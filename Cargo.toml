@@ -2,7 +2,7 @@
 name = "pistol"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-only"
+license = "MIT"
 description = "Lets you customize network packages"
 homepage = "https://github.com/rikonaka/pistol-rs"
 documentation = "https://docs.rs/pistol"
@@ -13,3 +13,7 @@ keywords = ["net", "scapy"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+pnet = "^0"
+pnet_datalink = "^0"
+subnetwork = "^0"
+tokio = { version = "^1", features = ["full"] }
