@@ -15,5 +15,6 @@ keywords = ["net", "scapy"]
 [dependencies]
 pnet = "^0"
 pnet_datalink = "^0"
+rand = "0.8.5"
 subnetwork = "^0"
 tokio = { version = "^1", features = ["full"] }

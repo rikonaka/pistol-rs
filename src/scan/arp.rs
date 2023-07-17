@@ -69,7 +69,7 @@ fn send_arp_scan_packet(
     None
 }
 
-pub async fn run_arp_scan(subnet: &mut Ipv4Pool) -> Option<ArpScanResults> {
+pub async fn arp_scan(subnet: &mut Ipv4Pool) -> Option<ArpScanResults> {
     match find_interface_by_subnet(subnet) {
         Some(interface) => match get_interface_ip(&interface) {
             Some(source_ip) => {
