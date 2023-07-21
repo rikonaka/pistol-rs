@@ -4,7 +4,7 @@ mod scan;
 mod utils;
 
 use scan::arp::{run_arp_scan, ArpScanResults};
-use scan::tcp::tcp_syn_scan;
+use scan::tcp::send_tcp_syn_scan_packet;
 
 pub async fn arp_scan(subnet: &str) -> Option<ArpScanResults> {
     let mut subnet = Ipv4Pool::new(subnet).unwrap();

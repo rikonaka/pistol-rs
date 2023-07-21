@@ -46,6 +46,16 @@ pub fn get_interface_ip(interface: &NetworkInterface) -> Option<Ipv4Addr> {
     None
 }
 
+pub fn get_interface(interface_name: &str) -> Option<NetworkInterface> {
+    for interface in pnet_datalink::interfaces() {
+        // println!("{}", interface)
+        if interface.name == interface_name {
+            return Some(interface);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
