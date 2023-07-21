@@ -3,12 +3,12 @@ use subnetwork::Ipv4Pool;
 mod scan;
 mod utils;
 
-use scan::arp::{arp_scan, ArpScanResults};
+use scan::arp::{run_arp_scan, ArpScanResults};
 use scan::tcp::tcp_syn_scan;
 
-pub async fn run_arp_scan(subnet: &str) -> Option<ArpScanResults> {
+pub async fn arp_scan(subnet: &str) -> Option<ArpScanResults> {
     let mut subnet = Ipv4Pool::new(subnet).unwrap();
-    arp_scan(&mut subnet).await
+    run_arp_scan(&mut subnet).await
 }
 
 #[cfg(test)]
@@ -16,7 +16,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn test_arp_scan() {
-        match run_arp_scan("192.168.1.0/24").await {
+        match arp_scan("192.168.1.0/24").await {
             Some(rets) => {
                 println!("{}", rets.alive_hosts);
                 for i in rets.alive_hosts_info {
