@@ -4,21 +4,23 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::{MutablePacket, Packet};
 use std::net::Ipv4Addr;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::channel;
 use subnetwork::Ipv4Pool;
 
-use crate::utils::{find_interface_by_subnet, get_interface_ip};
+use crate::utils::{self, find_interface_by_subnet, get_interface_ip};
+
+const ARP_SCAN_MAX_WAIT_TIME: usize = 32;
 
 #[derive(Debug)]
 pub struct HostInfo {
     pub host_ip: Ipv4Addr,
-    pub host_mac: MacAddr,
+    pub host_mac: Option<MacAddr>,
 }
 
 #[derive(Debug)]
 pub struct ArpScanResults {
-    pub alive_hosts: usize,
-    pub alive_hosts_info: Vec<HostInfo>,
+    pub alive_hosts_num: usize,
+    pub alive_hosts_vec: Vec<HostInfo>,
 }
 
 fn send_arp_scan_packet(
@@ -61,61 +63,68 @@ fn send_arp_scan_packet(
         _ => (),
     }
 
-    let buf = receiver.next().unwrap();
-    let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
-    if arp.get_sender_proto_addr() == target_ip && arp.get_target_hw_addr() == source_mac {
-        return Some(arp.get_sender_hw_addr());
+    for _ in 0..ARP_SCAN_MAX_WAIT_TIME {
+        let buf = receiver.next().unwrap();
+        let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
+        if arp.get_sender_proto_addr() == target_ip && arp.get_target_hw_addr() == source_mac {
+            return Some(arp.get_sender_hw_addr());
+        }
     }
     None
 }
 
-pub async fn run_arp_scan(subnet: &mut Ipv4Pool) -> Option<ArpScanResults> {
-    match find_interface_by_subnet(subnet) {
+pub fn run_arp_scan(
+    subnet: Ipv4Pool,
+    threads_num: usize,
+    print_result: bool,
+) -> Option<ArpScanResults> {
+    match find_interface_by_subnet(&subnet) {
         Some(interface) => match get_interface_ip(&interface) {
             Some(source_ip) => {
                 let source_mac = interface.mac.unwrap();
-                let interface = Arc::new(interface);
-                let alive_hosts = Arc::new(Mutex::new(0));
-                let alive_hosts_info = Arc::new(Mutex::new(Vec::new()));
-                let mut handles = Vec::new();
+                let (tx, rx) = channel();
+                let pool = utils::auto_threads_pool(threads_num);
+
                 for target_ip in subnet {
-                    let interface_clone = interface.clone();
-                    let alive_hosts_clone = alive_hosts.clone();
-                    let alive_hosts_info_clone = alive_hosts_info.clone();
-                    handles.push(tokio::spawn(async move {
-                        // println!("hi {}", i);
-                        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                        match send_arp_scan_packet(
-                            &interface_clone,
-                            source_ip,
-                            source_mac,
-                            target_ip,
-                        ) {
+                    let tx = tx.clone();
+                    let interface = interface.clone();
+                    pool.execute(move || {
+                        match send_arp_scan_packet(&interface, source_ip, source_mac, target_ip) {
                             Some(target_mac) => {
                                 // println!("alive host {}, mac {}", &target_ip, &target_mac);
                                 let host_info = HostInfo {
                                     host_ip: target_ip,
-                                    host_mac: target_mac,
+                                    host_mac: Some(target_mac),
                                 };
-                                *alive_hosts_clone.lock().unwrap() += 1;
-                                alive_hosts_info_clone.lock().unwrap().push(host_info);
+                                if print_result {
+                                    println!("{} => {}", target_ip, target_mac);
+                                }
+                                tx.send(host_info)
+                                    .expect("channel will be there waiting for the pool");
                             }
-                            _ => (),
+                            _ => {
+                                let host_info = HostInfo {
+                                    host_ip: target_ip,
+                                    host_mac: None,
+                                };
+                                tx.send(host_info)
+                                    .expect("channel will be there waiting for the pool");
+                            }
                         }
-                        // println!("bye {}", i);
-                    }));
+                    });
                 }
-                for h in handles {
-                    h.await.unwrap();
+                let iter = rx.into_iter().take(subnet.len());
+                let mut alive_hosts_info = Vec::new();
+                let mut alive_hosts = 0;
+                for host_info in iter {
+                    if host_info.host_mac.is_some() {
+                        alive_hosts_info.push(host_info);
+                        alive_hosts += 1;
+                    }
                 }
-                let a = Arc::try_unwrap(alive_hosts).unwrap().into_inner().unwrap();
-                let b = Arc::try_unwrap(alive_hosts_info)
-                    .unwrap()
-                    .into_inner()
-                    .unwrap();
                 Some(ArpScanResults {
-                    alive_hosts: a,
-                    alive_hosts_info: b,
+                    alive_hosts_num: alive_hosts,
+                    alive_hosts_vec: alive_hosts_info,
                 })
             }
             _ => {

@@ -1,21 +1,14 @@
+use num_cpus;
 use pnet_datalink::NetworkInterface;
 use std::net::{IpAddr, Ipv4Addr};
 use subnetwork::Ipv4Pool;
+use threadpool::ThreadPool;
 
 pub fn get_host_interfaces() -> Vec<NetworkInterface> {
     pnet_datalink::interfaces()
 }
 
-pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
-    let interfaces = get_host_interfaces();
-    for i in interfaces {
-        if i.name == name {
-            return Some(i);
-        }
-    }
-    None
-}
-
+/// Returns an interface that matches the subnet
 pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
     let interfaces = get_host_interfaces();
     for interface in &interfaces {
@@ -33,7 +26,18 @@ pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
     None
 }
 
-/// Return source ip of host machine interfaces
+/// Returns an interface that matches the name
+pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
+    for interface in pnet_datalink::interfaces() {
+        // println!("{}", interface)
+        if interface.name == interface_name {
+            return Some(interface);
+        }
+    }
+    None
+}
+
+/// Returns source ip of host machine interfaces
 pub fn get_interface_ip(interface: &NetworkInterface) -> Option<Ipv4Addr> {
     for i in &interface.ips {
         if i.is_ipv4() {
@@ -46,14 +50,19 @@ pub fn get_interface_ip(interface: &NetworkInterface) -> Option<Ipv4Addr> {
     None
 }
 
-pub fn get_interface(interface_name: &str) -> Option<NetworkInterface> {
-    for interface in pnet_datalink::interfaces() {
-        // println!("{}", interface)
-        if interface.name == interface_name {
-            return Some(interface);
-        }
-    }
-    None
+/// Returns the number of CPUs in the machine
+pub fn get_cpu_num() -> usize {
+    num_cpus::get()
+}
+
+pub fn auto_threads_pool(threads_num: usize) -> ThreadPool {
+    let pool = if threads_num > 0 {
+        ThreadPool::new(threads_num)
+    } else {
+        let cpus = get_cpu_num();
+        ThreadPool::new(cpus)
+    };
+    pool
 }
 
 #[cfg(test)]
@@ -85,5 +94,10 @@ mod tests {
             Some(i) => println!("{:?}", i),
             _ => (),
         }
+    }
+    #[test]
+    fn test_get_cpus() {
+        let cpus = get_cpu_num();
+        println!("{}", cpus);
     }
 }
