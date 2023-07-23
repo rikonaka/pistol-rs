@@ -135,7 +135,7 @@ mod tests {
     }
     #[test]
     fn test_syn_scan_subnet() {
-        let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
+        let subnet = Ipv4Pool::new("192.168.1.0/28").unwrap();
         let i = Some("eth0");
         let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true).unwrap();
         println!("{:?}", ret);

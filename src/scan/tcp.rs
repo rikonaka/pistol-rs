@@ -9,15 +9,16 @@ use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::time::Duration;
 
+const TCP_HEADER_LEN: usize = 20;
+const TCP_DATA_LEN: usize = 0;
+const SEND_SYN_PACKET_MAX_WAIT_TIME: usize = 128;
+
 pub fn send_syn_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     src_port: u16,
     dst_port: u16,
 ) -> bool {
-    const TCP_HEADER_LEN: usize = 20;
-    const TEST_DATA_LEN: usize = 0;
-
     let protocol = Layer4(Ipv4(IpNextHeaderProtocols::Tcp));
     // Create a new transport channel, dealing with layer 4 packets on a test protocol
     // It has a receive buffer of 4096 bytes.
@@ -30,7 +31,7 @@ pub fn send_syn_packet(
     };
 
     let mut rng = rand::thread_rng();
-    let mut packet = [0u8; TCP_HEADER_LEN + TEST_DATA_LEN];
+    let mut packet = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
     let mut tcp_packet = MutableTcpPacket::new(&mut packet[..]).unwrap();
     tcp_packet.set_source(src_port);
     tcp_packet.set_destination(dst_port);
@@ -63,14 +64,14 @@ pub fn send_syn_packet(
     match tx.send_to(tcp_packet, dst_ipv4.into()) {
         Ok(n) => {
             // println!("{}", n);
-            assert_eq!(n, TCP_HEADER_LEN + TEST_DATA_LEN);
+            assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN);
         }
         Err(e) => panic!("failed to send packet: {}", e),
     }
 
     // We treat received packets as if they were TCP packets
     let mut iter = tcp_packet_iter(&mut rx);
-    loop {
+    for _ in 0..SEND_SYN_PACKET_MAX_WAIT_TIME {
         match iter.next() {
             Ok((response_packet, response_addr)) => {
                 // println!("{}", addr);
@@ -96,6 +97,7 @@ pub fn send_syn_packet(
             }
         }
     }
+    false
 }
 
 pub fn send_connect_packets(dst_ipv4: Ipv4Addr, dst_port: u16, timeout: Duration) -> bool {

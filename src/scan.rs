@@ -146,8 +146,9 @@ pub fn run_arp_scan_subnet(
                         host_ip: target_ip,
                         host_mac: None,
                     };
-                    tx.send(host_info)
-                        .expect("channel will be there waiting for the pool");
+                    match tx.send(host_info) {
+                        _ => (),
+                    }
                 }
             }
         });
@@ -246,8 +247,9 @@ pub fn run_tcp_syn_scan_range_port(
             if print_result {
                 _tcp_print_result(dst_ipv4, dst_port, scan_ret);
             }
-            tx.send((dst_port, scan_ret))
-                .expect("channel will be there waiting for the pool");
+            match tx.send((dst_port, scan_ret)) {
+                _ => (),
+            }
         });
     }
 
@@ -299,8 +301,9 @@ pub fn run_tcp_syn_scan_subnet(
                 if print_result {
                     _tcp_print_result(dst_ipv4, dst_port, scan_ret);
                 }
-                tx.send((dst_ipv4, dst_port, scan_ret))
-                    .expect("channel will be there waiting for the pool");
+                match tx.send((dst_ipv4, dst_port, scan_ret)) {
+                    _ => (),
+                }
             });
         }
     }
