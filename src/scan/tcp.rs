@@ -107,20 +107,24 @@ pub fn send_connect_packets(dst_ipv4: Ipv4Addr, dst_port: u16, timeout: Duration
     }
 }
 
-#[test]
-fn test_tcp_full_scan() {
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-    let duration = Duration::from_secs(1);
-    let ret = send_connect_packets(dst_ipv4, 80, duration);
-    assert_eq!(ret, true);
-    let ret = send_connect_packets(dst_ipv4, 999, duration);
-    // println!("{ret}");
-    assert_eq!(ret, false);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_tcp_full_scan() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let duration = Duration::from_secs(1);
+        let ret = send_connect_packets(dst_ipv4, 80, duration);
+        assert_eq!(ret, true);
+        let ret = send_connect_packets(dst_ipv4, 999, duration);
+        // println!("{ret}");
+        assert_eq!(ret, false);
+    }
 
-#[test]
-fn test_tcp_syn_scan() {
-    let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-    send_syn_packet(src_ipv4, dst_ipv4, 49511, 9999);
+    #[test]
+    fn test_tcp_syn_scan() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        send_syn_packet(src_ipv4, dst_ipv4, 49511, 9999);
+    }
 }

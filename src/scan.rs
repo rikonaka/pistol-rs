@@ -18,18 +18,18 @@ pub mod tcp;
 /* FindInterfaceError */
 #[derive(Debug, Clone)]
 pub struct FindInterfaceError {
-    error_message: String,
+    interface: String,
 }
 
 impl fmt::Display for FindInterfaceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.error_message)
+        write!(f, "can not found interface {}", self.interface)
     }
 }
 
 impl FindInterfaceError {
-    pub fn new(error_message: String) -> FindInterfaceError {
-        FindInterfaceError { error_message }
+    pub fn new(interface: String) -> FindInterfaceError {
+        FindInterfaceError { interface }
     }
 }
 
@@ -38,18 +38,18 @@ impl Error for FindInterfaceError {}
 /* GetInterfaceIPError */
 #[derive(Debug, Clone)]
 pub struct GetInterfaceIPError {
-    error_message: String,
+    interface: String,
 }
 
 impl fmt::Display for GetInterfaceIPError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.error_message)
+        write!(f, "can not get ip from interface {}", self.interface)
     }
 }
 
 impl GetInterfaceIPError {
-    pub fn new(error_message: String) -> GetInterfaceIPError {
-        GetInterfaceIPError { error_message }
+    pub fn new(interface: String) -> GetInterfaceIPError {
+        GetInterfaceIPError { interface }
     }
 }
 
@@ -97,34 +97,16 @@ pub fn run_arp_scan_subnet(
     let interface = match interface {
         Some(name) => match utils::find_interface_by_name(name) {
             Some(i) => i,
-            _ => {
-                return Err(FindInterfaceError::new(format!(
-                    "can not found interface by name {}",
-                    name
-                ))
-                .into())
-            }
+            _ => return Err(FindInterfaceError::new(name.to_string()).into()),
         },
         _ => match utils::find_interface_by_subnet(&subnet) {
             Some(i) => i,
-            _ => {
-                return Err(FindInterfaceError::new(format!(
-                    "can not found interface by subnet {}",
-                    subnet
-                ))
-                .into())
-            }
+            _ => return Err(FindInterfaceError::new(subnet.to_string()).into()),
         },
     };
     let source_ip = match utils::get_interface_ip(&interface) {
         Some(s) => s,
-        _ => {
-            return Err(GetInterfaceIPError::new(format!(
-                "can not get ip from interface {}",
-                interface
-            ))
-            .into())
-        }
+        _ => return Err(GetInterfaceIPError::new(interface.to_string()).into()),
     };
     let dstaddr = match dstaddr {
         Some(v) => match MacAddr::from_str(v) {
@@ -194,34 +176,19 @@ pub fn run_tcp_syn_scan_single_port(
     let interface = match interface {
         Some(name) => match utils::find_interface_by_name(name) {
             Some(i) => i,
-            _ => {
-                return Err(FindInterfaceError::new(format!(
-                    "can not found interface by name {}",
-                    name
-                ))
-                .into())
-            }
+            _ => return Err(FindInterfaceError::new(name.to_string()).into()),
         },
         _ => {
             let guess_subnet = Ipv4Pool::new(&format!("{}/24", dst_ipv4)).unwrap();
             match utils::find_interface_by_subnet(&guess_subnet) {
                 Some(i) => i,
-                _ => {
-                    return Err(FindInterfaceError::new(format!(
-                        "can not found interface by guess subnet {}",
-                        guess_subnet,
-                    ))
-                    .into())
-                }
+                _ => return Err(FindInterfaceError::new(guess_subnet.to_string()).into()),
             }
         }
     };
     let src_ipv4 = match utils::get_interface_ip(&interface) {
         Some(i) => i,
-        _ => {
-            eprintln!("get interface ip failed: {}", interface);
-            return None;
-        }
+        _ => return Err(GetInterfaceIPError::new(interface.to_string()).into()),
     };
     let mut rng = rand::thread_rng();
     let src_port: u16 = rng.gen_range(1024..=49151);
@@ -230,12 +197,12 @@ pub fn run_tcp_syn_scan_single_port(
         _tcp_print_result(dst_ipv4, dst_port, scan_ret)
     }
     if scan_ret {
-        Some(TcpScanResults {
+        Ok(TcpScanResults {
             alive_port_num: 1,
             alive_port_vec: vec![dst_port],
         })
     } else {
-        Some(TcpScanResults {
+        Ok(TcpScanResults {
             alive_port_num: 0,
             alive_port_vec: vec![],
         })
@@ -246,23 +213,26 @@ pub fn run_tcp_syn_scan_range_port(
     dst_ipv4: Ipv4Addr,
     start_port: u16,
     end_port: u16,
-    interface: &str,
+    interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-) -> Option<TcpScanResults> {
-    let i = match utils::find_interface_by_name(interface) {
-        Some(i) => i,
+) -> Result<TcpScanResults> {
+    let interface = match interface {
+        Some(name) => match utils::find_interface_by_name(name) {
+            Some(i) => i,
+            _ => return Err(FindInterfaceError::new(name.to_string()).into()),
+        },
         _ => {
-            eprintln!("not such interface: {}", interface);
-            return None;
+            let guess_subnet = Ipv4Pool::new(&format!("{}/24", dst_ipv4)).unwrap();
+            match utils::find_interface_by_subnet(&guess_subnet) {
+                Some(i) => i,
+                _ => return Err(FindInterfaceError::new(guess_subnet.to_string()).into()),
+            }
         }
     };
-    let src_ipv4 = match utils::get_interface_ip(&i) {
+    let src_ipv4 = match utils::get_interface_ip(&interface) {
         Some(i) => i,
-        _ => {
-            eprintln!("get interface ip failed: {}", interface);
-            return None;
-        }
+        _ => return Err(GetInterfaceIPError::new(interface.to_string()).into()),
     };
     let mut rng = rand::thread_rng();
     let src_port: u16 = rng.gen_range(1024..=49151);
@@ -288,7 +258,7 @@ pub fn run_tcp_syn_scan_range_port(
             alive_port_vec.push(port);
         }
     }
-    Some(TcpScanResults {
+    Ok(TcpScanResults {
         alive_port_num: alive_port_vec.len(),
         alive_port_vec,
     })
@@ -298,23 +268,23 @@ pub fn run_tcp_syn_scan_subnet(
     subnet: Ipv4Pool,
     start_port: u16,
     end_port: u16,
-    interface: &str,
+    interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-) -> Option<HashMap<Ipv4Addr, TcpScanResults>> {
-    let i = match utils::find_interface_by_name(interface) {
-        Some(i) => i,
-        _ => {
-            eprintln!("not such interface: {}", interface);
-            return None;
-        }
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    let interface = match interface {
+        Some(name) => match utils::find_interface_by_name(name) {
+            Some(i) => i,
+            _ => return Err(FindInterfaceError::new(name.to_string()).into()),
+        },
+        _ => match utils::find_interface_by_subnet(&subnet) {
+            Some(i) => i,
+            _ => return Err(FindInterfaceError::new(subnet.to_string()).into()),
+        },
     };
-    let src_ipv4 = match utils::get_interface_ip(&i) {
+    let src_ipv4 = match utils::get_interface_ip(&interface) {
         Some(i) => i,
-        _ => {
-            eprintln!("get interface ip failed: {}", interface);
-            return None;
-        }
+        _ => return Err(GetInterfaceIPError::new(interface.to_string()).into()),
     };
 
     let pool = utils::get_threads_pool(threads_num);
@@ -358,7 +328,7 @@ pub fn run_tcp_syn_scan_subnet(
         }
     }
 
-    Some(ret)
+    Ok(ret)
 }
 
 pub fn run_tcp_connect_scan_single_port(
@@ -366,18 +336,18 @@ pub fn run_tcp_connect_scan_single_port(
     dst_port: u16,
     timeout: Duration,
     print_result: bool,
-) -> Option<TcpScanResults> {
+) -> Result<TcpScanResults> {
     let scan_ret = tcp::send_connect_packets(dst_ipv4, dst_port, timeout);
     if print_result {
         _tcp_print_result(dst_ipv4, dst_port, scan_ret);
     }
     if scan_ret {
-        Some(TcpScanResults {
+        Ok(TcpScanResults {
             alive_port_num: 1,
             alive_port_vec: vec![dst_port],
         })
     } else {
-        Some(TcpScanResults {
+        Ok(TcpScanResults {
             alive_port_num: 0,
             alive_port_vec: vec![],
         })
