@@ -55,7 +55,7 @@ pub fn get_cpu_num() -> usize {
     num_cpus::get()
 }
 
-pub fn auto_threads_pool(threads_num: usize) -> ThreadPool {
+pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
     let pool = if threads_num > 0 {
         ThreadPool::new(threads_num)
     } else {

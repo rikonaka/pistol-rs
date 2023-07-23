@@ -1,25 +1,15 @@
 use pnet::packet::ip::IpNextHeaderProtocols;
-// use pnet::packet::ipv4::MutableIpv4Packet;
-// use pnet::packet::tcp::TcpOption;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
 use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::Ipv4;
 use pnet::transport::{tcp_packet_iter, transport_channel};
 use rand::Rng;
-use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::sync::mpsc::channel;
-use subnetwork::Ipv4Pool;
+use std::net::SocketAddr;
+use std::net::TcpStream;
+use std::time::Duration;
 
-use crate::utils;
-
-#[derive(Debug)]
-pub struct SynScanResults {
-    pub alive_port_num: usize,
-    pub alive_port_vec: Vec<u16>,
-}
-
-pub fn send_tcp_syn_scan_packet(
+pub fn send_syn_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     src_port: u16,
@@ -108,171 +98,29 @@ pub fn send_tcp_syn_scan_packet(
     }
 }
 
-pub fn run_syn_scan_single(
-    interface: &str,
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-) -> Option<SynScanResults> {
-    let i = match utils::find_interface_by_name(interface) {
-        Some(i) => i,
-        _ => {
-            eprintln!("not such interface: {}", interface);
-            return None;
-        }
-    };
-    let src_ipv4 = match utils::get_interface_ip(&i) {
-        Some(i) => i,
-        _ => {
-            eprintln!("get interface ip failed: {}", interface);
-            return None;
-        }
-    };
-    let mut rng = rand::thread_rng();
-    let src_port: u16 = rng.gen_range(1024..=49151);
-    let src_port_ret = send_tcp_syn_scan_packet(src_ipv4, dst_ipv4, src_port, dst_port);
-    if src_port_ret {
-        Some(SynScanResults {
-            alive_port_num: 1,
-            alive_port_vec: vec![dst_port],
-        })
-    } else {
-        Some(SynScanResults {
-            alive_port_num: 0,
-            alive_port_vec: vec![],
-        })
+pub fn send_connect_packets(dst_ipv4: Ipv4Addr, dst_port: u16, timeout: Duration) -> bool {
+    // let addr = format!("{}:{}", dst_ipv4, dst_port);
+    let addr = SocketAddr::from((dst_ipv4, dst_port));
+    match TcpStream::connect_timeout(&addr, timeout) {
+        Ok(_) => true,
+        _ => false,
     }
 }
 
-pub fn run_syn_scan_range(
-    dst_ipv4: Ipv4Addr,
-    interface: &str,
-    start_port: u16,
-    end_port: u16,
-    threads_num: usize,
-    print_result: bool,
-) -> Option<SynScanResults> {
-    let i = match utils::find_interface_by_name(interface) {
-        Some(i) => i,
-        _ => {
-            eprintln!("not such interface: {}", interface);
-            return None;
-        }
-    };
-    let src_ipv4 = match utils::get_interface_ip(&i) {
-        Some(i) => i,
-        _ => {
-            eprintln!("get interface ip failed: {}", interface);
-            return None;
-        }
-    };
-    let mut rng = rand::thread_rng();
-    let src_port: u16 = rng.gen_range(1024..=49151);
-    let pool = utils::auto_threads_pool(threads_num);
-    let (tx, rx) = channel();
-
-    for dst_port in start_port..end_port {
-        let tx = tx.clone();
-        pool.execute(move || {
-            let dst_port_ret = send_tcp_syn_scan_packet(src_ipv4, dst_ipv4, src_port, dst_port);
-            if print_result {
-                if dst_port_ret {
-                    println!("port {} is open", dst_port);
-                } else {
-                    println!("port {} is close", dst_port);
-                }
-            }
-            tx.send((dst_port, dst_port_ret))
-                .expect("channel will be there waiting for the pool");
-        });
-    }
-
-    let iter = rx.into_iter().take((end_port - start_port).into());
-    let mut alive_port_vec = Vec::new();
-    for (port, port_ret) in iter {
-        if port_ret {
-            alive_port_vec.push(port);
-        }
-    }
-    Some(SynScanResults {
-        alive_port_num: alive_port_vec.len(),
-        alive_port_vec,
-    })
-}
-
-pub fn run_syn_scan_subnet(
-    subnet: Ipv4Pool,
-    interface: &str,
-    start_port: u16,
-    end_port: u16,
-    threads_num: usize,
-    print_result: bool,
-) -> Option<HashMap<Ipv4Addr, SynScanResults>> {
-    let i = match utils::find_interface_by_name(interface) {
-        Some(i) => i,
-        _ => {
-            eprintln!("not such interface: {}", interface);
-            return None;
-        }
-    };
-    let src_ipv4 = match utils::get_interface_ip(&i) {
-        Some(i) => i,
-        _ => {
-            eprintln!("get interface ip failed: {}", interface);
-            return None;
-        }
-    };
-
-    let pool = utils::auto_threads_pool(threads_num);
-    let (tx, rx) = channel();
-    let mut rng = rand::thread_rng();
-    for dst_ipv4 in subnet {
-        let src_port: u16 = rng.gen_range(1024..=49151);
-        for dst_port in start_port..end_port {
-            let tx = tx.clone();
-            pool.execute(move || {
-                let dst_port_ret = send_tcp_syn_scan_packet(src_ipv4, dst_ipv4, src_port, dst_port);
-                if print_result {
-                    if dst_port_ret {
-                        println!("ip {} port {} is open", dst_ipv4, dst_port);
-                    } else {
-                        println!("ip {} port {} is close", dst_ipv4, dst_port);
-                    }
-                }
-                tx.send((dst_ipv4, dst_port, dst_port_ret))
-                    .expect("channel will be there waiting for the pool");
-            });
-        }
-    }
-
-    let iter = rx
-        .into_iter()
-        .take(subnet.len() * (end_port - start_port) as usize);
-
-    let mut ret: HashMap<Ipv4Addr, SynScanResults> = HashMap::new();
-    for (dst_ipv4, dst_port, dst_port_ret) in iter {
-        if dst_port_ret {
-            if ret.contains_key(&dst_ipv4) {
-                ret.get_mut(&dst_ipv4).unwrap().alive_port_num += 1;
-                ret.get_mut(&dst_ipv4)
-                    .unwrap()
-                    .alive_port_vec
-                    .push(dst_port);
-            } else {
-                let ssr = SynScanResults {
-                    alive_port_num: 1,
-                    alive_port_vec: vec![dst_port],
-                };
-                ret.insert(dst_ipv4, ssr);
-            }
-        }
-    }
-
-    Some(ret)
+#[test]
+fn test_tcp_full_scan() {
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+    let duration = Duration::from_secs(1);
+    let ret = send_connect_packets(dst_ipv4, 80, duration);
+    assert_eq!(ret, true);
+    let ret = send_connect_packets(dst_ipv4, 999, duration);
+    // println!("{ret}");
+    assert_eq!(ret, false);
 }
 
 #[test]
 fn test_tcp_syn_scan() {
     let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
     let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-    send_tcp_syn_scan_packet(src_ipv4, dst_ipv4, 49511, 9999);
+    send_syn_packet(src_ipv4, dst_ipv4, 49511, 9999);
 }

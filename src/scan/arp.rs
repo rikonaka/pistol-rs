@@ -4,27 +4,12 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::{MutablePacket, Packet};
 use std::net::Ipv4Addr;
-use std::sync::mpsc::channel;
-use subnetwork::Ipv4Pool;
-
-use crate::utils::{self, find_interface_by_subnet, get_interface_ip};
 
 const ARP_SCAN_MAX_WAIT_TIME: usize = 32;
 
-#[derive(Debug)]
-pub struct HostInfo {
-    pub host_ip: Ipv4Addr,
-    pub host_mac: Option<MacAddr>,
-}
-
-#[derive(Debug)]
-pub struct ArpScanResults {
-    pub alive_hosts_num: usize,
-    pub alive_hosts_vec: Vec<HostInfo>,
-}
-
-fn send_arp_scan_packet(
+pub fn send_arp_scan_packet(
     interface: &NetworkInterface,
+    dstaddr: &MacAddr,
     source_ip: Ipv4Addr,
     source_mac: MacAddr,
     target_ip: Ipv4Addr,
@@ -38,7 +23,8 @@ fn send_arp_scan_packet(
     let mut ethernet_buffer = [0u8; 42];
     let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
 
-    ethernet_packet.set_destination(MacAddr::broadcast());
+    ethernet_packet.set_destination(*dstaddr);
+    // ethernet_packet.set_destination(MacAddr::broadcast());
     ethernet_packet.set_source(source_mac);
     ethernet_packet.set_ethertype(EtherTypes::Arp);
 
@@ -71,70 +57,4 @@ fn send_arp_scan_packet(
         }
     }
     None
-}
-
-pub fn run_arp_scan(
-    subnet: Ipv4Pool,
-    threads_num: usize,
-    print_result: bool,
-) -> Option<ArpScanResults> {
-    match find_interface_by_subnet(&subnet) {
-        Some(interface) => match get_interface_ip(&interface) {
-            Some(source_ip) => {
-                let source_mac = interface.mac.unwrap();
-                let (tx, rx) = channel();
-                let pool = utils::auto_threads_pool(threads_num);
-
-                for target_ip in subnet {
-                    let tx = tx.clone();
-                    let interface = interface.clone();
-                    pool.execute(move || {
-                        match send_arp_scan_packet(&interface, source_ip, source_mac, target_ip) {
-                            Some(target_mac) => {
-                                // println!("alive host {}, mac {}", &target_ip, &target_mac);
-                                let host_info = HostInfo {
-                                    host_ip: target_ip,
-                                    host_mac: Some(target_mac),
-                                };
-                                if print_result {
-                                    println!("{} => {}", target_ip, target_mac);
-                                }
-                                tx.send(host_info)
-                                    .expect("channel will be there waiting for the pool");
-                            }
-                            _ => {
-                                let host_info = HostInfo {
-                                    host_ip: target_ip,
-                                    host_mac: None,
-                                };
-                                tx.send(host_info)
-                                    .expect("channel will be there waiting for the pool");
-                            }
-                        }
-                    });
-                }
-                let iter = rx.into_iter().take(subnet.len());
-                let mut alive_hosts_info = Vec::new();
-                let mut alive_hosts = 0;
-                for host_info in iter {
-                    if host_info.host_mac.is_some() {
-                        alive_hosts_info.push(host_info);
-                        alive_hosts += 1;
-                    }
-                }
-                Some(ArpScanResults {
-                    alive_hosts_num: alive_hosts,
-                    alive_hosts_vec: alive_hosts_info,
-                })
-            }
-            _ => {
-                eprintln!("can not find avaliable ip by interface {}", interface.name);
-                None
-            }
-        },
-        _ => {
-            eprintln!("can not find interface by subnet {}", subnet);
-            None
-        }
-    }
 }

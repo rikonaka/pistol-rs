@@ -13,6 +13,7 @@ keywords = ["net", "scapy"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.72"
 num_cpus = "1.16.0"
 pnet = "^0"
 pnet_datalink = "^0"
