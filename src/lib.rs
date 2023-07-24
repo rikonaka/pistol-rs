@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_syn_scan_single() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let i = Some("eth0");
+        let i = Some("ens33");
         let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true).unwrap();
         assert_eq!(ret.alive_port_num, 1);
         let ret = tcp_syn_scan_single_port(dst_ipv4, 9999, i, true).unwrap();
@@ -129,14 +129,14 @@ mod tests {
     #[test]
     fn test_syn_scan_multi() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let i = Some("eth0");
+        let i = Some("ens33");
         let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true).unwrap();
         println!("{:?}", ret);
     }
     #[test]
     fn test_syn_scan_subnet() {
-        let subnet = Ipv4Pool::new("192.168.1.0/28").unwrap();
-        let i = Some("eth0");
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let i = Some("ens33");
         let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true).unwrap();
         println!("{:?}", ret);
     }

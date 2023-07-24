@@ -11,7 +11,7 @@ use std::time::Duration;
 
 const TCP_HEADER_LEN: usize = 20;
 const TCP_DATA_LEN: usize = 0;
-const SEND_SYN_PACKET_MAX_WAIT_TIME: usize = 128;
+const SEND_SYN_PACKET_MAX_WAIT_TIME: usize = 64;
 
 pub fn send_syn_packet(
     src_ipv4: Ipv4Addr,

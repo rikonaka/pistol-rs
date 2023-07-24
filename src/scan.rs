@@ -119,8 +119,10 @@ pub fn run_arp_scan_subnet(
     let source_mac = interface.mac.unwrap();
     let (tx, rx) = channel();
     let pool = utils::get_threads_pool(threads_num);
+    let mut recv_size = 0;
 
     for target_ip in subnet {
+        recv_size += 1;
         let tx = tx.clone();
         let interface = interface.clone();
         pool.execute(move || {
@@ -153,7 +155,7 @@ pub fn run_arp_scan_subnet(
             }
         });
     }
-    let iter = rx.into_iter().take(subnet.len());
+    let iter = rx.into_iter().take(recv_size);
     let mut alive_hosts_info = Vec::new();
     let mut alive_hosts = 0;
     for host_info in iter {
@@ -239,8 +241,10 @@ pub fn run_tcp_syn_scan_range_port(
     let src_port: u16 = rng.gen_range(1024..=49151);
     let pool = utils::get_threads_pool(threads_num);
     let (tx, rx) = channel();
+    let mut recv_size = 0;
 
     for dst_port in start_port..end_port {
+        recv_size += 1;
         let tx = tx.clone();
         pool.execute(move || {
             let scan_ret = tcp::send_syn_packet(src_ipv4, dst_ipv4, src_port, dst_port);
@@ -253,7 +257,7 @@ pub fn run_tcp_syn_scan_range_port(
         });
     }
 
-    let iter = rx.into_iter().take((end_port - start_port).into());
+    let iter = rx.into_iter().take(recv_size);
     let mut alive_port_vec = Vec::new();
     for (port, port_ret) in iter {
         if port_ret {
@@ -274,6 +278,25 @@ pub fn run_tcp_syn_scan_subnet(
     threads_num: usize,
     print_result: bool,
 ) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    // scan with arp first
+    if print_result {
+        println!("arp scan start...")
+    }
+    let arp_scan_result =
+        match run_arp_scan_subnet(subnet, interface, None, threads_num, print_result) {
+            Ok(r) => r,
+            Err(e) => return Err(e.into()),
+        };
+    if print_result {
+        println!(
+            "arp scan end, alive hosts {}",
+            arp_scan_result.alive_hosts_num
+        );
+    }
+    if arp_scan_result.alive_hosts_num <= 0 {
+        return Ok(HashMap::new());
+    }
+
     let interface = match interface {
         Some(name) => match utils::find_interface_by_name(name) {
             Some(i) => i,
@@ -292,25 +315,29 @@ pub fn run_tcp_syn_scan_subnet(
     let pool = utils::get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut rng = rand::thread_rng();
-    for dst_ipv4 in subnet {
-        let src_port: u16 = rng.gen_range(1024..=49151);
-        for dst_port in start_port..end_port {
-            let tx = tx.clone();
-            pool.execute(move || {
-                let scan_ret = tcp::send_syn_packet(src_ipv4, dst_ipv4, src_port, dst_port);
-                if print_result {
-                    _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-                }
-                match tx.send((dst_ipv4, dst_port, scan_ret)) {
-                    _ => (),
-                }
-            });
+    let mut recv_size = 0;
+
+    for alive_host in arp_scan_result.alive_hosts_vec {
+        let dst_ipv4 = alive_host.host_ip;
+        if dst_ipv4 != src_ipv4 {
+            let src_port: u16 = rng.gen_range(1024..=49151);
+            for dst_port in start_port..end_port {
+                recv_size += 1;
+                let tx = tx.clone();
+                pool.execute(move || {
+                    let scan_ret = tcp::send_syn_packet(src_ipv4, dst_ipv4, src_port, dst_port);
+                    if print_result {
+                        _tcp_print_result(dst_ipv4, dst_port, scan_ret);
+                    }
+                    match tx.send((dst_ipv4, dst_port, scan_ret)) {
+                        _ => (),
+                    }
+                });
+            }
         }
     }
 
-    let iter = rx
-        .into_iter()
-        .take(subnet.len() * (end_port - start_port) as usize);
+    let iter = rx.into_iter().take(recv_size);
 
     let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
     for (dst_ipv4, dst_port, dst_port_ret) in iter {
