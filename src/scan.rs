@@ -321,7 +321,7 @@ pub fn run_tcp_syn_scan_subnet(
         let dst_ipv4 = alive_host.host_ip;
         if dst_ipv4 != src_ipv4 {
             let src_port: u16 = rng.gen_range(1024..=49151);
-            for dst_port in start_port..end_port {
+            for dst_port in start_port..=end_port {
                 recv_size += 1;
                 let tx = tx.clone();
                 pool.execute(move || {
@@ -338,8 +338,8 @@ pub fn run_tcp_syn_scan_subnet(
     }
 
     let iter = rx.into_iter().take(recv_size);
-
     let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
+
     for (dst_ipv4, dst_port, dst_port_ret) in iter {
         if dst_port_ret {
             if ret.contains_key(&dst_ipv4) {
@@ -357,7 +357,6 @@ pub fn run_tcp_syn_scan_subnet(
             }
         }
     }
-
     Ok(ret)
 }
 
@@ -382,4 +381,131 @@ pub fn run_tcp_connect_scan_single_port(
             alive_port_vec: vec![],
         })
     }
+}
+
+pub fn tcp_connect_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    timeout: Duration,
+    threads_num: usize,
+    print_result: bool,
+) -> Result<TcpScanResults> {
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+
+    for dst_port in start_port..=end_port {
+        recv_size += 1;
+        let tx = tx.clone();
+        pool.execute(move || {
+            let scan_ret = tcp::send_connect_packets(dst_ipv4, dst_port, timeout);
+            if print_result {
+                _tcp_print_result(dst_ipv4, dst_port, scan_ret);
+            }
+            match tx.send((dst_port, scan_ret)) {
+                _ => (),
+            }
+        })
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret = TcpScanResults {
+        alive_port_num: 0,
+        alive_port_vec: vec![],
+    };
+    for (dst_port, dst_port_ret) in iter {
+        if dst_port_ret {
+            ret.alive_port_num += 1;
+            ret.alive_port_vec.push(dst_port);
+        }
+    }
+
+    Ok(ret)
+}
+
+pub fn run_tcp_connect_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    timeout: Duration,
+    threads_num: usize,
+    print_result: bool,
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    // scan with arp first
+    if print_result {
+        println!("arp scan start...")
+    }
+    let arp_scan_result =
+        match run_arp_scan_subnet(subnet, interface, None, threads_num, print_result) {
+            Ok(r) => r,
+            Err(e) => return Err(e.into()),
+        };
+    if print_result {
+        println!(
+            "arp scan end, alive hosts {}",
+            arp_scan_result.alive_hosts_num
+        );
+    }
+
+    let interface = match interface {
+        Some(name) => match utils::find_interface_by_name(name) {
+            Some(i) => i,
+            _ => return Err(FindInterfaceError::new(name.to_string()).into()),
+        },
+        _ => match utils::find_interface_by_subnet(&subnet) {
+            Some(i) => i,
+            _ => return Err(FindInterfaceError::new(subnet.to_string()).into()),
+        },
+    };
+    let src_ipv4 = match utils::get_interface_ip(&interface) {
+        Some(i) => i,
+        _ => return Err(GetInterfaceIPError::new(interface.to_string()).into()),
+    };
+
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+
+    for host_info in arp_scan_result.alive_hosts_vec {
+        let dst_ipv4 = host_info.host_ip;
+        if dst_ipv4 != src_ipv4 {
+            for dst_port in start_port..=end_port {
+                recv_size += 1;
+                let tx = tx.clone();
+                pool.execute(move || {
+                    let scan_ret = tcp::send_connect_packets(dst_ipv4, dst_port, timeout);
+                    if print_result {
+                        _tcp_print_result(dst_ipv4, dst_port, scan_ret);
+                    }
+                    match tx.send((dst_ipv4, dst_port, scan_ret)) {
+                        _ => (),
+                    }
+                })
+            }
+        }
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
+
+    for (dst_ipv4, dst_port, dst_port_ret) in iter {
+        if dst_port_ret {
+            if ret.contains_key(&dst_ipv4) {
+                ret.get_mut(&dst_ipv4).unwrap().alive_port_num += 1;
+                ret.get_mut(&dst_ipv4)
+                    .unwrap()
+                    .alive_port_vec
+                    .push(dst_port);
+            } else {
+                ret.insert(
+                    dst_ipv4,
+                    TcpScanResults {
+                        alive_port_num: 1,
+                        alive_port_vec: vec![dst_port],
+                    },
+                );
+            }
+        }
+    }
+    Ok(ret)
 }

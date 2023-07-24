@@ -102,6 +102,44 @@ pub fn tcp_connect_scan_single_port(
     scan::run_tcp_connect_scan_single_port(dst_ipv4, dst_port, timeout, print_result)
 }
 
+pub fn tcp_connect_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    timeout: Duration,
+    threads_num: usize,
+    print_result: bool,
+) -> Result<scan::TcpScanResults> {
+    scan::tcp_connect_scan_range_port(
+        dst_ipv4,
+        start_port,
+        end_port,
+        timeout,
+        threads_num,
+        print_result,
+    )
+}
+
+pub fn tcp_connect_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    timeout: Duration,
+    threads_num: usize,
+    print_result: bool,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_connect_scan_subnet(
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        timeout,
+        threads_num,
+        print_result,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,7 +156,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_syn_scan_single() {
+    fn test_syn_scan_single_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let i = Some("ens33");
         let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true).unwrap();
@@ -127,7 +165,7 @@ mod tests {
         assert_eq!(ret.alive_port_num, 0);
     }
     #[test]
-    fn test_syn_scan_multi() {
+    fn test_syn_scan_multi_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let i = Some("ens33");
         let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true).unwrap();
@@ -138,6 +176,55 @@ mod tests {
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         let i = Some("ens33");
         let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_syn_connect_single_port() {
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
+        let dst_port: u16 = 80;
+        let timeout: Duration = Duration::from_secs(6);
+        let print_result: bool = true;
+        let ret = tcp_connect_scan_single_port(dst_ipv4, dst_port, timeout, print_result).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_syn_connect_range_port() {
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
+        let start_port: u16 = 1;
+        let end_port: u16 = 100;
+        let timeout: Duration = Duration::from_secs(6);
+        let threads_num = 0;
+        let print_result: bool = true;
+        let ret = tcp_connect_scan_range_port(
+            dst_ipv4,
+            start_port,
+            end_port,
+            timeout,
+            threads_num,
+            print_result,
+        )
+        .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_syn_connect_subnet() {
+        let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let start_port: u16 = 80;
+        let end_port: u16 = 82;
+        let interface: Option<&str> = Some("ens33");
+        let timeout = Duration::from_secs(6);
+        let threads_num: usize = 0;
+        let print_result: bool = true;
+        let ret = tcp_connect_scan_subnet(
+            subnet,
+            start_port,
+            end_port,
+            interface,
+            timeout,
+            threads_num,
+            print_result,
+        )
+        .unwrap();
         println!("{:?}", ret);
     }
 }
