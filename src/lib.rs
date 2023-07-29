@@ -37,13 +37,21 @@ pub fn arp_scan_subnet(
 /// The big downside is that this sort of scan is easily detectable and filterable.
 /// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
+/// If you want to increase the wait time, you can increase it to the `max_wait_time` parameter.
 pub fn tcp_connect_scan_single_port(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     interface: Option<&str>,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<bool> {
-    scan::run_tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result)
+    scan::run_tcp_connect_scan_single_port(
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        max_wait_time,
+    )
 }
 
 pub fn tcp_connect_scan_range_port(
@@ -53,14 +61,16 @@ pub fn tcp_connect_scan_range_port(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<scan::TcpScanResults> {
-    scan::tcp_connect_scan_range_port(
+    scan::run_tcp_connect_scan_range_port(
         dst_ipv4,
         start_port,
         end_port,
         interface,
         threads_num,
         print_result,
+        max_wait_time,
     )
 }
 
@@ -71,6 +81,7 @@ pub fn tcp_connect_scan_subnet(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
     scan::run_tcp_connect_scan_subnet(
         subnet,
@@ -79,6 +90,7 @@ pub fn tcp_connect_scan_subnet(
         interface,
         threads_num,
         print_result,
+        max_wait_time,
     )
 }
 
@@ -93,13 +105,15 @@ pub fn tcp_connect_scan_subnet(
 /// SYN scanning is the -s option of nmap.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
 /// And when `interface` is None, means that automatic find interface.
+/// If you want to increase the wait time, you can increase it to the `max_wait_time` parameter.
 pub fn tcp_syn_scan_single_port(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     interface: Option<&str>,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<bool> {
-    scan::run_tcp_syn_scan_single_port(dst_ipv4, dst_port, interface, print_result)
+    scan::run_tcp_syn_scan_single_port(dst_ipv4, dst_port, interface, print_result, max_wait_time)
 }
 
 pub fn tcp_syn_scan_range_port(
@@ -109,6 +123,7 @@ pub fn tcp_syn_scan_range_port(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<scan::TcpScanResults> {
     scan::run_tcp_syn_scan_range_port(
         dst_ipv4,
@@ -117,6 +132,7 @@ pub fn tcp_syn_scan_range_port(
         interface,
         threads_num,
         print_result,
+        max_wait_time,
     )
 }
 
@@ -127,6 +143,7 @@ pub fn tcp_syn_scan_subnet(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
     scan::run_tcp_syn_scan_subnet(
         subnet,
@@ -135,11 +152,74 @@ pub fn tcp_syn_scan_subnet(
         interface,
         threads_num,
         print_result,
+        max_wait_time,
     )
 }
 
 /// TCP FIN scanning.
-pub fn tcp_fin_scan_single_port() {}
+/// There are times when even SYN scanning isn't clandestine enough.
+/// Some firewalls and packet filters watch for SYNs to an unallowed port,
+/// and programs like synlogger and Courtney are available to detect these scans.
+/// FIN packets, on the other hand, may be able to pass through unmolested.
+/// This scanning technique was featured in detail by Uriel Maimon in Phrack 49, article 15.
+/// The idea is that closed ports tend to reply to your FIN packet with the proper RST.
+/// Open ports, on the other hand, tend to ignore the packet in question.
+/// This is a bug in TCP implementations and so it isn't 100% reliable
+/// (some systems, notably Micro$oft boxes, seem to be immune).
+/// It works well on most other systems I've tried.
+/// FIN scanning is the -U (Uriel) option of nmap.
+/// When `threads_num` is 0, means that automatic threads pool mode is used.
+/// And when `interface` is None, means that automatic find interface.
+/// If you want to increase the wait time, you can increase it to the `max_wait_time` parameter.
+pub fn tcp_fin_scan_single_port(
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<bool> {
+    scan::run_tcp_fin_scan_single_port(dst_ipv4, dst_port, interface, print_result, max_wait_time)
+}
+
+pub fn tcp_fin_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_fin_scan_range_port(
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn tcp_fin_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_fin_scan_subnet(
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -160,23 +240,26 @@ mod tests {
     fn test_syn_scan_single_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let i = Some("eno1");
-        let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true).unwrap();
+        let max_wait_time = Some(64);
+        let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true, max_wait_time).unwrap();
         assert_eq!(ret, true);
-        let ret = tcp_syn_scan_single_port(dst_ipv4, 9999, i, true).unwrap();
+        let ret = tcp_syn_scan_single_port(dst_ipv4, 9999, i, true, max_wait_time).unwrap();
         assert_eq!(ret, false);
     }
     #[test]
     fn test_syn_scan_multi_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let i = Some("eno1");
-        let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true).unwrap();
+        let max_wait_time = Some(64);
+        let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true, max_wait_time).unwrap();
         println!("{:?}", ret);
     }
     #[test]
     fn test_syn_scan_subnet() {
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         let i = Some("eno1");
-        let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true).unwrap();
+        let max_wait_time = Some(64);
+        let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true, max_wait_time).unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -185,8 +268,15 @@ mod tests {
         let dst_port: u16 = 80;
         let interface: Option<&str> = Some("eno1");
         let print_result: bool = true;
-        let ret =
-            tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result).unwrap();
+        let max_wait_time = Some(64);
+        let ret = tcp_connect_scan_single_port(
+            dst_ipv4,
+            dst_port,
+            interface,
+            print_result,
+            max_wait_time,
+        )
+        .unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -197,6 +287,7 @@ mod tests {
         let interface: Option<&str> = Some("eno1");
         let threads_num = 0;
         let print_result: bool = true;
+        let max_wait_time = Some(64);
         let ret = tcp_connect_scan_range_port(
             dst_ipv4,
             start_port,
@@ -204,6 +295,7 @@ mod tests {
             interface,
             threads_num,
             print_result,
+            max_wait_time,
         )
         .unwrap();
         println!("{:?}", ret);
@@ -216,6 +308,7 @@ mod tests {
         let interface: Option<&str> = Some("eno1");
         let threads_num: usize = 0;
         let print_result: bool = true;
+        let max_wait_time = Some(64);
         let ret = tcp_connect_scan_subnet(
             subnet,
             start_port,
@@ -223,6 +316,7 @@ mod tests {
             interface,
             threads_num,
             print_result,
+            max_wait_time,
         )
         .unwrap();
         println!("{:?}", ret);
@@ -233,12 +327,25 @@ mod tests {
         let dst_port: u16 = 80;
         let interface: Option<&str> = Some("eno1");
         let print_result: bool = true;
-        let ret =
-            tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result).unwrap();
+        let max_wait_time = Some(64);
+        let ret = tcp_connect_scan_single_port(
+            dst_ipv4,
+            dst_port,
+            interface,
+            print_result,
+            max_wait_time,
+        )
+        .unwrap();
         println!("{:?}", ret);
         let dst_port: u16 = 88;
-        let ret =
-            tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result).unwrap();
+        let ret = tcp_connect_scan_single_port(
+            dst_ipv4,
+            dst_port,
+            interface,
+            print_result,
+            max_wait_time,
+        )
+        .unwrap();
         println!("{:?}", ret);
     }
 }

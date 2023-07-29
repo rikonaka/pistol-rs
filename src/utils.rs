@@ -5,8 +5,10 @@ use rand::Rng;
 use std::error::Error;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr};
-use subnetwork::Ipv4Pool;
+// use subnetwork::Ipv4Pool;
 use threadpool::ThreadPool;
+
+const DEFAILT_MAX_WAIT: usize = 64;
 
 /* FindInterfaceError */
 #[derive(Debug, Clone)]
@@ -70,27 +72,27 @@ impl Error for GetInterfaceMACError {}
 
 /* CODE */
 
-pub fn get_host_interfaces() -> Vec<NetworkInterface> {
-    pnet_datalink::interfaces()
-}
+// pub fn get_host_interfaces() -> Vec<NetworkInterface> {
+//     pnet_datalink::interfaces()
+// }
 
 /// Returns an interface that matches the subnet
-pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
-    let interfaces = get_host_interfaces();
-    for interface in &interfaces {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(i) => {
-                    if subnet.contain(i) {
-                        return Some(interface.clone());
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
+// pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
+//     let interfaces = get_host_interfaces();
+//     for interface in &interfaces {
+//         for ip in &interface.ips {
+//             match ip.ip() {
+//                 IpAddr::V4(i) => {
+//                     if subnet.contain(i) {
+//                         return Some(interface.clone());
+//                     }
+//                 }
+//                 _ => (),
+//             }
+//         }
+//     }
+//     None
+// }
 
 /// Returns an interface that matches the name
 pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
@@ -159,13 +161,16 @@ pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
     pool
 }
 
+pub fn get_max_wait(max_wait_time: Option<usize>) -> usize {
+    match max_wait_time {
+        Some(m) => m,
+        _ => DEFAILT_MAX_WAIT,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_get_host_interfaces() {
-        get_host_interfaces();
-    }
     #[test]
     fn test_list_interfaces() {
         for interface in pnet_datalink::interfaces() {
@@ -179,14 +184,6 @@ mod tests {
                     _ => (),
                 }
             }
-        }
-    }
-    #[test]
-    fn test_find_interface_by_subnet() {
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
-        match find_interface_by_subnet(&subnet) {
-            Some(i) => println!("{:?}", i),
-            _ => (),
         }
     }
     #[test]

@@ -1,16 +1,19 @@
 use anyhow::Result;
-use pnet::{datalink::MacAddr, packet::util};
+use pnet::datalink::MacAddr;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::mpsc::channel;
-use std::time::Duration;
 use subnetwork::Ipv4Pool;
 
-use crate::utils::{self, parse_interface};
+use crate::utils;
 
 pub mod arp;
 pub mod tcp;
+
+const CONNECT_SCAN: &str = "connect";
+const SYN_SCAN: &str = "syn";
+const FIN_SCAN: &str = "fin";
 
 #[derive(Debug)]
 pub struct HostInfo {
@@ -112,84 +115,120 @@ pub fn run_arp_scan_subnet(
     })
 }
 
-pub fn run_tcp_syn_scan_single_port(
+fn _run_tcp_scan_single_port(
+    scan_type: &str,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     interface: Option<&str>,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<bool> {
-    let (_, src_ipv4, _) = utils::parse_interface(interface)?;
     let src_port: u16 = utils::random_port();
-    let scan_ret = tcp::send_syn_packet(src_ipv4, dst_ipv4, src_port, dst_port);
+    let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+    let max_wait = utils::get_max_wait(max_wait_time);
+    let scan_ret = match scan_type {
+        CONNECT_SCAN => tcp::tcp_handshake(src_ipv4, dst_ipv4, src_port, dst_port, max_wait),
+        SYN_SCAN => {
+            match tcp::send_syn_scan_packet(src_ipv4, dst_ipv4, src_port, dst_port, max_wait) {
+                Some(_) => true,
+                _ => false,
+            }
+        }
+        FIN_SCAN => {
+            match tcp::send_fin_scan_packet(src_ipv4, dst_ipv4, src_port, dst_port, max_wait) {
+                Some(_) => true,
+                _ => false,
+            }
+        }
+        _ => false,
+    };
+
     if print_result {
-        let _ret = match scan_ret {
-            Some(_) => true,
-            _ => false,
-        };
-        _tcp_print_result(dst_ipv4, dst_port, _ret);
+        _tcp_print_result(dst_ipv4, dst_port, scan_ret);
     }
-    match scan_ret {
-        Some(_) => Ok(true),
-        _ => Ok(false),
+    if scan_ret {
+        Ok(true)
+    } else {
+        Ok(false)
     }
 }
 
-pub fn run_tcp_syn_scan_range_port(
+fn _run_tcp_scan_range_port(
+    scan_type: &str,
     dst_ipv4: Ipv4Addr,
     start_port: u16,
     end_port: u16,
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<TcpScanResults> {
-    let (_, src_ipv4, _) = utils::parse_interface(interface)?;
-    let src_port = utils::random_port();
     let pool = utils::get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
+    let src_port: u16 = utils::random_port();
+    let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+    let max_wait = utils::get_max_wait(max_wait_time);
 
-    for dst_port in start_port..end_port {
+    for dst_port in start_port..=end_port {
         recv_size += 1;
         let tx = tx.clone();
+        let scan_type = scan_type.to_string();
         pool.execute(move || {
-            let scan_ret = tcp::send_syn_packet(src_ipv4, dst_ipv4, src_port, dst_port);
+            let scan_ret = match scan_type.as_str() {
+                CONNECT_SCAN => {
+                    tcp::tcp_handshake(src_ipv4, dst_ipv4, src_port, dst_port, max_wait)
+                }
+                SYN_SCAN => {
+                    match tcp::send_syn_scan_packet(
+                        src_ipv4, dst_ipv4, src_port, dst_port, max_wait,
+                    ) {
+                        Some(_) => true,
+                        _ => false,
+                    }
+                }
+                FIN_SCAN => {
+                    match tcp::send_fin_scan_packet(
+                        src_ipv4, dst_ipv4, src_port, dst_port, max_wait,
+                    ) {
+                        Some(_) => true,
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
             if print_result {
-                let _ret = match scan_ret {
-                    Some(_) => true,
-                    _ => false,
-                };
-                _tcp_print_result(dst_ipv4, dst_port, _ret);
+                _tcp_print_result(dst_ipv4, dst_port, scan_ret);
             }
             match tx.send((dst_port, scan_ret)) {
                 _ => (),
             }
-        });
+        })
     }
-
     let iter = rx.into_iter().take(recv_size);
-    let mut alive_port_vec = Vec::new();
-    for (port, port_ret) in iter {
-        let _ret = match port_ret {
-            Some(_) => true,
-            _ => false,
-        };
-        if _ret {
-            alive_port_vec.push(port);
+    let mut ret = TcpScanResults {
+        alive_port_num: 0,
+        alive_port_vec: vec![],
+    };
+    for (dst_port, dst_port_ret) in iter {
+        if dst_port_ret {
+            ret.alive_port_num += 1;
+            ret.alive_port_vec.push(dst_port);
         }
     }
-    Ok(TcpScanResults {
-        alive_port_num: alive_port_vec.len(),
-        alive_port_vec,
-    })
+
+    Ok(ret)
 }
 
-pub fn run_tcp_syn_scan_subnet(
+fn _run_tcp_scan_subnet(
+    scan_type: &str,
     subnet: Ipv4Pool,
     start_port: u16,
     end_port: u16,
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     // scan with arp first
     if print_result {
@@ -201,48 +240,58 @@ pub fn run_tcp_syn_scan_subnet(
             Err(e) => return Err(e.into()),
         };
 
-    if arp_scan_result.alive_hosts_num <= 0 {
-        return Ok(HashMap::new());
-    }
-
-    let (_, src_ipv4, _) = parse_interface(interface)?;
+    let (_, src_ipv4, _) = utils::parse_interface(interface)?;
     let pool = utils::get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
+    let src_port = utils::random_port();
+    let max_wait = utils::get_max_wait(max_wait_time);
 
-    for alive_host in arp_scan_result.alive_hosts_vec {
-        let dst_ipv4 = alive_host.host_ip;
+    for host_info in arp_scan_result.alive_hosts_vec {
+        let dst_ipv4 = host_info.host_ip;
         if dst_ipv4 != src_ipv4 {
-            let src_port: u16 = utils::random_port();
             for dst_port in start_port..=end_port {
                 recv_size += 1;
                 let tx = tx.clone();
+                let scan_type = scan_type.to_string();
                 pool.execute(move || {
-                    let scan_ret = tcp::send_syn_packet(src_ipv4, dst_ipv4, src_port, dst_port);
+                    let scan_ret = match scan_type.as_str() {
+                        CONNECT_SCAN => {
+                            tcp::tcp_handshake(src_ipv4, dst_ipv4, src_port, dst_port, max_wait)
+                        }
+                        SYN_SCAN => {
+                            match tcp::send_syn_scan_packet(
+                                src_ipv4, dst_ipv4, src_port, dst_port, max_wait,
+                            ) {
+                                Some(_) => true,
+                                _ => false,
+                            }
+                        }
+                        FIN_SCAN => {
+                            match tcp::send_fin_scan_packet(
+                                src_ipv4, dst_ipv4, src_port, dst_port, max_wait,
+                            ) {
+                                Some(_) => true,
+                                _ => false,
+                            }
+                        }
+                        _ => false,
+                    };
                     if print_result {
-                        let _ret = match scan_ret {
-                            Some(_) => true,
-                            _ => false,
-                        };
-                        _tcp_print_result(dst_ipv4, dst_port, _ret);
+                        _tcp_print_result(dst_ipv4, dst_port, scan_ret);
                     }
                     match tx.send((dst_ipv4, dst_port, scan_ret)) {
                         _ => (),
                     }
-                });
+                })
             }
         }
     }
-
     let iter = rx.into_iter().take(recv_size);
     let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
 
     for (dst_ipv4, dst_port, dst_port_ret) in iter {
-        let _ret = match dst_port_ret {
-            Some(_) => true,
-            _ => false,
-        };
-        if _ret {
+        if dst_port_ret {
             if ret.contains_key(&dst_ipv4) {
                 ret.get_mut(&dst_ipv4).unwrap().alive_port_num += 1;
                 ret.get_mut(&dst_ipv4)
@@ -250,11 +299,13 @@ pub fn run_tcp_syn_scan_subnet(
                     .alive_port_vec
                     .push(dst_port);
             } else {
-                let ssr = TcpScanResults {
-                    alive_port_num: 1,
-                    alive_port_vec: vec![dst_port],
-                };
-                ret.insert(dst_ipv4, ssr);
+                ret.insert(
+                    dst_ipv4,
+                    TcpScanResults {
+                        alive_port_num: 1,
+                        alive_port_vec: vec![dst_port],
+                    },
+                );
             }
         }
     }
@@ -266,150 +317,36 @@ pub fn run_tcp_connect_scan_single_port(
     dst_port: u16,
     interface: Option<&str>,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<bool> {
-    fn _old_method(
-        dst_ipv4: Ipv4Addr,
-        dst_port: u16,
-        timeout: Duration,
-        print_result: bool,
-    ) -> Result<bool> {
-        /* deprecated function */
-        let scan_ret = tcp::tcp_connect(dst_ipv4, dst_port, timeout);
-        if print_result {
-            _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-        }
-        if scan_ret {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-    fn _new_method(
-        dst_ipv4: Ipv4Addr,
-        dst_port: u16,
-        interface: Option<&str>,
-        print_result: bool,
-    ) -> Result<bool> {
-        let src_port: u16 = utils::random_port();
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
-        let scan_ret = tcp::tcp_handshake(src_ipv4, dst_ipv4, src_port, dst_port);
-        if print_result {
-            _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-        }
-        if scan_ret {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-    // _old_method(dst_ipv4, dst_port, timeout, print_result)
-    _new_method(dst_ipv4, dst_port, interface, print_result)
+    _run_tcp_scan_single_port(
+        CONNECT_SCAN,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        max_wait_time,
+    )
 }
 
-pub fn tcp_connect_scan_range_port(
+pub fn run_tcp_connect_scan_range_port(
     dst_ipv4: Ipv4Addr,
     start_port: u16,
     end_port: u16,
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<TcpScanResults> {
-    fn _old_method(
-        dst_ipv4: Ipv4Addr,
-        start_port: u16,
-        end_port: u16,
-        timeout: Duration,
-        threads_num: usize,
-        print_result: bool,
-    ) -> Result<TcpScanResults> {
-        /* deprecated function */
-        let pool = utils::get_threads_pool(threads_num);
-        let (tx, rx) = channel();
-        let mut recv_size = 0;
-
-        for dst_port in start_port..=end_port {
-            recv_size += 1;
-            let tx = tx.clone();
-            pool.execute(move || {
-                let scan_ret = tcp::tcp_connect(dst_ipv4, dst_port, timeout);
-                if print_result {
-                    _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-                }
-                match tx.send((dst_port, scan_ret)) {
-                    _ => (),
-                }
-            })
-        }
-        let iter = rx.into_iter().take(recv_size);
-        let mut ret = TcpScanResults {
-            alive_port_num: 0,
-            alive_port_vec: vec![],
-        };
-        for (dst_port, dst_port_ret) in iter {
-            if dst_port_ret {
-                ret.alive_port_num += 1;
-                ret.alive_port_vec.push(dst_port);
-            }
-        }
-
-        Ok(ret)
-    }
-    fn _new_method(
-        dst_ipv4: Ipv4Addr,
-        start_port: u16,
-        end_port: u16,
-        interface: Option<&str>,
-        threads_num: usize,
-        print_result: bool,
-    ) -> Result<TcpScanResults> {
-        let pool = utils::get_threads_pool(threads_num);
-        let (tx, rx) = channel();
-        let mut recv_size = 0;
-        let src_port: u16 = utils::random_port();
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
-
-        for dst_port in start_port..=end_port {
-            recv_size += 1;
-            let tx = tx.clone();
-            pool.execute(move || {
-                let scan_ret = tcp::tcp_handshake(src_ipv4, dst_ipv4, src_port, dst_port);
-                if print_result {
-                    _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-                }
-                match tx.send((dst_port, scan_ret)) {
-                    _ => (),
-                }
-            })
-        }
-        let iter = rx.into_iter().take(recv_size);
-        let mut ret = TcpScanResults {
-            alive_port_num: 0,
-            alive_port_vec: vec![],
-        };
-        for (dst_port, dst_port_ret) in iter {
-            if dst_port_ret {
-                ret.alive_port_num += 1;
-                ret.alive_port_vec.push(dst_port);
-            }
-        }
-
-        Ok(ret)
-    }
-    // _old_method(
-    //     dst_ipv4,
-    //     start_port,
-    //     end_port,
-    //     timeout,
-    //     threads_num,
-    //     print_result,
-    // )
-    _new_method(
+    _run_tcp_scan_range_port(
+        CONNECT_SCAN,
         dst_ipv4,
         start_port,
         end_port,
         interface,
         threads_num,
         print_result,
+        max_wait_time,
     )
 }
 
@@ -420,145 +357,134 @@ pub fn run_tcp_connect_scan_subnet(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_wait_time: Option<usize>,
 ) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
-    fn _old_method(
-        subnet: Ipv4Pool,
-        start_port: u16,
-        end_port: u16,
-        interface: Option<&str>,
-        timeout: Duration,
-        threads_num: usize,
-        print_result: bool,
-    ) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
-        // scan with arp first
-        if print_result {
-            println!("arp scan start...")
-        }
-        let arp_scan_result =
-            match run_arp_scan_subnet(subnet, None, interface, threads_num, print_result) {
-                Ok(r) => r,
-                Err(e) => return Err(e.into()),
-            };
-
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
-        let pool = utils::get_threads_pool(threads_num);
-        let (tx, rx) = channel();
-        let mut recv_size = 0;
-
-        for host_info in arp_scan_result.alive_hosts_vec {
-            let dst_ipv4 = host_info.host_ip;
-            if dst_ipv4 != src_ipv4 {
-                for dst_port in start_port..=end_port {
-                    recv_size += 1;
-                    let tx = tx.clone();
-                    pool.execute(move || {
-                        let scan_ret = tcp::tcp_connect(dst_ipv4, dst_port, timeout);
-                        if print_result {
-                            _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-                        }
-                        match tx.send((dst_ipv4, dst_port, scan_ret)) {
-                            _ => (),
-                        }
-                    })
-                }
-            }
-        }
-        let iter = rx.into_iter().take(recv_size);
-        let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
-
-        for (dst_ipv4, dst_port, dst_port_ret) in iter {
-            if dst_port_ret {
-                if ret.contains_key(&dst_ipv4) {
-                    ret.get_mut(&dst_ipv4).unwrap().alive_port_num += 1;
-                    ret.get_mut(&dst_ipv4)
-                        .unwrap()
-                        .alive_port_vec
-                        .push(dst_port);
-                } else {
-                    ret.insert(
-                        dst_ipv4,
-                        TcpScanResults {
-                            alive_port_num: 1,
-                            alive_port_vec: vec![dst_port],
-                        },
-                    );
-                }
-            }
-        }
-        Ok(ret)
-    }
-    fn _new_method(
-        subnet: Ipv4Pool,
-        start_port: u16,
-        end_port: u16,
-        interface: Option<&str>,
-        threads_num: usize,
-        print_result: bool,
-    ) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
-        // scan with arp first
-        if print_result {
-            println!("arp scan start...")
-        }
-        let arp_scan_result =
-            match run_arp_scan_subnet(subnet, None, interface, threads_num, print_result) {
-                Ok(r) => r,
-                Err(e) => return Err(e.into()),
-            };
-
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
-        let pool = utils::get_threads_pool(threads_num);
-        let (tx, rx) = channel();
-        let mut recv_size = 0;
-        let src_port = utils::random_port();
-
-        for host_info in arp_scan_result.alive_hosts_vec {
-            let dst_ipv4 = host_info.host_ip;
-            if dst_ipv4 != src_ipv4 {
-                for dst_port in start_port..=end_port {
-                    recv_size += 1;
-                    let tx = tx.clone();
-                    pool.execute(move || {
-                        let scan_ret = tcp::tcp_handshake(src_ipv4, dst_ipv4, src_port, dst_port);
-                        if print_result {
-                            _tcp_print_result(dst_ipv4, dst_port, scan_ret);
-                        }
-                        match tx.send((dst_ipv4, dst_port, scan_ret)) {
-                            _ => (),
-                        }
-                    })
-                }
-            }
-        }
-        let iter = rx.into_iter().take(recv_size);
-        let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
-
-        for (dst_ipv4, dst_port, dst_port_ret) in iter {
-            if dst_port_ret {
-                if ret.contains_key(&dst_ipv4) {
-                    ret.get_mut(&dst_ipv4).unwrap().alive_port_num += 1;
-                    ret.get_mut(&dst_ipv4)
-                        .unwrap()
-                        .alive_port_vec
-                        .push(dst_port);
-                } else {
-                    ret.insert(
-                        dst_ipv4,
-                        TcpScanResults {
-                            alive_port_num: 1,
-                            alive_port_vec: vec![dst_port],
-                        },
-                    );
-                }
-            }
-        }
-        Ok(ret)
-    }
-    _new_method(
+    _run_tcp_scan_subnet(
+        CONNECT_SCAN,
         subnet,
         start_port,
         end_port,
         interface,
         threads_num,
         print_result,
+        max_wait_time,
+    )
+}
+
+pub fn run_tcp_syn_scan_single_port(
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<bool> {
+    _run_tcp_scan_single_port(
+        SYN_SCAN,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn run_tcp_syn_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port(
+        SYN_SCAN,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn run_tcp_syn_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    _run_tcp_scan_subnet(
+        SYN_SCAN,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn run_tcp_fin_scan_single_port(
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<bool> {
+    _run_tcp_scan_single_port(
+        FIN_SCAN,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn run_tcp_fin_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port(
+        FIN_SCAN,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn run_tcp_fin_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    _run_tcp_scan_subnet(
+        FIN_SCAN,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
     )
 }
