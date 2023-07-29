@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::time::Duration;
 use subnetwork::Ipv4Pool;
 
 mod scan;
@@ -15,13 +14,72 @@ mod utils;
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
 pub fn arp_scan_subnet(
     subnet: &str,
-    interface: Option<&str>,
     dstaddr: Option<&str>,
+    interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
 ) -> Result<scan::ArpScanResults> {
     let subnet = Ipv4Pool::new(subnet).unwrap();
-    scan::run_arp_scan_subnet(subnet, interface, dstaddr, threads_num, print_result)
+    scan::run_arp_scan_subnet(subnet, dstaddr, interface, threads_num, print_result)
+}
+
+/// TCP connect() scanning.
+/// This is the most basic form of TCP scanning.
+/// The connect() system call provided by your operating system is used to open a connection to every interesting port on the machine.
+/// If the port is listening, connect() will succeed, otherwise the port isn't reachable.
+/// One strong advantage to this technique is that you don't need any special privileges.
+/// Any user on most UNIX boxes is free to use this call.
+/// Another advantage is speed.
+/// While making a separate connect() call for every targeted port in a linear fashion would take ages over a slow connection,
+/// you can hasten the scan by using many sockets in parallel.
+/// Using non-blocking I/O allows you to set a low time-out period and watch all the sockets at once.
+/// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
+/// The big downside is that this sort of scan is easily detectable and filterable.
+/// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
+/// When `threads_num` is 0, means that automatic threads pool mode is used.
+pub fn tcp_connect_scan_single_port(
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+) -> Result<bool> {
+    scan::run_tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result)
+}
+
+pub fn tcp_connect_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+) -> Result<scan::TcpScanResults> {
+    scan::tcp_connect_scan_range_port(
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+    )
+}
+
+pub fn tcp_connect_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_connect_scan_subnet(
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+    )
 }
 
 /// TCP SYN scanning.
@@ -34,12 +92,13 @@ pub fn arp_scan_subnet(
 /// Unfortunately you need root privileges to build these custom SYN packets.
 /// SYN scanning is the -s option of nmap.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
+/// And when `interface` is None, means that automatic find interface.
 pub fn tcp_syn_scan_single_port(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     interface: Option<&str>,
     print_result: bool,
-) -> Result<scan::TcpScanResults> {
+) -> Result<bool> {
     scan::run_tcp_syn_scan_single_port(dst_ipv4, dst_port, interface, print_result)
 }
 
@@ -79,73 +138,15 @@ pub fn tcp_syn_scan_subnet(
     )
 }
 
-/// TCP connect() scanning.
-/// This is the most basic form of TCP scanning.
-/// The connect() system call provided by your operating system is used to open a connection to every interesting port on the machine.
-/// If the port is listening, connect() will succeed, otherwise the port isn't reachable.
-/// One strong advantage to this technique is that you don't need any special privileges.
-/// Any user on most UNIX boxes is free to use this call.
-/// Another advantage is speed.
-/// While making a separate connect() call for every targeted port in a linear fashion would take ages over a slow connection,
-/// you can hasten the scan by using many sockets in parallel.
-/// Using non-blocking I/O allows you to set a low time-out period and watch all the sockets at once.
-/// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
-/// The big downside is that this sort of scan is easily detectable and filterable.
-/// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
-/// When `threads_num` is 0, means that automatic threads pool mode is used.
-pub fn tcp_connect_scan_single_port(
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-    timeout: Duration,
-    print_result: bool,
-) -> Result<scan::TcpScanResults> {
-    scan::run_tcp_connect_scan_single_port(dst_ipv4, dst_port, timeout, print_result)
-}
-
-pub fn tcp_connect_scan_range_port(
-    dst_ipv4: Ipv4Addr,
-    start_port: u16,
-    end_port: u16,
-    timeout: Duration,
-    threads_num: usize,
-    print_result: bool,
-) -> Result<scan::TcpScanResults> {
-    scan::tcp_connect_scan_range_port(
-        dst_ipv4,
-        start_port,
-        end_port,
-        timeout,
-        threads_num,
-        print_result,
-    )
-}
-
-pub fn tcp_connect_scan_subnet(
-    subnet: Ipv4Pool,
-    start_port: u16,
-    end_port: u16,
-    interface: Option<&str>,
-    timeout: Duration,
-    threads_num: usize,
-    print_result: bool,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
-    scan::run_tcp_connect_scan_subnet(
-        subnet,
-        start_port,
-        end_port,
-        interface,
-        timeout,
-        threads_num,
-        print_result,
-    )
-}
+/// TCP FIN scanning.
+pub fn tcp_fin_scan_single_port() {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_arp_scan() {
-        match arp_scan_subnet("192.168.72.0/24", None, None, 0, true) {
+        match arp_scan_subnet("192.168.1.0/24", None, None, 0, true) {
             Ok(rets) => {
                 println!("{}", rets.alive_hosts_num);
                 for i in rets.alive_hosts_vec {
@@ -158,23 +159,23 @@ mod tests {
     #[test]
     fn test_syn_scan_single_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let i = Some("ens33");
+        let i = Some("eno1");
         let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true).unwrap();
-        assert_eq!(ret.alive_port_num, 1);
+        assert_eq!(ret, true);
         let ret = tcp_syn_scan_single_port(dst_ipv4, 9999, i, true).unwrap();
-        assert_eq!(ret.alive_port_num, 0);
+        assert_eq!(ret, false);
     }
     #[test]
     fn test_syn_scan_multi_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let i = Some("ens33");
+        let i = Some("eno1");
         let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true).unwrap();
         println!("{:?}", ret);
     }
     #[test]
     fn test_syn_scan_subnet() {
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
-        let i = Some("ens33");
+        let i = Some("eno1");
         let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true).unwrap();
         println!("{:?}", ret);
     }
@@ -182,9 +183,10 @@ mod tests {
     fn test_syn_connect_single_port() {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let dst_port: u16 = 80;
-        let timeout: Duration = Duration::from_secs(6);
+        let interface: Option<&str> = Some("eno1");
         let print_result: bool = true;
-        let ret = tcp_connect_scan_single_port(dst_ipv4, dst_port, timeout, print_result).unwrap();
+        let ret =
+            tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result).unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -192,14 +194,14 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
         let start_port: u16 = 1;
         let end_port: u16 = 100;
-        let timeout: Duration = Duration::from_secs(6);
+        let interface: Option<&str> = Some("eno1");
         let threads_num = 0;
         let print_result: bool = true;
         let ret = tcp_connect_scan_range_port(
             dst_ipv4,
             start_port,
             end_port,
-            timeout,
+            interface,
             threads_num,
             print_result,
         )
@@ -211,8 +213,7 @@ mod tests {
         let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/24").unwrap();
         let start_port: u16 = 80;
         let end_port: u16 = 82;
-        let interface: Option<&str> = Some("ens33");
-        let timeout = Duration::from_secs(6);
+        let interface: Option<&str> = Some("eno1");
         let threads_num: usize = 0;
         let print_result: bool = true;
         let ret = tcp_connect_scan_subnet(
@@ -220,11 +221,24 @@ mod tests {
             start_port,
             end_port,
             interface,
-            timeout,
             threads_num,
             print_result,
         )
         .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_tcp_connect_scan_single_port() {
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
+        let dst_port: u16 = 80;
+        let interface: Option<&str> = Some("eno1");
+        let print_result: bool = true;
+        let ret =
+            tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result).unwrap();
+        println!("{:?}", ret);
+        let dst_port: u16 = 88;
+        let ret =
+            tcp_connect_scan_single_port(dst_ipv4, dst_port, interface, print_result).unwrap();
         println!("{:?}", ret);
     }
 }

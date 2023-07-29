@@ -65,11 +65,11 @@ mod tests {
     use crate::utils;
     #[test]
     fn test_send_arp_scan_packet() {
-        let interface: NetworkInterface = utils::find_interface_by_name("ens33").unwrap();
+        let interface: NetworkInterface = utils::find_interface_by_name("eno1").unwrap();
         let dstaddr: MacAddr = MacAddr::broadcast();
-        let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 33);
         let source_mac: MacAddr = interface.mac.unwrap();
-        let target_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 1);
+        let target_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let ret =
             send_arp_scan_packet(&interface, &dstaddr, source_ip, source_mac, target_ip).unwrap();
         println!("{:?}", ret);
