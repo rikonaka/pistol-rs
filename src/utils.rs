@@ -8,7 +8,7 @@ use std::net::{IpAddr, Ipv4Addr};
 // use subnetwork::Ipv4Pool;
 use threadpool::ThreadPool;
 
-const DEFAILT_MAX_WAIT: usize = 64;
+const DEFAILT_MAX_WAIT: usize = 128;
 
 /* FindInterfaceError */
 #[derive(Debug, Clone)]

@@ -102,7 +102,6 @@ pub fn tcp_connect_scan_subnet(
 /// If a SYN|ACK is received, you immediately send a RST to tear down the connection (actually the kernel does this for us).
 /// The primary advantage to this scanning technique is that fewer sites will log it.
 /// Unfortunately you need root privileges to build these custom SYN packets.
-/// SYN scanning is the -s option of nmap.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
 /// And when `interface` is None, means that automatic find interface.
 /// If you want to increase the wait time, you can increase it to the `max_wait_time` parameter.
@@ -167,7 +166,6 @@ pub fn tcp_syn_scan_subnet(
 /// This is a bug in TCP implementations and so it isn't 100% reliable
 /// (some systems, notably Micro$oft boxes, seem to be immune).
 /// It works well on most other systems I've tried.
-/// FIN scanning is the -U (Uriel) option of nmap.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
 /// And when `interface` is None, means that automatic find interface.
 /// If you want to increase the wait time, you can increase it to the `max_wait_time` parameter.
@@ -336,8 +334,7 @@ mod tests {
     fn test_syn_scan_range_port() {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let i = Some("eno1");
-        let max_wait_time = Some(64);
-        let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true, max_wait_time).unwrap();
+        let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true, None).unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -349,11 +346,27 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
+    fn test_fin_scan_single_port() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = Some("eno1");
+        let ret = tcp_fin_scan_single_port(dst_ipv4, 80, i, true, None).unwrap();
+        assert_eq!(ret, true);
+        let ret = tcp_fin_scan_single_port(dst_ipv4, 9999, i, true, None).unwrap();
+        assert_eq!(ret, false);
+    }
+    #[test]
     fn test_fin_scan_range_port() {
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 133);
-        let i = Some("ens33");
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = Some("eno1");
+        let ret = tcp_fin_scan_range_port(dst_ipv4, 22, 90, i, 0, true, None).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_fin_scan_subnet() {
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let i = Some("eno1");
         let max_wait_time = Some(64);
-        let ret = tcp_fin_scan_range_port(dst_ipv4, 22, 90, i, 0, true, max_wait_time).unwrap();
+        let ret = tcp_fin_scan_subnet(subnet, 80, 82, i, 0, true, max_wait_time).unwrap();
         println!("{:?}", ret);
     }
 }

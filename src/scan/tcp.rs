@@ -12,7 +12,7 @@ use std::net::Ipv4Addr;
 const TCP_HEADER_LEN: usize = 20;
 const TCP_DATA_LEN: usize = 0;
 
-/// If port is open, return (syn, ack), else return None.
+/// If port is open, return Some(syn, ack), else return None.
 pub fn send_syn_scan_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
@@ -93,6 +93,7 @@ pub fn send_syn_scan_packet(
     None
 }
 
+/// If port is open, return Some(true), else return None.
 pub fn send_fin_scan_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
@@ -306,9 +307,9 @@ mod tests {
     }
     #[test]
     fn test_send_fin_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 137);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 133);
-        let max_wait = 8;
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let max_wait = 128;
         let ret = send_fin_scan_packet(src_ipv4, dst_ipv4, 49511, 22, max_wait);
         println!("{:?}", ret);
     }
