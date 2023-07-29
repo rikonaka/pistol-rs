@@ -102,6 +102,10 @@ pub fn tcp_connect_scan_subnet(
 /// If a SYN|ACK is received, you immediately send a RST to tear down the connection (actually the kernel does this for us).
 /// The primary advantage to this scanning technique is that fewer sites will log it.
 /// Unfortunately you need root privileges to build these custom SYN packets.
+/// SYN scan is the default and most popular scan option for good reason.
+/// It can be performed quickly,
+/// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
+/// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
 /// And when `interface` is None, means that automatic find interface.
 /// If you want to increase the wait time, you can increase it to the `max_wait_time` parameter.
@@ -209,6 +213,59 @@ pub fn tcp_fin_scan_subnet(
     max_wait_time: Option<usize>,
 ) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
     scan::run_tcp_fin_scan_subnet(
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
+
+/// TCP ACK scanning.
+/// This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports.
+/// It is used to map out firewall rulesets, determining whether they are stateful or not and which ports are filtered.
+pub fn tcp_ack_scan_single_port(
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<bool> {
+    scan::run_tcp_ack_scan_single_port(dst_ipv4, dst_port, interface, print_result, max_wait_time)
+}
+
+pub fn tcp_ack_scan_range_port(
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_ack_scan_range_port(
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        max_wait_time,
+    )
+}
+
+pub fn tcp_ack_scan_subnet(
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_wait_time: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_ack_scan_subnet(
         subnet,
         start_port,
         end_port,
@@ -367,6 +424,30 @@ mod tests {
         let i = Some("eno1");
         let max_wait_time = Some(64);
         let ret = tcp_fin_scan_subnet(subnet, 80, 82, i, 0, true, max_wait_time).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_ack_scan_single_port() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = Some("eno1");
+        let ret = tcp_ack_scan_single_port(dst_ipv4, 80, i, true, None).unwrap();
+        assert_eq!(ret, true);
+        let ret = tcp_ack_scan_single_port(dst_ipv4, 9999, i, true, None).unwrap();
+        assert_eq!(ret, true);
+    }
+    #[test]
+    fn test_ack_scan_range_port() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = Some("eno1");
+        let ret = tcp_ack_scan_range_port(dst_ipv4, 22, 90, i, 0, true, None).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_ack_scan_subnet() {
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let i = Some("eno1");
+        let max_wait_time = Some(64);
+        let ret = tcp_ack_scan_subnet(subnet, 80, 82, i, 0, true, max_wait_time).unwrap();
         println!("{:?}", ret);
     }
 }
