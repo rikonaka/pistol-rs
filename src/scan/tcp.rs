@@ -146,7 +146,10 @@ pub fn send_fin_scan_packet(
     for _ in 0..max_wait {
         match iter.next() {
             Ok((response_packet, response_addr)) => {
-                if response_addr == dst_ipv4 && response_packet.get_source() == dst_port {
+                if response_addr == dst_ipv4
+                    && response_packet.get_destination() == src_port
+                    && response_packet.get_source() == dst_port
+                {
                     // println!(">>> {}", response_packet.get_flags());
                     // println!("{}", TcpFlags::RST | TcpFlags::ACK); // PORT NOT OPEN
                     // println!("{}", TcpFlags::SYN | TcpFlags::ACK); // PORT OPEN
@@ -309,8 +312,8 @@ mod tests {
     fn test_send_fin_scan_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let max_wait = 128;
-        let ret = send_fin_scan_packet(src_ipv4, dst_ipv4, 49511, 22, max_wait);
+        let max_wait = 64;
+        let ret = send_fin_scan_packet(src_ipv4, dst_ipv4, 49511, 80, max_wait);
         println!("{:?}", ret);
     }
     #[test]
