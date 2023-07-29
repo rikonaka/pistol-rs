@@ -30,8 +30,12 @@ pub struct ArpScanResults {
 
 #[derive(Debug, Clone)]
 pub struct TcpScanResults {
-    pub port_num: usize,
-    pub port_vec: Vec<u16>,
+    pub alive_port_num: usize,
+    pub alive_port_vec: Vec<u16>,
+    pub unfiltered_port_num: usize,
+    pub unfiltered_port_vec: Vec<u16>,
+    pub filtered_port_num: usize,
+    pub filtered_port_vec: Vec<u16>,
 }
 
 fn _arp_print_result(ip: Ipv4Addr, mac: Option<MacAddr>) {
@@ -235,16 +239,34 @@ fn _run_tcp_scan_range_port(
     }
     let iter = rx.into_iter().take(recv_size);
     let mut ret = TcpScanResults {
-        port_num: 0,
-        port_vec: vec![],
+        alive_port_num: 0,
+        alive_port_vec: vec![],
+        unfiltered_port_num: 0,
+        unfiltered_port_vec: vec![],
+        filtered_port_num: 0,
+        filtered_port_vec: vec![],
     };
-    for (dst_port, dst_port_ret) in iter {
-        if dst_port_ret {
-            ret.port_num += 1;
-            ret.port_vec.push(dst_port);
+    match scan_type {
+        ACK_SCAN => {
+            for (dst_port, dst_port_ret) in iter {
+                if dst_port_ret {
+                    ret.unfiltered_port_num += 1;
+                    ret.unfiltered_port_vec.push(dst_port);
+                } else {
+                    ret.filtered_port_num += 1;
+                    ret.filtered_port_vec.push(dst_port);
+                }
+            }
+        }
+        _ => {
+            for (dst_port, dst_port_ret) in iter {
+                if dst_port_ret {
+                    ret.alive_port_num += 1;
+                    ret.alive_port_vec.push(dst_port);
+                }
+            }
         }
     }
-
     Ok(ret)
 }
 
@@ -330,18 +352,72 @@ fn _run_tcp_scan_subnet(
     let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
 
     for (dst_ipv4, dst_port, dst_port_ret) in iter {
-        if dst_port_ret {
-            if ret.contains_key(&dst_ipv4) {
-                ret.get_mut(&dst_ipv4).unwrap().port_num += 1;
-                ret.get_mut(&dst_ipv4).unwrap().port_vec.push(dst_port);
-            } else {
-                ret.insert(
-                    dst_ipv4,
-                    TcpScanResults {
-                        port_num: 1,
-                        port_vec: vec![dst_port],
-                    },
-                );
+        match scan_type {
+            ACK_SCAN => {
+                if dst_port_ret {
+                    if ret.contains_key(&dst_ipv4) {
+                        ret.get_mut(&dst_ipv4).unwrap().unfiltered_port_num += 1;
+                        ret.get_mut(&dst_ipv4)
+                            .unwrap()
+                            .unfiltered_port_vec
+                            .push(dst_port);
+                    } else {
+                        ret.insert(
+                            dst_ipv4,
+                            TcpScanResults {
+                                alive_port_num: 0,
+                                alive_port_vec: vec![],
+                                unfiltered_port_num: 1,
+                                unfiltered_port_vec: vec![dst_port],
+                                filtered_port_num: 0,
+                                filtered_port_vec: vec![],
+                            },
+                        );
+                    }
+                } else {
+                    if ret.contains_key(&dst_ipv4) {
+                        ret.get_mut(&dst_ipv4).unwrap().filtered_port_num += 1;
+                        ret.get_mut(&dst_ipv4)
+                            .unwrap()
+                            .filtered_port_vec
+                            .push(dst_port);
+                    } else {
+                        ret.insert(
+                            dst_ipv4,
+                            TcpScanResults {
+                                alive_port_num: 0,
+                                alive_port_vec: vec![],
+                                unfiltered_port_num: 0,
+                                unfiltered_port_vec: vec![],
+                                filtered_port_num: 1,
+                                filtered_port_vec: vec![dst_port],
+                            },
+                        );
+                    }
+                }
+            }
+            _ => {
+                if dst_port_ret {
+                    if ret.contains_key(&dst_ipv4) {
+                        ret.get_mut(&dst_ipv4).unwrap().alive_port_num += 1;
+                        ret.get_mut(&dst_ipv4)
+                            .unwrap()
+                            .alive_port_vec
+                            .push(dst_port);
+                    } else {
+                        ret.insert(
+                            dst_ipv4,
+                            TcpScanResults {
+                                alive_port_num: 1,
+                                alive_port_vec: vec![dst_port],
+                                unfiltered_port_num: 0,
+                                unfiltered_port_vec: vec![],
+                                filtered_port_num: 0,
+                                filtered_port_vec: vec![],
+                            },
+                        );
+                    }
+                }
             }
         }
     }
