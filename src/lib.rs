@@ -225,7 +225,7 @@ pub fn tcp_fin_scan_subnet(
 mod tests {
     use super::*;
     #[test]
-    fn test_arp_scan() {
+    fn test_arp_scan_subnet() {
         match arp_scan_subnet("192.168.1.0/24", None, None, 0, true) {
             Ok(rets) => {
                 println!("{}", rets.alive_hosts_num);
@@ -237,33 +237,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_syn_scan_single_port() {
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let i = Some("eno1");
-        let max_wait_time = Some(64);
-        let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true, max_wait_time).unwrap();
-        assert_eq!(ret, true);
-        let ret = tcp_syn_scan_single_port(dst_ipv4, 9999, i, true, max_wait_time).unwrap();
-        assert_eq!(ret, false);
-    }
-    #[test]
-    fn test_syn_scan_multi_port() {
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let i = Some("eno1");
-        let max_wait_time = Some(64);
-        let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true, max_wait_time).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_syn_scan_subnet() {
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
-        let i = Some("eno1");
-        let max_wait_time = Some(64);
-        let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true, max_wait_time).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_syn_connect_single_port() {
+    fn test_connect_scan_single_port() {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let dst_port: u16 = 80;
         let interface: Option<&str> = Some("eno1");
@@ -280,7 +254,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_syn_connect_range_port() {
+    fn test_connect_scan_range_port() {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
         let start_port: u16 = 1;
         let end_port: u16 = 100;
@@ -301,7 +275,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_syn_connect_subnet() {
+    fn test_connect_scan_subnet() {
         let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/24").unwrap();
         let start_port: u16 = 80;
         let end_port: u16 = 82;
@@ -346,6 +320,40 @@ mod tests {
             max_wait_time,
         )
         .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_syn_scan_single_port() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = Some("eno1");
+        let max_wait_time = Some(64);
+        let ret = tcp_syn_scan_single_port(dst_ipv4, 80, i, true, max_wait_time).unwrap();
+        assert_eq!(ret, true);
+        let ret = tcp_syn_scan_single_port(dst_ipv4, 9999, i, true, max_wait_time).unwrap();
+        assert_eq!(ret, false);
+    }
+    #[test]
+    fn test_syn_scan_range_port() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = Some("eno1");
+        let max_wait_time = Some(64);
+        let ret = tcp_syn_scan_range_port(dst_ipv4, 22, 90, i, 0, true, max_wait_time).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_syn_scan_subnet() {
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let i = Some("eno1");
+        let max_wait_time = Some(64);
+        let ret = tcp_syn_scan_subnet(subnet, 80, 82, i, 0, true, max_wait_time).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_fin_scan_range_port() {
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 133);
+        let i = Some("ens33");
+        let max_wait_time = Some(64);
+        let ret = tcp_fin_scan_range_port(dst_ipv4, 22, 90, i, 0, true, max_wait_time).unwrap();
         println!("{:?}", ret);
     }
 }

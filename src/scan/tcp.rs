@@ -46,7 +46,7 @@ pub fn send_syn_scan_packet(
     tcp_packet.set_flags(TcpFlags::SYN);
     // tcp_header.set_window(4015);
     tcp_packet.set_urgent_ptr(0);
-    tcp_packet.set_window(4096);
+    tcp_packet.set_window(1024);
     tcp_packet.set_data_offset(5);
     let checksum = ipv4_checksum(&tcp_packet.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_packet.set_checksum(checksum);
@@ -99,7 +99,7 @@ pub fn send_fin_scan_packet(
     src_port: u16,
     dst_port: u16,
     max_wait: usize,
-) -> Option<(u32, u32)> {
+) -> Option<bool> {
     let protocol = Layer4(Ipv4(IpNextHeaderProtocols::Tcp));
     // Create a new transport channel, dealing with layer 4 packets on a test protocol
     // It has a receive buffer of 4096 bytes.
@@ -122,13 +122,12 @@ pub fn send_fin_scan_packet(
     // First syn package ack is not used
     let acknowledgement: u32 = rng.gen();
     tcp_packet.set_acknowledgement(acknowledgement);
-    // tcp_packet.set_acknowledgement(0x944bb276);
     assert_ne!(sequence, acknowledgement);
     tcp_packet.set_reserved(0);
     tcp_packet.set_flags(TcpFlags::FIN);
     // tcp_header.set_window(4015);
     tcp_packet.set_urgent_ptr(0);
-    tcp_packet.set_window(4096);
+    tcp_packet.set_window(1024);
     tcp_packet.set_data_offset(5);
     let checksum = ipv4_checksum(&tcp_packet.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_packet.set_checksum(checksum);
@@ -146,20 +145,16 @@ pub fn send_fin_scan_packet(
     for _ in 0..max_wait {
         match iter.next() {
             Ok((response_packet, response_addr)) => {
-                if response_addr == dst_ipv4
-                    && response_packet.get_destination() == src_port
-                    && response_packet.get_source() == dst_port
-                {
+                if response_addr == dst_ipv4 && response_packet.get_source() == dst_port {
                     // println!(">>> {}", response_packet.get_flags());
                     // println!("{}", TcpFlags::RST | TcpFlags::ACK); // PORT NOT OPEN
                     // println!("{}", TcpFlags::SYN | TcpFlags::ACK); // PORT OPEN
-                    if response_packet.get_flags() & 0b00000100 == TcpFlags::RST {
-                        return Some((
-                            response_packet.get_sequence(),
-                            response_packet.get_acknowledgement(),
-                        ));
+                    if response_packet.get_flags() == TcpFlags::RST | TcpFlags::ACK {
+                        // close port
+                        return None;
                     } else {
                         // do nothing
+                        // it should not return any response if a port is open
                     }
                 }
             }
@@ -169,7 +164,7 @@ pub fn send_fin_scan_packet(
             }
         }
     }
-    None
+    Some(true)
 }
 
 // pub fn tcp_connect(dst_ipv4: Ipv4Addr, dst_port: u16, timeout: Duration) -> bool {
@@ -311,10 +306,10 @@ mod tests {
     }
     #[test]
     fn test_send_fin_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let max_wait = 64;
-        let ret = send_fin_scan_packet(src_ipv4, dst_ipv4, 49511, 80, max_wait).unwrap();
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 137);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 133);
+        let max_wait = 8;
+        let ret = send_fin_scan_packet(src_ipv4, dst_ipv4, 49511, 22, max_wait);
         println!("{:?}", ret);
     }
     #[test]
