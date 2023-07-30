@@ -52,10 +52,7 @@ pub fn send_syn_scan_packet(
     tcp_packet.set_checksum(checksum);
     // Send the packet
     match tx.send_to(tcp_packet, dst_ipv4.into()) {
-        Ok(n) => {
-            // println!("{}", n);
-            assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN);
-        }
+        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
         Err(e) => panic!("failed to send packet: {}", e),
     }
 

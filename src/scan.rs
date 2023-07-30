@@ -10,6 +10,7 @@ use crate::utils;
 
 pub mod arp;
 pub mod tcp;
+pub mod udp;
 
 const CONNECT_SCAN: &str = "connect";
 const SYN_SCAN: &str = "syn";
