@@ -1,4 +1,4 @@
-use pnet::datalink::{Channel, MacAddr, NetworkInterface};
+use pnet::datalink::{channel, Channel, MacAddr, NetworkInterface};
 use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::MutableEthernetPacket;
@@ -14,7 +14,7 @@ pub fn send_arp_scan_packet(
     source_mac: MacAddr,
     target_ip: Ipv4Addr,
 ) -> Option<MacAddr> {
-    let (mut sender, mut receiver) = match pnet::datalink::channel(&interface, Default::default()) {
+    let (mut sender, mut receiver) = match channel(&interface, Default::default()) {
         Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
         Ok(_) => panic!("unknown channel type"),
         Err(e) => panic!("error happened {}", e),

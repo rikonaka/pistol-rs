@@ -139,11 +139,16 @@ pub fn parse_interface(interface: Option<&str>) -> Result<(NetworkInterface, Ipv
     Ok((i, ipv4, mac))
 }
 
+/// Returns the random u16
+pub fn random_u16() -> u16 {
+    let mut rng = rand::thread_rng();
+    rng.gen()
+}
+
 /// Returns the random port
 pub fn random_port() -> u16 {
     let mut rng = rand::thread_rng();
-    let src_port: u16 = rng.gen_range(1024..=41926);
-    src_port
+    rng.gen_range(1024..=65535)
 }
 
 /// Returns the number of CPUs in the machine
