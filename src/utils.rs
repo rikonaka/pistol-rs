@@ -5,10 +5,13 @@ use rand::Rng;
 use std::error::Error;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr};
+use std::time::Duration;
+use subnetwork::Ipv4Pool;
 // use subnetwork::Ipv4Pool;
 use threadpool::ThreadPool;
 
-const DEFAILT_MAX_WAIT: usize = 128;
+const DEFAILT_MAX_LOOP: usize = 16;
+const DEFAILT_TIMEOUT: f32 = 1.5;
 
 /* FindInterfaceError */
 #[derive(Debug, Clone)]
@@ -23,7 +26,8 @@ impl fmt::Display for FindInterfaceError {
 }
 
 impl FindInterfaceError {
-    pub fn new(interface: String) -> FindInterfaceError {
+    pub fn new(interface: &str) -> FindInterfaceError {
+        let interface = interface.to_string();
         FindInterfaceError { interface }
     }
 }
@@ -43,7 +47,8 @@ impl fmt::Display for GetInterfaceIPError {
 }
 
 impl GetInterfaceIPError {
-    pub fn new(interface: String) -> GetInterfaceIPError {
+    pub fn new(interface: &str) -> GetInterfaceIPError {
+        let interface = interface.to_string();
         GetInterfaceIPError { interface }
     }
 }
@@ -63,7 +68,8 @@ impl fmt::Display for GetInterfaceMACError {
 }
 
 impl GetInterfaceMACError {
-    pub fn new(interface: String) -> GetInterfaceMACError {
+    pub fn new(interface: &str) -> GetInterfaceMACError {
+        let interface = interface.to_string();
         GetInterfaceMACError { interface }
     }
 }
@@ -72,27 +78,27 @@ impl Error for GetInterfaceMACError {}
 
 /* CODE */
 
-// pub fn get_host_interfaces() -> Vec<NetworkInterface> {
-//     pnet_datalink::interfaces()
-// }
+pub fn get_host_interfaces() -> Vec<NetworkInterface> {
+    pnet_datalink::interfaces()
+}
 
 /// Returns an interface that matches the subnet
-// pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
-//     let interfaces = get_host_interfaces();
-//     for interface in &interfaces {
-//         for ip in &interface.ips {
-//             match ip.ip() {
-//                 IpAddr::V4(i) => {
-//                     if subnet.contain(i) {
-//                         return Some(interface.clone());
-//                     }
-//                 }
-//                 _ => (),
-//             }
-//         }
-//     }
-//     None
-// }
+pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
+    let interfaces = get_host_interfaces();
+    for interface in &interfaces {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V4(i) => {
+                    if subnet.contain(i) {
+                        return Some(interface.clone());
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    None
+}
 
 /// Returns an interface that matches the name
 pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
@@ -123,17 +129,37 @@ pub fn parse_interface(interface: Option<&str>) -> Result<(NetworkInterface, Ipv
     let i = match interface {
         Some(name) => match find_interface_by_name(name) {
             Some(i) => i,
-            _ => return Err(FindInterfaceError::new(name.to_string()).into()),
+            _ => return Err(FindInterfaceError::new(name).into()),
         },
-        _ => return Err(FindInterfaceError::new("please set interface".to_string()).into()),
+        _ => return Err(FindInterfaceError::new("please set interface").into()),
     };
     let ipv4 = match get_interface_ip(&i) {
         Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(i.to_string()).into()),
+        _ => return Err(GetInterfaceIPError::new(&i.to_string()).into()),
     };
     let mac = match i.mac {
         Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(i.to_string()).into()),
+        _ => return Err(GetInterfaceMACError::new(&i.to_string()).into()),
+    };
+
+    Ok((i, ipv4, mac))
+}
+
+/// Convert user input subnet and return (NetworkInterface, Ipv4Addr, MacAddr)
+pub fn parse_interface_by_subnet(
+    subnet: Ipv4Pool,
+) -> Result<(NetworkInterface, Ipv4Addr, MacAddr)> {
+    let i = match find_interface_by_subnet(&subnet) {
+        Some(i) => i,
+        _ => return Err(FindInterfaceError::new("counld not find interface by subnet").into()),
+    };
+    let ipv4 = match get_interface_ip(&i) {
+        Some(ip) => ip,
+        _ => return Err(GetInterfaceIPError::new(&i.to_string()).into()),
+    };
+    let mac = match i.mac {
+        Some(m) => m,
+        _ => return Err(GetInterfaceMACError::new(&i.to_string()).into()),
     };
 
     Ok((i, ipv4, mac))
@@ -166,10 +192,17 @@ pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
     pool
 }
 
-pub fn get_max_wait(max_wait_time: Option<usize>) -> usize {
-    match max_wait_time {
+pub fn get_max_loop(max_loop: Option<usize>) -> usize {
+    match max_loop {
         Some(m) => m,
-        _ => DEFAILT_MAX_WAIT,
+        _ => DEFAILT_MAX_LOOP,
+    }
+}
+
+pub fn get_timeout(timeout: Option<Duration>) -> Duration {
+    match timeout {
+        Some(t) => t,
+        _ => Duration::from_secs_f32(DEFAILT_TIMEOUT),
     }
 }
 
