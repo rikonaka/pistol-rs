@@ -364,6 +364,246 @@ pub fn tcp_ack_scan_subnet(
     )
 }
 
+/// TCP Null scanning.
+/// Does not set any bits (TCP flag header is 0).
+/// When scanning systems compliant with this RFC text,
+/// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
+/// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+pub fn tcp_null_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_null_scan_single_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_null_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_null_scan_range_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_null_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_null_scan_subnet(
+        src_ipv4,
+        src_port,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// TCP Xmas scanning.
+/// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
+/// When scanning systems compliant with this RFC text,
+/// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
+/// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+pub fn tcp_xmas_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_xmas_scan_single_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_xmas_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_xmas_scan_range_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_xmas_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_xmas_scan_subnet(
+        src_ipv4,
+        src_port,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// UDP scanning.
+/// While most popular services on the Internet run over the TCP protocol, UDP services are widely deployed.
+/// DNS, SNMP, and DHCP (registered ports 53, 161/162, and 67/68) are three of the most common.
+/// Because UDP scanning is generally slower and more difficult than TCP, some security auditors ignore these ports.
+/// This is a mistake, as exploitable UDP services are quite common and attackers certainly don't ignore the whole protocol.
+/// UDP scan works by sending a UDP packet to every targeted port.
+/// For most ports, this packet will be empty (no payload), but for a few of the more common ports a protocol-specific payload will be sent.
+/// Based on the response, or lack thereof, the port is assigned to one of four states.
+pub fn udp_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::UdpScanResults> {
+    scan::run_udp_scan_single_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn udp_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::UdpScanResults> {
+    scan::run_udp_scan_range_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn udp_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::UdpScanResults>> {
+    scan::run_udp_scan_subnet(
+        src_ipv4,
+        src_port,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,6 +844,79 @@ mod tests {
         let i = None;
         let max_loop = Some(64);
         let ret = tcp_ack_scan_subnet(
+            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
+        )
+        .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_null_scan_single_port() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_port = None;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        // let i = Some("eno1");
+        let i = None;
+        let ret = tcp_null_scan_single_port(src_ipv4, src_port, dst_ipv4, 81, i, true, None, None)
+            .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_null_scan_range_port() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_port = None;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        // let i = Some("eno1");
+        let i = None;
+        let ret =
+            tcp_null_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
+                .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_null_scan_subnet() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_port = None;
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        // let i = Some("eno1");
+        let i = None;
+        let max_loop = Some(64);
+        let ret = tcp_null_scan_subnet(
+            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
+        )
+        .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_udp_scan_single_port() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_port = None;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        // let i = Some("eno1");
+        let i = None;
+        let ret =
+            udp_scan_single_port(src_ipv4, src_port, dst_ipv4, 53, i, true, None, None).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_udp_scan_range_port() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_port = None;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        // let i = Some("eno1");
+        let i = None;
+        let ret = udp_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
+            .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_udp_scan_subnet() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_port = None;
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        // let i = Some("eno1");
+        let i = None;
+        let max_loop = Some(64);
+        let ret = udp_scan_subnet(
             src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
         )
         .unwrap();

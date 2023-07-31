@@ -7,6 +7,7 @@ use pnet::packet::Packet;
 use pnet::transport::TransportChannelType::Layer3;
 use pnet::transport::{ipv4_packet_iter, transport_channel};
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::utils;
 
@@ -19,7 +20,7 @@ const ICMP_BUFF_SIZE: usize = 4096;
 #[derive(Debug, Clone, Copy)]
 pub enum UdpScanStatus {
     Open,
-    OpenAndFiltered,
+    OpenOrFiltered,
     Closed,
     Filtered,
 }
@@ -29,6 +30,7 @@ pub fn send_udp_scan_packet(
     dst_ipv4: Ipv4Addr,
     src_port: u16,
     dst_port: u16,
+    timeout: Duration,
     max_loop: usize,
 ) -> Result<UdpScanStatus> {
     let udp_protocol = Layer3(IpNextHeaderProtocols::Udp);
@@ -77,58 +79,64 @@ pub fn send_udp_scan_packet(
     let mut udp_iter = ipv4_packet_iter(&mut udp_rx);
     let mut icmp_iter = ipv4_packet_iter(&mut icmp_rx);
     for _ in 0..max_loop {
-        match udp_iter.next() {
-            Ok((packet, addr)) => {
-                if addr == dst_ipv4 && packet.get_destination() == src_ipv4 {
-                    if packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
-                        let ipv4_payload = packet.payload();
-                        let udp_packet = UdpPacket::new(ipv4_payload).unwrap();
-                        if udp_packet.get_destination() == src_port
-                            && udp_packet.get_source() == dst_port
-                        {
-                            // any udp response from target port (unusual)
-                            return Ok(UdpScanStatus::Open);
+        match udp_iter.next_with_timeout(timeout) {
+            Ok(r) => match r {
+                Some((packet, addr)) => {
+                    if addr == dst_ipv4 && packet.get_destination() == src_ipv4 {
+                        if packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
+                            let ipv4_payload = packet.payload();
+                            let udp_packet = UdpPacket::new(ipv4_payload).unwrap();
+                            if udp_packet.get_destination() == src_port
+                                && udp_packet.get_source() == dst_port
+                            {
+                                // any udp response from target port (unusual)
+                                return Ok(UdpScanStatus::Open);
+                            }
                         }
                     }
                 }
-            }
+                _ => (),
+            },
             Err(e) => return Err(e.into()),
         }
-        match icmp_iter.next() {
-            Ok((packet, addr)) => {
-                if addr == dst_ipv4 {
-                    if packet.get_next_level_protocol() == IpNextHeaderProtocols::Icmp {
-                        let ipv4_payload = packet.payload();
-                        let icmp_packet = IcmpPacket::new(ipv4_payload).unwrap();
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            let codes_1 = vec![
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                            ];
-                            let codes_2 = vec![
+        match icmp_iter.next_with_timeout(timeout) {
+            Ok(r) => match r {
+                Some((packet, addr)) => {
+                    if addr == dst_ipv4 {
+                        if packet.get_next_level_protocol() == IpNextHeaderProtocols::Icmp {
+                            let ipv4_payload = packet.payload();
+                            let icmp_packet = IcmpPacket::new(ipv4_payload).unwrap();
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                let codes_1 = vec![
+                                    destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                ];
+                                let codes_2 = vec![
                                 destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
                                 destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
                             ];
-                            if codes_1.contains(&icmp_code) {
-                                // icmp port unreachable error (type 3, code 3)
-                                return Ok(UdpScanStatus::Closed);
-                            } else if codes_2.contains(&icmp_code) {
-                                // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                return Ok(UdpScanStatus::Filtered);
+                                if codes_1.contains(&icmp_code) {
+                                    // icmp port unreachable error (type 3, code 3)
+                                    return Ok(UdpScanStatus::Closed);
+                                } else if codes_2.contains(&icmp_code) {
+                                    // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
+                                    return Ok(UdpScanStatus::Filtered);
+                                }
                             }
                         }
                     }
                 }
-            }
+                _ => (),
+            },
             Err(e) => return Err(e.into()),
         }
     }
     // no response received (even after retransmissions)
-    Ok(UdpScanStatus::OpenAndFiltered)
+    Ok(UdpScanStatus::OpenOrFiltered)
 }
 
 #[cfg(test)]
@@ -139,7 +147,8 @@ mod tests {
         let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let max_loop = 32;
-        let ret = send_udp_scan_packet(src_ipv4, dst_ipv4, 54422, 53, max_loop).unwrap();
+        let timeout = Duration::from_secs(1);
+        let ret = send_udp_scan_packet(src_ipv4, dst_ipv4, 54422, 53, timeout, max_loop).unwrap();
         println!("{:?}", ret);
     }
 }

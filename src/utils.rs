@@ -10,8 +10,8 @@ use subnetwork::Ipv4Pool;
 // use subnetwork::Ipv4Pool;
 use threadpool::ThreadPool;
 
-const DEFAILT_MAX_LOOP: usize = 16;
-const DEFAILT_TIMEOUT: f32 = 1.5;
+const DEFAILT_MAX_LOOP: usize = 32;
+const DEFAILT_TIMEOUT: f32 = 1.;
 
 /* FindInterfaceError */
 #[derive(Debug, Clone)]
