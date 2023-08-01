@@ -67,7 +67,7 @@ mod tests {
     fn test_send_arp_scan_packet() {
         let interface: NetworkInterface = utils::find_interface_by_name("ens33").unwrap();
         let dstaddr: MacAddr = MacAddr::broadcast();
-        let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 211);
+        let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 110);
         let source_mac: MacAddr = interface.mac.unwrap();
         let target_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let ret =

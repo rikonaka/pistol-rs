@@ -7,7 +7,7 @@ use subnetwork::Ipv4Pool;
 mod scan;
 mod utils;
 
-/// ARP scanning.
+/// ARP Scan.
 /// This will sends ARP packets to hosts on the local network and displays any responses that are received.
 /// The network interface to use can be specified with the `interface` option.
 /// If this option is not present, program will search the system interface list for `subnet` user provided, configured up interface (excluding loopback).
@@ -24,7 +24,7 @@ pub fn arp_scan_subnet(
     scan::run_arp_scan_subnet(subnet, dstaddr, interface, threads_num, print_result)
 }
 
-/// TCP connect() scanning.
+/// TCP Connect() Scan.
 /// This is the most basic form of TCP scanning.
 /// The connect() system call provided by your operating system is used to open a connection to every interesting port on the machine.
 /// If the port is listening, connect() will succeed, otherwise the port isn't reachable.
@@ -111,7 +111,7 @@ pub fn tcp_connect_scan_subnet(
     )
 }
 
-/// TCP SYN scanning.
+/// TCP SYN Scan.
 /// This technique is often referred to as "half-open" scanning, because you don't open a full TCP connection.
 /// You send a SYN packet, as if you are going to open a real connection and wait for a response.
 /// A SYN|ACK indicates the port is listening.
@@ -197,7 +197,7 @@ pub fn tcp_syn_scan_subnet(
     )
 }
 
-/// TCP FIN scanning.
+/// TCP FIN Scan.
 /// There are times when even SYN scanning isn't clandestine enough.
 /// Some firewalls and packet filters watch for SYNs to an unallowed port,
 /// and programs like synlogger and Courtney are available to detect these scans.
@@ -284,7 +284,7 @@ pub fn tcp_fin_scan_subnet(
     )
 }
 
-/// TCP ACK scanning.
+/// TCP ACK Scan.
 /// This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports.
 /// It is used to map out firewall rulesets, determining whether they are stateful or not and which ports are filtered.
 /// When scanning unfiltered systems, open and closed ports will both return a RST packet.
@@ -364,7 +364,7 @@ pub fn tcp_ack_scan_subnet(
     )
 }
 
-/// TCP Null scanning.
+/// TCP Null Scan.
 /// Does not set any bits (TCP flag header is 0).
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
@@ -443,7 +443,7 @@ pub fn tcp_null_scan_subnet(
     )
 }
 
-/// TCP Xmas scanning.
+/// TCP Xmas Scan.
 /// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
@@ -522,7 +522,260 @@ pub fn tcp_xmas_scan_subnet(
     )
 }
 
-/// UDP scanning.
+/// TCP Window Scan.
+/// Window scan is exactly the same as ACK scan except that it exploits an implementation detail of certain systems to differentiate open ports from closed ones,
+/// rather than always printing unfiltered when a RST is returned.
+/// It does this by examining the TCP Window value of the RST packets returned.
+/// On some systems, open ports use a positive window size (even for RST packets) while closed ones have a zero window.
+/// Window scan sends the same bare ACK probe as ACK scan.
+pub fn tcp_window_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_window_scan_single_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_window_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_window_scan_range_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_window_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_window_scan_subnet(
+        src_ipv4,
+        src_port,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// TCP Maimon Scan.
+/// The Maimon scan is named after its discoverer, Uriel Maimon.
+/// He described the technique in Phrack Magazine issue #49 (November 1996).
+/// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
+/// According to RFC 793 (TCP), a RST packet should be generated in response to such a probe whether the port is open or closed.
+/// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
+pub fn tcp_maimon_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_maimon_scan_single_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_maimon_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_maimon_scan_range_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_maimon_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_maimon_scan_subnet(
+        src_ipv4,
+        src_port,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// TCP Idle Scan.
+/// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book) posted to the Bugtraq mailing list an ingenious new port scanning technique.
+/// Idle scan, as it has become known, allows for completely blind port scanning.
+/// Attackers can actually scan a target without sending a single packet to the target from their own IP address!
+/// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
+/// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
+/// Besides being extraordinarily stealthy, this scan type permits discovery of IP-based trust relationships between machines.
+pub fn tcp_idle_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    zombie_ipv4: Ipv4Addr,
+    zombie_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_idle_scan_single_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        Some(zombie_ipv4),
+        Some(zombie_port),
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_idle_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    zombie_ipv4: Ipv4Addr,
+    zombie_port: u16,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::TcpScanResults> {
+    scan::run_tcp_idle_scan_range_port(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        Some(zombie_ipv4),
+        Some(zombie_port),
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_idle_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    zombie_ipv4: Ipv4Addr,
+    zombie_port: u16,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+    scan::run_tcp_idle_scan_subnet(
+        src_ipv4,
+        src_port,
+        Some(zombie_ipv4),
+        Some(zombie_port),
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// UDP Scan.
 /// While most popular services on the Internet run over the TCP protocol, UDP services are widely deployed.
 /// DNS, SNMP, and DHCP (registered ports 53, 161/162, and 67/68) are three of the most common.
 /// Because UDP scanning is generally slower and more difficult than TCP, some security auditors ignore these ports.
@@ -616,7 +869,7 @@ mod tests {
     }
     #[test]
     fn test_connect_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let dst_port: u16 = 80;
@@ -638,7 +891,7 @@ mod tests {
     }
     #[test]
     fn test_connect_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
         let start_port: u16 = 1;
@@ -665,7 +918,7 @@ mod tests {
     }
     #[test]
     fn test_connect_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/24").unwrap();
         let start_port: u16 = 80;
@@ -692,7 +945,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let dst_port: u16 = 80;
@@ -728,7 +981,7 @@ mod tests {
     }
     #[test]
     fn test_syn_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -745,7 +998,7 @@ mod tests {
     }
     #[test]
     fn test_syn_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -757,7 +1010,7 @@ mod tests {
     }
     #[test]
     fn test_syn_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         // let i = Some("eno1");
@@ -771,7 +1024,7 @@ mod tests {
     }
     #[test]
     fn test_fin_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -785,7 +1038,7 @@ mod tests {
     }
     #[test]
     fn test_fin_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -797,7 +1050,7 @@ mod tests {
     }
     #[test]
     fn test_fin_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         // let i = Some("eno1");
@@ -811,7 +1064,7 @@ mod tests {
     }
     #[test]
     fn test_ack_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -825,7 +1078,7 @@ mod tests {
     }
     #[test]
     fn test_ack_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -837,7 +1090,7 @@ mod tests {
     }
     #[test]
     fn test_ack_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         // let i = Some("eno1");
@@ -851,7 +1104,7 @@ mod tests {
     }
     #[test]
     fn test_null_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -862,7 +1115,7 @@ mod tests {
     }
     #[test]
     fn test_null_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -874,7 +1127,7 @@ mod tests {
     }
     #[test]
     fn test_null_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         // let i = Some("eno1");
@@ -888,7 +1141,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -899,7 +1152,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         // let i = Some("eno1");
@@ -910,7 +1163,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 211));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
         // let i = Some("eno1");

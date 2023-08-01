@@ -25,6 +25,9 @@ enum TcpScanMethod {
     Ack,
     Null,
     Xmas,
+    Window,
+    Maimon,
+    Idle,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +61,8 @@ impl fmt::Display for TcpScanResults {
                 TcpScanStatus::Filtered => format!("{ip} {port} filtered"),
                 TcpScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
                 TcpScanStatus::Closed => format!("{ip} {port} closed"),
+                TcpScanStatus::Unreachable => format!("{ip} {port} unreachable"),
+                TcpScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
             };
             result_str += &str;
             result_str += "\n";
@@ -112,6 +117,8 @@ fn _tcp_print_result(ip: Ipv4Addr, port: u16, ret: TcpScanStatus) {
         TcpScanStatus::Filtered => println!("{ip} {port} filtered"),
         TcpScanStatus::Unfiltered => println!("{ip} {port} unfiltered"),
         TcpScanStatus::Closed => println!("{ip} {port} closed"),
+        TcpScanStatus::Unreachable => println!("{ip} {port} unreachable"),
+        TcpScanStatus::ClosedOrFiltered => println!("{ip} {port} closed|filtered"),
     }
 }
 
@@ -191,6 +198,8 @@ fn _run_tcp_scan_single_port(
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
     interface: Option<&str>,
     print_result: bool,
     timeout: Option<Duration>,
@@ -214,7 +223,7 @@ fn _run_tcp_scan_single_port(
     let scan_ret = match method {
         TcpScanMethod::Connect => {
             match tcp::send_connect_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             ) {
                 Ok(t) => t,
                 Err(e) => return Err(e.into()),
@@ -222,7 +231,7 @@ fn _run_tcp_scan_single_port(
         }
         TcpScanMethod::Syn => {
             match tcp::send_syn_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             ) {
                 Ok(t) => t,
                 Err(e) => return Err(e.into()),
@@ -230,7 +239,7 @@ fn _run_tcp_scan_single_port(
         }
         TcpScanMethod::Fin => {
             match tcp::send_fin_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             ) {
                 Ok(t) => t,
                 Err(e) => return Err(e.into()),
@@ -238,7 +247,7 @@ fn _run_tcp_scan_single_port(
         }
         TcpScanMethod::Ack => {
             match tcp::send_ack_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             ) {
                 Ok(t) => t,
                 Err(e) => return Err(e.into()),
@@ -246,7 +255,7 @@ fn _run_tcp_scan_single_port(
         }
         TcpScanMethod::Null => {
             match tcp::send_null_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             ) {
                 Ok(t) => t,
                 Err(e) => return Err(e.into()),
@@ -254,9 +263,53 @@ fn _run_tcp_scan_single_port(
         }
         TcpScanMethod::Xmas => {
             match tcp::send_xmas_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             ) {
                 Ok(t) => t,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        TcpScanMethod::Window => {
+            match tcp::send_window_scan_packet(
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+            ) {
+                Ok(t) => t,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        TcpScanMethod::Maimon => {
+            match tcp::send_maimon_scan_packet(
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+            ) {
+                Ok(t) => t,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        TcpScanMethod::Idle => {
+            let zombie_ipv4 = zombie_ipv4.unwrap();
+            let zombie_port = zombie_port.unwrap();
+            match tcp::send_idle_scan_packet(
+                src_ipv4,
+                src_port,
+                dst_ipv4,
+                dst_port,
+                zombie_ipv4,
+                zombie_port,
+                timeout,
+                max_loop,
+            ) {
+                Ok((t, i)) => {
+                    if print_result {
+                        if i.is_some() {
+                            let v = i.unwrap();
+                            println!(
+                                "zombie ip id 1: {}, zombie ip id 2: {}",
+                                v.zombie_ip_id_1, v.zombie_ip_id_2
+                            );
+                        }
+                    }
+                    t
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -278,6 +331,8 @@ fn _run_tcp_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
     start_port: u16,
     end_port: u16,
     interface: Option<&str>,
@@ -311,23 +366,55 @@ fn _run_tcp_scan_range_port(
         pool.execute(move || {
             let scan_ret_with_error = match method {
                 TcpScanMethod::Connect => tcp::send_connect_scan_packet(
-                    src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                 ),
                 TcpScanMethod::Syn => tcp::send_syn_scan_packet(
-                    src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                 ),
                 TcpScanMethod::Fin => tcp::send_fin_scan_packet(
-                    src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                 ),
                 TcpScanMethod::Ack => tcp::send_ack_scan_packet(
-                    src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                 ),
                 TcpScanMethod::Null => tcp::send_null_scan_packet(
-                    src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                 ),
                 TcpScanMethod::Xmas => tcp::send_xmas_scan_packet(
-                    src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                 ),
+                TcpScanMethod::Window => tcp::send_window_scan_packet(
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod::Maimon => tcp::send_maimon_scan_packet(
+                    src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod::Idle => {
+                    match tcp::send_idle_scan_packet(
+                        src_ipv4,
+                        src_port,
+                        dst_ipv4,
+                        dst_port,
+                        zombie_ipv4.unwrap(),
+                        zombie_port.unwrap(),
+                        timeout,
+                        max_loop,
+                    ) {
+                        Ok((t, i)) => {
+                            if print_result {
+                                if i.is_some() {
+                                    let v = i.unwrap();
+                                    println!(
+                                        "zombie ip id 1: {}, zombie ip id 2: {}",
+                                        v.zombie_ip_id_1, v.zombie_ip_id_2
+                                    );
+                                }
+                            }
+                            Ok(t)
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
             };
             if print_result {
                 match scan_ret_with_error {
@@ -356,6 +443,8 @@ fn _run_tcp_scan_subnet(
     method: TcpScanMethod,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
     subnet: Ipv4Pool,
     start_port: u16,
     end_port: u16,
@@ -392,23 +481,53 @@ fn _run_tcp_scan_subnet(
                 pool.execute(move || {
                     let scan_ret_with_error = match method {
                         TcpScanMethod::Connect => tcp::send_connect_scan_packet(
-                            src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                         ),
                         TcpScanMethod::Syn => tcp::send_syn_scan_packet(
-                            src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                         ),
                         TcpScanMethod::Fin => tcp::send_fin_scan_packet(
-                            src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                         ),
                         TcpScanMethod::Ack => tcp::send_ack_scan_packet(
-                            src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                         ),
                         TcpScanMethod::Null => tcp::send_null_scan_packet(
-                            src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                         ),
                         TcpScanMethod::Xmas => tcp::send_xmas_scan_packet(
-                            src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                         ),
+                        TcpScanMethod::Window => tcp::send_window_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod::Maimon => tcp::send_maimon_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod::Idle => match tcp::send_idle_scan_packet(
+                            src_ipv4,
+                            src_port,
+                            dst_ipv4,
+                            dst_port,
+                            zombie_ipv4.unwrap(),
+                            zombie_port.unwrap(),
+                            timeout,
+                            max_loop,
+                        ) {
+                            Ok((t, i)) => {
+                                if print_result {
+                                    if i.is_some() {
+                                        let v = i.unwrap();
+                                        println!(
+                                            "zombie ip id 1: {}, zombie ip id 2: {}",
+                                            v.zombie_ip_id_1, v.zombie_ip_id_2
+                                        );
+                                    }
+                                }
+                                Ok(t)
+                            }
+                            Err(e) => Err(e),
+                        },
                     };
                     if print_result {
                         match scan_ret_with_error {
@@ -459,6 +578,8 @@ pub fn run_tcp_connect_scan_single_port(
         src_port,
         dst_ipv4,
         dst_port,
+        None,
+        None,
         interface,
         print_result,
         timeout,
@@ -483,6 +604,8 @@ pub fn run_tcp_connect_scan_range_port(
         src_ipv4,
         src_port,
         dst_ipv4,
+        None,
+        None,
         start_port,
         end_port,
         interface,
@@ -509,6 +632,8 @@ pub fn run_tcp_connect_scan_subnet(
         TcpScanMethod::Connect,
         src_ipv4,
         src_port,
+        None,
+        None,
         subnet,
         start_port,
         end_port,
@@ -536,6 +661,8 @@ pub fn run_tcp_syn_scan_single_port(
         src_port,
         dst_ipv4,
         dst_port,
+        None,
+        None,
         interface,
         print_result,
         timeout,
@@ -560,6 +687,8 @@ pub fn run_tcp_syn_scan_range_port(
         src_ipv4,
         src_port,
         dst_ipv4,
+        None,
+        None,
         start_port,
         end_port,
         interface,
@@ -586,6 +715,8 @@ pub fn run_tcp_syn_scan_subnet(
         TcpScanMethod::Syn,
         src_ipv4,
         src_port,
+        None,
+        None,
         subnet,
         start_port,
         end_port,
@@ -613,6 +744,8 @@ pub fn run_tcp_fin_scan_single_port(
         src_port,
         dst_ipv4,
         dst_port,
+        None,
+        None,
         interface,
         print_result,
         timeout,
@@ -637,6 +770,8 @@ pub fn run_tcp_fin_scan_range_port(
         src_ipv4,
         src_port,
         dst_ipv4,
+        None,
+        None,
         start_port,
         end_port,
         interface,
@@ -663,6 +798,8 @@ pub fn run_tcp_fin_scan_subnet(
         TcpScanMethod::Fin,
         src_ipv4,
         src_port,
+        None,
+        None,
         subnet,
         start_port,
         end_port,
@@ -690,6 +827,8 @@ pub fn run_tcp_ack_scan_single_port(
         src_port,
         dst_ipv4,
         dst_port,
+        None,
+        None,
         interface,
         print_result,
         timeout,
@@ -714,6 +853,8 @@ pub fn run_tcp_ack_scan_range_port(
         src_ipv4,
         src_port,
         dst_ipv4,
+        None,
+        None,
         start_port,
         end_port,
         interface,
@@ -740,6 +881,8 @@ pub fn run_tcp_ack_scan_subnet(
         TcpScanMethod::Ack,
         src_ipv4,
         src_port,
+        None,
+        None,
         subnet,
         start_port,
         end_port,
@@ -767,6 +910,8 @@ pub fn run_tcp_null_scan_single_port(
         src_port,
         dst_ipv4,
         dst_port,
+        None,
+        None,
         interface,
         print_result,
         timeout,
@@ -791,6 +936,8 @@ pub fn run_tcp_null_scan_range_port(
         src_ipv4,
         src_port,
         dst_ipv4,
+        None,
+        None,
         start_port,
         end_port,
         interface,
@@ -817,6 +964,8 @@ pub fn run_tcp_null_scan_subnet(
         TcpScanMethod::Null,
         src_ipv4,
         src_port,
+        None,
+        None,
         subnet,
         start_port,
         end_port,
@@ -844,6 +993,8 @@ pub fn run_tcp_xmas_scan_single_port(
         src_port,
         dst_ipv4,
         dst_port,
+        None,
+        None,
         interface,
         print_result,
         timeout,
@@ -868,6 +1019,8 @@ pub fn run_tcp_xmas_scan_range_port(
         src_ipv4,
         src_port,
         dst_ipv4,
+        None,
+        None,
         start_port,
         end_port,
         interface,
@@ -893,7 +1046,264 @@ pub fn run_tcp_xmas_scan_subnet(
     _run_tcp_scan_subnet(
         TcpScanMethod::Xmas,
         src_ipv4,
+        None,
+        None,
         src_port,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_window_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port(
+        TcpScanMethod::Window,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        None,
+        None,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_window_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port(
+        TcpScanMethod::Window,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        None,
+        None,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_window_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    _run_tcp_scan_subnet(
+        TcpScanMethod::Window,
+        src_ipv4,
+        src_port,
+        None,
+        None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_maimon_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port(
+        TcpScanMethod::Maimon,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        None,
+        None,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_maimon_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port(
+        TcpScanMethod::Maimon,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        None,
+        None,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_maimon_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    _run_tcp_scan_subnet(
+        TcpScanMethod::Maimon,
+        src_ipv4,
+        src_port,
+        None,
+        None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_idle_scan_single_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port(
+        TcpScanMethod::Idle,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        zombie_ipv4,
+        zombie_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_idle_scan_range_port(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port(
+        TcpScanMethod::Idle,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        zombie_ipv4,
+        zombie_port,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn run_tcp_idle_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
+    subnet: Ipv4Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+    _run_tcp_scan_subnet(
+        TcpScanMethod::Idle,
+        src_ipv4,
+        src_port,
+        zombie_ipv4,
+        zombie_port,
         subnet,
         start_port,
         end_port,
