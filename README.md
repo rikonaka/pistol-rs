@@ -2,7 +2,7 @@
 
 ## Support scan methods
 
-We implement `pistol` transport layer scan according to the nmap [documentation](https://nmap.org/nmap_doc.html).
+I implement `pistol` transport layer scan according to the nmap [documentation](https://nmap.org/nmap_doc.html).
 
 | Methods            | Detailed Documentation                                                        |
 | :----------------- | :---------------------------------------------------------------------------- |
