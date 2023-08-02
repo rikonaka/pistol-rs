@@ -142,9 +142,7 @@ pub fn send_syn_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 if tcp_packet.get_source() == dst_port
@@ -269,9 +267,7 @@ pub fn send_fin_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 if tcp_packet.get_source() == dst_port
@@ -396,9 +392,7 @@ pub fn send_ack_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 let tcp_flags = tcp_packet.get_flags();
@@ -516,9 +510,7 @@ pub fn send_null_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 if tcp_packet.get_source() == dst_port
@@ -640,9 +632,7 @@ pub fn send_xmas_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 if tcp_packet.get_source() == dst_port
@@ -764,9 +754,7 @@ pub fn send_window_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 let tcp_flags = tcp_packet.get_flags();
@@ -889,9 +877,7 @@ pub fn send_maimon_scan_packet(
                 Some((packet, addr)) => {
                     if addr == dst_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == dst_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 if tcp_packet.get_source() == dst_port
@@ -1028,9 +1014,7 @@ pub fn send_idle_scan_packet(
                 Some((packet, addr)) => {
                     if addr == zombie_ipv4 {
                         if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == zombie_ipv4
-                            {
+                            if packet.get_destination() == src_ipv4 {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
                                 println!(">>> {}", tcp_packet.get_flags());
@@ -1119,9 +1103,7 @@ pub fn send_idle_scan_packet(
                             {
                                 let ipv4_payload = packet.payload();
                                 let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
-                                if tcp_packet.get_source() == zombie_port
-                                    && tcp_packet.get_destination() == src_port
-                                {
+                                if tcp_packet.get_source() == zombie_port {
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // 5. zombie return rst packet again, get this packet ip id

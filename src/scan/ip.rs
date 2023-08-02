@@ -2,7 +2,7 @@ use anyhow::Result;
 use pnet::packet::icmp::{self, destination_unreachable};
 use pnet::packet::icmp::{IcmpCode, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
-use pnet::packet::ipv4::{checksum, Ipv4Flags, MutableIpv4Packet};
+use pnet::packet::ipv4::{self, Ipv4Flags, MutableIpv4Packet};
 use pnet::packet::tcp::{self, MutableTcpPacket, TcpFlags};
 use pnet::packet::udp::{self, MutableUdpPacket};
 use pnet::packet::Packet;
@@ -111,7 +111,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(52);
             ip_header.set_next_level_protocol(protocol);
-            let c = checksum(&ip_header.to_immutable());
+            let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
             ip_header.set_source(src_ipv4);
             ip_header.set_destination(dst_ipv4);
@@ -132,7 +132,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(52);
             ip_header.set_next_level_protocol(protocol);
-            let c = checksum(&ip_header.to_immutable());
+            let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
             ip_header.set_source(src_ipv4);
             ip_header.set_destination(dst_ipv4);
@@ -155,7 +155,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(52);
             ip_header.set_next_level_protocol(protocol);
-            let c = checksum(&ip_header.to_immutable());
+            let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
             ip_header.set_source(src_ipv4);
             ip_header.set_destination(dst_ipv4);
@@ -178,7 +178,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(52);
             ip_header.set_next_level_protocol(protocol);
-            let c = checksum(&ip_header.to_immutable());
+            let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
             ip_header.set_source(src_ipv4);
             ip_header.set_destination(dst_ipv4);

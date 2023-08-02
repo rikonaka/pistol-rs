@@ -22,7 +22,7 @@ use udp::UdpScanStatus;
 use self::ip::IpScanStatus;
 
 #[derive(Debug, Clone, Copy)]
-enum TcpScanMethod {
+pub enum TcpScanMethod {
     Connect,
     Syn,
     Fin,
@@ -42,9 +42,8 @@ pub struct ArpScanResults {
 
 #[derive(Debug, Clone)]
 pub struct TcpScanResults {
-    addr: Ipv4Addr,
-    // port: TcpScanStatus
-    results: HashMap<u16, TcpScanStatus>,
+    pub addr: Ipv4Addr,
+    pub results: HashMap<u16, TcpScanStatus>,
 }
 
 impl TcpScanResults {
@@ -77,8 +76,8 @@ impl fmt::Display for TcpScanResults {
 
 #[derive(Debug, Clone)]
 pub struct IpScanResults {
-    addr: Ipv4Addr,
-    results: HashMap<IpNextHeaderProtocol, IpScanStatus>,
+    pub addr: Ipv4Addr,
+    pub results: HashMap<IpNextHeaderProtocol, IpScanStatus>,
 }
 
 impl IpScanResults {
@@ -108,9 +107,8 @@ impl fmt::Display for IpScanResults {
 
 #[derive(Debug, Clone)]
 pub struct UdpScanResults {
-    addr: Ipv4Addr,
-    // port: TcpScanStatus
-    results: HashMap<u16, UdpScanStatus>,
+    pub addr: Ipv4Addr,
+    pub results: HashMap<u16, UdpScanStatus>,
 }
 
 impl UdpScanResults {
@@ -139,12 +137,13 @@ impl fmt::Display for UdpScanResults {
 }
 
 fn _ip_print_result(ip: Ipv4Addr, protocol: IpNextHeaderProtocol, ret: IpScanStatus) {
-    match ret {
-        IpScanStatus::Open => println!("{ip} {protocol} open"),
-        IpScanStatus::Filtered => println!("{ip} {protocol} filtered"),
-        IpScanStatus::OpenOrFiltered => println!("{ip} {protocol} open|filtered"),
-        IpScanStatus::Closed => println!("{ip} {protocol} closed"),
-    }
+    let str = match ret {
+        IpScanStatus::Open => format!("{ip} {protocol} open"),
+        IpScanStatus::Filtered => format!("{ip} {protocol} filtered"),
+        IpScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
+        IpScanStatus::Closed => format!("{ip} {protocol} closed"),
+    };
+    println!("{str}");
 }
 
 fn _arp_print_result(ip: Ipv4Addr, mac: Option<MacAddr>) {
@@ -155,24 +154,26 @@ fn _arp_print_result(ip: Ipv4Addr, mac: Option<MacAddr>) {
 }
 
 fn _tcp_print_result(ip: Ipv4Addr, port: u16, ret: TcpScanStatus) {
-    match ret {
-        TcpScanStatus::Open => println!("{ip} {port} open"),
-        TcpScanStatus::OpenOrFiltered => println!("{ip} {port} open|filtered"),
-        TcpScanStatus::Filtered => println!("{ip} {port} filtered"),
-        TcpScanStatus::Unfiltered => println!("{ip} {port} unfiltered"),
-        TcpScanStatus::Closed => println!("{ip} {port} closed"),
-        TcpScanStatus::Unreachable => println!("{ip} {port} unreachable"),
-        TcpScanStatus::ClosedOrFiltered => println!("{ip} {port} closed|filtered"),
-    }
+    let str = match ret {
+        TcpScanStatus::Open => format!("{ip} {port} open"),
+        TcpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
+        TcpScanStatus::Filtered => format!("{ip} {port} filtered"),
+        TcpScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
+        TcpScanStatus::Closed => format!("{ip} {port} closed"),
+        TcpScanStatus::Unreachable => format!("{ip} {port} unreachable"),
+        TcpScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
+    };
+    println!("{str}");
 }
 
 fn _udp_print_result(ip: Ipv4Addr, port: u16, ret: UdpScanStatus) {
-    match ret {
-        UdpScanStatus::Open => println!("{ip} {port} open"),
-        UdpScanStatus::OpenOrFiltered => println!("{ip} {port} open|filtered"),
-        UdpScanStatus::Filtered => println!("{ip} {port} filtered"),
-        UdpScanStatus::Closed => println!("{ip} {port} closed"),
-    }
+    let str = match ret {
+        UdpScanStatus::Open => format!("{ip} {port} open"),
+        UdpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
+        UdpScanStatus::Filtered => format!("{ip} {port} filtered"),
+        UdpScanStatus::Closed => format!("{ip} {port} closed"),
+    };
+    println!("{str}");
 }
 
 pub fn run_arp_scan_subnet(
@@ -268,69 +269,29 @@ fn _run_tcp_scan_single_port(
     let max_loop = utils::get_max_loop(max_loop);
     let timeout = utils::get_timeout(timeout);
     let scan_ret = match method {
-        TcpScanMethod::Connect => {
-            match tcp::send_connect_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
-        }
+        TcpScanMethod::Connect => tcp::send_connect_scan_packet(
+            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+        )?,
         TcpScanMethod::Syn => {
-            match tcp::send_syn_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Fin => {
-            match tcp::send_fin_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_fin_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Ack => {
-            match tcp::send_ack_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Null => {
-            match tcp::send_null_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_null_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Xmas => {
-            match tcp::send_xmas_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_xmas_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Window => {
-            match tcp::send_window_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_window_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Maimon => {
-            match tcp::send_maimon_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            ) {
-                Ok(t) => t,
-                Err(e) => return Err(e.into()),
-            }
+            tcp::send_maimon_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)?
         }
         TcpScanMethod::Idle => {
             let zombie_ipv4 = zombie_ipv4.unwrap();

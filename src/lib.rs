@@ -1,13 +1,21 @@
 use anyhow::Result;
+use ping::PingResults;
 use pnet::packet::ip::IpNextHeaderProtocol;
+use scan::ArpScanResults;
+use scan::IpScanResults;
+use scan::TcpScanResults;
+use scan::UdpScanResults;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 
 mod flood;
+mod ping;
 mod scan;
 mod utils;
+
+/* Scan */
 
 /// ARP Scan.
 /// This will sends ARP packets to hosts on the local network and displays any responses that are received.
@@ -22,7 +30,7 @@ pub fn arp_scan_subnet(
     threads_num: usize,
     print_result: bool,
     max_loop: Option<usize>,
-) -> Result<scan::ArpScanResults> {
+) -> Result<ArpScanResults> {
     let subnet = Ipv4Pool::new(subnet).unwrap();
     scan::run_arp_scan_subnet(
         subnet,
@@ -56,7 +64,7 @@ pub fn tcp_connect_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_connect_scan_single_port(
         src_ipv4,
         src_port,
@@ -80,7 +88,7 @@ pub fn tcp_connect_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_connect_scan_range_port(
         src_ipv4,
         src_port,
@@ -106,7 +114,7 @@ pub fn tcp_connect_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_connect_scan_subnet(
         src_ipv4,
         src_port,
@@ -142,7 +150,7 @@ pub fn tcp_syn_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_syn_scan_single_port(
         src_ipv4,
         src_port,
@@ -166,7 +174,7 @@ pub fn tcp_syn_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_syn_scan_range_port(
         src_ipv4,
         src_port,
@@ -192,7 +200,7 @@ pub fn tcp_syn_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_syn_scan_subnet(
         src_ipv4,
         src_port,
@@ -229,7 +237,7 @@ pub fn tcp_fin_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_fin_scan_single_port(
         src_ipv4,
         src_port,
@@ -253,7 +261,7 @@ pub fn tcp_fin_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_fin_scan_range_port(
         src_ipv4,
         src_port,
@@ -279,7 +287,7 @@ pub fn tcp_fin_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_fin_scan_subnet(
         src_ipv4,
         src_port,
@@ -309,7 +317,7 @@ pub fn tcp_ack_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_ack_scan_single_port(
         src_ipv4,
         src_port,
@@ -333,7 +341,7 @@ pub fn tcp_ack_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_ack_scan_range_port(
         src_ipv4,
         src_port,
@@ -359,7 +367,7 @@ pub fn tcp_ack_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_ack_scan_subnet(
         src_ipv4,
         src_port,
@@ -388,7 +396,7 @@ pub fn tcp_null_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_null_scan_single_port(
         src_ipv4,
         src_port,
@@ -412,7 +420,7 @@ pub fn tcp_null_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_null_scan_range_port(
         src_ipv4,
         src_port,
@@ -438,7 +446,7 @@ pub fn tcp_null_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_null_scan_subnet(
         src_ipv4,
         src_port,
@@ -467,7 +475,7 @@ pub fn tcp_xmas_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_xmas_scan_single_port(
         src_ipv4,
         src_port,
@@ -491,7 +499,7 @@ pub fn tcp_xmas_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_xmas_scan_range_port(
         src_ipv4,
         src_port,
@@ -517,7 +525,7 @@ pub fn tcp_xmas_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_xmas_scan_subnet(
         src_ipv4,
         src_port,
@@ -547,7 +555,7 @@ pub fn tcp_window_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_window_scan_single_port(
         src_ipv4,
         src_port,
@@ -571,7 +579,7 @@ pub fn tcp_window_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_window_scan_range_port(
         src_ipv4,
         src_port,
@@ -597,7 +605,7 @@ pub fn tcp_window_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_window_scan_subnet(
         src_ipv4,
         src_port,
@@ -627,7 +635,7 @@ pub fn tcp_maimon_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_maimon_scan_single_port(
         src_ipv4,
         src_port,
@@ -651,7 +659,7 @@ pub fn tcp_maimon_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_maimon_scan_range_port(
         src_ipv4,
         src_port,
@@ -677,7 +685,7 @@ pub fn tcp_maimon_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_maimon_scan_subnet(
         src_ipv4,
         src_port,
@@ -710,7 +718,7 @@ pub fn tcp_idle_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_idle_scan_single_port(
         src_ipv4,
         src_port,
@@ -738,7 +746,7 @@ pub fn tcp_idle_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::TcpScanResults> {
+) -> Result<TcpScanResults> {
     scan::run_tcp_idle_scan_range_port(
         src_ipv4,
         src_port,
@@ -768,7 +776,7 @@ pub fn tcp_idle_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::TcpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
     scan::run_tcp_idle_scan_subnet(
         src_ipv4,
         src_port,
@@ -802,7 +810,7 @@ pub fn udp_scan_single_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::UdpScanResults> {
+) -> Result<UdpScanResults> {
     scan::run_udp_scan_single_port(
         src_ipv4,
         src_port,
@@ -826,7 +834,7 @@ pub fn udp_scan_range_port(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::UdpScanResults> {
+) -> Result<UdpScanResults> {
     scan::run_udp_scan_range_port(
         src_ipv4,
         src_port,
@@ -852,7 +860,7 @@ pub fn udp_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::UdpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, UdpScanResults>> {
     scan::run_udp_scan_subnet(
         src_ipv4,
         src_port,
@@ -878,7 +886,7 @@ pub fn ip_protocol_scan_host(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<scan::IpScanResults> {
+) -> Result<IpScanResults> {
     scan::run_ip_protocol_scan_host(
         src_ipv4,
         dst_ipv4,
@@ -899,11 +907,216 @@ pub fn ip_protocol_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, scan::IpScanResults>> {
+) -> Result<HashMap<Ipv4Addr, IpScanResults>> {
     scan::run_ip_procotol_scan_subnet(
         src_ipv4,
         subnet,
         protocol,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/* Ping */
+
+/// TCP SYN Ping.
+/// The function send an empty TCP packet with the SYN flag set.
+/// The destination port an alternate port can be specified as a parameter.
+/// A list of ports may be specified (e.g. 22-25,80,113,1050,35000), in which case probes will be attempted against each port in parallel.
+pub fn tcp_syn_ping_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<PingResults> {
+    ping::run_tcp_syn_ping_host(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_syn_ping_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_port: Option<u16>,
+    subnet: Ipv4Pool,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
+    ping::run_tcp_syn_ping_subnet(
+        src_ipv4,
+        src_port,
+        dst_port,
+        subnet,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// TCP ACK Ping.
+/// The TCP ACK ping is quite similar to the SYN ping.
+/// The difference, as you could likely guess, is that the TCP ACK flag is set instead of the SYN flag.
+/// Such an ACK packet purports to be acknowledging data over an established TCP connection, but no such connection exists.
+/// So remote hosts should always respond with a RST packet, disclosing their existence in the process.
+pub fn tcp_ack_ping_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<PingResults> {
+    ping::run_tcp_ack_ping_host(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_ack_ping_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_port: Option<u16>,
+    subnet: Ipv4Pool,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
+    ping::run_tcp_ack_ping_subnet(
+        src_ipv4,
+        src_port,
+        dst_port,
+        subnet,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// UDP Ping.
+/// Another host discovery option is the UDP ping, which sends a UDP packet to the given ports.
+/// If no ports are specified, the default is 125.
+/// A highly uncommon port is used by default because sending to open ports is often undesirable for this particular scan type.
+pub fn udp_ping_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<PingResults> {
+    ping::run_udp_ping_host(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn udp_ping_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_port: Option<u16>,
+    subnet: Ipv4Pool,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
+    ping::run_udp_ping_subnet(
+        src_ipv4,
+        src_port,
+        dst_port,
+        subnet,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+/// ICMP Ping.
+/// In addition to the unusual TCP and UDP host discovery types discussed previously, we can send the standard packets sent by the ubiquitous ping program.
+/// We sends an ICMP type 8 (echo request) packet to the target IP addresses, expecting a type 0 (echo reply) in return from available hosts.
+/// As noted at the beginning of this chapter, many hosts and firewalls now block these packets, rather than responding as required by RFC 1122.
+/// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
+/// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
+pub fn icmp_ping_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<PingResults> {
+    ping::run_icmp_ping_host(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn icmp_ping_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_port: Option<u16>,
+    subnet: Ipv4Pool,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
+    ping::run_icmp_ping_subnet(
+        src_ipv4,
+        src_port,
+        dst_port,
+        subnet,
         interface,
         threads_num,
         print_result,
@@ -923,7 +1136,7 @@ mod tests {
         println!("{:?}", rets);
     }
     #[test]
-    fn test_connect_scan_single_port() {
+    fn test_tcp_connect_scan_single_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
@@ -945,7 +1158,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_connect_scan_range_port() {
+    fn test_tcp_connect_scan_range_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
@@ -972,7 +1185,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_connect_scan_subnet() {
+    fn test_tcp_connect_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/30").unwrap();
@@ -999,43 +1212,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_connect_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
-        let src_port = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
-        let dst_port: u16 = 80;
-        // let interface: Option<&str> = Some("eno1");
-        let interface = None;
-        let print_result: bool = true;
-        let max_loop = Some(64);
-        let ret = tcp_connect_scan_single_port(
-            src_ipv4,
-            src_port,
-            dst_ipv4,
-            dst_port,
-            interface,
-            print_result,
-            None,
-            max_loop,
-        )
-        .unwrap();
-        println!("{:?}", ret);
-        let dst_port: u16 = 88;
-        let ret = tcp_connect_scan_single_port(
-            src_ipv4,
-            src_port,
-            dst_ipv4,
-            dst_port,
-            interface,
-            print_result,
-            None,
-            max_loop,
-        )
-        .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_syn_scan_single_port() {
+    fn test_tcp_syn_scan_single_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1052,7 +1229,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_syn_scan_range_port() {
+    fn test_tcp_syn_scan_range_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1064,7 +1241,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_syn_scan_subnet() {
+    fn test_tcp_syn_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
@@ -1078,7 +1255,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_fin_scan_single_port() {
+    fn test_tcp_fin_scan_single_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1092,7 +1269,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_fin_scan_range_port() {
+    fn test_tcp_fin_scan_range_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1104,7 +1281,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_fin_scan_subnet() {
+    fn test_tcp_fin_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
@@ -1118,7 +1295,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_ack_scan_single_port() {
+    fn test_tcp_ack_scan_single_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1132,7 +1309,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_ack_scan_range_port() {
+    fn test_tcp_ack_scan_range_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1144,7 +1321,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_ack_scan_subnet() {
+    fn test_tcp_ack_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
@@ -1158,7 +1335,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_null_scan_single_port() {
+    fn test_tcp_null_scan_single_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1169,7 +1346,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_null_scan_range_port() {
+    fn test_tcp_null_scan_range_port() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
@@ -1181,7 +1358,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_null_scan_subnet() {
+    fn test_tcp_null_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
@@ -1241,6 +1418,46 @@ mod tests {
         let protocol = IpNextHeaderProtocols::Udp;
         let ret =
             ip_protocol_scan_host(src_ipv4, dst_ipv4, protocol, i, true, None, max_loop).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_tcp_syn_ping_host() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = None;
+        let max_loop = None;
+        let ret =
+            tcp_syn_ping_host(src_ipv4, None, dst_ipv4, None, i, true, None, max_loop).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_tcp_syn_ping_subnet() {
+        let src_ipv4 = None;
+        let subnet = Ipv4Pool::new("192.168.1.0/29").unwrap();
+        let i = Some("ens33");
+        let max_loop = Some(16);
+        let ret =
+            tcp_syn_ping_subnet(src_ipv4, None, None, subnet, i, 0, true, None, max_loop).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_icmp_ping_host() {
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let i = None;
+        let max_loop = None;
+        let ret = icmp_ping_host(src_ipv4, None, dst_ipv4, None, i, true, None, max_loop).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_icmp_ping_subnet() {
+        let src_ipv4 = None;
+        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let i = Some("ens33");
+        let timeout = Some(Duration::from_secs_f32(0.5));
+        let max_loop = Some(4);
+        let ret =
+            icmp_ping_subnet(src_ipv4, None, None, subnet, i, 32, true, timeout, max_loop).unwrap();
         println!("{:?}", ret);
     }
 }
