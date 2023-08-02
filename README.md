@@ -16,4 +16,5 @@ I implement `pistol` transport layer scan according to the nmap [documentation](
 | TCP Window Scan    | [nmap references](https://nmap.org/book/scan-methods-window-scan.html)        |
 | TCP Maimon Scan    | [nmap references](https://nmap.org/book/scan-methods-maimon-scan.html)        |
 | TCP Idle Scan      | [nmap references](https://nmap.org/book/idlescan.html)                        |
+| IP Protocol Scan   | [nmap references](https://nmap.org/book/scan-methods-ip-protocol-scan.html)   |
 | UDP Scan           | [nmap references](https://nmap.org/book/scan-methods-udp-scan.html)           |

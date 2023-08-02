@@ -61,8 +61,8 @@ pub fn send_udp_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // udp header
-    let mut udp_packet = [0u8; UDP_HEADER_LEN + UDP_DATA_LEN];
-    let mut udp_header = MutableUdpPacket::new(&mut udp_packet[..]).unwrap();
+    let mut udp_buff = [0u8; UDP_HEADER_LEN + UDP_DATA_LEN];
+    let mut udp_header = MutableUdpPacket::new(&mut udp_buff[..]).unwrap();
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_LEN + UDP_DATA_LEN) as u16);
@@ -113,12 +113,12 @@ pub fn send_udp_scan_packet(
                                     destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
                                 ];
                                 let codes_2 = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                                    destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                    destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                    destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                    destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                    destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                ];
                                 if codes_1.contains(&icmp_code) {
                                     // icmp port unreachable error (type 3, code 3)
                                     return Ok(UdpScanStatus::Closed);

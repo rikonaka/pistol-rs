@@ -1,5 +1,6 @@
 use anyhow::Result;
 use pnet::datalink::MacAddr;
+use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::Ipv4Addr;
@@ -11,11 +12,14 @@ use subnetwork::Ipv4Pool;
 use crate::utils;
 
 pub mod arp;
+pub mod ip;
 pub mod tcp;
 pub mod udp;
 
 use tcp::TcpScanStatus;
 use udp::UdpScanStatus;
+
+use self::ip::IpScanStatus;
 
 #[derive(Debug, Clone, Copy)]
 enum TcpScanMethod {
@@ -67,7 +71,38 @@ impl fmt::Display for TcpScanResults {
             result_str += &str;
             result_str += "\n";
         }
-        write!(f, "can not found interface {}", result_str)
+        write!(f, "{}", result_str)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IpScanResults {
+    addr: Ipv4Addr,
+    results: HashMap<IpNextHeaderProtocol, IpScanStatus>,
+}
+
+impl IpScanResults {
+    pub fn new(addr: Ipv4Addr) -> IpScanResults {
+        let results = HashMap::new();
+        IpScanResults { addr, results }
+    }
+}
+
+impl fmt::Display for IpScanResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ip = self.addr;
+        let mut result_str = String::new();
+        for protocol in self.results.keys() {
+            let str = match self.results.get(protocol).unwrap() {
+                IpScanStatus::Open => format!("{ip} {protocol} open"),
+                IpScanStatus::Filtered => format!("{ip} {protocol} filtered"),
+                IpScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
+                IpScanStatus::Closed => format!("{ip} {protocol} closed"),
+            };
+            result_str += &str;
+            result_str += "\n";
+        }
+        write!(f, "{}", result_str)
     }
 }
 
@@ -99,7 +134,16 @@ impl fmt::Display for UdpScanResults {
             result_str += &str;
             result_str += "\n";
         }
-        write!(f, "can not found interface {}", result_str)
+        write!(f, "{}", result_str)
+    }
+}
+
+fn _ip_print_result(ip: Ipv4Addr, protocol: IpNextHeaderProtocol, ret: IpScanStatus) {
+    match ret {
+        IpScanStatus::Open => println!("{ip} {protocol} open"),
+        IpScanStatus::Filtered => println!("{ip} {protocol} filtered"),
+        IpScanStatus::OpenOrFiltered => println!("{ip} {protocol} open|filtered"),
+        IpScanStatus::Closed => println!("{ip} {protocol} closed"),
     }
 }
 
@@ -137,6 +181,7 @@ pub fn run_arp_scan_subnet(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_loop: Option<usize>,
 ) -> Result<ArpScanResults> {
     let (i, src_ip, src_mac, dst_mac) = if interface.is_some() {
         let (i, src_ip, src_mac) = utils::parse_interface(interface)?;
@@ -163,13 +208,15 @@ pub fn run_arp_scan_subnet(
     let (tx, rx) = channel();
     let pool = utils::get_threads_pool(threads_num);
     let mut recv_size = 0;
+    let max_loop = utils::get_max_loop(max_loop);
 
     for target_ip in subnet {
         recv_size += 1;
         let tx = tx.clone();
         let i = i.clone();
         pool.execute(move || {
-            let scan_ret = arp::send_arp_scan_packet(&i, &dst_mac, src_ip, src_mac, target_ip);
+            let scan_ret =
+                arp::send_arp_scan_packet(&i, &dst_mac, src_ip, src_mac, target_ip, max_loop);
             if print_result {
                 _arp_print_result(target_ip, scan_ret)
             }
@@ -1483,6 +1530,105 @@ pub fn run_udp_scan_subnet(
                 } else {
                     let mut v = UdpScanResults::new(dst_ipv4);
                     v.results.insert(dst_port, s);
+                    ret.insert(dst_ipv4, v);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(ret)
+}
+
+pub fn run_ip_protocol_scan_host(
+    src_ipv4: Option<Ipv4Addr>,
+    dst_ipv4: Ipv4Addr,
+    protocol: IpNextHeaderProtocol,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<IpScanResults> {
+    let src_ipv4 = if src_ipv4.is_none() {
+        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+        src_ipv4
+    } else {
+        src_ipv4.unwrap()
+    };
+
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+
+    let scan_ret_with_error =
+        ip::send_ip_procotol_scan_packet(src_ipv4, dst_ipv4, protocol, timeout, max_loop);
+    if print_result {
+        match scan_ret_with_error {
+            Ok(s) => _ip_print_result(dst_ipv4, protocol, s),
+            _ => (),
+        }
+    }
+    let mut ret = IpScanResults::new(dst_ipv4);
+
+    match scan_ret_with_error {
+        Ok(s) => ret.results.insert(protocol, s),
+        Err(e) => return Err(e),
+    };
+    Ok(ret)
+}
+
+pub fn run_ip_procotol_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    subnet: Ipv4Pool,
+    protocol: IpNextHeaderProtocol,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, IpScanResults>> {
+    let src_ipv4 = if src_ipv4.is_none() {
+        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+        src_ipv4
+    } else {
+        src_ipv4.unwrap()
+    };
+
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+
+    for dst_ipv4 in subnet {
+        if dst_ipv4 != src_ipv4 {
+            recv_size += 1;
+            let tx = tx.clone();
+            pool.execute(move || {
+                let scan_ret_with_error = ip::send_ip_procotol_scan_packet(
+                    src_ipv4, dst_ipv4, protocol, timeout, max_loop,
+                );
+                if print_result {
+                    match scan_ret_with_error {
+                        Ok(s) => _ip_print_result(dst_ipv4, protocol, s),
+                        _ => (),
+                    }
+                }
+                match tx.send((dst_ipv4, protocol, scan_ret_with_error)) {
+                    _ => (),
+                }
+            })
+        }
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret: HashMap<Ipv4Addr, IpScanResults> = HashMap::new();
+
+    for (dst_ipv4, protocol, scan_ret_with_error) in iter {
+        match scan_ret_with_error {
+            Ok(s) => {
+                if ret.contains_key(&dst_ipv4) {
+                    ret.get_mut(&dst_ipv4).unwrap().results.insert(protocol, s);
+                } else {
+                    let mut v = IpScanResults::new(dst_ipv4);
+                    v.results.insert(protocol, s);
                     ret.insert(dst_ipv4, v);
                 }
             }

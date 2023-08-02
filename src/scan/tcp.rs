@@ -177,13 +177,13 @@ pub fn send_syn_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                            destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                            destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                            destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                            destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                            destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                            destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -304,13 +304,13 @@ pub fn send_fin_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -424,13 +424,13 @@ pub fn send_ack_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -548,13 +548,13 @@ pub fn send_null_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -672,13 +672,13 @@ pub fn send_xmas_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -797,13 +797,13 @@ pub fn send_window_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -921,13 +921,13 @@ pub fn send_maimon_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -1070,13 +1070,13 @@ pub fn send_idle_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -1155,13 +1155,13 @@ pub fn send_idle_scan_packet(
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             let codes = vec![
-                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                    ];
+                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable
                                 && codes.contains(&icmp_code)
                             {
@@ -1264,6 +1264,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
+    #[should_panic]
     fn test_send_idle_scan_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);

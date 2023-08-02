@@ -1,9 +1,11 @@
 use anyhow::Result;
+use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 
+mod flood;
 mod scan;
 mod utils;
 
@@ -19,9 +21,17 @@ pub fn arp_scan_subnet(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
+    max_loop: Option<usize>,
 ) -> Result<scan::ArpScanResults> {
     let subnet = Ipv4Pool::new(subnet).unwrap();
-    scan::run_arp_scan_subnet(subnet, dstaddr, interface, threads_num, print_result)
+    scan::run_arp_scan_subnet(
+        subnet,
+        dstaddr,
+        interface,
+        threads_num,
+        print_result,
+        max_loop,
+    )
 }
 
 /// TCP Connect() Scan.
@@ -857,6 +867,51 @@ pub fn udp_scan_subnet(
     )
 }
 
+/// IP Protocol Scan.
+/// IP protocol scan allows you to determine which IP protocols (TCP, ICMP, IGMP, etc.) are supported by target machines.
+/// This isn't technically a port scan, since it cycles through IP protocol numbers rather than TCP or UDP port numbers.
+pub fn ip_protocol_scan_host(
+    src_ipv4: Option<Ipv4Addr>,
+    dst_ipv4: Ipv4Addr,
+    protocol: IpNextHeaderProtocol,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<scan::IpScanResults> {
+    scan::run_ip_protocol_scan_host(
+        src_ipv4,
+        dst_ipv4,
+        protocol,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn ip_protocol_scan_subnet(
+    src_ipv4: Option<Ipv4Addr>,
+    subnet: Ipv4Pool,
+    protocol: IpNextHeaderProtocol,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<Ipv4Addr, scan::IpScanResults>> {
+    scan::run_ip_procotol_scan_subnet(
+        src_ipv4,
+        subnet,
+        protocol,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -864,7 +919,7 @@ mod tests {
     fn test_arp_scan_subnet() {
         // let interface = Some("ens33");
         let interface = None;
-        let rets = arp_scan_subnet("192.168.1.0/24", None, interface, 0, true).unwrap();
+        let rets = arp_scan_subnet("192.168.1.0/24", None, interface, 0, true, None).unwrap();
         println!("{:?}", rets);
     }
     #[test]
@@ -920,7 +975,7 @@ mod tests {
     fn test_connect_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
-        let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/30").unwrap();
         let start_port: u16 = 80;
         let end_port: u16 = 82;
         // let interface: Option<&str> = Some("eno1");
@@ -1012,7 +1067,7 @@ mod tests {
     fn test_syn_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
         let i = None;
         let max_loop = Some(64);
@@ -1052,7 +1107,7 @@ mod tests {
     fn test_fin_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
         let i = None;
         let max_loop = Some(64);
@@ -1092,7 +1147,7 @@ mod tests {
     fn test_ack_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
         let i = None;
         let max_loop = Some(64);
@@ -1129,7 +1184,7 @@ mod tests {
     fn test_null_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
         let i = None;
         let max_loop = Some(64);
@@ -1165,7 +1220,7 @@ mod tests {
     fn test_udp_scan_subnet() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
         let src_port = None;
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
         let i = None;
         let max_loop = Some(64);
@@ -1173,6 +1228,19 @@ mod tests {
             src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
         )
         .unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_ip_scan_host() {
+        use pnet::packet::ip::IpNextHeaderProtocols;
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 110));
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        // let i = Some("eno1");
+        let i = None;
+        let max_loop = None;
+        let protocol = IpNextHeaderProtocols::Udp;
+        let ret =
+            ip_protocol_scan_host(src_ipv4, dst_ipv4, protocol, i, true, None, max_loop).unwrap();
         println!("{:?}", ret);
     }
 }

@@ -5,14 +5,13 @@ use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::{MutablePacket, Packet};
 use std::net::Ipv4Addr;
 
-const ARP_SCAN_MAX_LOOP_TIME: usize = 32;
-
 pub fn send_arp_scan_packet(
     interface: &NetworkInterface,
     dstaddr: &MacAddr,
     source_ip: Ipv4Addr,
     source_mac: MacAddr,
     target_ip: Ipv4Addr,
+    max_loop: usize,
 ) -> Option<MacAddr> {
     let (mut sender, mut receiver) = match channel(&interface, Default::default()) {
         Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
@@ -49,7 +48,7 @@ pub fn send_arp_scan_packet(
         _ => (),
     }
 
-    for _ in 0..ARP_SCAN_MAX_LOOP_TIME {
+    for _ in 0..max_loop {
         let buf = receiver.next().unwrap();
         let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
         if arp.get_sender_proto_addr() == target_ip && arp.get_target_hw_addr() == source_mac {
@@ -62,16 +61,16 @@ pub fn send_arp_scan_packet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils;
     #[test]
     fn test_send_arp_scan_packet() {
+        use crate::utils;
         let interface: NetworkInterface = utils::find_interface_by_name("ens33").unwrap();
         let dstaddr: MacAddr = MacAddr::broadcast();
         let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 110);
         let source_mac: MacAddr = interface.mac.unwrap();
         let target_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
-        let ret =
-            send_arp_scan_packet(&interface, &dstaddr, source_ip, source_mac, target_ip).unwrap();
+        let ret = send_arp_scan_packet(&interface, &dstaddr, source_ip, source_mac, target_ip, 32)
+            .unwrap();
         println!("{:?}", ret);
     }
 }
