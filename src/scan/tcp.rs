@@ -1200,8 +1200,8 @@ mod tests {
     fn test_send_syn_scan_packet() {
         // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let timeout = Duration::from_secs(1);
         let max_loop = 4;
         let ret = send_syn_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop).unwrap();
@@ -1211,8 +1211,8 @@ mod tests {
     fn test_send_fin_scan_packet() {
         // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_fin_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -1220,8 +1220,8 @@ mod tests {
     }
     #[test]
     fn test_send_ack_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_ack_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -1229,8 +1229,8 @@ mod tests {
     }
     #[test]
     fn test_send_null_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_null_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -1238,8 +1238,8 @@ mod tests {
     }
     #[test]
     fn test_send_window_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_window_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -1248,8 +1248,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_send_idle_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let zombie_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
 
         let src_port = utils::random_port();
@@ -1273,8 +1273,8 @@ mod tests {
     }
     #[test]
     fn test_send_tcp_handshark() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 110);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let timeout = Duration::from_secs(10);
         let max_loop = 64;
         let src_port = utils::random_port();
