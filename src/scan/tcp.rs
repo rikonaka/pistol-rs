@@ -5,8 +5,6 @@ use pnet::packet::ipv4::{checksum, Ipv4Flags, Ipv4Packet, MutableIpv4Packet};
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags, TcpPacket};
 use pnet::packet::Packet;
 use pnet::transport::TransportChannelType::Layer3;
-// use pnet::transport::TransportChannelType::Layer4;
-// use pnet::transport::TransportProtocol::Ipv4;
 use pnet::transport::{ipv4_packet_iter, transport_channel};
 use rand::Rng;
 use std::error::Error;
@@ -17,24 +15,13 @@ use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::Duration;
 
+use crate::scan::ICMP_BUFF_SIZE;
+use crate::scan::IPV4_HEADER_LEN;
+use crate::scan::IP_TTL;
+use crate::scan::TCP_BUFF_SIZE;
+use crate::scan::TCP_DATA_LEN;
+use crate::scan::TCP_HEADER_LEN;
 use crate::utils;
-
-const IPV4_HEADER_LEN: usize = 20;
-const TCP_HEADER_LEN: usize = 20;
-const TCP_DATA_LEN: usize = 0;
-const TCP_BUFF_SIZE: usize = 4096;
-const ICMP_BUFF_SIZE: usize = 4096;
-
-#[derive(Debug, Clone, Copy)]
-pub enum TcpScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-    Unfiltered,
-    Unreachable,
-    ClosedOrFiltered,
-}
 
 /* IdleScanAllZeroError */
 #[derive(Debug, Clone)]
@@ -59,6 +46,17 @@ impl IdleScanAllZeroError {
 }
 
 impl Error for IdleScanAllZeroError {}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TcpScanStatus {
+    Open,
+    Closed,
+    Filtered,
+    OpenOrFiltered,
+    Unfiltered,
+    Unreachable,
+    ClosedOrFiltered,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct IdleScanResults {
@@ -103,7 +101,7 @@ pub fn send_syn_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -228,7 +226,7 @@ pub fn send_fin_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -353,7 +351,7 @@ pub fn send_ack_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -471,7 +469,7 @@ pub fn send_null_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -593,7 +591,7 @@ pub fn send_xmas_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -715,7 +713,7 @@ pub fn send_window_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -838,7 +836,7 @@ pub fn send_maimon_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -957,7 +955,7 @@ pub fn send_idle_scan_packet(
         let id = utils::random_u16();
         ip_header.set_identification(id);
         ip_header.set_flags(Ipv4Flags::DontFragment);
-        ip_header.set_ttl(52);
+        ip_header.set_ttl(IP_TTL);
         ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
         let c = checksum(&ip_header.to_immutable());
         ip_header.set_checksum(c);

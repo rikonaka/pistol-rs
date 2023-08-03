@@ -16,10 +16,27 @@ pub mod ip;
 pub mod tcp;
 pub mod udp;
 
+use ip::IpScanStatus;
 use tcp::TcpScanStatus;
 use udp::UdpScanStatus;
 
-use self::ip::IpScanStatus;
+pub const IP_TTL: u8 = 64;
+
+pub const BUFF_SIZE: usize = 4096;
+pub const TCP_BUFF_SIZE: usize = 4096;
+pub const UDP_BUFF_SIZE: usize = 4096;
+
+pub const IPV4_HEADER_LEN: usize = 20;
+pub const ICMP_BUFF_SIZE: usize = 4096;
+
+pub const TCP_HEADER_LEN: usize = 20;
+pub const TCP_DATA_LEN: usize = 0;
+
+pub const UDP_HEADER_LEN: usize = 8;
+pub const UDP_DATA_LEN: usize = 0;
+
+pub const ICMP_HEADER_LEN: usize = 8;
+pub const ICMP_DATA_LEN: usize = 0;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TcpScanMethod {

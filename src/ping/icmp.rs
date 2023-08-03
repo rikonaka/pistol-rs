@@ -14,12 +14,11 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::ping::PingStatus;
+use crate::ping::ICMP_BUFF_SIZE;
+use crate::ping::ICMP_DATA_LEN;
+use crate::ping::ICMP_HEADER_LEN;
+use crate::ping::IPV4_HEADER_LEN;
 use crate::utils;
-
-const ICMP_BUFF_SIZE: usize = 4096;
-const IPV4_HEADER_LEN: usize = 20;
-const ICMP_HEADER_LEN: usize = 8;
-const ICMP_DATA_LEN: usize = 0;
 
 pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,

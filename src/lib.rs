@@ -1125,6 +1125,24 @@ pub fn icmp_ping_subnet(
     )
 }
 
+pub fn icmp_flood_host(
+    src_ipv4: Option<Ipv4Addr>,
+    dst_ipv4: Ipv4Addr,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_packet_num: usize,
+) -> Result<()> {
+    flood::run_icmp_flood(
+        src_ipv4,
+        dst_ipv4,
+        interface,
+        threads_num,
+        print_result,
+        max_packet_num,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

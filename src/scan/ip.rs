@@ -12,20 +12,17 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
+use crate::scan::BUFF_SIZE;
+use crate::scan::ICMP_BUFF_SIZE;
+use crate::scan::ICMP_DATA_LEN;
+use crate::scan::ICMP_HEADER_LEN;
+use crate::scan::IPV4_HEADER_LEN;
+use crate::scan::IP_TTL;
+use crate::scan::TCP_DATA_LEN;
+use crate::scan::TCP_HEADER_LEN;
+use crate::scan::UDP_DATA_LEN;
+use crate::scan::UDP_HEADER_LEN;
 use crate::utils;
-
-const BUFF_SIZE: usize = 4096;
-const IPV4_HEADER_LEN: usize = 20;
-const ICMP_BUFF_SIZE: usize = 4096;
-
-const TCP_HEADER_LEN: usize = 20;
-const TCP_DATA_LEN: usize = 0;
-
-const UDP_HEADER_LEN: usize = 8;
-const UDP_DATA_LEN: usize = 0;
-
-const ICMP_HEADER_LEN: usize = 8;
-const ICMP_DATA_LEN: usize = 0;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IpScanStatus {
@@ -109,7 +106,7 @@ pub fn send_ip_procotol_scan_packet(
             let id = utils::random_u16();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
-            ip_header.set_ttl(52);
+            ip_header.set_ttl(IP_TTL);
             ip_header.set_next_level_protocol(protocol);
             let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
@@ -130,7 +127,7 @@ pub fn send_ip_procotol_scan_packet(
             let id = utils::random_u16();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
-            ip_header.set_ttl(52);
+            ip_header.set_ttl(IP_TTL);
             ip_header.set_next_level_protocol(protocol);
             let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
@@ -153,7 +150,7 @@ pub fn send_ip_procotol_scan_packet(
             let id = utils::random_u16();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
-            ip_header.set_ttl(52);
+            ip_header.set_ttl(IP_TTL);
             ip_header.set_next_level_protocol(protocol);
             let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);
@@ -176,7 +173,7 @@ pub fn send_ip_procotol_scan_packet(
             let id = utils::random_u16();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
-            ip_header.set_ttl(52);
+            ip_header.set_ttl(IP_TTL);
             ip_header.set_next_level_protocol(protocol);
             let c = ipv4::checksum(&ip_header.to_immutable());
             ip_header.set_checksum(c);

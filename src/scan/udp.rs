@@ -9,20 +9,20 @@ use pnet::transport::{ipv4_packet_iter, transport_channel};
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
+use crate::scan::ICMP_BUFF_SIZE;
+use crate::scan::IPV4_HEADER_LEN;
+use crate::scan::IP_TTL;
+use crate::scan::UDP_BUFF_SIZE;
+use crate::scan::UDP_DATA_LEN;
+use crate::scan::UDP_HEADER_LEN;
 use crate::utils;
-
-const IPV4_HEADER_LEN: usize = 20;
-const UDP_HEADER_LEN: usize = 8;
-const UDP_DATA_LEN: usize = 0;
-const UDP_BUFF_SIZE: usize = 4096;
-const ICMP_BUFF_SIZE: usize = 4096;
 
 #[derive(Debug, Clone, Copy)]
 pub enum UdpScanStatus {
     Open,
-    OpenOrFiltered,
     Closed,
     Filtered,
+    OpenOrFiltered,
 }
 
 pub fn send_udp_scan_packet(
@@ -53,7 +53,7 @@ pub fn send_udp_scan_packet(
     let id = utils::random_u16();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(52);
+    ip_header.set_ttl(IP_TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Udp);
     let c = checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);

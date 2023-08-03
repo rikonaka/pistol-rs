@@ -15,6 +15,10 @@ use crate::utils;
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;
 const UDP_PING_DEFAULT_PORT: u16 = 125;
+const ICMP_BUFF_SIZE: usize = 4096;
+const IPV4_HEADER_LEN: usize = 20;
+const ICMP_HEADER_LEN: usize = 8;
+const ICMP_DATA_LEN: usize = 0;
 
 pub enum TcpPingMethods {
     Syn,
