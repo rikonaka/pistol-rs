@@ -1,6 +1,6 @@
 [package]
 name = "pistol"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 description = "An implementation of a subset of the nmap scanning tool"
@@ -8,7 +8,7 @@ homepage = "https://github.com/rikonaka/pistol-rs"
 documentation = "https://docs.rs/pistol"
 repository = "https://github.com/rikonaka/pistol-rs"
 readme = "README.md"
-keywords = ["net", "scapy", "nmap"]
+keywords = ["port scan", "host discovery", "penetration test", "cybersecurity", "nmap"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
