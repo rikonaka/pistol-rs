@@ -16,14 +16,14 @@ pub const TCP_HEADER_LEN: usize = 20;
 pub const TCP_DATA_LEN: usize = 0;
 pub const IP_TTL: u8 = 64;
 
-pub enum FloodMethods {
+enum FloodMethods {
     Icmp,
     Syn,
     Ack,
     Udp,
 }
 
-pub fn _run_flood(
+fn _run_flood(
     method: FloodMethods,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use std::collections::HashMap;
-use std::fmt;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
@@ -9,6 +8,8 @@ pub mod icmp;
 
 use crate::scan;
 use crate::utils;
+use crate::PingResults;
+use crate::PingStatus;
 use crate::TcpScanStatus;
 use crate::UdpScanStatus;
 
@@ -20,37 +21,11 @@ const IPV4_HEADER_LEN: usize = 20;
 const ICMP_HEADER_LEN: usize = 8;
 const ICMP_DATA_LEN: usize = 0;
 
-pub enum TcpPingMethods {
+enum TcpPingMethods {
     Syn,
     Ack,
     Udp,
     Icmp,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PingStatus {
-    Up,
-    Down,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PingResults {
-    pub addr: Ipv4Addr,
-    pub status: PingStatus,
-}
-
-impl fmt::Display for PingResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        let str = match self.status {
-            PingStatus::Up => format!("{ip} up"),
-            PingStatus::Down => format!("{ip} down"),
-        };
-        result_str += &str;
-        result_str += "\n";
-        write!(f, "{}", result_str)
-    }
 }
 
 fn _print_icmp_result(addr: Ipv4Addr, status: PingStatus) {

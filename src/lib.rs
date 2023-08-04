@@ -1,7 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use anyhow::Result;
-use ping::PingResults;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
@@ -14,6 +13,32 @@ mod flood;
 mod ping;
 mod scan;
 mod utils;
+
+#[derive(Debug, Clone, Copy)]
+pub enum PingStatus {
+    Up,
+    Down,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PingResults {
+    pub addr: Ipv4Addr,
+    pub status: PingStatus,
+}
+
+impl fmt::Display for PingResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ip = self.addr;
+        let mut result_str = String::new();
+        let str = match self.status {
+            PingStatus::Up => format!("{ip} up"),
+            PingStatus::Down => format!("{ip} down"),
+        };
+        result_str += &str;
+        result_str += "\n";
+        write!(f, "{}", result_str)
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum IpScanStatus {
