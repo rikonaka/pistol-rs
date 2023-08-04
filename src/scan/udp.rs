@@ -16,14 +16,7 @@ use crate::scan::UDP_BUFF_SIZE;
 use crate::scan::UDP_DATA_LEN;
 use crate::scan::UDP_HEADER_LEN;
 use crate::utils;
-
-#[derive(Debug, Clone, Copy)]
-pub enum UdpScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-}
+use crate::UdpScanStatus;
 
 pub fn send_udp_scan_packet(
     src_ipv4: Ipv4Addr,

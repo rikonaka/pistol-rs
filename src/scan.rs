@@ -2,7 +2,6 @@ use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
-use std::fmt;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::mpsc::channel;
@@ -16,9 +15,13 @@ pub mod ip;
 pub mod tcp;
 pub mod udp;
 
-use ip::IpScanStatus;
-use tcp::TcpScanStatus;
-use udp::UdpScanStatus;
+use crate::ArpScanResults;
+use crate::IpScanResults;
+use crate::IpScanStatus;
+use crate::TcpScanResults;
+use crate::TcpScanStatus;
+use crate::UdpScanResults;
+use crate::UdpScanStatus;
 
 pub const IP_TTL: u8 = 64;
 
@@ -39,7 +42,7 @@ pub const ICMP_HEADER_LEN: usize = 8;
 pub const ICMP_DATA_LEN: usize = 0;
 
 #[derive(Debug, Clone, Copy)]
-pub enum TcpScanMethod {
+enum TcpScanMethod {
     Connect,
     Syn,
     Fin,
@@ -49,108 +52,6 @@ pub enum TcpScanMethod {
     Window,
     Maimon,
     Idle,
-}
-
-#[derive(Debug, Clone)]
-pub struct ArpScanResults {
-    pub alive_hosts_num: usize,
-    pub alive_hosts: HashMap<Ipv4Addr, Option<MacAddr>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TcpScanResults {
-    pub addr: Ipv4Addr,
-    pub results: HashMap<u16, TcpScanStatus>,
-}
-
-impl TcpScanResults {
-    pub fn new(addr: Ipv4Addr) -> TcpScanResults {
-        let results = HashMap::new();
-        TcpScanResults { addr, results }
-    }
-}
-
-impl fmt::Display for TcpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        for port in self.results.keys() {
-            let str = match self.results.get(port).unwrap() {
-                TcpScanStatus::Open => format!("{ip} {port} open"),
-                TcpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
-                TcpScanStatus::Filtered => format!("{ip} {port} filtered"),
-                TcpScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
-                TcpScanStatus::Closed => format!("{ip} {port} closed"),
-                TcpScanStatus::Unreachable => format!("{ip} {port} unreachable"),
-                TcpScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
-            };
-            result_str += &str;
-            result_str += "\n";
-        }
-        write!(f, "{}", result_str)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct IpScanResults {
-    pub addr: Ipv4Addr,
-    pub results: HashMap<IpNextHeaderProtocol, IpScanStatus>,
-}
-
-impl IpScanResults {
-    pub fn new(addr: Ipv4Addr) -> IpScanResults {
-        let results = HashMap::new();
-        IpScanResults { addr, results }
-    }
-}
-
-impl fmt::Display for IpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        for protocol in self.results.keys() {
-            let str = match self.results.get(protocol).unwrap() {
-                IpScanStatus::Open => format!("{ip} {protocol} open"),
-                IpScanStatus::Filtered => format!("{ip} {protocol} filtered"),
-                IpScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
-                IpScanStatus::Closed => format!("{ip} {protocol} closed"),
-            };
-            result_str += &str;
-            result_str += "\n";
-        }
-        write!(f, "{}", result_str)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct UdpScanResults {
-    pub addr: Ipv4Addr,
-    pub results: HashMap<u16, UdpScanStatus>,
-}
-
-impl UdpScanResults {
-    pub fn new(addr: Ipv4Addr) -> UdpScanResults {
-        let results = HashMap::new();
-        UdpScanResults { addr, results }
-    }
-}
-
-impl fmt::Display for UdpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        for port in self.results.keys() {
-            let str = match self.results.get(port).unwrap() {
-                UdpScanStatus::Open => format!("{ip} {port} open"),
-                UdpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
-                UdpScanStatus::Filtered => format!("{ip} {port} filtered"),
-                UdpScanStatus::Closed => format!("{ip} {port} closed"),
-            };
-            result_str += &str;
-            result_str += "\n";
-        }
-        write!(f, "{}", result_str)
-    }
 }
 
 fn _ip_print_result(ip: Ipv4Addr, protocol: IpNextHeaderProtocol, ret: IpScanStatus) {

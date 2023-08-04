@@ -23,14 +23,7 @@ use crate::scan::TCP_HEADER_LEN;
 use crate::scan::UDP_DATA_LEN;
 use crate::scan::UDP_HEADER_LEN;
 use crate::utils;
-
-#[derive(Debug, Clone, Copy)]
-pub enum IpScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-}
+use crate::IpScanStatus;
 
 fn _build_tcp_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Vec<u8> {
     // tcp header

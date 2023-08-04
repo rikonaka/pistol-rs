@@ -22,10 +22,12 @@ use crate::scan::TCP_BUFF_SIZE;
 use crate::scan::TCP_DATA_LEN;
 use crate::scan::TCP_HEADER_LEN;
 use crate::utils;
+use crate::IdleScanResults;
+use crate::TcpScanStatus;
 
 /* IdleScanAllZeroError */
 #[derive(Debug, Clone)]
-pub struct IdleScanAllZeroError {
+struct IdleScanAllZeroError {
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
 }
@@ -46,23 +48,6 @@ impl IdleScanAllZeroError {
 }
 
 impl Error for IdleScanAllZeroError {}
-
-#[derive(Debug, Clone, Copy)]
-pub enum TcpScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-    Unfiltered,
-    Unreachable,
-    ClosedOrFiltered,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct IdleScanResults {
-    pub zombie_ip_id_1: u16,
-    pub zombie_ip_id_2: u16,
-}
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
 // const TCP_FLAGS_ECE_MASK: u8 = 0b01000000;

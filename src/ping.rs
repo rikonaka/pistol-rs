@@ -8,9 +8,9 @@ use subnetwork::Ipv4Pool;
 pub mod icmp;
 
 use crate::scan;
-use crate::scan::tcp::TcpScanStatus;
-use crate::scan::udp::UdpScanStatus;
 use crate::utils;
+use crate::TcpScanStatus;
+use crate::UdpScanStatus;
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;
