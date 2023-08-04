@@ -4,14 +4,14 @@
 
 I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
-| Methods              | Detailed Documentation                                                                          | Notes   |
-| :------------------- | :---------------------------------------------------------------------------------------------- | :------ |
-| [x] TCP SYN Ping     | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       |         |
-| [x] TCP ACK Ping     | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       |         |
-| [x] UDP Ping         | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       |         |
-| [x] ICMP Ping        | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) |         |
-| [x] ARP Scan         | [namp references](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                |         |
-| [ ] IP Protocol Ping | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Useless |
+| Methods              | Detailed Documentation                                                                          | Notes                           |
+| :------------------- | :---------------------------------------------------------------------------------------------- | :------------------------------ |
+| [x] TCP SYN Ping     | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       |                                 |
+| [x] TCP ACK Ping     | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       |                                 |
+| [x] UDP Ping         | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       |                                 |
+| [x] ICMP Ping        | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) |                                 |
+| [x] ARP Scan         | [namp references](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                |                                 |
+| [ ] IP Protocol Ping | [namp references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful |
 
 ## Port Scanning Techniques and Algorithms
 
