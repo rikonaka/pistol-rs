@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![doc = include_str!("lib.md")]
 use anyhow::Result;
 use ping::PingResults;
 use pnet::packet::ip::IpNextHeaderProtocol;
@@ -1131,7 +1133,8 @@ pub fn icmp_flood_host(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    max_packet_num: usize,
+    max_same_packet: usize,
+    max_flood_packet: usize,
 ) -> Result<()> {
     flood::run_icmp_flood(
         src_ipv4,
@@ -1139,7 +1142,80 @@ pub fn icmp_flood_host(
         interface,
         threads_num,
         print_result,
-        max_packet_num,
+        max_same_packet,
+        max_flood_packet,
+    )
+}
+
+pub fn tcp_syn_flood_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<()> {
+    flood::run_tcp_syn_flood(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        threads_num,
+        print_result,
+        max_same_packet,
+        max_flood_packet,
+    )
+}
+
+pub fn tcp_ack_flood_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<()> {
+    flood::run_tcp_ack_flood(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        threads_num,
+        print_result,
+        max_same_packet,
+        max_flood_packet,
+    )
+}
+
+pub fn udp_flood_host(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<()> {
+    flood::run_udp_flood(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        threads_num,
+        print_result,
+        max_same_packet,
+        max_flood_packet,
     )
 }
 

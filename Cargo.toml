@@ -3,18 +3,18 @@ name = "pistol"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Lets you customize network packages"
+description = "An implementation of a subset of the nmap scanning tool"
 homepage = "https://github.com/rikonaka/pistol-rs"
 documentation = "https://docs.rs/pistol"
 repository = "https://github.com/rikonaka/pistol-rs"
 readme = "README.md"
-keywords = ["net", "scapy"]
+keywords = ["net", "scapy", "nmap"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.72"
-num_cpus = "1.16.0"
+anyhow = "^1"
+num_cpus = "^1"
 pnet = "^0"
 pnet_datalink = "^0"
 pnet_macros_support = "^0"

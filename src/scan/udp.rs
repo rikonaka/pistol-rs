@@ -27,8 +27,8 @@ pub enum UdpScanStatus {
 
 pub fn send_udp_scan_packet(
     src_ipv4: Ipv4Addr,
-    dst_ipv4: Ipv4Addr,
     src_port: u16,
+    dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
     max_loop: usize,
@@ -148,7 +148,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let max_loop = 32;
         let timeout = Duration::from_secs(1);
-        let ret = send_udp_scan_packet(src_ipv4, dst_ipv4, 54422, 53, timeout, max_loop).unwrap();
+        let ret = send_udp_scan_packet(src_ipv4, 54321, dst_ipv4, 53, timeout, max_loop).unwrap();
         println!("{:?}", ret);
     }
 }

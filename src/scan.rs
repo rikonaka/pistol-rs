@@ -1366,7 +1366,7 @@ pub fn run_udp_scan_single_port(
     let max_loop = utils::get_max_loop(max_loop);
     let timeout = utils::get_timeout(timeout);
     let scan_ret = match udp::send_udp_scan_packet(
-        src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+        src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
     ) {
         Ok(s) => s,
         Err(e) => return Err(e.into()),
@@ -1419,7 +1419,7 @@ pub fn run_udp_scan_range_port(
         let tx = tx.clone();
         pool.execute(move || {
             let scan_ret_with_error = udp::send_udp_scan_packet(
-                src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             );
             if print_result {
                 match scan_ret_with_error {
@@ -1482,7 +1482,7 @@ pub fn run_udp_scan_subnet(
                 let tx = tx.clone();
                 pool.execute(move || {
                     let scan_ret_with_error = udp::send_udp_scan_packet(
-                        src_ipv4, dst_ipv4, src_port, dst_port, timeout, max_loop,
+                        src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
                     );
                     if print_result {
                         match scan_ret_with_error {
