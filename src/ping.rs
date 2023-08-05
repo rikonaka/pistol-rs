@@ -111,7 +111,7 @@ fn _run_tcp_ping_host(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::run_tcp_syn_scan_single_port(
+            let scan_ret = scan::tcp_syn_scan_single_port(
                 src_ipv4,
                 src_port,
                 dst_ipv4,
@@ -132,7 +132,7 @@ fn _run_tcp_ping_host(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::run_tcp_ack_scan_single_port(
+            let scan_ret = scan::tcp_ack_scan_single_port(
                 src_ipv4,
                 src_port,
                 dst_ipv4,
@@ -153,7 +153,7 @@ fn _run_tcp_ping_host(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::run_udp_scan_single_port(
+            let scan_ret = scan::udp_scan_single_port(
                 src_ipv4,
                 src_port,
                 dst_ipv4,
@@ -205,7 +205,7 @@ fn _run_tcp_ping_subnet(
             };
             let start_port = dst_port;
             let end_port = dst_port;
-            let scan_ret = scan::run_tcp_syn_scan_subnet(
+            let scan_ret = scan::tcp_syn_scan_subnet(
                 src_ipv4,
                 src_port,
                 subnet,
@@ -242,7 +242,7 @@ fn _run_tcp_ping_subnet(
             };
             let start_port = dst_port;
             let end_port = dst_port;
-            let scan_ret = scan::run_tcp_ack_scan_subnet(
+            let scan_ret = scan::tcp_ack_scan_subnet(
                 src_ipv4,
                 src_port,
                 subnet,
@@ -279,7 +279,7 @@ fn _run_tcp_ping_subnet(
             };
             let start_port = dst_port;
             let end_port = dst_port;
-            let scan_ret = scan::run_udp_scan_subnet(
+            let scan_ret = scan::udp_scan_subnet(
                 src_ipv4,
                 src_port,
                 subnet,
@@ -315,7 +315,7 @@ fn _run_tcp_ping_subnet(
     Ok(ret)
 }
 
-pub fn run_tcp_syn_ping_host(
+pub fn tcp_syn_ping_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -338,7 +338,7 @@ pub fn run_tcp_syn_ping_host(
     )
 }
 
-pub fn run_tcp_syn_ping_subnet(
+pub fn tcp_syn_ping_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_port: Option<u16>,
@@ -363,7 +363,7 @@ pub fn run_tcp_syn_ping_subnet(
     )
 }
 
-pub fn run_tcp_ack_ping_host(
+pub fn tcp_ack_ping_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -386,7 +386,7 @@ pub fn run_tcp_ack_ping_host(
     )
 }
 
-pub fn run_tcp_ack_ping_subnet(
+pub fn tcp_ack_ping_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_port: Option<u16>,
@@ -411,7 +411,7 @@ pub fn run_tcp_ack_ping_subnet(
     )
 }
 
-pub fn run_udp_ping_host(
+pub fn udp_ping_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -434,7 +434,7 @@ pub fn run_udp_ping_host(
     )
 }
 
-pub fn run_udp_ping_subnet(
+pub fn udp_ping_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_port: Option<u16>,
@@ -459,7 +459,7 @@ pub fn run_udp_ping_subnet(
     )
 }
 
-pub fn run_icmp_ping_host(
+pub fn icmp_ping_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -482,7 +482,7 @@ pub fn run_icmp_ping_host(
     )
 }
 
-pub fn run_icmp_ping_subnet(
+pub fn icmp_ping_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_port: Option<u16>,

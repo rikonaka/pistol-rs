@@ -92,7 +92,7 @@ fn _run_flood(
     Ok(())
 }
 
-pub fn run_icmp_flood(
+pub fn icmp_flood_host(
     src_ipv4: Option<Ipv4Addr>,
     dst_ipv4: Ipv4Addr,
     interface: Option<&str>,
@@ -115,7 +115,7 @@ pub fn run_icmp_flood(
     )
 }
 
-pub fn run_tcp_syn_flood(
+pub fn tcp_syn_flood_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -140,7 +140,7 @@ pub fn run_tcp_syn_flood(
     )
 }
 
-pub fn run_tcp_ack_flood(
+pub fn tcp_ack_flood_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -165,7 +165,7 @@ pub fn run_tcp_ack_flood(
     )
 }
 
-pub fn run_udp_flood(
+pub fn udp_flood_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,

@@ -94,9 +94,9 @@ fn _udp_print_result(ip: Ipv4Addr, port: u16, ret: UdpScanStatus) {
     println!("{str}");
 }
 
-pub fn run_arp_scan_subnet(
+pub fn arp_scan_subnet(
     subnet: Ipv4Pool,
-    dst_mac: Option<&str>,
+    dstaddr: Option<&str>,
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
@@ -104,7 +104,7 @@ pub fn run_arp_scan_subnet(
 ) -> Result<ArpScanResults> {
     let (i, src_ip, src_mac, dst_mac) = if interface.is_some() {
         let (i, src_ip, src_mac) = utils::parse_interface(interface)?;
-        let dst_mac = match dst_mac {
+        let dst_mac = match dstaddr {
             Some(v) => match MacAddr::from_str(v) {
                 Ok(m) => m,
                 Err(e) => return Err(e.into()),
@@ -114,7 +114,7 @@ pub fn run_arp_scan_subnet(
         (i, src_ip, src_mac, dst_mac)
     } else {
         let (i, src_ip, src_mac) = utils::parse_interface_by_subnet(subnet)?;
-        let dst_mac = match dst_mac {
+        let dst_mac = match dstaddr {
             Some(v) => match MacAddr::from_str(v) {
                 Ok(m) => m,
                 Err(e) => return Err(e.into()),
@@ -488,7 +488,7 @@ fn _run_tcp_scan_subnet(
     Ok(ret)
 }
 
-pub fn run_tcp_connect_scan_single_port(
+pub fn tcp_connect_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -513,7 +513,7 @@ pub fn run_tcp_connect_scan_single_port(
     )
 }
 
-pub fn run_tcp_connect_scan_range_port(
+pub fn tcp_connect_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -542,7 +542,7 @@ pub fn run_tcp_connect_scan_range_port(
     )
 }
 
-pub fn run_tcp_connect_scan_subnet(
+pub fn tcp_connect_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -571,7 +571,7 @@ pub fn run_tcp_connect_scan_subnet(
     )
 }
 
-pub fn run_tcp_syn_scan_single_port(
+pub fn tcp_syn_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -596,7 +596,7 @@ pub fn run_tcp_syn_scan_single_port(
     )
 }
 
-pub fn run_tcp_syn_scan_range_port(
+pub fn tcp_syn_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -625,7 +625,7 @@ pub fn run_tcp_syn_scan_range_port(
     )
 }
 
-pub fn run_tcp_syn_scan_subnet(
+pub fn tcp_syn_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -654,7 +654,7 @@ pub fn run_tcp_syn_scan_subnet(
     )
 }
 
-pub fn run_tcp_fin_scan_single_port(
+pub fn tcp_fin_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -679,7 +679,7 @@ pub fn run_tcp_fin_scan_single_port(
     )
 }
 
-pub fn run_tcp_fin_scan_range_port(
+pub fn tcp_fin_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -708,7 +708,7 @@ pub fn run_tcp_fin_scan_range_port(
     )
 }
 
-pub fn run_tcp_fin_scan_subnet(
+pub fn tcp_fin_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -737,7 +737,7 @@ pub fn run_tcp_fin_scan_subnet(
     )
 }
 
-pub fn run_tcp_ack_scan_single_port(
+pub fn tcp_ack_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -762,7 +762,7 @@ pub fn run_tcp_ack_scan_single_port(
     )
 }
 
-pub fn run_tcp_ack_scan_range_port(
+pub fn tcp_ack_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -791,7 +791,7 @@ pub fn run_tcp_ack_scan_range_port(
     )
 }
 
-pub fn run_tcp_ack_scan_subnet(
+pub fn tcp_ack_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -820,7 +820,7 @@ pub fn run_tcp_ack_scan_subnet(
     )
 }
 
-pub fn run_tcp_null_scan_single_port(
+pub fn tcp_null_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -845,7 +845,7 @@ pub fn run_tcp_null_scan_single_port(
     )
 }
 
-pub fn run_tcp_null_scan_range_port(
+pub fn tcp_null_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -874,7 +874,7 @@ pub fn run_tcp_null_scan_range_port(
     )
 }
 
-pub fn run_tcp_null_scan_subnet(
+pub fn tcp_null_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -903,7 +903,7 @@ pub fn run_tcp_null_scan_subnet(
     )
 }
 
-pub fn run_tcp_xmas_scan_single_port(
+pub fn tcp_xmas_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -928,7 +928,7 @@ pub fn run_tcp_xmas_scan_single_port(
     )
 }
 
-pub fn run_tcp_xmas_scan_range_port(
+pub fn tcp_xmas_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -957,7 +957,7 @@ pub fn run_tcp_xmas_scan_range_port(
     )
 }
 
-pub fn run_tcp_xmas_scan_subnet(
+pub fn tcp_xmas_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -986,7 +986,7 @@ pub fn run_tcp_xmas_scan_subnet(
     )
 }
 
-pub fn run_tcp_window_scan_single_port(
+pub fn tcp_window_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1011,7 +1011,7 @@ pub fn run_tcp_window_scan_single_port(
     )
 }
 
-pub fn run_tcp_window_scan_range_port(
+pub fn tcp_window_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1040,7 +1040,7 @@ pub fn run_tcp_window_scan_range_port(
     )
 }
 
-pub fn run_tcp_window_scan_subnet(
+pub fn tcp_window_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -1152,7 +1152,7 @@ pub fn run_tcp_maimon_scan_subnet(
     )
 }
 
-pub fn run_tcp_idle_scan_single_port(
+pub fn tcp_idle_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1179,7 +1179,7 @@ pub fn run_tcp_idle_scan_single_port(
     )
 }
 
-pub fn run_tcp_idle_scan_range_port(
+pub fn tcp_idle_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1210,7 +1210,7 @@ pub fn run_tcp_idle_scan_range_port(
     )
 }
 
-pub fn run_tcp_idle_scan_subnet(
+pub fn tcp_idle_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
@@ -1241,7 +1241,7 @@ pub fn run_tcp_idle_scan_subnet(
     )
 }
 
-pub fn run_udp_scan_single_port(
+pub fn udp_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1284,7 +1284,7 @@ pub fn run_udp_scan_single_port(
     })
 }
 
-pub fn run_udp_scan_range_port(
+pub fn udp_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1345,7 +1345,7 @@ pub fn run_udp_scan_range_port(
     Ok(ret)
 }
 
-pub fn run_udp_scan_subnet(
+pub fn udp_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,
@@ -1418,7 +1418,7 @@ pub fn run_udp_scan_subnet(
     Ok(ret)
 }
 
-pub fn run_ip_protocol_scan_host(
+pub fn ip_protocol_scan_host(
     src_ipv4: Option<Ipv4Addr>,
     dst_ipv4: Ipv4Addr,
     protocol: IpNextHeaderProtocol,
@@ -1454,7 +1454,7 @@ pub fn run_ip_protocol_scan_host(
     Ok(ret)
 }
 
-pub fn run_ip_procotol_scan_subnet(
+pub fn ip_procotol_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     subnet: Ipv4Pool,
     protocol: IpNextHeaderProtocol,
