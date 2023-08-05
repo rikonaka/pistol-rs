@@ -4,10 +4,10 @@ use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
+use std::fmt;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
-use std::fmt;
 
 mod flood;
 mod ping;
@@ -1280,6 +1280,8 @@ pub fn icmp_ping_subnet(
         max_loop,
     )
 }
+
+/* Flood */
 
 pub fn icmp_flood_host(
     src_ipv4: Option<Ipv4Addr>,
