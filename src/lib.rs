@@ -35,7 +35,6 @@ impl fmt::Display for PingResults {
             PingStatus::Down => format!("{ip} down"),
         };
         result_str += &str;
-        result_str += "\n";
         write!(f, "{}", result_str)
     }
 }
@@ -107,7 +106,6 @@ impl fmt::Display for TcpScanResults {
                 TcpScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
             };
             result_str += &str;
-            result_str += "\n";
         }
         write!(f, "{}", result_str)
     }
@@ -138,7 +136,6 @@ impl fmt::Display for IpScanResults {
                 IpScanStatus::Closed => format!("{ip} {protocol} closed"),
             };
             result_str += &str;
-            result_str += "\n";
         }
         write!(f, "{}", result_str)
     }
@@ -169,7 +166,6 @@ impl fmt::Display for UdpScanResults {
                 UdpScanStatus::Closed => format!("{ip} {port} closed"),
             };
             result_str += &str;
-            result_str += "\n";
         }
         write!(f, "{}", result_str)
     }
