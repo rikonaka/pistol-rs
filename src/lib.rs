@@ -348,13 +348,12 @@ pub use flood::udp_flood_host;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use subnetwork::Ipv4Pool;
     use std::time::Duration;
+    use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() {
-        // let interface = Some("ens33");
-        let interface = None;
-        let subnet = Ipv4Pool::new("192.168.1.0/24").unwrap();
+        let interface = Some("ens33");
+        let subnet = Ipv4Pool::new("192.168.72.0/24").unwrap();
         let rets = arp_scan_subnet(subnet, None, interface, 0, true, None).unwrap();
         println!("{:?}", rets);
     }

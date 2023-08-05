@@ -32,3 +32,16 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 | [x] UDP Scan            | [nmap references](https://nmap.org/book/scan-methods-udp-scan.html)           |                                         |
 | [ ] TCP FTP Bounce Scan | [nmap references](https://nmap.org/book/scan-methods-ftp-bounce-scan.html)    | The bugs exploited have long been fixed |
 
+
+## Flood attack
+
+| Methods           |
+| :---------------- |
+| [x] TCP SYN Flood |
+| [x] TCP ACK Flood |
+| [x] UDP Flood     |
+| [x] ICMP Flood    |
+
+## CLI program
+
+I also implement a demo [code](https://github.com/rikonaka/pistol_cli-rs) here.
