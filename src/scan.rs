@@ -1069,7 +1069,7 @@ pub fn tcp_window_scan_subnet(
     )
 }
 
-pub fn run_tcp_maimon_scan_single_port(
+pub fn tcp_maimon_scan_single_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1094,7 +1094,7 @@ pub fn run_tcp_maimon_scan_single_port(
     )
 }
 
-pub fn run_tcp_maimon_scan_range_port(
+pub fn tcp_maimon_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1123,7 +1123,7 @@ pub fn run_tcp_maimon_scan_range_port(
     )
 }
 
-pub fn run_tcp_maimon_scan_subnet(
+pub fn tcp_maimon_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     subnet: Ipv4Pool,

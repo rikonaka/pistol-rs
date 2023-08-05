@@ -266,15 +266,15 @@ pub use scan::tcp_window_scan_range_port;
 pub use scan::tcp_window_scan_single_port;
 pub use scan::tcp_window_scan_subnet;
 
-pub use scan::run_tcp_maimon_scan_range_port;
+pub use scan::tcp_maimon_scan_range_port;
 /// TCP Maimon Scan.
 /// The Maimon scan is named after its discoverer, Uriel Maimon.
 /// He described the technique in Phrack Magazine issue #49 (November 1996).
 /// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
 /// According to RFC 793 (TCP), a RST packet should be generated in response to such a probe whether the port is open or closed.
 /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
-pub use scan::run_tcp_maimon_scan_single_port;
-pub use scan::run_tcp_maimon_scan_subnet;
+pub use scan::tcp_maimon_scan_single_port;
+pub use scan::tcp_maimon_scan_subnet;
 
 pub use scan::tcp_idle_scan_range_port;
 /// TCP Idle Scan.
