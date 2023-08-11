@@ -66,9 +66,9 @@ mod tests {
         use crate::utils;
         let interface: NetworkInterface = utils::find_interface_by_name("ens33").unwrap();
         let dstaddr: MacAddr = MacAddr::broadcast();
-        let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 130);
+        let source_ip: Ipv4Addr = Ipv4Addr::new(192, 168,213, 129);
         let source_mac: MacAddr = interface.mac.unwrap();
-        let target_ip: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 136);
+        let target_ip: Ipv4Addr = Ipv4Addr::new(192, 168,213, 128);
         let ret = send_arp_scan_packet(&interface, &dstaddr, source_ip, source_mac, target_ip, 32)
             .unwrap();
         println!("{:?}", ret);

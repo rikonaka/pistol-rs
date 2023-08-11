@@ -67,8 +67,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_icmp_flood_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+        let src_ipv4 = Ipv4Addr::new(192, 168,213, 129);
+        let dst_ipv4 = Ipv4Addr::new(192, 168,213, 128);
         let ret = send_icmp_flood_packet(src_ipv4, 0, dst_ipv4, 0, 1).unwrap();
         println!("{:?}", ret);
     }

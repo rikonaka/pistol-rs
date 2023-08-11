@@ -130,15 +130,15 @@ mod tests {
     use super::*;
     #[test]
     fn test_syn_flood_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+        let src_ipv4 = Ipv4Addr::new(192, 168,213, 129);
+        let dst_ipv4 = Ipv4Addr::new(192, 168,213, 128);
         let ret = send_syn_flood_packet(src_ipv4, 8888, dst_ipv4, 80, 1).unwrap();
         println!("{:?}", ret);
     }
     #[test]
     fn test_ack_flood_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+        let src_ipv4 = Ipv4Addr::new(192, 168,213, 129);
+        let dst_ipv4 = Ipv4Addr::new(192, 168,213, 128);
         let ret = send_ack_flood_packet(src_ipv4, 8888, dst_ipv4, 80, 1).unwrap();
         println!("{:?}", ret);
     }

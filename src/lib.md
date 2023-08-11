@@ -8,11 +8,11 @@ use std::net::Ipv4Addr;
 
 fn main() {
     // If you don't want to provide the `source address`, you can provide the `interface` for the program to infer.
-    let src_ipv4 = Some(Ipv4Addr::new(192, 168, 72, 130));
+    let src_ipv4 = Some(Ipv4Addr::new(192, 168,213, 129));
     // If the value of `source port` is `None`, the program will randomly generate the source port.
     let src_port = None;
     // The destination address is required.
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+    let dst_ipv4 = Ipv4Addr::new(192, 168,213, 128);
     // The source address and interface must provide at least one
     let i = None; // let i = Some("ens33");
     // `max_loop` indicates the maximum number of loops that the program will wait for the target packet in a loop.
