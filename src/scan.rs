@@ -1,6 +1,11 @@
 use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::transport::TransportChannelType::Layer3;
+use pnet::transport::TransportChannelType::Layer4;
+use pnet::transport::TransportProtocol::{Ipv4, Ipv6};
+use pnet::transport::{transport_channel, TransportReceiver, TransportSender};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
@@ -94,34 +99,124 @@ fn _udp_print_result(ip: Ipv4Addr, port: u16, ret: UdpScanStatus) {
     println!("{str}");
 }
 
+pub fn _return_layer3_tcp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
+    match transport_channel(buffer_size, tcp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer4_tcp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let tcp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Tcp));
+    match transport_channel(buffer_size, tcp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer4_tcpv6_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let tcp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Tcp));
+    match transport_channel(buffer_size, tcp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer3_udp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let udp_protocol = Layer3(IpNextHeaderProtocols::Udp);
+    match transport_channel(buffer_size, udp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer4_udp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let udp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Udp));
+    match transport_channel(buffer_size, udp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer4_udpv6_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let udp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Udp));
+    match transport_channel(buffer_size, udp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer3_icmp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let icmp_protocol = Layer3(IpNextHeaderProtocols::Icmp);
+    match transport_channel(buffer_size, icmp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer4_icmp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let icmp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Icmp));
+    match transport_channel(buffer_size, icmp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
+pub fn _return_layer4_icmpv6_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let icmp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Icmpv6));
+    match transport_channel(buffer_size, icmp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
 pub fn arp_scan_subnet(
     subnet: Ipv4Pool,
-    dstaddr: Option<&str>,
+    dst_mac: Option<&str>,
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
     max_loop: Option<usize>,
 ) -> Result<ArpScanResults> {
-    let (i, src_ip, src_mac, dst_mac) = if interface.is_some() {
-        let (i, src_ip, src_mac) = utils::parse_interface(interface)?;
-        let dst_mac = match dstaddr {
+    let (interface, src_ipv4, src_mac, dst_mac) = if interface.is_some() {
+        let (i, src_ipv4, src_mac) = utils::parse_interface(interface)?;
+        let dst_mac = match dst_mac {
             Some(v) => match MacAddr::from_str(v) {
                 Ok(m) => m,
                 Err(e) => return Err(e.into()),
             },
             _ => MacAddr::broadcast(),
         };
-        (i, src_ip, src_mac, dst_mac)
+        (i, src_ipv4, src_mac, dst_mac)
     } else {
-        let (i, src_ip, src_mac) = utils::parse_interface_by_subnet(subnet)?;
-        let dst_mac = match dstaddr {
+        let (i, src_ipv4, src_mac) = utils::parse_interface_by_subnet(subnet)?;
+        let dst_mac = match dst_mac {
             Some(v) => match MacAddr::from_str(v) {
                 Ok(m) => m,
                 Err(e) => return Err(e.into()),
             },
             _ => MacAddr::broadcast(),
         };
-        (i, src_ip, src_mac, dst_mac)
+        (i, src_ipv4, src_mac, dst_mac)
     };
 
     let (tx, rx) = channel();
@@ -129,17 +224,17 @@ pub fn arp_scan_subnet(
     let mut recv_size = 0;
     let max_loop = utils::get_max_loop(max_loop);
 
-    for target_ip in subnet {
+    for dst_ipv4 in subnet {
         recv_size += 1;
         let tx = tx.clone();
-        let i = i.clone();
+        let i = interface.clone();
         pool.execute(move || {
             let scan_ret =
-                arp::send_arp_scan_packet(&i, &dst_mac, src_ip, src_mac, target_ip, max_loop);
+                arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, i, max_loop);
             if print_result {
-                _arp_print_result(target_ip, scan_ret)
+                _arp_print_result(dst_ipv4, scan_ret)
             }
-            match tx.send((target_ip, scan_ret)) {
+            match tx.send((dst_ipv4, scan_ret)) {
                 _ => (),
             }
         });
