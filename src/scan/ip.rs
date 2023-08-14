@@ -12,17 +12,17 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::scan::_return_layer3_icmp_channel;
-use crate::scan::BUFF_SIZE;
-use crate::scan::ICMP_BUFF_SIZE;
-use crate::scan::ICMP_DATA_LEN;
-use crate::scan::ICMP_HEADER_LEN;
-use crate::scan::IPV4_HEADER_LEN;
-use crate::scan::IP_TTL;
-use crate::scan::TCP_DATA_LEN;
-use crate::scan::TCP_HEADER_LEN;
-use crate::scan::UDP_DATA_LEN;
-use crate::scan::UDP_HEADER_LEN;
+use crate::utils::return_layer3_icmp_channel;
+use crate::utils::BUFF_SIZE;
+use crate::utils::ICMP_BUFF_SIZE;
+use crate::utils::ICMP_DATA_LEN;
+use crate::utils::ICMP_HEADER_LEN;
+use crate::utils::IPV4_HEADER_LEN;
+use crate::utils::IP_TTL;
+use crate::utils::TCP_DATA_LEN;
+use crate::utils::TCP_HEADER_LEN;
+use crate::utils::UDP_DATA_LEN;
+use crate::utils::UDP_HEADER_LEN;
 use crate::utils;
 use crate::IpScanStatus;
 
@@ -82,7 +82,7 @@ pub fn send_ip_procotol_scan_packet(
         Err(e) => return Err(e.into()),
     };
 
-    let (_, mut icmp_rx) = _return_layer3_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer3_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // an exception is made for certain popular protocols (including TCP, UDP, and ICMP)
     match protocol {
@@ -236,8 +236,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_ip_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let protocol = IpNextHeaderProtocols::Tcp;

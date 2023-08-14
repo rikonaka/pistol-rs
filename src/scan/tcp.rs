@@ -16,14 +16,14 @@ use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::Duration;
 
-use crate::scan::_return_layer4_icmp_channel;
-use crate::scan::_return_layer4_tcp_channel;
-use crate::scan::ICMP_BUFF_SIZE;
-use crate::scan::IPV4_HEADER_LEN;
-use crate::scan::IP_TTL;
-use crate::scan::TCP_BUFF_SIZE;
-use crate::scan::TCP_DATA_LEN;
-use crate::scan::TCP_HEADER_LEN;
+use crate::utils::return_layer4_icmp_channel;
+use crate::utils::return_layer4_tcp_channel;
+use crate::utils::ICMP_BUFF_SIZE;
+use crate::utils::IPV4_HEADER_LEN;
+use crate::utils::IP_TTL;
+use crate::utils::TCP_BUFF_SIZE;
+use crate::utils::TCP_DATA_LEN;
+use crate::utils::TCP_HEADER_LEN;
 use crate::utils;
 use crate::IdleScanResults;
 use crate::TcpScanStatus;
@@ -69,8 +69,8 @@ pub fn send_syn_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -131,7 +131,7 @@ pub fn send_syn_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -157,8 +157,8 @@ pub fn send_fin_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -219,7 +219,7 @@ pub fn send_fin_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -245,8 +245,8 @@ pub fn send_ack_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -304,7 +304,7 @@ pub fn send_ack_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -330,8 +330,8 @@ pub fn send_null_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -393,7 +393,7 @@ pub fn send_null_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -419,8 +419,8 @@ pub fn send_xmas_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -482,7 +482,7 @@ pub fn send_xmas_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -508,8 +508,8 @@ pub fn send_window_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -572,7 +572,7 @@ pub fn send_window_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -598,8 +598,8 @@ pub fn send_maimon_scan_packet(
     timeout: Duration,
     max_loop: usize,
 ) -> Result<TcpScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = _return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = _return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
     // tcp header
     let mut rng = rand::thread_rng();
@@ -661,7 +661,7 @@ pub fn send_maimon_scan_packet(
                                 destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
                                 destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
                                 destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
+                        ];
                         if icmp_type == IcmpTypes::DestinationUnreachable
                             && codes.contains(&icmp_code)
                         {
@@ -947,8 +947,8 @@ mod tests {
     fn test_send_syn_scan_packet_new() {
         // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let src_port = 32109;
         let dst_port = 81;
         let timeout = Duration::from_secs(1);
@@ -961,8 +961,8 @@ mod tests {
     fn test_send_fin_scan_packet() {
         // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_fin_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -970,8 +970,8 @@ mod tests {
     }
     #[test]
     fn test_send_ack_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_ack_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -979,8 +979,8 @@ mod tests {
     }
     #[test]
     fn test_send_null_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_null_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -988,8 +988,8 @@ mod tests {
     }
     #[test]
     fn test_send_window_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_window_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
@@ -998,8 +998,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_send_idle_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let zombie_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
 
         let src_port = utils::random_port();
@@ -1023,8 +1023,8 @@ mod tests {
     }
     #[test]
     fn test_send_tcp_handshark() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(10);
         let max_loop = 64;
         let src_port = utils::random_port();

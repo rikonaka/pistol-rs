@@ -1,24 +1,21 @@
 use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
-use pnet::packet::ip::IpNextHeaderProtocols;
-use pnet::transport::TransportChannelType::Layer3;
-use pnet::transport::TransportChannelType::Layer4;
-use pnet::transport::TransportProtocol::{Ipv4, Ipv6};
-use pnet::transport::{transport_channel, TransportReceiver, TransportSender};
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use subnetwork::Ipv4Pool;
+use subnetwork::{Ipv4Pool, Ipv6Pool};
 
 use crate::utils;
 
 pub mod arp;
 pub mod ip;
 pub mod tcp;
+pub mod tcp6;
 pub mod udp;
+pub mod udp6;
 
 use crate::ArpScanResults;
 use crate::IpScanResults;
@@ -27,24 +24,6 @@ use crate::TcpScanResults;
 use crate::TcpScanStatus;
 use crate::UdpScanResults;
 use crate::UdpScanStatus;
-
-pub const IP_TTL: u8 = 64;
-
-pub const BUFF_SIZE: usize = 4096;
-pub const TCP_BUFF_SIZE: usize = 4096;
-pub const UDP_BUFF_SIZE: usize = 4096;
-
-pub const IPV4_HEADER_LEN: usize = 20;
-pub const ICMP_BUFF_SIZE: usize = 4096;
-
-pub const TCP_HEADER_LEN: usize = 20;
-pub const TCP_DATA_LEN: usize = 0;
-
-pub const UDP_HEADER_LEN: usize = 8;
-pub const UDP_DATA_LEN: usize = 0;
-
-pub const ICMP_HEADER_LEN: usize = 8;
-pub const ICMP_DATA_LEN: usize = 0;
 
 #[derive(Debug, Clone, Copy)]
 enum TcpScanMethod {
@@ -59,7 +38,19 @@ enum TcpScanMethod {
     Idle,
 }
 
-fn _ip_print_result(ip: Ipv4Addr, protocol: IpNextHeaderProtocol, ret: IpScanStatus) {
+#[derive(Debug, Clone, Copy)]
+enum TcpScanMethod6 {
+    Connect,
+    Syn,
+    Fin,
+    Ack,
+    Null,
+    Xmas,
+    Window,
+    Maimon,
+}
+
+fn _ip_print_result(ip: IpAddr, protocol: IpNextHeaderProtocol, ret: IpScanStatus) {
     let str = match ret {
         IpScanStatus::Open => format!("{ip} {protocol} open"),
         IpScanStatus::Filtered => format!("{ip} {protocol} filtered"),
@@ -69,14 +60,14 @@ fn _ip_print_result(ip: Ipv4Addr, protocol: IpNextHeaderProtocol, ret: IpScanSta
     println!("{str}");
 }
 
-fn _arp_print_result(ip: Ipv4Addr, mac: Option<MacAddr>) {
+fn _arp_print_result(ip: IpAddr, mac: Option<MacAddr>) {
     match mac {
         Some(mac) => println!("{ip} ({mac})"),
         _ => println!("{ip} (null)"),
     }
 }
 
-fn _tcp_print_result(ip: Ipv4Addr, port: u16, ret: TcpScanStatus) {
+fn _tcp_print_result(ip: IpAddr, port: u16, ret: TcpScanStatus) {
     let str = match ret {
         TcpScanStatus::Open => format!("{ip} {port} open"),
         TcpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
@@ -89,7 +80,7 @@ fn _tcp_print_result(ip: Ipv4Addr, port: u16, ret: TcpScanStatus) {
     println!("{str}");
 }
 
-fn _udp_print_result(ip: Ipv4Addr, port: u16, ret: UdpScanStatus) {
+fn _udp_print_result(ip: IpAddr, port: u16, ret: UdpScanStatus) {
     let str = match ret {
         UdpScanStatus::Open => format!("{ip} {port} open"),
         UdpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
@@ -97,96 +88,6 @@ fn _udp_print_result(ip: Ipv4Addr, port: u16, ret: UdpScanStatus) {
         UdpScanStatus::Closed => format!("{ip} {port} closed"),
     };
     println!("{str}");
-}
-
-pub fn _return_layer3_tcp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
-    match transport_channel(buffer_size, tcp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer4_tcp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let tcp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Tcp));
-    match transport_channel(buffer_size, tcp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer4_tcpv6_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let tcp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Tcp));
-    match transport_channel(buffer_size, tcp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer3_udp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let udp_protocol = Layer3(IpNextHeaderProtocols::Udp);
-    match transport_channel(buffer_size, udp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer4_udp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let udp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Udp));
-    match transport_channel(buffer_size, udp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer4_udpv6_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let udp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Udp));
-    match transport_channel(buffer_size, udp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer3_icmp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let icmp_protocol = Layer3(IpNextHeaderProtocols::Icmp);
-    match transport_channel(buffer_size, icmp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer4_icmp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let icmp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Icmp));
-    match transport_channel(buffer_size, icmp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn _return_layer4_icmpv6_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let icmp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Icmpv6));
-    match transport_channel(buffer_size, icmp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
 }
 
 pub fn arp_scan_subnet(
@@ -232,7 +133,7 @@ pub fn arp_scan_subnet(
             let scan_ret =
                 arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, i, max_loop);
             if print_result {
-                _arp_print_result(dst_ipv4, scan_ret)
+                _arp_print_result(dst_ipv4.into(), scan_ret)
             }
             match tx.send((dst_ipv4, scan_ret)) {
                 _ => (),
@@ -337,13 +238,13 @@ fn _run_tcp_scan_single_port(
     };
 
     if print_result {
-        _tcp_print_result(dst_ipv4, dst_port, scan_ret);
+        _tcp_print_result(dst_ipv4.into(), dst_port, scan_ret);
     }
     let mut results = HashMap::new();
     results.insert(dst_port, scan_ret);
     Ok(TcpScanResults {
         results,
-        addr: dst_ipv4,
+        addr: dst_ipv4.into(),
     })
 }
 
@@ -439,7 +340,7 @@ fn _run_tcp_scan_range_port(
             };
             if print_result {
                 match scan_ret_with_error {
-                    Ok(s) => _tcp_print_result(dst_ipv4, dst_port, s),
+                    Ok(s) => _tcp_print_result(dst_ipv4.into(), dst_port, s),
                     _ => (),
                 }
             }
@@ -449,7 +350,7 @@ fn _run_tcp_scan_range_port(
         })
     }
     let iter = rx.into_iter().take(recv_size);
-    let mut ret = TcpScanResults::new(dst_ipv4);
+    let mut ret = TcpScanResults::new(dst_ipv4.into());
 
     for (dst_port, dst_port_ret) in iter {
         match dst_port_ret {
@@ -474,7 +375,7 @@ fn _run_tcp_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     let src_ipv4 = if src_ipv4.is_none() {
         let (_, src_ipv4, _) = utils::parse_interface(interface)?;
         src_ipv4
@@ -552,7 +453,7 @@ fn _run_tcp_scan_subnet(
                     };
                     if print_result {
                         match scan_ret_with_error {
-                            Ok(s) => _tcp_print_result(dst_ipv4, dst_port, s),
+                            Ok(s) => _tcp_print_result(dst_ipv4.into(), dst_port, s),
                             _ => (),
                         }
                     }
@@ -564,17 +465,269 @@ fn _run_tcp_scan_subnet(
         }
     }
     let iter = rx.into_iter().take(recv_size);
-    let mut ret: HashMap<Ipv4Addr, TcpScanResults> = HashMap::new();
+    let mut ret: HashMap<IpAddr, TcpScanResults> = HashMap::new();
 
     for (dst_ipv4, dst_port, dst_port_ret) in iter {
         match dst_port_ret {
             Ok(s) => {
-                if ret.contains_key(&dst_ipv4) {
-                    ret.get_mut(&dst_ipv4).unwrap().results.insert(dst_port, s);
+                if ret.contains_key(&dst_ipv4.into()) {
+                    ret.get_mut(&dst_ipv4.into())
+                        .unwrap()
+                        .results
+                        .insert(dst_port, s);
                 } else {
-                    let mut v = TcpScanResults::new(dst_ipv4);
+                    let mut v = TcpScanResults::new(dst_ipv4.into());
                     v.results.insert(dst_port, s);
-                    ret.insert(dst_ipv4, v);
+                    ret.insert(dst_ipv4.into(), v);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(ret)
+}
+
+fn _run_tcp_scan_single_port6(
+    method: TcpScanMethod6,
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    let src_ipv6 = if src_ipv6.is_none() {
+        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        src_ipv6
+    } else {
+        src_ipv6.unwrap()
+    };
+    let src_port = if src_port.is_none() {
+        let src_port: u16 = utils::random_port();
+        src_port
+    } else {
+        src_port.unwrap()
+    };
+
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+    let scan_ret = match method {
+        TcpScanMethod6::Connect => tcp6::send_connect_scan_packet(
+            src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+        )?,
+        TcpScanMethod6::Syn => {
+            tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop)?
+        }
+        TcpScanMethod6::Fin => {
+            tcp6::send_fin_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop)?
+        }
+        TcpScanMethod6::Ack => {
+            tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop)?
+        }
+        TcpScanMethod6::Null => {
+            tcp6::send_null_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop)?
+        }
+        TcpScanMethod6::Xmas => {
+            tcp6::send_xmas_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop)?
+        }
+        TcpScanMethod6::Window => tcp6::send_window_scan_packet(
+            src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+        )?,
+        TcpScanMethod6::Maimon => tcp6::send_maimon_scan_packet(
+            src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+        )?,
+    };
+
+    if print_result {
+        _tcp_print_result(dst_ipv6.into(), dst_port, scan_ret);
+    }
+    let mut results = HashMap::new();
+    results.insert(dst_port, scan_ret);
+    Ok(TcpScanResults {
+        results,
+        addr: dst_ipv6.into(),
+    })
+}
+
+fn _run_tcp_scan_range_port6(
+    method: TcpScanMethod6,
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    let src_ipv6 = if src_ipv6.is_none() {
+        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        src_ipv6
+    } else {
+        src_ipv6.unwrap()
+    };
+    let src_port = if src_port.is_none() {
+        let src_port: u16 = utils::random_port();
+        src_port
+    } else {
+        src_port.unwrap()
+    };
+
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+
+    for dst_port in start_port..=end_port {
+        recv_size += 1;
+        let tx = tx.clone();
+        pool.execute(move || {
+            let scan_ret_with_error = match method {
+                TcpScanMethod6::Connect => tcp6::send_connect_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Syn => tcp6::send_syn_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Fin => tcp6::send_fin_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Ack => tcp6::send_ack_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Null => tcp6::send_null_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Xmas => tcp6::send_xmas_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Window => tcp6::send_window_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+                TcpScanMethod6::Maimon => tcp6::send_maimon_scan_packet(
+                    src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                ),
+            };
+            if print_result {
+                match scan_ret_with_error {
+                    Ok(s) => _tcp_print_result(dst_ipv6.into(), dst_port, s),
+                    _ => (),
+                }
+            }
+            match tx.send((dst_port, scan_ret_with_error)) {
+                _ => (),
+            }
+        })
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret = TcpScanResults::new(dst_ipv6.into());
+
+    for (dst_port, dst_port_ret) in iter {
+        match dst_port_ret {
+            Ok(s) => ret.results.insert(dst_port, s),
+            Err(e) => return Err(e),
+        };
+    }
+    Ok(ret)
+}
+
+fn _run_tcp_scan_subnet6(
+    method: TcpScanMethod6,
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    let src_ipv4 = if src_ipv6.is_none() {
+        let (_, src_ipv4, _) = utils::parse_interface6(interface)?;
+        src_ipv4
+    } else {
+        src_ipv6.unwrap()
+    };
+    let src_port = if src_port.is_none() {
+        let src_port: u16 = utils::random_port();
+        src_port
+    } else {
+        src_port.unwrap()
+    };
+
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+
+    for dst_ipv4 in subnet {
+        if dst_ipv4 != src_ipv4 {
+            for dst_port in start_port..=end_port {
+                recv_size += 1;
+                let tx = tx.clone();
+                pool.execute(move || {
+                    let scan_ret_with_error = match method {
+                        TcpScanMethod6::Connect => tcp6::send_connect_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Syn => tcp6::send_syn_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Fin => tcp6::send_fin_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Ack => tcp6::send_ack_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Null => tcp6::send_null_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Xmas => tcp6::send_xmas_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Window => tcp6::send_window_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                        TcpScanMethod6::Maimon => tcp6::send_maimon_scan_packet(
+                            src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
+                        ),
+                    };
+                    if print_result {
+                        match scan_ret_with_error {
+                            Ok(s) => _tcp_print_result(dst_ipv4.into(), dst_port, s),
+                            _ => (),
+                        }
+                    }
+                    match tx.send((dst_ipv4, dst_port, scan_ret_with_error)) {
+                        _ => (),
+                    }
+                })
+            }
+        }
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret: HashMap<IpAddr, TcpScanResults> = HashMap::new();
+
+    for (dst_ipv6, dst_port, dst_port_ret) in iter {
+        match dst_port_ret {
+            Ok(s) => {
+                if ret.contains_key(&dst_ipv6.into()) {
+                    ret.get_mut(&dst_ipv6.into())
+                        .unwrap()
+                        .results
+                        .insert(dst_port, s);
+                } else {
+                    let mut v = TcpScanResults::new(dst_ipv6.into());
+                    v.results.insert(dst_port, s);
+                    ret.insert(dst_ipv6.into(), v);
                 }
             }
             Err(e) => return Err(e),
@@ -601,6 +754,29 @@ pub fn tcp_connect_scan_single_port(
         dst_port,
         None,
         None,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_connect_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Connect,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
         interface,
         print_result,
         timeout,
@@ -637,6 +813,33 @@ pub fn tcp_connect_scan_range_port(
     )
 }
 
+pub fn tcp_connect_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Connect,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_connect_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -648,13 +851,40 @@ pub fn tcp_connect_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Connect,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_connect_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Connect,
+        src_ipv6,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -691,6 +921,29 @@ pub fn tcp_syn_scan_single_port(
     )
 }
 
+pub fn tcp_syn_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Syn,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_syn_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -720,6 +973,33 @@ pub fn tcp_syn_scan_range_port(
     )
 }
 
+pub fn tcp_syn_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Syn,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_syn_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -731,13 +1011,40 @@ pub fn tcp_syn_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Syn,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_syn_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Syn,
+        src_ipv6,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -774,6 +1081,29 @@ pub fn tcp_fin_scan_single_port(
     )
 }
 
+pub fn tcp_fin_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Fin,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_fin_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -803,6 +1133,33 @@ pub fn tcp_fin_scan_range_port(
     )
 }
 
+pub fn tcp_fin_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Fin,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_fin_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -814,13 +1171,40 @@ pub fn tcp_fin_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Fin,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_fin_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Fin,
+        src_ipv6,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -857,6 +1241,29 @@ pub fn tcp_ack_scan_single_port(
     )
 }
 
+pub fn tcp_ack_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Ack,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_ack_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -886,6 +1293,33 @@ pub fn tcp_ack_scan_range_port(
     )
 }
 
+pub fn tcp_ack_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Ack,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_ack_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -897,13 +1331,40 @@ pub fn tcp_ack_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Ack,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_ack_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Ack,
+        src_ipv6,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -940,6 +1401,29 @@ pub fn tcp_null_scan_single_port(
     )
 }
 
+pub fn tcp_null_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Null,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_null_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -969,6 +1453,33 @@ pub fn tcp_null_scan_range_port(
     )
 }
 
+pub fn tcp_null_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Null,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_null_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -980,13 +1491,40 @@ pub fn tcp_null_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Null,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_null_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Null,
+        src_ipv6,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -1023,6 +1561,29 @@ pub fn tcp_xmas_scan_single_port(
     )
 }
 
+pub fn tcp_xmas_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Xmas,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_xmas_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -1052,6 +1613,33 @@ pub fn tcp_xmas_scan_range_port(
     )
 }
 
+pub fn tcp_xmas_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Xmas,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_xmas_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -1063,12 +1651,39 @@ pub fn tcp_xmas_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Xmas,
         src_ipv4,
+        src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_xmas_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Xmas,
+        src_ipv6,
         src_port,
         subnet,
         start_port,
@@ -1106,6 +1721,29 @@ pub fn tcp_window_scan_single_port(
     )
 }
 
+pub fn tcp_window_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Window,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_window_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -1135,6 +1773,33 @@ pub fn tcp_window_scan_range_port(
     )
 }
 
+pub fn tcp_window_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Window,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_window_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -1146,13 +1811,40 @@ pub fn tcp_window_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Window,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_window_scan_subnet6(
+    src_ipv4: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Window,
+        src_ipv4,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -1189,6 +1881,29 @@ pub fn tcp_maimon_scan_single_port(
     )
 }
 
+pub fn tcp_maimon_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_single_port6(
+        TcpScanMethod6::Maimon,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        dst_port,
+        interface,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_maimon_scan_range_port(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -1218,6 +1933,33 @@ pub fn tcp_maimon_scan_range_port(
     )
 }
 
+pub fn tcp_maimon_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<TcpScanResults> {
+    _run_tcp_scan_range_port6(
+        TcpScanMethod6::Maimon,
+        src_ipv6,
+        src_port,
+        dst_ipv6,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
 pub fn tcp_maimon_scan_subnet(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -1229,13 +1971,40 @@ pub fn tcp_maimon_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Maimon,
         src_ipv4,
         src_port,
         None,
         None,
+        subnet,
+        start_port,
+        end_port,
+        interface,
+        threads_num,
+        print_result,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn tcp_maimon_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
+    _run_tcp_scan_subnet6(
+        TcpScanMethod6::Maimon,
+        src_ipv6,
+        src_port,
         subnet,
         start_port,
         end_port,
@@ -1318,7 +2087,7 @@ pub fn tcp_idle_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, TcpScanResults>> {
+) -> Result<HashMap<IpAddr, TcpScanResults>> {
     _run_tcp_scan_subnet(
         TcpScanMethod::Idle,
         src_ipv4,
@@ -1369,13 +2138,56 @@ pub fn udp_scan_single_port(
     };
 
     if print_result {
-        _udp_print_result(dst_ipv4, dst_port, scan_ret);
+        _udp_print_result(dst_ipv4.into(), dst_port, scan_ret);
     }
     let mut results = HashMap::new();
     results.insert(dst_port, scan_ret);
     Ok(UdpScanResults {
         results,
-        addr: dst_ipv4,
+        addr: dst_ipv4.into(),
+    })
+}
+
+pub fn udp_scan_single_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    interface: Option<&str>,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<UdpScanResults> {
+    let src_ipv6 = if src_ipv6.is_none() {
+        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        src_ipv6
+    } else {
+        src_ipv6.unwrap()
+    };
+    let src_port = if src_port.is_none() {
+        let src_port: u16 = utils::random_port();
+        src_port
+    } else {
+        src_port.unwrap()
+    };
+
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+    let scan_ret =
+        match udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop)
+        {
+            Ok(s) => s,
+            Err(e) => return Err(e.into()),
+        };
+
+    if print_result {
+        _udp_print_result(dst_ipv6.into(), dst_port, scan_ret);
+    }
+    let mut results = HashMap::new();
+    results.insert(dst_port, scan_ret);
+    Ok(UdpScanResults {
+        results,
+        addr: dst_ipv6.into(),
     })
 }
 
@@ -1419,7 +2231,7 @@ pub fn udp_scan_range_port(
             );
             if print_result {
                 match scan_ret_with_error {
-                    Ok(s) => _udp_print_result(dst_ipv4, dst_port, s),
+                    Ok(s) => _udp_print_result(dst_ipv4.into(), dst_port, s),
                     _ => (),
                 }
             }
@@ -1429,7 +2241,68 @@ pub fn udp_scan_range_port(
         })
     }
     let iter = rx.into_iter().take(recv_size);
-    let mut ret = UdpScanResults::new(dst_ipv4);
+    let mut ret = UdpScanResults::new(dst_ipv4.into());
+
+    for (dst_port, dst_port_ret) in iter {
+        match dst_port_ret {
+            Ok(s) => ret.results.insert(dst_port, s),
+            Err(e) => return Err(e),
+        };
+    }
+    Ok(ret)
+}
+
+pub fn udp_scan_range_port6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    dst_ipv6: Ipv6Addr,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<UdpScanResults> {
+    let src_ipv6 = if src_ipv6.is_none() {
+        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        src_ipv6
+    } else {
+        src_ipv6.unwrap()
+    };
+    let src_port = if src_port.is_none() {
+        let src_port: u16 = utils::random_port();
+        src_port
+    } else {
+        src_port.unwrap()
+    };
+
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+
+    for dst_port in start_port..=end_port {
+        recv_size += 1;
+        let tx = tx.clone();
+        pool.execute(move || {
+            let scan_ret_with_error = udp6::send_udp_scan_packet(
+                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+            );
+            if print_result {
+                match scan_ret_with_error {
+                    Ok(s) => _udp_print_result(dst_ipv6.into(), dst_port, s),
+                    _ => (),
+                }
+            }
+            match tx.send((dst_port, scan_ret_with_error)) {
+                _ => (),
+            }
+        })
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret = UdpScanResults::new(dst_ipv6.into());
 
     for (dst_port, dst_port_ret) in iter {
         match dst_port_ret {
@@ -1451,7 +2324,7 @@ pub fn udp_scan_subnet(
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<HashMap<Ipv4Addr, UdpScanResults>> {
+) -> Result<HashMap<IpAddr, UdpScanResults>> {
     let src_ipv4 = if src_ipv4.is_none() {
         let (_, src_ipv4, _) = utils::parse_interface(interface)?;
         src_ipv4
@@ -1482,7 +2355,7 @@ pub fn udp_scan_subnet(
                     );
                     if print_result {
                         match scan_ret_with_error {
-                            Ok(s) => _udp_print_result(dst_ipv4, dst_port, s),
+                            Ok(s) => _udp_print_result(dst_ipv4.into(), dst_port, s),
                             _ => (),
                         }
                     }
@@ -1494,17 +2367,96 @@ pub fn udp_scan_subnet(
         }
     }
     let iter = rx.into_iter().take(recv_size);
-    let mut ret: HashMap<Ipv4Addr, UdpScanResults> = HashMap::new();
+    let mut ret: HashMap<IpAddr, UdpScanResults> = HashMap::new();
 
     for (dst_ipv4, dst_port, dst_port_ret) in iter {
         match dst_port_ret {
             Ok(s) => {
-                if ret.contains_key(&dst_ipv4) {
-                    ret.get_mut(&dst_ipv4).unwrap().results.insert(dst_port, s);
+                if ret.contains_key(&dst_ipv4.into()) {
+                    ret.get_mut(&dst_ipv4.into())
+                        .unwrap()
+                        .results
+                        .insert(dst_port, s);
                 } else {
-                    let mut v = UdpScanResults::new(dst_ipv4);
+                    let mut v = UdpScanResults::new(dst_ipv4.into());
                     v.results.insert(dst_port, s);
-                    ret.insert(dst_ipv4, v);
+                    ret.insert(dst_ipv4.into(), v);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(ret)
+}
+
+pub fn udp_scan_subnet6(
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    subnet: Ipv6Pool,
+    start_port: u16,
+    end_port: u16,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<IpAddr, UdpScanResults>> {
+    let src_ipv6 = if src_ipv6.is_none() {
+        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        src_ipv6
+    } else {
+        src_ipv6.unwrap()
+    };
+    let src_port = if src_port.is_none() {
+        let src_port: u16 = utils::random_port();
+        src_port
+    } else {
+        src_port.unwrap()
+    };
+
+    let pool = utils::get_threads_pool(threads_num);
+    let (tx, rx) = channel();
+    let mut recv_size = 0;
+    let max_loop = utils::get_max_loop(max_loop);
+    let timeout = utils::get_timeout(timeout);
+
+    for dst_ipv6 in subnet {
+        if dst_ipv6 != src_ipv6 {
+            for dst_port in start_port..=end_port {
+                recv_size += 1;
+                let tx = tx.clone();
+                pool.execute(move || {
+                    let scan_ret_with_error = udp6::send_udp_scan_packet(
+                        src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
+                    );
+                    if print_result {
+                        match scan_ret_with_error {
+                            Ok(s) => _udp_print_result(dst_ipv6.into(), dst_port, s),
+                            _ => (),
+                        }
+                    }
+                    match tx.send((dst_ipv6, dst_port, scan_ret_with_error)) {
+                        _ => (),
+                    }
+                })
+            }
+        }
+    }
+    let iter = rx.into_iter().take(recv_size);
+    let mut ret: HashMap<IpAddr, UdpScanResults> = HashMap::new();
+
+    for (dst_ipv6, dst_port, dst_port_ret) in iter {
+        match dst_port_ret {
+            Ok(s) => {
+                if ret.contains_key(&dst_ipv6.into()) {
+                    ret.get_mut(&dst_ipv6.into())
+                        .unwrap()
+                        .results
+                        .insert(dst_port, s);
+                } else {
+                    let mut v = UdpScanResults::new(dst_ipv6.into());
+                    v.results.insert(dst_port, s);
+                    ret.insert(dst_ipv6.into(), v);
                 }
             }
             Err(e) => return Err(e),
@@ -1536,7 +2488,7 @@ pub fn ip_protocol_scan_host(
         ip::send_ip_procotol_scan_packet(src_ipv4, dst_ipv4, protocol, timeout, max_loop);
     if print_result {
         match scan_ret_with_error {
-            Ok(s) => _ip_print_result(dst_ipv4, protocol, s),
+            Ok(s) => _ip_print_result(dst_ipv4.into(), protocol, s),
             _ => (),
         }
     }
@@ -1582,7 +2534,7 @@ pub fn ip_procotol_scan_subnet(
                 );
                 if print_result {
                     match scan_ret_with_error {
-                        Ok(s) => _ip_print_result(dst_ipv4, protocol, s),
+                        Ok(s) => _ip_print_result(dst_ipv4.into(), protocol, s),
                         _ => (),
                     }
                 }
