@@ -16,6 +16,7 @@ use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::Duration;
 
+use crate::utils;
 use crate::utils::return_layer4_icmp_channel;
 use crate::utils::return_layer4_tcp_channel;
 use crate::utils::ICMP_BUFF_SIZE;
@@ -24,7 +25,6 @@ use crate::utils::IP_TTL;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::TCP_DATA_LEN;
 use crate::utils::TCP_HEADER_LEN;
-use crate::utils;
 use crate::IdleScanResults;
 use crate::TcpScanStatus;
 

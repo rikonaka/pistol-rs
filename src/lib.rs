@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr};
 
+mod fingerprinting;
 mod flood;
 mod ping;
 mod scan;
