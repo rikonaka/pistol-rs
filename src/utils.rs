@@ -221,12 +221,6 @@ pub fn parse_interface_by_subnet(
     Ok((i, ipv4, mac))
 }
 
-/// Returns the random u16
-pub fn random_u16() -> u16 {
-    let mut rng = rand::thread_rng();
-    rng.gen()
-}
-
 /// Returns the random port
 pub fn random_port() -> u16 {
     let mut rng = rand::thread_rng();
@@ -259,6 +253,16 @@ pub fn get_timeout(timeout: Option<Duration>) -> Duration {
     match timeout {
         Some(t) => t,
         _ => Duration::from_secs_f32(DEFAILT_TIMEOUT),
+    }
+}
+
+pub fn return_layer3_tcp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
+    match transport_channel(buffer_size, tcp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
     }
 }
 
@@ -332,9 +336,115 @@ pub fn return_layer4_icmp6_channel(
     }
 }
 
+pub fn gcd_vec(values: &mut Vec<u32>) -> u32 {
+    fn _vec_min(values: &Vec<u32>) -> u32 {
+        let mut min_value = u32::MAX;
+        for v in values {
+            if *v != 0 {
+                if *v < min_value {
+                    min_value = *v;
+                }
+            }
+        }
+        return min_value;
+    }
+    fn _gcd_break_judge(values: &Vec<u32>) -> bool {
+        let mut one_num = 0;
+        let mut min_num = 0;
+        let min = _vec_min(values);
+        for v in values {
+            if *v == 1 {
+                one_num += 1;
+            }
+            if *v == min {
+                min_num += 1;
+            }
+        }
+        if min_num == values.len() || one_num == values.len() - 1 {
+            true
+        } else {
+            false
+        }
+    }
+    fn _gcd_get_value(values: &Vec<u32>) -> u32 {
+        let mut one_num = 0;
+        let mut min_num = 0;
+        let min = _vec_min(values);
+        for v in values {
+            if *v == 1 {
+                one_num += 1;
+            } else if *v == min {
+                min_num += 1;
+            }
+        }
+        if min_num == values.len() {
+            min
+        } else if one_num == values.len() - 1 {
+            1
+        } else {
+            0
+        }
+    }
+
+    let values_len = values.len();
+    if values_len > 0 {
+        loop {
+            // println!("{:?}", values_clone);
+            let min = _vec_min(values);
+            for i in 0..values_len {
+                if values[i] != min && values[i] != 0 {
+                    values[i] -= min;
+                }
+            }
+            if _gcd_break_judge(values) {
+                break;
+            }
+        }
+        _gcd_get_value(values)
+    } else {
+        0
+    }
+}
+
+pub fn standard_deviation_vec(values: &Vec<f32>) -> f32 {
+    let mut sum = 0.0;
+    for v in values {
+        sum += *v;
+    }
+    let mean = sum / values.len() as f32;
+
+    let mut ret = 0.0;
+    for v in values {
+        ret += (v - mean).powi(2);
+    }
+
+    ret.sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+    #[test]
+    fn test_gcd() {
+        let start = Instant::now();
+
+        let mut test_vec = vec![120, 168, 328, 624, 320];
+        assert_eq!(gcd_vec(&mut test_vec), 8);
+
+        let mut test_vec = vec![4, 18, 22, 16];
+        assert_eq!(gcd_vec(&mut test_vec), 2);
+
+        // 1
+        let mut test_vec = vec![1566429, 1566930, 1570805, 1563941, 1566387];
+        assert_eq!(gcd_vec(&mut test_vec), 1);
+
+        let mut test_vec = vec![1774071, 1360754, 1571542, 1830161, 1302721];
+        assert_eq!(gcd_vec(&mut test_vec), 1);
+
+        let duration = start.elapsed();
+        println!("duration: {:?}", duration);
+    }
     #[test]
     fn test_list_interfaces() {
         for interface in pnet_datalink::interfaces() {

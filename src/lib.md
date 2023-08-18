@@ -13,9 +13,9 @@ fn main() {
     let src_port = None;
     // The destination address is required.
     let dst_ipv4 = Ipv4Addr::new(192, 168,213, 128);
-    // The source address and interface must provide at least one
+    // The source address and interface must provide at least one.
     let i = None; // let i = Some("ens33");
-    // `max_loop` indicates the maximum number of loops that the program will wait for the target packet in a loop.
+    // `max_loop` indicates the maximum number of loops that the program will wait for the target packet.
     // The larger the value, the longer the wait time for the program to scan.
     // And the smaller the value, the more unreliable the program's scanning results increases.
     let max_loop = Some(32);

@@ -399,7 +399,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 119);
         let dst_port: u16 = 80;
@@ -421,7 +421,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
         let start_port: u16 = 1;
@@ -448,7 +448,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let subnet: Ipv4Pool = Ipv4Pool::new("192.168.1.0/30").unwrap();
         let start_port: u16 = 80;
@@ -475,7 +475,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -492,7 +492,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -504,7 +504,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
@@ -518,7 +518,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -532,7 +532,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -544,7 +544,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
@@ -558,7 +558,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -572,7 +572,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -584,7 +584,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
@@ -598,7 +598,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -609,7 +609,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -621,7 +621,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
@@ -635,7 +635,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -646,7 +646,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
@@ -657,7 +657,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let src_port = None;
         let subnet = Ipv4Pool::new("192.168.1.0/30").unwrap();
         // let i = Some("eno1");
@@ -672,7 +672,7 @@ mod tests {
     #[test]
     fn test_ip_scan_host() {
         use pnet::packet::ip::IpNextHeaderProtocols;
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         // let i = Some("eno1");
         let i = None;
@@ -684,7 +684,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_ping_host() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let i = None;
         let max_loop = None;
@@ -704,7 +704,7 @@ mod tests {
     }
     #[test]
     fn test_icmp_ping_host() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 106));
+        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let i = None;
         let max_loop = None;

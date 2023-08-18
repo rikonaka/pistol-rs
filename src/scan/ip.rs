@@ -23,7 +23,6 @@ use crate::utils::TCP_DATA_LEN;
 use crate::utils::TCP_HEADER_LEN;
 use crate::utils::UDP_DATA_LEN;
 use crate::utils::UDP_HEADER_LEN;
-use crate::utils;
 use crate::IpScanStatus;
 
 fn _build_tcp_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Vec<u8> {
@@ -83,6 +82,7 @@ pub fn send_ip_procotol_scan_packet(
     };
 
     let (_, mut icmp_rx) = return_layer3_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
 
     // an exception is made for certain popular protocols (including TCP, UDP, and ICMP)
     match protocol {
@@ -93,7 +93,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_version(4);
             ip_header.set_header_length(5);
             ip_header.set_total_length((IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN) as u16);
-            let id = utils::random_u16();
+            let id = rng.gen();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(IP_TTL);
@@ -114,7 +114,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_version(4);
             ip_header.set_header_length(5);
             ip_header.set_total_length((IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_DATA_LEN) as u16);
-            let id = utils::random_u16();
+            let id = rng.gen();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(IP_TTL);
@@ -137,7 +137,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_version(4);
             ip_header.set_header_length(5);
             ip_header.set_total_length((IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_DATA_LEN) as u16);
-            let id = utils::random_u16();
+            let id = rng.gen();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(IP_TTL);
@@ -160,7 +160,7 @@ pub fn send_ip_procotol_scan_packet(
             ip_header.set_version(4);
             ip_header.set_header_length(5);
             ip_header.set_total_length(IPV4_HEADER_LEN as u16);
-            let id = utils::random_u16();
+            let id = rng.gen();
             ip_header.set_identification(id);
             ip_header.set_flags(Ipv4Flags::DontFragment);
             ip_header.set_ttl(IP_TTL);
@@ -236,7 +236,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_ip_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;

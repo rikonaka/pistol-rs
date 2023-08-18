@@ -83,7 +83,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_icmp_ping_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 106);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
