@@ -76,6 +76,7 @@ pub struct TcpProbeResults {
     pub w4: u16,
     pub w5: u16,
     pub w6: u16,
+    pub df: String,
 }
 
 fn tcp_packet_get_info(tcp_packet: TcpPacket) -> (u32, u32, String, u16) {
@@ -196,7 +197,7 @@ fn send_six_seq_packets(
         pool.execute(move || {
             let (mut tcp_tx, mut tcp_rx) = return_layer3_tcp_channel(TCP_BUFF_SIZE).unwrap();
             let packet = Ipv4Packet::new(&buff).unwrap();
-            match tcp_tx.send_to(packet, dst_ipv4.into()) {
+            match tcp_tx.send_to(&packet, dst_ipv4.into()) {
                 Ok(n) => {
                     if n == IPV4_HEADER_LEN + TCP_HEADER_WITH_OPTIONS_LEN + TCP_DATA_LEN {
                         let mut tcp_iter = ipv4_packet_iter(&mut tcp_rx);
@@ -326,7 +327,7 @@ fn send_t5_t6_t7_packets(
         pool.execute(move || {
             let (mut tcp_tx, mut tcp_rx) = return_layer3_tcp_channel(TCP_BUFF_SIZE).unwrap();
             let packet = Ipv4Packet::new(&buff).unwrap();
-            match tcp_tx.send_to(packet, dst_ipv4.into()) {
+            match tcp_tx.send_to(&packet, dst_ipv4.into()) {
                 Ok(n) => {
                     if n == IPV4_HEADER_LEN + TCP_HEADER_WITH_OPTIONS_LEN + TCP_DATA_LEN {
                         let mut tcp_iter = ipv4_packet_iter(&mut tcp_rx);
@@ -347,8 +348,15 @@ fn send_t5_t6_t7_packets(
                                                     let id = ipv4_packet.get_identification();
                                                     let (seq, tsval, o, window) =
                                                         tcp_packet_get_info(tcp_packet);
+                                                    let df = if packet.get_flags()
+                                                        == Ipv4Flags::DontFragment
+                                                    {
+                                                        String::from("Y")
+                                                    } else {
+                                                        String::from("N")
+                                                    };
                                                     match tx.send(Ok((
-                                                        recv_size, seq, id, tsval, o, window,
+                                                        recv_size, seq, id, tsval, o, window, df,
                                                     ))) {
                                                         _ => (),
                                                     }
@@ -372,12 +380,28 @@ fn send_t5_t6_t7_packets(
                             }
                         }
                         if !send_flag {
-                            match tx.send(Ok((recv_size, 0, 0, 0, String::from(""), 0))) {
+                            match tx.send(Ok((
+                                recv_size,
+                                0,
+                                0,
+                                0,
+                                String::from(""),
+                                0,
+                                String::from(""),
+                            ))) {
                                 _ => (),
                             }
                         }
                     } else {
-                        match tx.send(Ok((recv_size, 0, 0, 0, String::from(""), 0))) {
+                        match tx.send(Ok((
+                            recv_size,
+                            0,
+                            0,
+                            0,
+                            String::from(""),
+                            0,
+                            String::from(""),
+                        ))) {
                             _ => (),
                         }
                     };
@@ -395,7 +419,7 @@ fn send_t5_t6_t7_packets(
     let iter = rx.into_iter().take(recv_size);
     for ret in iter {
         match ret {
-            Ok((index, seq, id, tsval, o, window)) => {
+            Ok((index, seq, id, tsval, o, window, df)) => {
                 let r = if seq == 0 && id == 0 && tsval == 0 && window == 0 && o.len() == 0 {
                     String::from("N")
                 } else {
@@ -408,6 +432,7 @@ fn send_t5_t6_t7_packets(
                     o,
                     window,
                     r,
+                    df,
                 };
                 result.insert(index, data);
             }
@@ -889,6 +914,8 @@ pub fn tcp_probe(
     let w5 = sq_response.get(&5).unwrap().window;
     let w6 = sq_response.get(&6).unwrap().window;
 
+    let df = sq_response.get(&1).unwrap().df.clone();
+
     let result = TcpProbeResults {
         gcd,
         isr,
@@ -910,6 +937,7 @@ pub fn tcp_probe(
         w4,
         w5,
         w6,
+        df,
     };
 
     Ok(result)
