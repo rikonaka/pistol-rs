@@ -42,7 +42,11 @@ const TCP_HEADER_WITH_OPTIONS_LEN: usize = 60; // 20 + 40 (options)
 struct SEQ {
     seq: u32,
     id: u16,
-    tsval: Vec<u8>,
+    tsval: u32,
+    o: String,
+    window: u16,
+    r: String,
+    df: String,
 }
 
 #[derive(Debug)]
@@ -60,6 +64,108 @@ pub struct TcpProbeResults {
     pub ii: String,
     pub ss: String,
     pub ts: String,
+    pub o1: String,
+    pub o2: String,
+    pub o3: String,
+    pub o4: String,
+    pub o5: String,
+    pub o6: String,
+    pub w1: u16,
+    pub w2: u16,
+    pub w3: u16,
+    pub w4: u16,
+    pub w5: u16,
+    pub w6: u16,
+}
+
+fn tcp_packet_get_info(tcp_packet: TcpPacket) -> (u32, u32, String, u16) {
+    let seq = tcp_packet.get_sequence();
+    let options_vec = tcp_packet.get_options();
+    let mut tsval_vec = Vec::new();
+    let mut o = String::from("");
+    let window = tcp_packet.get_window();
+    for option in options_vec {
+        match option.number {
+            TcpOptionNumbers::EOL => {
+                o = format!("{}{}", o, "L");
+            }
+            TcpOptionNumbers::NOP => {
+                o = format!("{}{}", o, "N");
+            }
+            TcpOptionNumbers::MSS => {
+                o = format!("{}{}", o, "M");
+                let mut data = 0;
+                let mut i = option.data.len();
+                for d in &option.data {
+                    let t = *d as u32;
+                    data += t << ((i - 1) * 8);
+                    i -= 1;
+                }
+                o = format!("{}{:X}", o, data);
+            }
+            TcpOptionNumbers::WSCALE => {
+                o = format!("{}{}", o, "W");
+                let mut data = 0;
+                let mut i = option.data.len();
+                for d in &option.data {
+                    let t = *d as u32;
+                    data += t << ((i - 1) * 8);
+                    i -= 1;
+                }
+                o = format!("{}{:X}", o, data);
+            }
+            TcpOptionNumbers::TIMESTAMPS => {
+                o = format!("{}{}", o, "T");
+                let mut t0 = Vec::new();
+                let mut t1 = Vec::new();
+                for i in 0..option.data.len() {
+                    if i < 4 {
+                        // get first 4 u8 values
+                        tsval_vec.push(option.data[i]);
+                        t0.push(option.data[i]);
+                    } else {
+                        t1.push(option.data[i]);
+                    }
+                }
+                let mut t0_u32 = 0;
+                let mut t1_u32 = 0;
+                let mut i = t0.len();
+                for d in &t0 {
+                    let t = *d as u32;
+                    t0_u32 += t << ((i - 1) * 8);
+                    i -= 1;
+                }
+                let mut i = t1.len();
+                for d in &t1 {
+                    let t = *d as u32;
+                    t1_u32 += t << ((i - 1) * 8);
+                    i -= 1;
+                }
+                if t0_u32 == 0 {
+                    o = format!("{}{}", o, 0);
+                } else {
+                    o = format!("{}{}", o, 1);
+                }
+                if t1_u32 == 0 {
+                    o = format!("{}{}", o, 0);
+                } else {
+                    o = format!("{}{}", o, 1);
+                }
+            }
+            TcpOptionNumbers::SACK_PERMITTED => {
+                o = format!("{}{}", o, "S");
+            }
+            _ => (), // do nothing
+        }
+    }
+    let mut tsval = 0;
+    let mut i = tsval_vec.len();
+    for t in &tsval_vec {
+        let t = *t as u32;
+        tsval += t << ((i - 1) * 8);
+        i -= 1;
+    }
+    (seq, tsval, o, window)
 }
 
 fn send_six_seq_packets(
@@ -108,22 +214,21 @@ fn send_six_seq_packets(
                                                 if tcp_packet.get_source() == dst_open_port
                                                     && tcp_packet.get_destination() == src_port
                                                 {
-                                                    let seq = tcp_packet.get_sequence();
                                                     let id = ipv4_packet.get_identification();
-                                                    let options_vec = tcp_packet.get_options();
-                                                    let mut tsval = Vec::new();
-                                                    for o in options_vec {
-                                                        if o.number == TcpOptionNumbers::TIMESTAMPS
-                                                        {
-                                                            // println!("len {} -> {:?}", o.data.len(), o.data);
-                                                            for i in 0..4 {
-                                                                tsval.push(o.data[i]);
-                                                            }
-                                                        }
-                                                    }
+                                                    let (seq, tsval, o, window) =
+                                                        tcp_packet_get_info(tcp_packet);
 
-                                                    // (packet_id, seq, id)
-                                                    match tx.send(Ok((recv_size, seq, id, tsval))) {
+                                                    let df = if packet.get_flags()
+                                                        == Ipv4Flags::DontFragment
+                                                    {
+                                                        String::from("Y")
+                                                    } else {
+                                                        String::from("N")
+                                                    };
+                                                    let send_value = Some((
+                                                        recv_size, seq, id, tsval, o, window, df,
+                                                    ));
+                                                    match tx.send(Ok(send_value)) {
                                                         _ => (),
                                                     }
                                                     send_flag = true;
@@ -146,12 +251,12 @@ fn send_six_seq_packets(
                             }
                         }
                         if !send_flag {
-                            match tx.send(Ok((recv_size, 0, 0, vec![]))) {
+                            match tx.send(Ok(None)) {
                                 _ => (),
                             }
                         }
                     } else {
-                        match tx.send(Ok((recv_size, 0, 0, vec![]))) {
+                        match tx.send(Ok(None)) {
                             _ => (),
                         }
                     };
@@ -169,10 +274,26 @@ fn send_six_seq_packets(
     let iter = rx.into_iter().take(recv_size);
     for ret in iter {
         match ret {
-            Ok((index, seq, id, tsval)) => {
-                let data = SEQ { seq, id, tsval };
-                result.insert(index, data);
-            }
+            Ok(v) => match v {
+                Some((index, seq, id, tsval, o, window, df)) => {
+                    let r = if seq == 0 && id == 0 && tsval == 0 && window == 0 && o.len() == 0 {
+                        String::from("N")
+                    } else {
+                        String::from("Y")
+                    };
+                    let data = SEQ {
+                        seq,
+                        id,
+                        tsval,
+                        o,
+                        window,
+                        r,
+                        df,
+                    };
+                    result.insert(index, data);
+                }
+                _ => (),
+            },
             Err(e) => return Err(e.into()),
         }
     }
@@ -223,10 +344,12 @@ fn send_t5_t6_t7_packets(
                                                 if tcp_packet.get_source() == dst_closed_port
                                                     && tcp_packet.get_destination() == src_port
                                                 {
-                                                    let seq = tcp_packet.get_sequence();
                                                     let id = ipv4_packet.get_identification();
-                                                    // (packet_id, seq, id)
-                                                    match tx.send(Ok((recv_size, seq, id))) {
+                                                    let (seq, tsval, o, window) =
+                                                        tcp_packet_get_info(tcp_packet);
+                                                    match tx.send(Ok((
+                                                        recv_size, seq, id, tsval, o, window,
+                                                    ))) {
                                                         _ => (),
                                                     }
                                                     send_flag = true;
@@ -249,12 +372,12 @@ fn send_t5_t6_t7_packets(
                             }
                         }
                         if !send_flag {
-                            match tx.send(Ok((recv_size, 0, 0))) {
+                            match tx.send(Ok((recv_size, 0, 0, 0, String::from(""), 0))) {
                                 _ => (),
                             }
                         }
                     } else {
-                        match tx.send(Ok((recv_size, 0, 0))) {
+                        match tx.send(Ok((recv_size, 0, 0, 0, String::from(""), 0))) {
                             _ => (),
                         }
                     };
@@ -272,11 +395,19 @@ fn send_t5_t6_t7_packets(
     let iter = rx.into_iter().take(recv_size);
     for ret in iter {
         match ret {
-            Ok((index, seq, id)) => {
+            Ok((index, seq, id, tsval, o, window)) => {
+                let r = if seq == 0 && id == 0 && tsval == 0 && window == 0 && o.len() == 0 {
+                    String::from("N")
+                } else {
+                    String::from("Y")
+                };
                 let data = SEQ {
                     seq,
                     id,
-                    tsval: vec![],
+                    tsval,
+                    o,
+                    window,
+                    r,
                 };
                 result.insert(index, data);
             }
@@ -720,14 +851,7 @@ pub fn tcp_probe(
     let mut tsval_vec = Vec::new();
     for i in 1..(sq_response.len() + 1) {
         let seq = sq_response.get(&i).unwrap();
-        let _tsval = &seq.tsval;
-        let mut tsval: u32 = 0;
-        let mut i = _tsval.len();
-        for t in _tsval {
-            let t = *t as u32;
-            tsval += t << ((i - 1) * 8);
-            i -= 1;
-        }
+        let tsval = &seq.tsval;
         // It takes the difference between each consecutive TSval and divides that by the amount of time elapsed
         // between Nmap sending the two probes which generated those responses.
         tsval_vec.push(tsval * 10); // = tsval / 0.1
@@ -749,6 +873,22 @@ pub fn tcp_probe(
         String::from("A")
     };
 
+    // O1-O6
+    let o1 = sq_response.get(&1).unwrap().o.clone();
+    let o2 = sq_response.get(&2).unwrap().o.clone();
+    let o3 = sq_response.get(&3).unwrap().o.clone();
+    let o4 = sq_response.get(&4).unwrap().o.clone();
+    let o5 = sq_response.get(&5).unwrap().o.clone();
+    let o6 = sq_response.get(&6).unwrap().o.clone();
+
+    // W1–W6
+    let w1 = sq_response.get(&1).unwrap().window;
+    let w2 = sq_response.get(&2).unwrap().window;
+    let w3 = sq_response.get(&3).unwrap().window;
+    let w4 = sq_response.get(&4).unwrap().window;
+    let w5 = sq_response.get(&5).unwrap().window;
+    let w6 = sq_response.get(&6).unwrap().window;
+
     let result = TcpProbeResults {
         gcd,
         isr,
@@ -758,6 +898,18 @@ pub fn tcp_probe(
         ii,
         ss,
         ts,
+        o1,
+        o2,
+        o3,
+        o4,
+        o5,
+        o6,
+        w1,
+        w2,
+        w3,
+        w4,
+        w5,
+        w6,
     };
 
     Ok(result)

@@ -1,5 +1,7 @@
 # pistol-rs
 
+The library must be run as root (Linux) or administrator (Windows).
+
 ## Host discovery (Ping Scanning)
 
 I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
