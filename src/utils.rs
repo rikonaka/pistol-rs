@@ -286,6 +286,16 @@ pub fn return_layer4_tcp6_channel(
     }
 }
 
+pub fn return_layer3_udp_channel(
+    buffer_size: usize,
+) -> Result<(TransportSender, TransportReceiver)> {
+    let udp_protocol = Layer3(IpNextHeaderProtocols::Udp);
+    match transport_channel(buffer_size, udp_protocol) {
+        Ok((tx, rx)) => Ok((tx, rx)),
+        Err(e) => return Err(e.into()),
+    }
+}
+
 pub fn return_layer4_udp_channel(
     buffer_size: usize,
 ) -> Result<(TransportSender, TransportReceiver)> {

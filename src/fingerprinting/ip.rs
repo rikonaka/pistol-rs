@@ -1,4 +1,6 @@
 use anyhow::Result;
+use chrono::{DateTime, Local, Utc};
+use pnet::datalink::MacAddr;
 use pnet::packet::icmp;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::MutableIcmpPacket;
@@ -29,14 +31,11 @@ use crate::utils::gcd_vec;
 use crate::utils::get_threads_pool;
 use crate::utils::return_layer3_icmp_channel;
 use crate::utils::return_layer3_tcp_channel;
+use crate::utils::return_layer3_udp_channel;
 use crate::utils::standard_deviation_vec;
 use crate::utils::ICMP_BUFF_SIZE;
-use crate::utils::ICMP_HEADER_LEN;
-use crate::utils::IPV4_HEADER_LEN;
 use crate::utils::TCP_BUFF_SIZE;
-use crate::utils::TCP_DATA_LEN;
-
-const TCP_HEADER_WITH_OPTIONS_LEN: usize = 60; // 20 + 40 (options)
+use crate::utils::UDP_BUFF_SIZE;
 
 #[derive(Debug)]
 struct SEQ {
@@ -52,10 +51,18 @@ struct SEQ {
 #[derive(Debug)]
 struct IE {
     id: u16,
+    odfi: String,
+    dfi: String,
 }
 
 #[derive(Debug)]
-pub struct TcpProbeResults {
+struct U1 {
+    t: u8,
+    tg: u8,
+}
+
+#[derive(Debug)]
+pub struct ProbeResults {
     pub gcd: u32,
     pub isr: f32,
     pub sp: f32,
@@ -77,6 +84,9 @@ pub struct TcpProbeResults {
     pub w5: u16,
     pub w6: u16,
     pub df: String,
+    pub dfi: String,
+    pub t: u8,
+    pub tg: u8,
 }
 
 fn tcp_packet_get_info(tcp_packet: TcpPacket) -> (u32, u32, String, u16) {
@@ -169,7 +179,7 @@ fn tcp_packet_get_info(tcp_packet: TcpPacket) -> (u32, u32, String, u16) {
     (seq, tsval, o, window)
 }
 
-fn send_six_seq_packets(
+fn send_six_seq_probes(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     dst_ipv4: Ipv4Addr,
@@ -199,7 +209,7 @@ fn send_six_seq_packets(
             let packet = Ipv4Packet::new(&buff).unwrap();
             match tcp_tx.send_to(&packet, dst_ipv4.into()) {
                 Ok(n) => {
-                    if n == IPV4_HEADER_LEN + TCP_HEADER_WITH_OPTIONS_LEN + TCP_DATA_LEN {
+                    if n == buff.len() {
                         let mut tcp_iter = ipv4_packet_iter(&mut tcp_rx);
                         let mut send_flag = false;
                         for _ in 0..max_loop {
@@ -276,7 +286,7 @@ fn send_six_seq_packets(
     for ret in iter {
         match ret {
             Ok(v) => match v {
-                Some((index, seq, id, tsval, o, window, df)) => {
+                Some((packet_id, seq, id, tsval, o, window, df)) => {
                     let r = if seq == 0 && id == 0 && tsval == 0 && window == 0 && o.len() == 0 {
                         String::from("N")
                     } else {
@@ -291,7 +301,7 @@ fn send_six_seq_packets(
                         r,
                         df,
                     };
-                    result.insert(index, data);
+                    result.insert(packet_id, data);
                 }
                 _ => (),
             },
@@ -302,7 +312,7 @@ fn send_six_seq_packets(
     Ok(result)
 }
 
-fn send_t5_t6_t7_packets(
+fn send_t5_t6_t7_probes(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     dst_ipv4: Ipv4Addr,
@@ -329,7 +339,7 @@ fn send_t5_t6_t7_packets(
             let packet = Ipv4Packet::new(&buff).unwrap();
             match tcp_tx.send_to(&packet, dst_ipv4.into()) {
                 Ok(n) => {
-                    if n == IPV4_HEADER_LEN + TCP_HEADER_WITH_OPTIONS_LEN + TCP_DATA_LEN {
+                    if n == buff.len() {
                         let mut tcp_iter = ipv4_packet_iter(&mut tcp_rx);
                         let mut send_flag = false;
                         for _ in 0..max_loop {
@@ -355,9 +365,9 @@ fn send_t5_t6_t7_packets(
                                                     } else {
                                                         String::from("N")
                                                     };
-                                                    match tx.send(Ok((
+                                                    match tx.send(Ok(Some((
                                                         recv_size, seq, id, tsval, o, window, df,
-                                                    ))) {
+                                                    )))) {
                                                         _ => (),
                                                     }
                                                     send_flag = true;
@@ -380,28 +390,12 @@ fn send_t5_t6_t7_packets(
                             }
                         }
                         if !send_flag {
-                            match tx.send(Ok((
-                                recv_size,
-                                0,
-                                0,
-                                0,
-                                String::from(""),
-                                0,
-                                String::from(""),
-                            ))) {
+                            match tx.send(Ok(None)) {
                                 _ => (),
                             }
                         }
                     } else {
-                        match tx.send(Ok((
-                            recv_size,
-                            0,
-                            0,
-                            0,
-                            String::from(""),
-                            0,
-                            String::from(""),
-                        ))) {
+                        match tx.send(Ok(None)) {
                             _ => (),
                         }
                     };
@@ -419,23 +413,26 @@ fn send_t5_t6_t7_packets(
     let iter = rx.into_iter().take(recv_size);
     for ret in iter {
         match ret {
-            Ok((index, seq, id, tsval, o, window, df)) => {
-                let r = if seq == 0 && id == 0 && tsval == 0 && window == 0 && o.len() == 0 {
-                    String::from("N")
-                } else {
-                    String::from("Y")
-                };
-                let data = SEQ {
-                    seq,
-                    id,
-                    tsval,
-                    o,
-                    window,
-                    r,
-                    df,
-                };
-                result.insert(index, data);
-            }
+            Ok(r) => match r {
+                Some((packet_id, seq, id, tsval, o, window, df)) => {
+                    let r = if seq == 0 && id == 0 && tsval == 0 && window == 0 && o.len() == 0 {
+                        String::from("N")
+                    } else {
+                        String::from("Y")
+                    };
+                    let data = SEQ {
+                        seq,
+                        id,
+                        tsval,
+                        o,
+                        window,
+                        r,
+                        df,
+                    };
+                    result.insert(packet_id, data);
+                }
+                _ => (),
+            },
             Err(e) => return Err(e.into()),
         }
     }
@@ -443,7 +440,7 @@ fn send_t5_t6_t7_packets(
     Ok(result)
 }
 
-fn send_ie_packets(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usize, IE>> {
+fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usize, IE>> {
     const ICMP_DATA_LEN: usize = 120;
     let max_loop = 32;
     let read_timeout = Duration::from_secs_f32(9.0);
@@ -463,7 +460,7 @@ fn send_ie_packets(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usi
         pool.execute(move || {
             let (mut icmp_tx, mut icmp_rx) = return_layer3_icmp_channel(ICMP_BUFF_SIZE).unwrap();
             let packet = Ipv4Packet::new(&buff).unwrap();
-            match icmp_tx.send_to(packet, dst_ipv4.into()) {
+            match icmp_tx.send_to(&packet, dst_ipv4.into()) {
                 Ok(n) => {
                     // two ie packet had diffierent length
                     if n > 0 {
@@ -478,8 +475,23 @@ fn send_ie_packets(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usi
                                                 == IpNextHeaderProtocols::Icmp
                                             {
                                                 let id = ipv4_packet.get_identification();
-                                                // (packet_id, ip_id)
-                                                match tx.send(Ok((recv_size, id))) {
+                                                let odfi = if packet.get_flags()
+                                                    == Ipv4Flags::DontFragment
+                                                {
+                                                    String::from("Y")
+                                                } else {
+                                                    String::from("N")
+                                                };
+                                                let dfi = if ipv4_packet.get_flags()
+                                                    == Ipv4Flags::DontFragment
+                                                {
+                                                    String::from("Y")
+                                                } else {
+                                                    String::from("N")
+                                                };
+                                                // (packet_id, ip_id, dfi)
+                                                match tx.send(Ok(Some((recv_size, id, odfi, dfi))))
+                                                {
                                                     _ => (),
                                                 }
                                                 send_flag = true;
@@ -501,12 +513,12 @@ fn send_ie_packets(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usi
                             }
                         }
                         if !send_flag {
-                            match tx.send(Ok((recv_size, 0))) {
+                            match tx.send(Ok(None)) {
                                 _ => (),
                             }
                         }
                     } else {
-                        match tx.send(Ok((recv_size, 0))) {
+                        match tx.send(Ok(None)) {
                             _ => (),
                         }
                     };
@@ -524,10 +536,13 @@ fn send_ie_packets(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usi
     let iter = rx.into_iter().take(recv_size);
     for ret in iter {
         match ret {
-            Ok((index, id)) => {
-                let data = IE { id };
-                result.insert(index, data);
-            }
+            Ok(r) => match r {
+                Some((packet_id, id, odfi, dfi)) => {
+                    let data = IE { id, odfi, dfi };
+                    result.insert(packet_id, data);
+                }
+                _ => (),
+            },
             Err(e) => return Err(e.into()),
         }
     }
@@ -535,17 +550,151 @@ fn send_ie_packets(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<HashMap<usi
     Ok(result)
 }
 
-pub fn tcp_probe(
+fn send_u1_probe(
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
+    dst_ipv4: Ipv4Addr,
+    dst_closed_port: u16,
+) -> Result<U1> {
+    const ICMP_DATA_LEN: usize = 120;
+    let max_loop = 32;
+    let read_timeout = Duration::from_secs_f32(9.0);
+
+    let buff = packet::udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
+    let (mut udp_tx, _) = return_layer3_udp_channel(UDP_BUFF_SIZE).unwrap();
+    let (_, mut icmp_rx) = return_layer3_icmp_channel(ICMP_BUFF_SIZE).unwrap();
+
+    let packet = Ipv4Packet::new(&buff).unwrap();
+    match udp_tx.send_to(&packet, dst_ipv4.into()) {
+        Ok(n) => assert_eq!(n, buff.len()),
+        Err(e) => return Err(e.into()),
+    }
+
+    let mut icmp_iter = ipv4_packet_iter(&mut icmp_rx);
+    let packet_ttl_1 = packet.get_ttl();
+    let mut htops = 0;
+    let mut response_ttl = 0;
+
+    let mut recv_packet = false;
+    for _ in 0..max_loop {
+        match icmp_iter.next_with_timeout(read_timeout) {
+            Ok(r) => match r {
+                Some((ipv4_packet, addr)) => {
+                    if addr == dst_ipv4 {
+                        if ipv4_packet.get_next_level_protocol() == IpNextHeaderProtocols::Icmp {
+                            // the UDP packet was send to closed port, ICMP should be return first
+                            response_ttl = ipv4_packet.get_ttl();
+                            let icmp_packet = IcmpPacket::new(ipv4_packet.payload()).unwrap();
+                            let unreachable_ip_packet =
+                                Ipv4Packet::new(icmp_packet.payload()).unwrap();
+                            let packet_ttl_2 = unreachable_ip_packet.get_ttl();
+                            htops = packet_ttl_1 - packet_ttl_2;
+                            // get what we need, so break
+                            recv_packet = true;
+                            break;
+                        }
+                    }
+                }
+                _ => (), // do nothing
+            },
+            Err(e) => return Err(e.into()),
+        }
+    }
+    let tg = if recv_packet {
+        0
+    } else {
+        if response_ttl <= 32 {
+            32
+        } else if response_ttl <= 64 && response_ttl > 32 {
+            64
+        } else if response_ttl <= 128 && response_ttl > 64 {
+            128
+        } else if response_ttl > 128 {
+            255
+        } else {
+            0
+        }
+    };
+
+    let t = response_ttl + htops;
+    let result = U1 { t, tg };
+
+    Ok(result)
+}
+
+pub fn return_scan_line(
+    dst_mac: Option<MacAddr>,
+    dst_open_tcp_port: u16,
+    dst_closed_tcp_port: u16,
+    dst_closed_udp_port: u16,
+    dst_ipv4: Ipv4Addr,
+    htops: Option<u8>,
+    good_results: bool,
+) -> String {
+    // Nmap version number (V).
+    let v = "pistol";
+    // Date of scan (D) in the form month/day.
+    let now: DateTime<Local> = Local::now();
+    let date = format!("{}", now.format("%-m/%-d"));
+    // Private IP space (PV) is Y if the target is on the 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16 private networks (RFC 1918).
+    // Otherwise it is N.
+    // Network distance (DS) is the network hop distance from the target. It is 0 if the target is localhost, 1 if directly connected on an ethernet network, or the exact distance if discovered by Nmap.
+    // If the distance is unknown, this test is omitted.
+    // The distance calculation method (DC) indicates how the network distance (DS) was calculated.
+    // It can take on these values:
+    // L for localhost (DS=0);
+    // D for a direct subnet connection (DS=1);
+    // I for a TTL calculation based on an ICMP response to the U1 OS detection probe;
+    // and T for a count of traceroute hops (I don't particularly understand how this sentence is implemented).
+    // This test exists because it is possible for the ICMP TTL calculation to be incorrect when intermediate machines change the TTL;
+    // it distinguishes between a host that is truly directly connected and what may be just a miscalculation.
+    let (pv, ds, dc) = if dst_ipv4.is_loopback() {
+        ("Y", 0, "L")
+    } else if dst_ipv4.is_private() {
+        ("Y", 1, "D")
+    } else {
+        ("N", htops.unwrap(), "I")
+    };
+    // Good results (G) is Y if conditions and results seem good enough to submit this fingerprint to Nmap.Org.
+    // It is N otherwise. Unless you force them by enabling debugging (-d) or extreme verbosity (-vv), G=N fingerprints aren't printed by Nmap.
+    let g = if good_results { "Y" } else { "N" };
+    // Target MAC prefix (M) is the first six hex digits of the target MAC address, which correspond to the vendor name.
+    // Leading zeros are not included. This field is omitted unless the target is on the same ethernet network (DS=1).
+    let m = if ds == 1 {
+        let mut dst_mac_vec: [u8; 6] = dst_mac.unwrap().octets();
+        let mut dst_mac_str = String::from("");
+        for m in &mut dst_mac_vec[0..3] {
+            dst_mac_str = format!("{}{:X}", dst_mac_str, m);
+        }
+        dst_mac_str
+    } else {
+        "".to_string()
+    };
+    // The OS scan time (TM) is provided in Unix time_t format (in hexadecimal).
+    let now: DateTime<Utc> = Utc::now();
+    let tm = format!("{:X}", now.timestamp());
+    // The platform Nmap was compiled for is given in the P field.
+    let p = "rust";
+
+    // SCAN(V=5.05BETA1%D=8/23%OT=22%CT=1%CU=42341%PV=N%DS=0%DC=L%G=Y%TM=4A91CB90%P=i686-pc-linux-gnu)
+    let info_str = if m.len() > 0 {
+        format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
+    } else {
+        format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+    };
+    info_str
+}
+
+pub fn return_seq_line(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
-) -> Result<TcpProbeResults> {
-    let sq_response = send_six_seq_packets(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
-    let t5_t6_t7_response = send_t5_t6_t7_packets(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
-    let ie_response = send_ie_packets(src_ipv4, dst_ipv4)?;
-    // println!("{:?}", sq_response);
+) -> Result<String> {
+    let sq_response = send_six_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
+    let t5_t6_t7_response = send_t5_t6_t7_probes(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
+    let ie_response = send_ie_probes(src_ipv4, dst_ipv4)?;
     // GCD
     let mut diff1: Vec<u32> = Vec::new();
     for i in 1..sq_response.len() {
@@ -898,6 +1047,23 @@ pub fn tcp_probe(
         String::from("A")
     };
 
+    Ok(format!(
+        "SEQ(SP={sp}%GCD={gcd}%ISR={isr}%TI={ti}%CI={ci}%II={ii}%TS={ts})"
+    ))
+}
+
+pub fn not_finish(
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
+    dst_ipv4: Ipv4Addr,
+    dst_open_port: u16,
+    dst_closed_port: u16,
+) -> Result<()> {
+    let sq_response = send_six_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
+    let t5_t6_t7_response = send_t5_t6_t7_probes(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
+    let ie_response = send_ie_probes(src_ipv4, dst_ipv4)?;
+    let u1_response = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
+
     // O1-O6
     let o1 = sq_response.get(&1).unwrap().o.clone();
     let o2 = sq_response.get(&2).unwrap().o.clone();
@@ -914,39 +1080,64 @@ pub fn tcp_probe(
     let w5 = sq_response.get(&5).unwrap().window;
     let w6 = sq_response.get(&6).unwrap().window;
 
+    // DF
     let df = sq_response.get(&1).unwrap().df.clone();
 
-    let result = TcpProbeResults {
-        gcd,
-        isr,
-        sp,
-        ti,
-        ci,
-        ii,
-        ss,
-        ts,
-        o1,
-        o2,
-        o3,
-        o4,
-        o5,
-        o6,
-        w1,
-        w2,
-        w3,
-        w4,
-        w5,
-        w6,
-        df,
+    // DFI
+    let dfi = if ie_response.len() >= 2 {
+        let dfi1 = ie_response.get(&1).unwrap().dfi.clone();
+        let dfi2 = ie_response.get(&2).unwrap().dfi.clone();
+        let odfi1 = ie_response.get(&1).unwrap().odfi.clone();
+        let odfi2 = ie_response.get(&2).unwrap().odfi.clone();
+        if dfi1 == "N" && dfi2 == "N" {
+            // Neither of the ping responses have the DF bit set.
+            String::from("N")
+        } else if odfi1 == dfi1 && odfi2 == dfi2 {
+            // Both responses echo the DF value of the probe.
+            String::from("S")
+        } else if dfi1 == "Y" && dfi2 == "Y" {
+            // Both of the response DF bits are set.
+            String::from("Y")
+        } else if odfi1 != dfi1 && odfi2 != dfi2 {
+            // The one remaining other combination—both responses have the DF bit toggled.
+            String::from("O")
+        } else {
+            String::from("")
+        }
+    } else {
+        String::from("")
     };
 
-    Ok(result)
+    // T
+    let t = u1_response.t;
+
+    // TG
+    let tg = u1_response.tg;
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils;
+    #[test]
+    fn test_scan_str() {
+        let dst_mac = MacAddr::new(01, 12, 34, 56, 00, 90);
+        let dst_open_tcp_port = 22;
+        let dst_closed_tcp_port = 1;
+        let dst_closed_udp_port = 42341;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        return_scan_line(
+            Some(dst_mac),
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
+            dst_ipv4,
+            None,
+            true,
+        );
+    }
     #[test]
     fn test_sub() {
         let a: u32 = 0xFFFFFF00;
@@ -972,13 +1163,14 @@ mod tests {
         println!("{:X}", tsval)
     }
     #[test]
-    fn test_tcp_probe() {
+    fn test_seq() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
         let src_port = utils::random_port();
         let dst_open_port = 80;
         let dst_closed_port = 81;
-        let ret = tcp_probe(src_ipv4, src_port, dst_ipv4, dst_open_port, dst_closed_port).unwrap();
+        let ret =
+            return_seq_line(src_ipv4, src_port, dst_ipv4, dst_open_port, dst_closed_port).unwrap();
         println!("{:?}", ret);
     }
 }
