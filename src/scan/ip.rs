@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn test_ip_scan_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let protocol = IpNextHeaderProtocols::Tcp;

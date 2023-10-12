@@ -20,7 +20,81 @@ use crate::utils::IP_TTL;
 use crate::utils::TCP_DATA_LEN;
 use crate::utils::UDP_HEADER_LEN;
 
-const TCP_HEADER_WITH_OPTIONS_LEN: usize = 60; // 20 + 40 (options)
+// const TCP_HEADER_WITH_OPTIONS_LEN: usize = 60; // 20 + 40 (options)
+const TCP_HEADER_WITH_OPTIONS_LEN: usize = 40; // 20 + 20 (options)
+
+/* 8 options:
+*  0~5: six options for SEQ/OPS/WIN/T1 probes.
+*  6:   ECN probe.
+*  7-12:   T2~T7 probes.
+*
+* option 0: WScale (10), Nop, MSS (1460), Timestamp, SackP
+* option 1: MSS (1400), WScale (0), SackP, T(0xFFFFFFFF,0x0), EOL
+* option 2: T(0xFFFFFFFF, 0x0), Nop, Nop, WScale (5), Nop, MSS (640)
+* option 3: SackP, T(0xFFFFFFFF,0x0), WScale (10), EOL
+* option 4: MSS (536), SackP, T(0xFFFFFFFF,0x0), WScale (10), EOL
+* option 5: MSS (265), SackP, T(0xFFFFFFFF,0x0)
+* option 6: WScale (10), Nop, MSS (1460), SackP, Nop, Nop
+* option 7-11: WScale (10), Nop, MSS (265), T(0xFFFFFFFF,0x0), SackP
+* option 12: WScale (15), Nop, MSS (265), T(0xFFFFFFFF,0x0), SackP
+*/
+pub const PRB_OPT: [[u8; 20]; 13] = [
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x05, 0xb4, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 0
+    ],
+    [
+        0x02, 0x04, 0x05, 0x78, 0x03, 0x03, 0x00, 0x04, 0x02, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff,
+        0x00, 0x00, 0x00, 0x00, 0x00, // 1
+    ],
+    [
+        0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03, 0x03, 0x05,
+        0x01, 0x02, 0x04, 0x02, 0x80, // 2
+    ],
+    [
+        0x04, 0x02, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x03, 0x03, 0x0A,
+        0x00, 0x00, 0x00, 0x00, 0x00, // 3
+    ],
+    [
+        0x02, 0x04, 0x02, 0x18, 0x04, 0x02, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x03, 0x03, 0x0A, 0x00, // 4
+    ],
+    [
+        0x02, 0x04, 0x01, 0x09, 0x04, 0x02, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, // 5
+    ],
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x05, 0xb4, 0x04, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, // 6
+    ],
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x01, 0x09, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 7
+    ],
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x01, 0x09, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 8
+    ],
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x01, 0x09, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 9
+    ],
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x01, 0x09, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 10
+    ],
+    [
+        0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x01, 0x09, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 11
+    ],
+    [
+        0x03, 0x03, 0x0f, 0x01, 0x02, 0x04, 0x01, 0x09, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0x02, // 12
+    ],
+];
+
+/* TCP Window sizes. Numbering is the same as for prbOpts[] */
+pub const PRB_WINDOW_SZ: [u16; 13] = [1, 63, 4, 4, 16, 512, 3, 128, 256, 1024, 31337, 32768, 65535];
 
 pub fn seq_packet_1_layer3(
     src_ipv4: Ipv4Addr,
@@ -58,9 +132,9 @@ pub fn seq_packet_1_layer3(
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     // The window field is 1.
-    tcp_header.set_window(1);
+    tcp_header.set_window(PRB_WINDOW_SZ[0]);
     tcp_header.set_urgent_ptr(0);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // Packet #1: window scale (10), NOP, MSS (1460), timestamp (TSval: 0xFFFFFFFF; TSecr: 0), SACK permitted.
     tcp_header.set_options(&vec![
@@ -70,6 +144,8 @@ pub fn seq_packet_1_layer3(
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
         TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[0]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -114,9 +190,9 @@ pub fn seq_packet_2_layer3(
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     // The window field is 63.
-    tcp_header.set_window(63);
+    tcp_header.set_window(PRB_WINDOW_SZ[1]);
     tcp_header.set_urgent_ptr(0);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // Packet #2: MSS (1400), window scale (0), SACK permitted, timestamp (TSval: 0xFFFFFFFF; TSecr: 0), EOL.
     tcp_header.set_options(&vec![
@@ -125,6 +201,8 @@ pub fn seq_packet_2_layer3(
         TcpOption::sack_perm(),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[1]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -169,9 +247,9 @@ pub fn seq_packet_3_layer3(
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     // The window field is 4.
-    tcp_header.set_window(4);
+    tcp_header.set_window(PRB_WINDOW_SZ[2]);
     tcp_header.set_urgent_ptr(0);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // Packet #3: Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), NOP, NOP, window scale (5), NOP, MSS (640).
     tcp_header.set_options(&vec![
@@ -180,8 +258,10 @@ pub fn seq_packet_3_layer3(
         TcpOption::nop(),
         TcpOption::wscale(5),
         TcpOption::nop(),
-        TcpOption::mss(6400),
+        TcpOption::mss(640),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[2]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -226,9 +306,9 @@ pub fn seq_packet_4_layer3(
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     // The window field is 4.
-    tcp_header.set_window(4);
+    tcp_header.set_window(PRB_WINDOW_SZ[3]);
     tcp_header.set_urgent_ptr(0);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // Packet #4: SACK permitted, Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), window scale (10), EOL.
     tcp_header.set_options(&vec![
@@ -236,6 +316,8 @@ pub fn seq_packet_4_layer3(
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
         TcpOption::wscale(10),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[3]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -280,9 +362,9 @@ pub fn seq_packet_5_layer3(
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     // The window field is 16.
-    tcp_header.set_window(16);
+    tcp_header.set_window(PRB_WINDOW_SZ[4]);
     tcp_header.set_urgent_ptr(0);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // Packet #5: MSS (536), SACK permitted, Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), window scale (10), EOL.
     tcp_header.set_options(&vec![
@@ -291,6 +373,8 @@ pub fn seq_packet_5_layer3(
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
         TcpOption::wscale(10),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[4]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -335,9 +419,9 @@ pub fn seq_packet_6_layer3(
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     // The window field is 512.
-    tcp_header.set_window(512);
+    tcp_header.set_window(PRB_WINDOW_SZ[5]);
     tcp_header.set_urgent_ptr(0);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // Packet #6: MSS (265), SACK permitted, Timestamp (TSval: 0xFFFFFFFF; TSecr: 0).
     tcp_header.set_options(&vec![
@@ -345,6 +429,8 @@ pub fn seq_packet_6_layer3(
         TcpOption::sack_perm(),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[5]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -486,10 +572,10 @@ pub fn ecn_packet_layer3(
     // Nmap tests this by sending a SYN packet which also has the ECN CWR and ECE congestion control flags set.
     tcp_header.set_flags(TcpFlags::SYN | TcpFlags::CWR | TcpFlags::ECE);
     // Window size field is three.
-    tcp_header.set_window(3);
+    tcp_header.set_window(PRB_WINDOW_SZ[6]);
     // For an unrelated (to ECN) test, the urgent field value of 0xF7F5 is used even though the urgent flag is not set.
     tcp_header.set_urgent_ptr(0xF7F5);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
     // TCP options are WScale (10), NOP, MSS (1460), SACK permitted, NOP, NOP.
     tcp_header.set_options(&vec![
@@ -500,6 +586,8 @@ pub fn ecn_packet_layer3(
         TcpOption::nop(),
         TcpOption::nop(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[6]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -543,16 +631,19 @@ pub fn t2_packet_layer3(
     tcp_header.set_acknowledgement(acknowledgement);
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     tcp_header.set_flags(0);
-    tcp_header.set_window(128);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_window(PRB_WINDOW_SZ[7]);
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
-    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0),
+    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
     tcp_header.set_options(&vec![
         TcpOption::wscale(10),
         TcpOption::nop(),
         TcpOption::mss(265),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
+        TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[7]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -596,16 +687,19 @@ pub fn t3_packet_layer3(
     tcp_header.set_acknowledgement(acknowledgement);
     // T3 sends a TCP packet with the SYN, FIN, URG, and PSH flags set and a window field of 256 to an open port. The IP DF bit is not set.
     tcp_header.set_flags(TcpFlags::SYN | TcpFlags::FIN | TcpFlags::URG | TcpFlags::PSH);
-    tcp_header.set_window(256);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_window(PRB_WINDOW_SZ[8]);
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
-    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0),
+    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
     tcp_header.set_options(&vec![
         TcpOption::wscale(10),
         TcpOption::nop(),
         TcpOption::mss(265),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
+        TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[8]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -649,16 +743,19 @@ pub fn t4_packet_layer3(
     tcp_header.set_acknowledgement(acknowledgement);
     // T4 sends a TCP ACK packet with IP DF and a window field of 1024 to an open port.
     tcp_header.set_flags(TcpFlags::ACK);
-    tcp_header.set_window(1024);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_window(PRB_WINDOW_SZ[9]);
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
-    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0),
+    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
     tcp_header.set_options(&vec![
         TcpOption::wscale(10),
         TcpOption::nop(),
         TcpOption::mss(265),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
+        TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[9]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -702,16 +799,19 @@ pub fn t5_packet_layer3(
     tcp_header.set_acknowledgement(acknowledgement);
     // T5 sends a TCP SYN packet without IP DF and a window field of 31337 to a closed port.
     tcp_header.set_flags(TcpFlags::SYN);
-    tcp_header.set_window(31337);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_window(PRB_WINDOW_SZ[10]);
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
-    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0),
+    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
     tcp_header.set_options(&vec![
         TcpOption::wscale(10),
         TcpOption::nop(),
         TcpOption::mss(265),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
+        TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[10]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -755,16 +855,19 @@ pub fn t6_packet_layer3(
     tcp_header.set_acknowledgement(acknowledgement);
     // T6 sends a TCP ACK packet with IP DF and a window field of 32768 to a closed port.
     tcp_header.set_flags(TcpFlags::ACK);
-    tcp_header.set_window(32768);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_window(PRB_WINDOW_SZ[11]);
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
-    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0),
+    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
     tcp_header.set_options(&vec![
         TcpOption::wscale(10),
         TcpOption::nop(),
         TcpOption::mss(265),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
+        TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[11]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -809,16 +912,20 @@ pub fn t7_packet_layer3(
     // T7 sends a TCP packet with the FIN, PSH, and URG flags set and a window field of 65535 to a closed port.
     // The IP DF bit is not set.
     tcp_header.set_flags(TcpFlags::FIN | TcpFlags::PSH | TcpFlags::URG);
-    tcp_header.set_window(65535);
-    tcp_header.set_data_offset(15); // 4 * 15 = 60
+    tcp_header.set_window(PRB_WINDOW_SZ[12]);
+    tcp_header.set_data_offset(10); // 4 * 10 = 40
 
-    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0),
+    // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
+    // The exception is that T7 uses a Window scale value of 15 rather than 10.
     tcp_header.set_options(&vec![
-        TcpOption::wscale(10),
+        TcpOption::wscale(15),
         TcpOption::nop(),
         TcpOption::mss(265),
         TcpOption::timestamp(0xFFFFFFFF, 0x0),
+        TcpOption::sack_perm(),
     ]);
+    let opt = tcp_header.get_options_raw();
+    assert_eq!(opt, PRB_OPT[12]);
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
@@ -868,10 +975,30 @@ pub fn udp_packet_layer3(
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
     #[test]
     fn test_vec() {
         let udp_data: Vec<u8> = vec![0x43; 10];
         println!("{:?}", udp_data);
+    }
+    #[test]
+    fn tcp_options_test() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        let src_port = 39876;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let dst_port = 80;
+        let _ = seq_packet_1_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = seq_packet_2_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = seq_packet_3_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = seq_packet_4_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = seq_packet_5_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = seq_packet_6_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = t2_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = t3_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = t4_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = t5_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = t6_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = t7_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
     }
 }

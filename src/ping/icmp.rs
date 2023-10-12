@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn test_icmp_ping_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 119);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout, max_loop).unwrap();
