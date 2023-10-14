@@ -130,6 +130,7 @@ impl NmapValueTypes {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SEQ {
     pub sp: NmapValueTypes,
     pub gcd: NmapValueTypes,
@@ -189,6 +190,7 @@ impl SEQ {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct OPS {
     pub o1: NmapValueTypes,
     pub o2: NmapValueTypes,
@@ -236,6 +238,7 @@ impl OPS {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct WIN {
     pub w1: NmapValueTypes,
     pub w2: NmapValueTypes,
@@ -283,6 +286,7 @@ impl WIN {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ECN {
     pub r: NmapValueTypes,
     pub df: NmapValueTypes,
@@ -342,18 +346,85 @@ impl ECN {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct T {
     pub r: NmapValueTypes,
     pub df: NmapValueTypes,
     pub t: NmapValueTypes,
     pub tg: NmapValueTypes,
+    pub w: NmapValueTypes,
     pub s: NmapValueTypes,
     pub a: NmapValueTypes,
     pub f: NmapValueTypes,
+    pub o: NmapValueTypes,
     pub rd: NmapValueTypes,
     pub q: NmapValueTypes,
 }
 
+impl T {
+    fn new(map: HashMap<&str, NmapValueTypes>) -> T {
+        let r = match map.get("r") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let df = match map.get("df") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let t = match map.get("t") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let tg = match map.get("tg") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let w = match map.get("tg") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let s = match map.get("s") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let a = match map.get("a") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let f = match map.get("f") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let o = match map.get("o") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let rd = match map.get("RD") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let q = match map.get("q") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+
+        T {
+            r,
+            df,
+            t,
+            tg,
+            w,
+            s,
+            a,
+            f,
+            o,
+            rd,
+            q,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct U1 {
     pub df: NmapValueTypes,
     pub t: NmapValueTypes,
@@ -367,6 +438,65 @@ pub struct U1 {
     pub rud: NmapValueTypes,
 }
 
+impl U1 {
+    fn new(map: HashMap<&str, NmapValueTypes>) -> U1 {
+        let df = match map.get("df") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let t = match map.get("t") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let tg = match map.get("tg") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let ipl = match map.get("ipl") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let un = match map.get("un") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let ripl = match map.get("ripl") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let rid = match map.get("rid") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let ripck = match map.get("ripck") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let ruck = match map.get("ruck") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let rud = match map.get("rud") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+
+        U1 {
+            df,
+            t,
+            tg,
+            ipl,
+            un,
+            ripl,
+            rid,
+            ripck,
+            ruck,
+            rud,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct IE {
     pub dfi: NmapValueTypes,
     pub t: NmapValueTypes,
@@ -374,9 +504,33 @@ pub struct IE {
     pub cd: NmapValueTypes,
 }
 
+impl IE {
+    fn new(map: HashMap<&str, NmapValueTypes>) -> IE {
+        let dfi = match map.get("dfi") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let t = match map.get("t") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let tg = match map.get("tg") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+        let cd = match map.get("cd") {
+            Some(v) => v.clone(),
+            _ => NmapValueTypes::empty(),
+        };
+
+        IE { dfi, t, tg, cd }
+    }
+}
+
 pub struct NmapDB {
+    pub info: String,
     pub fingerprint: String,
-    pub class: Vec<String>,
+    pub class: String,
     pub cpe: String,
     pub seq: SEQ,
     pub ops: OPS,
@@ -595,6 +749,129 @@ fn ecn_parser(line: String) -> ECN {
     ECN::new(map)
 }
 
+fn t_parser(line: String) -> T {
+    let split_1: Vec<&str> = line.split("(").collect();
+    let split_2: Vec<&str> = split_1[1].split(")").collect();
+    let many_info = split_2[0];
+    let info_split: Vec<&str> = many_info.split("%").collect();
+
+    let mut map = HashMap::new();
+    for info in info_split {
+        if info.contains("R") {
+            let value = value_parser_str(info);
+            map.insert("r", value);
+        } else if info.contains("DF") {
+            let value = value_parser_str(info);
+            map.insert("df", value);
+        } else if info.contains("T") {
+            let value = value_parser_u32(info);
+            map.insert("t", value);
+        } else if info.contains("TG") {
+            let value = value_parser_u32(info);
+            map.insert("tg", value);
+        } else if info.contains("W") {
+            let value = value_parser_u32(info);
+            map.insert("w", value);
+        } else if info.contains("S") {
+            let value = value_parser_str(info);
+            map.insert("s", value);
+        } else if info.contains("A") {
+            let value = value_parser_u32(info);
+            map.insert("a", value);
+        } else if info.contains("F") {
+            let value = value_parser_u32(info);
+            map.insert("f", value);
+        } else if info.contains("O") {
+            let value = value_parser_str(info);
+            map.insert("o", value);
+        } else if info.contains("RD") {
+            let value = value_parser_str(info);
+            map.insert("rd", value);
+        } else if info.contains("Q") {
+            let value = value_parser_u32(info);
+            map.insert("q", value);
+        } else {
+            panic!("New type: {}", info);
+        }
+    }
+
+    T::new(map)
+}
+
+fn u1_parser(line: String) -> U1 {
+    let split_1: Vec<&str> = line.split("(").collect();
+    let split_2: Vec<&str> = split_1[1].split(")").collect();
+    let many_info = split_2[0];
+    let info_split: Vec<&str> = many_info.split("%").collect();
+
+    let mut map = HashMap::new();
+    for info in info_split {
+        if info.contains("DF") {
+            let value = value_parser_str(info);
+            map.insert("df", value);
+        } else if info.contains("T") {
+            let value = value_parser_str(info);
+            map.insert("t", value);
+        } else if info.contains("TG") {
+            let value = value_parser_str(info);
+            map.insert("tg", value);
+        } else if info.contains("IPL") {
+            let value = value_parser_str(info);
+            map.insert("ipl", value);
+        } else if info.contains("UN") {
+            let value = value_parser_str(info);
+            map.insert("un", value);
+        } else if info.contains("RIPL") {
+            let value = value_parser_str(info);
+            map.insert("ripl", value);
+        } else if info.contains("RID") {
+            let value = value_parser_str(info);
+            map.insert("rid", value);
+        } else if info.contains("RIPCK") {
+            let value = value_parser_str(info);
+            map.insert("ripck", value);
+        } else if info.contains("RUCK") {
+            let value = value_parser_str(info);
+            map.insert("ruck", value);
+        } else if info.contains("RUD") {
+            let value = value_parser_str(info);
+            map.insert("rud", value);
+        } else {
+            panic!("New type: {}", info);
+        }
+    }
+
+    U1::new(map)
+}
+
+fn ie_parser(line: String) -> IE {
+    let split_1: Vec<&str> = line.split("(").collect();
+    let split_2: Vec<&str> = split_1[1].split(")").collect();
+    let many_info = split_2[0];
+    let info_split: Vec<&str> = many_info.split("%").collect();
+
+    let mut map = HashMap::new();
+    for info in info_split {
+        if info.contains("DFI") {
+            let value = value_parser_str(info);
+            map.insert("dfi", value);
+        } else if info.contains("T") {
+            let value = value_parser_str(info);
+            map.insert("t", value);
+        } else if info.contains("TG") {
+            let value = value_parser_str(info);
+            map.insert("tg", value);
+        } else if info.contains("CD") {
+            let value = value_parser_str(info);
+            map.insert("cd", value);
+        } else {
+            panic!("New type: {}", info);
+        }
+    }
+
+    IE::new(map)
+}
+
 fn parser() {
     let filename = "nmap-os-db";
     let lines: Vec<String> = read_to_string(filename)
@@ -603,29 +880,88 @@ fn parser() {
         .map(String::from)
         .collect();
 
-    let mut ret = HashMap::new();
+    let mut result = Vec::new();
+
+    let mut l1 = None;
+    let mut l2 = None;
+    let mut l3 = None;
+    let mut l4 = None;
     let mut seq = None;
     let mut ops = None;
     let mut win = None;
     let mut ecn = None;
+    let mut t1 = None;
+    let mut t2 = None;
+    let mut t3 = None;
+    let mut t4 = None;
+    let mut t5 = None;
+    let mut t6 = None;
+    let mut t7 = None;
+    let mut u1 = None;
+    let mut ie = None;
     for l in lines {
-        if l.contains("#") {
-            ret.insert("l1", l);
-        } else if l.contains("Class") {
-            ret.insert("l2", l);
-        } else if l.contains("CPE") {
-            ret.insert("l3", l);
-        } else {
-            // not comments
-            // println!("{}", l);
-            if l.contains("SEQ") {
-                seq = Some(seq_parser(l));
-            } else if l.contains("OPS") {
-                ops = Some(ops_parser(l));
-            } else if l.contains("WIN") {
-                win = Some(ops_parser(l));
-            } else if l.contains("ECN") {
-                ecn = Some(ecn_parser(l))
+        let l = l.trim().to_string();
+        if l.len() > 0 {
+            if l.contains("#") {
+                // pack before result
+                if l1.is_some() && l2.is_some() && l3.is_some() && l4.is_some() {
+                    let v = NmapDB {
+                        info: l1.clone().unwrap(),
+                        fingerprint: l2.clone().unwrap(),
+                        class: l3.clone().unwrap(),
+                        cpe: l4.clone().unwrap(),
+                        seq: seq.clone().unwrap(),
+                        ops: ops.clone().unwrap(),
+                        win: win.clone().unwrap(),
+                        ecn: ecn.clone().unwrap(),
+                        t1: t1.clone().unwrap(),
+                        t2: t2.clone().unwrap(),
+                        t3: t3.clone().unwrap(),
+                        t4: t4.clone().unwrap(),
+                        t5: t5.clone().unwrap(),
+                        t6: t6.clone().unwrap(),
+                        t7: t7.clone().unwrap(),
+                        u1: u1.clone().unwrap(),
+                        ie: ie.clone().unwrap(),
+                    };
+                    result.push(v);
+                }
+
+                l1 = Some(l);
+            } else if l.contains("Fingerprint") {
+                l2 = Some(l);
+            } else if l.contains("Class") {
+                l3 = Some(l);
+            } else if l.contains("CPE") {
+                l4 = Some(l);
+            } else {
+                if l.contains("SEQ") {
+                    seq = Some(seq_parser(l));
+                } else if l.contains("OPS") {
+                    ops = Some(ops_parser(l));
+                } else if l.contains("WIN") {
+                    win = Some(win_parser(l));
+                } else if l.contains("ECN") {
+                    ecn = Some(ecn_parser(l))
+                } else if l.contains("T1") {
+                    t1 = Some(t_parser(l))
+                } else if l.contains("T2") {
+                    t2 = Some(t_parser(l))
+                } else if l.contains("T3") {
+                    t3 = Some(t_parser(l))
+                } else if l.contains("T4") {
+                    t4 = Some(t_parser(l))
+                } else if l.contains("T5") {
+                    t5 = Some(t_parser(l))
+                } else if l.contains("T6") {
+                    t6 = Some(t_parser(l))
+                } else if l.contains("T7") {
+                    t7 = Some(t_parser(l))
+                } else if l.contains("U1") {
+                    u1 = Some(u1_parser(l))
+                } else if l.contains("IE") {
+                    ie = Some(ie_parser(l))
+                }
             }
         }
     }
