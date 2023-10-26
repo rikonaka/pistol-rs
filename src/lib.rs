@@ -391,6 +391,9 @@ pub use flood::udp_flood_host6;
 /// Process standard nmap-os-db files and return a structure that can be processed by the program.
 pub use fingerprinting::parser::nmap_os_db_parser;
 
+/// Load our processed files `nmap-os-db.pistol`.
+pub use fingerprinting::parser::nmap_os_db_pistol_load;
+
 #[cfg(test)]
 mod tests {
     use super::*;
