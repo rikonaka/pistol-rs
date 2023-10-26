@@ -27,3 +27,4 @@ chrono = "^0"
 gcdx = "^0"
 crc32fast = "^1"
 hex = "^0"
+serde = { version="^1", features = ["derive"] }

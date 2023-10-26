@@ -179,8 +179,6 @@ impl fmt::Display for UdpScanResults {
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
 pub use scan::arp_scan_subnet;
 
-pub use scan::tcp_connect_scan_range_port;
-pub use scan::tcp_connect_scan_range_port6;
 /// TCP Connect() Scan.
 /// This is the most basic form of TCP scanning.
 /// The connect() system call provided by your operating system is used to open a connection to every interesting port on the machine.
@@ -194,13 +192,13 @@ pub use scan::tcp_connect_scan_range_port6;
 /// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
 /// The big downside is that this sort of scan is easily detectable and filterable.
 /// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
+pub use scan::tcp_connect_scan_range_port;
+pub use scan::tcp_connect_scan_range_port6;
 pub use scan::tcp_connect_scan_single_port;
 pub use scan::tcp_connect_scan_single_port6;
 pub use scan::tcp_connect_scan_subnet;
 pub use scan::tcp_connect_scan_subnet6;
 
-pub use scan::tcp_syn_scan_range_port;
-pub use scan::tcp_syn_scan_range_port6;
 /// TCP SYN Scan.
 /// This technique is often referred to as "half-open" scanning, because you don't open a full TCP connection.
 /// You send a SYN packet, as if you are going to open a real connection and wait for a response.
@@ -213,13 +211,13 @@ pub use scan::tcp_syn_scan_range_port6;
 /// It can be performed quickly,
 /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
 /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
+pub use scan::tcp_syn_scan_range_port;
+pub use scan::tcp_syn_scan_range_port6;
 pub use scan::tcp_syn_scan_single_port;
 pub use scan::tcp_syn_scan_single_port6;
 pub use scan::tcp_syn_scan_subnet;
 pub use scan::tcp_syn_scan_subnet6;
 
-pub use scan::tcp_fin_scan_range_port;
-pub use scan::tcp_fin_scan_range_port6;
 /// TCP FIN Scan.
 /// There are times when even SYN scanning isn't clandestine enough.
 /// Some firewalls and packet filters watch for SYNs to an unallowed port,
@@ -233,75 +231,76 @@ pub use scan::tcp_fin_scan_range_port6;
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+pub use scan::tcp_fin_scan_range_port;
+pub use scan::tcp_fin_scan_range_port6;
 pub use scan::tcp_fin_scan_single_port;
 pub use scan::tcp_fin_scan_single_port6;
 pub use scan::tcp_fin_scan_subnet;
 pub use scan::tcp_fin_scan_subnet6;
 
-pub use scan::tcp_ack_scan_range_port;
-pub use scan::tcp_ack_scan_range_port6;
 /// TCP ACK Scan.
 /// This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports.
 /// It is used to map out firewall rulesets, determining whether they are stateful or not and which ports are filtered.
 /// When scanning unfiltered systems, open and closed ports will both return a RST packet.
 /// We then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined.
 /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
+pub use scan::tcp_ack_scan_range_port;
+pub use scan::tcp_ack_scan_range_port6;
 pub use scan::tcp_ack_scan_single_port;
 pub use scan::tcp_ack_scan_single_port6;
 pub use scan::tcp_ack_scan_subnet;
 pub use scan::tcp_ack_scan_subnet6;
 
-pub use scan::tcp_null_scan_range_port;
-pub use scan::tcp_null_scan_range_port6;
 /// TCP Null Scan.
 /// Does not set any bits (TCP flag header is 0).
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+pub use scan::tcp_null_scan_range_port;
+pub use scan::tcp_null_scan_range_port6;
 pub use scan::tcp_null_scan_single_port;
 pub use scan::tcp_null_scan_single_port6;
 pub use scan::tcp_null_scan_subnet;
 pub use scan::tcp_null_scan_subnet6;
 
-pub use scan::tcp_xmas_scan_range_port;
-pub use scan::tcp_xmas_scan_range_port6;
 /// TCP Xmas Scan.
 /// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+pub use scan::tcp_xmas_scan_range_port;
+pub use scan::tcp_xmas_scan_range_port6;
 pub use scan::tcp_xmas_scan_single_port;
 pub use scan::tcp_xmas_scan_single_port6;
 pub use scan::tcp_xmas_scan_subnet;
 pub use scan::tcp_xmas_scan_subnet6;
 
-pub use scan::tcp_window_scan_range_port;
-pub use scan::tcp_window_scan_range_port6;
 /// TCP Window Scan.
 /// Window scan is exactly the same as ACK scan except that it exploits an implementation detail of certain systems to differentiate open ports from closed ones,
 /// rather than always printing unfiltered when a RST is returned.
 /// It does this by examining the TCP Window value of the RST packets returned.
 /// On some systems, open ports use a positive window size (even for RST packets) while closed ones have a zero window.
 /// Window scan sends the same bare ACK probe as ACK scan.
+pub use scan::tcp_window_scan_range_port;
+pub use scan::tcp_window_scan_range_port6;
 pub use scan::tcp_window_scan_single_port;
 pub use scan::tcp_window_scan_single_port6;
 pub use scan::tcp_window_scan_subnet;
 pub use scan::tcp_window_scan_subnet6;
 
-pub use scan::tcp_maimon_scan_range_port;
-pub use scan::tcp_maimon_scan_range_port6;
 /// TCP Maimon Scan.
 /// The Maimon scan is named after its discoverer, Uriel Maimon.
 /// He described the technique in Phrack Magazine issue #49 (November 1996).
 /// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
 /// According to RFC 793 (TCP), a RST packet should be generated in response to such a probe whether the port is open or closed.
 /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
+pub use scan::tcp_maimon_scan_range_port;
+pub use scan::tcp_maimon_scan_range_port6;
 pub use scan::tcp_maimon_scan_single_port;
 pub use scan::tcp_maimon_scan_single_port6;
 pub use scan::tcp_maimon_scan_subnet;
 pub use scan::tcp_maimon_scan_subnet6;
 
-pub use scan::tcp_idle_scan_range_port;
 /// TCP Idle Scan.
 /// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book) posted to the Bugtraq mailing list an ingenious new port scanning technique.
 /// Idle scan, as it has become known, allows for completely blind port scanning.
@@ -309,11 +308,10 @@ pub use scan::tcp_idle_scan_range_port;
 /// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
 /// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
 /// Besides being extraordinarily stealthy, this scan type permits discovery of IP-based trust relationships between machines.
+pub use scan::tcp_idle_scan_range_port;
 pub use scan::tcp_idle_scan_single_port;
 pub use scan::tcp_idle_scan_subnet;
 
-pub use scan::udp_scan_range_port;
-pub use scan::udp_scan_range_port6;
 /// UDP Scan.
 /// While most popular services on the Internet run over the TCP protocol, UDP services are widely deployed.
 /// DNS, SNMP, and DHCP (registered ports 53, 161/162, and 67/68) are three of the most common.
@@ -322,15 +320,17 @@ pub use scan::udp_scan_range_port6;
 /// UDP scan works by sending a UDP packet to every targeted port.
 /// For most ports, this packet will be empty (no payload), but for a few of the more common ports a protocol-specific payload will be sent.
 /// Based on the response, or lack thereof, the port is assigned to one of four states.
+pub use scan::udp_scan_range_port;
+pub use scan::udp_scan_range_port6;
 pub use scan::udp_scan_single_port;
 pub use scan::udp_scan_single_port6;
 pub use scan::udp_scan_subnet;
 pub use scan::udp_scan_subnet6;
 
-pub use scan::ip_procotol_scan_subnet;
 /// IP Protocol Scan.
 /// IP protocol scan allows you to determine which IP protocols (TCP, ICMP, IGMP, etc.) are supported by target machines.
 /// This isn't technically a port scan, since it cycles through IP protocol numbers rather than TCP or UDP port numbers.
+pub use scan::ip_procotol_scan_subnet;
 pub use scan::ip_protocol_scan_host;
 
 /* Ping */
@@ -384,6 +384,12 @@ pub use flood::tcp_syn_flood_host;
 pub use flood::tcp_syn_flood_host6;
 pub use flood::udp_flood_host;
 pub use flood::udp_flood_host6;
+
+/* Finger Printing */
+
+/// Nmap OS DB Parser.
+/// Process standard nmap-os-db files and return a structure that can be processed by the program.
+pub use fingerprinting::parser::nmap_os_db_parser;
 
 #[cfg(test)]
 mod tests {

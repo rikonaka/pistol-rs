@@ -1,31 +1,32 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::read_to_string};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RangeValueTypes {
-    Left,  // x >= 10
+    Left,  // 10 <= x
     Right, // x <= 20
     Both,  // 10 <= x <= 20
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RangeValue {
     pub start: u32,
     pub end: u32,
-    pub value_type: RangeValueTypes,
+    pub range_value_type: RangeValueTypes,
 }
 
 impl RangeValue {
-    pub fn new(start: u32, end: u32, value_type: RangeValueTypes) -> RangeValue {
+    pub fn new(start: u32, end: u32, range_value_type: RangeValueTypes) -> RangeValue {
         RangeValue {
             start,
             end,
-            value_type,
+            range_value_type,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SingleValue {
     pub value: u32,
 }
@@ -36,18 +37,7 @@ impl SingleValue {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EnumValue {
-    pub values: Vec<u32>,
-}
-
-impl EnumValue {
-    pub fn new(values: Vec<u32>) -> EnumValue {
-        EnumValue { values }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StringValue {
     pub value: String,
 }
@@ -60,7 +50,7 @@ impl StringValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmptyValue {}
 
 impl EmptyValue {
@@ -69,98 +59,43 @@ impl EmptyValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MixValue {
-    pub range_value: Option<RangeValue>,
-    pub single_value: Option<SingleValue>,
-    pub enum_value: Option<EnumValue>,
+    pub range_values: Vec<RangeValue>,
+    pub single_values: Vec<SingleValue>,
 }
 
 impl MixValue {
-    pub fn new(
-        range_value: Option<RangeValue>,
-        single_value: Option<SingleValue>,
-        enum_value: Option<EnumValue>,
-    ) -> MixValue {
+    pub fn new(range_value: Vec<RangeValue>, single_value: Vec<SingleValue>) -> MixValue {
         MixValue {
-            range_value,
-            single_value,
-            enum_value,
+            range_values: range_value,
+            single_values: single_value,
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum NmapValueTypes {
-    RangeValue(RangeValue),
-    EnumValue(EnumValue),
-    SingleValue(SingleValue),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NmapOsDbValueTypes {
     StringValue(StringValue),
     EmptyValue(EmptyValue),
-    MixValue(MixValue),
+    MixValue(MixValue), // u32, example: GCD=1-6|>5000
 }
 
-impl NmapValueTypes {
-    pub fn empty() -> NmapValueTypes {
-        NmapValueTypes::EmptyValue(EmptyValue::new())
+impl NmapOsDbValueTypes {
+    pub fn empty() -> NmapOsDbValueTypes {
+        NmapOsDbValueTypes::EmptyValue(EmptyValue::new())
     }
     pub fn within_u32(&self, input: Option<u32>) -> bool {
         match self {
-            NmapValueTypes::EnumValue(e) => match input {
-                Some(input) => {
-                    if e.values.contains(&input) {
-                        true
-                    } else {
-                        false
-                    }
-                }
-                _ => false,
-            },
-            NmapValueTypes::RangeValue(r) => match input {
-                Some(input) => match r.value_type {
-                    RangeValueTypes::Both => {
-                        if input >= r.start && input <= r.end {
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    RangeValueTypes::Left => {
-                        if input >= r.start {
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    RangeValueTypes::Right => {
-                        if input <= r.end {
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                },
-                _ => false,
-            },
-            NmapValueTypes::SingleValue(s) => match input {
-                Some(input) => {
-                    if input == s.value {
-                        true
-                    } else {
-                        false
-                    }
-                }
-                _ => false,
-            },
-            NmapValueTypes::EmptyValue(_) => match input {
+            NmapOsDbValueTypes::EmptyValue(_) => match input {
                 None => true,
                 _ => false,
             },
-            NmapValueTypes::MixValue(m) => match input {
+            NmapOsDbValueTypes::MixValue(m) => match input {
                 Some(input) => {
-                    if m.range_value.is_some() {
-                        let r = m.range_value.as_ref().unwrap();
-                        match r.value_type {
+                    let m = m.clone();
+                    for r in m.range_values {
+                        match r.range_value_type {
                             RangeValueTypes::Both => {
                                 if input >= r.start && input <= r.end {
                                     return true;
@@ -178,13 +113,8 @@ impl NmapValueTypes {
                             }
                         }
                     }
-                    if m.single_value.is_some() {
-                        if input == m.single_value.as_ref().unwrap().value {
-                            return true;
-                        }
-                    }
-                    if m.enum_value.is_some() {
-                        if m.enum_value.as_ref().unwrap().values.contains(&input) {
+                    for s in m.single_values {
+                        if input == s.value {
                             return true;
                         }
                     }
@@ -197,7 +127,7 @@ impl NmapValueTypes {
     }
     pub fn check_string(&self, input: Option<&str>) -> bool {
         match self {
-            NmapValueTypes::StringValue(s) => match input {
+            NmapOsDbValueTypes::StringValue(s) => match input {
                 Some(input) => {
                     if input == s.value {
                         true
@@ -207,7 +137,7 @@ impl NmapValueTypes {
                 }
                 _ => false,
             },
-            NmapValueTypes::EmptyValue(_) => match input {
+            NmapOsDbValueTypes::EmptyValue(_) => match input {
                 None => true,
                 _ => false,
             },
@@ -216,56 +146,56 @@ impl NmapValueTypes {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SEQ {
-    pub sp: NmapValueTypes,
-    pub gcd: NmapValueTypes,
-    pub isr: NmapValueTypes,
-    pub ti: NmapValueTypes,
-    pub ci: NmapValueTypes,
-    pub ii: NmapValueTypes,
-    pub ss: NmapValueTypes,
-    pub ts: NmapValueTypes,
-    pub r: NmapValueTypes,
+    pub sp: NmapOsDbValueTypes,
+    pub gcd: NmapOsDbValueTypes,
+    pub isr: NmapOsDbValueTypes,
+    pub ti: NmapOsDbValueTypes,
+    pub ci: NmapOsDbValueTypes,
+    pub ii: NmapOsDbValueTypes,
+    pub ss: NmapOsDbValueTypes,
+    pub ts: NmapOsDbValueTypes,
+    pub r: NmapOsDbValueTypes,
 }
 
 impl SEQ {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> SEQ {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> SEQ {
         let sp = match map.get("sp") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let gcd = match map.get("gcd") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let isr = match map.get("isr") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ti = match map.get("ti") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ci = match map.get("ci") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ii = match map.get("ii") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ss = match map.get("ss") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ts = match map.get("ts") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let r = match map.get("r") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         SEQ {
@@ -292,7 +222,6 @@ impl SEQ {
                 let value = value_parser_u32(info).unwrap();
                 map.insert("sp", value);
             } else if info.contains("GCD=") {
-                println!("{}", info);
                 let value = value_parser_u32(info).unwrap();
                 map.insert("gcd", value);
             } else if info.contains("ISR=") {
@@ -325,46 +254,46 @@ impl SEQ {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OPS {
-    pub o1: NmapValueTypes,
-    pub o2: NmapValueTypes,
-    pub o3: NmapValueTypes,
-    pub o4: NmapValueTypes,
-    pub o5: NmapValueTypes,
-    pub o6: NmapValueTypes,
-    pub r: NmapValueTypes,
+    pub o1: NmapOsDbValueTypes,
+    pub o2: NmapOsDbValueTypes,
+    pub o3: NmapOsDbValueTypes,
+    pub o4: NmapOsDbValueTypes,
+    pub o5: NmapOsDbValueTypes,
+    pub o6: NmapOsDbValueTypes,
+    pub r: NmapOsDbValueTypes,
 }
 
 impl OPS {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> OPS {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> OPS {
         let o1 = match map.get("o1") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o2 = match map.get("o2") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o3 = match map.get("o3") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o4 = match map.get("o4") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o5 = match map.get("o5") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o6 = match map.get("o6") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let r = match map.get("r") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         OPS {
@@ -415,46 +344,46 @@ impl OPS {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WIN {
-    pub w1: NmapValueTypes,
-    pub w2: NmapValueTypes,
-    pub w3: NmapValueTypes,
-    pub w4: NmapValueTypes,
-    pub w5: NmapValueTypes,
-    pub w6: NmapValueTypes,
-    pub r: NmapValueTypes,
+    pub w1: NmapOsDbValueTypes,
+    pub w2: NmapOsDbValueTypes,
+    pub w3: NmapOsDbValueTypes,
+    pub w4: NmapOsDbValueTypes,
+    pub w5: NmapOsDbValueTypes,
+    pub w6: NmapOsDbValueTypes,
+    pub r: NmapOsDbValueTypes,
 }
 
 impl WIN {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> WIN {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> WIN {
         let w1 = match map.get("w1") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w2 = match map.get("w2") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w3 = match map.get("w3") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w4 = match map.get("w4") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w5 = match map.get("w5") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w6 = match map.get("w6") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let r = match map.get("r") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         WIN {
@@ -504,51 +433,71 @@ impl WIN {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ECN {
-    pub r: NmapValueTypes,
-    pub df: NmapValueTypes,
-    pub t: NmapValueTypes,
-    pub tg: NmapValueTypes,
-    pub w: NmapValueTypes,
-    pub o: NmapValueTypes,
-    pub cc: NmapValueTypes,
-    pub q: NmapValueTypes,
+    pub r: NmapOsDbValueTypes,
+    pub df: NmapOsDbValueTypes,
+    pub t: NmapOsDbValueTypes,
+    pub tg: NmapOsDbValueTypes,
+    pub w: NmapOsDbValueTypes,
+    pub o: NmapOsDbValueTypes,
+    pub cc: NmapOsDbValueTypes,
+    pub q: NmapOsDbValueTypes,
+    pub s: NmapOsDbValueTypes,
+    pub a: NmapOsDbValueTypes,
+    pub f: NmapOsDbValueTypes,
+    pub rd: NmapOsDbValueTypes,
 }
 
 impl ECN {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> ECN {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> ECN {
         let r = match map.get("r") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let df = match map.get("df") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let t = match map.get("t") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let tg = match map.get("tg") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w = match map.get("w") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o = match map.get("o") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let cc = match map.get("cc") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let q = match map.get("q") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
+        };
+        let s = match map.get("s") {
+            Some(v) => v.clone(),
+            _ => NmapOsDbValueTypes::empty(),
+        };
+        let a = match map.get("a") {
+            Some(v) => v.clone(),
+            _ => NmapOsDbValueTypes::empty(),
+        };
+        let f = match map.get("f") {
+            Some(v) => v.clone(),
+            _ => NmapOsDbValueTypes::empty(),
+        };
+        let rd = match map.get("rd") {
+            Some(v) => v.clone(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         ECN {
@@ -560,6 +509,10 @@ impl ECN {
             o,
             cc,
             q,
+            s,
+            a,
+            f,
+            rd,
         }
     }
     fn parser(line: String) -> ECN {
@@ -592,8 +545,20 @@ impl ECN {
                 let value = value_parser_str(info);
                 map.insert("cc", value);
             } else if info.contains("Q=") {
-                let value = value_parser_u32(info).unwrap();
+                let value = value_parser_str(info);
                 map.insert("q", value);
+            } else if info.contains("S=") {
+                let value = value_parser_str(info);
+                map.insert("s", value);
+            } else if info.contains("A=") {
+                let value = value_parser_str(info);
+                map.insert("a", value);
+            } else if info.contains("F=") {
+                let value = value_parser_str(info);
+                map.insert("f", value);
+            } else if info.contains("RD=") {
+                let value = value_parser_u32(info).unwrap();
+                map.insert("rd", value);
             } else {
                 panic!("New type: {}", info);
             }
@@ -603,66 +568,66 @@ impl ECN {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TX {
-    pub r: NmapValueTypes,
-    pub df: NmapValueTypes,
-    pub t: NmapValueTypes,
-    pub tg: NmapValueTypes,
-    pub w: NmapValueTypes,
-    pub s: NmapValueTypes,
-    pub a: NmapValueTypes,
-    pub f: NmapValueTypes,
-    pub o: NmapValueTypes,
-    pub rd: NmapValueTypes,
-    pub q: NmapValueTypes,
+    pub r: NmapOsDbValueTypes,
+    pub df: NmapOsDbValueTypes,
+    pub t: NmapOsDbValueTypes,
+    pub tg: NmapOsDbValueTypes,
+    pub w: NmapOsDbValueTypes,
+    pub s: NmapOsDbValueTypes,
+    pub a: NmapOsDbValueTypes,
+    pub f: NmapOsDbValueTypes,
+    pub o: NmapOsDbValueTypes,
+    pub rd: NmapOsDbValueTypes,
+    pub q: NmapOsDbValueTypes,
 }
 
 impl TX {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> TX {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> TX {
         let r = match map.get("r") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let df = match map.get("df") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let t = match map.get("t") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let tg = match map.get("tg") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let w = match map.get("tg") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let s = match map.get("s") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let a = match map.get("a") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let f = match map.get("f") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let o = match map.get("o") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let rd = match map.get("RD") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let q = match map.get("q") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         TX {
@@ -729,66 +694,66 @@ impl TX {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct U1 {
-    pub r: NmapValueTypes,
-    pub df: NmapValueTypes,
-    pub t: NmapValueTypes,
-    pub tg: NmapValueTypes,
-    pub ipl: NmapValueTypes,
-    pub un: NmapValueTypes,
-    pub ripl: NmapValueTypes,
-    pub rid: NmapValueTypes,
-    pub ripck: NmapValueTypes,
-    pub ruck: NmapValueTypes,
-    pub rud: NmapValueTypes,
+    pub r: NmapOsDbValueTypes,
+    pub df: NmapOsDbValueTypes,
+    pub t: NmapOsDbValueTypes,
+    pub tg: NmapOsDbValueTypes,
+    pub ipl: NmapOsDbValueTypes,
+    pub un: NmapOsDbValueTypes,
+    pub ripl: NmapOsDbValueTypes,
+    pub rid: NmapOsDbValueTypes,
+    pub ripck: NmapOsDbValueTypes,
+    pub ruck: NmapOsDbValueTypes,
+    pub rud: NmapOsDbValueTypes,
 }
 
 impl U1 {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> U1 {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> U1 {
         let r = match map.get("r") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let df = match map.get("df") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let t = match map.get("t") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let tg = match map.get("tg") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ipl = match map.get("ipl") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let un = match map.get("un") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ripl = match map.get("ripl") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let rid = match map.get("rid") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ripck = match map.get("ripck") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let ruck = match map.get("ruck") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let rud = match map.get("rud") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         U1 {
@@ -855,31 +820,31 @@ impl U1 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IE {
-    pub dfi: NmapValueTypes,
-    pub t: NmapValueTypes,
-    pub tg: NmapValueTypes,
-    pub cd: NmapValueTypes,
+    pub dfi: NmapOsDbValueTypes,
+    pub t: NmapOsDbValueTypes,
+    pub tg: NmapOsDbValueTypes,
+    pub cd: NmapOsDbValueTypes,
 }
 
 impl IE {
-    fn new(map: HashMap<&str, NmapValueTypes>) -> IE {
+    fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> IE {
         let dfi = match map.get("dfi") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let t = match map.get("t") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let tg = match map.get("tg") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
         let cd = match map.get("cd") {
             Some(v) => v.clone(),
-            _ => NmapValueTypes::empty(),
+            _ => NmapOsDbValueTypes::empty(),
         };
 
         IE { dfi, t, tg, cd }
@@ -916,6 +881,7 @@ impl IE {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapDB {
     pub info: String,
     pub fingerprint: String,
@@ -941,9 +907,9 @@ struct Hex {
     hex: Option<String>,
 }
 impl Hex {
-    fn new_dec_u32(dec_u32: u32) -> Hex {
+    fn _new_dec_u32(dec_u32: u32) -> Hex {
         Hex {
-            _dec: Some(Hex::u32_to_vec(dec_u32)),
+            _dec: Some(Hex::_u32_to_vec(dec_u32)),
             hex: None,
         }
     }
@@ -972,7 +938,7 @@ impl Hex {
         }
         ret
     }
-    fn u32_to_vec(input: u32) -> Vec<u8> {
+    fn _u32_to_vec(input: u32) -> Vec<u8> {
         let mut ret = Vec::new();
         for i in 0..4 {
             let value = (input >> i * 8) as u8;
@@ -990,7 +956,7 @@ impl Hex {
             None => panic!("set value before decode!"),
         }
     }
-    fn encode(&self) -> Result<String> {
+    fn _encode(&self) -> Result<String> {
         match &self._dec {
             Some(dec_vec) => Ok(hex::encode(dec_vec)),
             None => panic!("set value before decode!"),
@@ -998,81 +964,59 @@ impl Hex {
     }
 }
 
-fn value_parser_u32(info: &str) -> Result<NmapValueTypes> {
+fn value_parser_u32(info: &str) -> Result<NmapOsDbValueTypes> {
     let value_split: Vec<&str> = info.split("=").collect();
     let value = value_split[1];
-    let ret = if value.contains("-") & value.contains("|") {
-        // enum value
-        let enum_value_split: Vec<&str> = value.split("|").collect();
-        let mut values = Vec::new();
-        let mut range_value = None;
-        let mut enum_value = None;
-        for e in enum_value_split {
-            if e.contains("-") {
-                let range_value_split: Vec<&str> = e.split("-").collect();
-                let hs = Hex::new_hex(range_value_split[0]);
-                let start = hs.decode()?;
-                let he = Hex::new_hex(range_value_split[1]);
-                let end = he.decode()?;
-                for v in start..end {
-                    values.push(v);
-                }
-            } else if e.contains(">") {
-                // still have some problem
-                let special_value_split: Vec<&str> = e.split(">").collect();
-                let h = Hex::new_hex(special_value_split[1]);
-                let value = h.decode()?;
-                range_value = Some(RangeValue::new(value, 0, RangeValueTypes::Left));
-            } else {
-                let he = Hex::new_hex(e);
-                let e_u32 = he.decode()?;
-                values.push(e_u32);
-            }
-        }
-        enum_value = Some(EnumValue::new(values));
-        NmapValueTypes::MixValue(MixValue::new(range_value, None, enum_value))
-    } else if value.contains("-") {
-        // range value
-        let range_value_split: Vec<&str> = value.split("-").collect();
-        let hs = Hex::new_hex(range_value_split[0]);
-        let start = hs.decode()?;
-        let he = Hex::new_hex(range_value_split[1]);
-        let end = he.decode()?;
-        NmapValueTypes::RangeValue(RangeValue::new(start, end, RangeValueTypes::Both))
-    } else if value.contains("|") {
-        // enum value
-        let enum_value_split: Vec<&str> = value.split("|").collect();
-        let mut values = Vec::new();
-        for e in enum_value_split {
-            let he = Hex::new_hex(e);
-            let e_u32 = he.decode()?;
-            values.push(e_u32);
-        }
-        NmapValueTypes::EnumValue(EnumValue::new(values))
-    } else {
-        if value.len() > 0 {
-            // single value
-            let h = Hex::new_hex(value);
-            let single = h.decode()?;
-            NmapValueTypes::SingleValue(SingleValue::new(single))
+    let items: Vec<&str> = value.split("|").collect();
+    let mut range_values: Vec<RangeValue> = Vec::new();
+    let mut single_values: Vec<SingleValue> = Vec::new();
+    for i in items {
+        if i.contains("-") {
+            // 1-6
+            let range_value_split: Vec<&str> = i.split("-").collect();
+            let hs = Hex::new_hex(range_value_split[0]);
+            let start = hs.decode()?;
+            let he = Hex::new_hex(range_value_split[1]);
+            let end = he.decode()?;
+            let range_value = RangeValue::new(start, end, RangeValueTypes::Both);
+            range_values.push(range_value);
+        } else if i.contains(">") {
+            // still have some problem
+            let special_value_split: Vec<&str> = i.split(">").collect();
+            let h = Hex::new_hex(special_value_split[1]);
+            let value = h.decode()?;
+            let range_value = RangeValue::new(value, 0, RangeValueTypes::Left);
+            range_values.push(range_value);
+        } else if i.contains("<") {
+            // still have some problem
+            let special_value_split: Vec<&str> = i.split(">").collect();
+            let h = Hex::new_hex(special_value_split[1]);
+            let value = h.decode()?;
+            let range_value = RangeValue::new(value, 0, RangeValueTypes::Right);
+            range_values.push(range_value);
         } else {
-            NmapValueTypes::empty()
+            let he = Hex::new_hex(i);
+            let e_u32 = he.decode()?;
+            let single_value = SingleValue::new(e_u32);
+            single_values.push(single_value);
         }
-    };
+    }
+    let ret = NmapOsDbValueTypes::MixValue(MixValue::new(range_values, single_values));
+
     Ok(ret)
 }
 
-fn value_parser_str(info: &str) -> NmapValueTypes {
+fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
     let value_split: Vec<&str> = info.split("=").collect();
     let value = value_split[1];
     if value.len() > 0 {
-        NmapValueTypes::StringValue(StringValue::new(value))
+        NmapOsDbValueTypes::StringValue(StringValue::new(value))
     } else {
-        NmapValueTypes::empty()
+        NmapOsDbValueTypes::empty()
     }
 }
 
-fn parser() {
+pub fn nmap_os_db_parser() -> Vec<NmapDB> {
     let filename = "nmap-os-db";
     let lines: Vec<String> = read_to_string(filename)
         .unwrap()
@@ -1165,14 +1109,23 @@ fn parser() {
             }
         }
     }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
     #[test]
     fn test_parser() {
-        parser();
+        let start = SystemTime::now();
+        let ret = nmap_os_db_parser();
+        for i in 0..5 {
+            let r = &ret[i];
+            println!("{:?}", r.seq.gcd);
+        }
+        // in my homelab server => parse time: 1.285817538s
+        println!("parse time: {:?}", start.elapsed().unwrap());
     }
     #[test]
     fn test_convert() {
@@ -1191,7 +1144,7 @@ mod tests {
         assert_eq!(r, 28);
 
         let v = 257;
-        let v2 = Hex::u32_to_vec(v);
+        let v2 = Hex::_u32_to_vec(v);
         assert_eq!(v2, vec![0, 0, 1, 1]);
     }
 }
