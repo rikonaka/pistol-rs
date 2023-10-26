@@ -1,5 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{prelude::*, Lines};
 use std::{collections::HashMap, fs::read_to_string};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -882,7 +884,7 @@ impl IE {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapDB {
+pub struct NmapOsDb {
     pub info: String,
     pub fingerprint: String,
     pub class: String,
@@ -903,8 +905,8 @@ pub struct NmapDB {
 }
 
 struct Hex {
-    _dec: Option<Vec<u8>>,
-    hex: Option<String>,
+    _dec: Option<Vec<u8>>, // reserved for program integrity (dec => hex function)
+    hex: Option<String>,   // hex => dec
 }
 impl Hex {
     fn _new_dec_u32(dec_u32: u32) -> Hex {
@@ -1016,14 +1018,9 @@ fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
     }
 }
 
-pub fn nmap_os_db_parser() -> Vec<NmapDB> {
-    let filename = "nmap-os-db";
-    let lines: Vec<String> = read_to_string(filename)
-        .unwrap()
-        .lines()
-        .map(String::from)
-        .collect();
-
+/// Each item in the input vec `lines` represents a line of nmap-os-db file content.
+/// So just read the nmap file line by line and store it in vec for input.
+pub fn nmap_os_db_parser(lines: Vec<String>) -> Vec<NmapOsDb> {
     let mut result = Vec::new();
 
     let mut l1 = None;
@@ -1049,7 +1046,7 @@ pub fn nmap_os_db_parser() -> Vec<NmapDB> {
             if l.contains("#") {
                 // pack before result
                 if l1.is_some() && l2.is_some() && l3.is_some() && l4.is_some() {
-                    let v = NmapDB {
+                    let v = NmapOsDb {
                         info: l1.clone().unwrap(),
                         fingerprint: l2.clone().unwrap(),
                         class: l3.clone().unwrap(),
@@ -1112,6 +1109,11 @@ pub fn nmap_os_db_parser() -> Vec<NmapDB> {
     result
 }
 
+pub fn nmap_os_db_pistol_load(serialized: String) -> Result<Vec<NmapOsDb>> {
+    let deserialized: Vec<NmapOsDb> = serde_json::from_str(&serialized)?;
+    Ok(deserialized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1119,13 +1121,32 @@ mod tests {
     #[test]
     fn test_parser() {
         let start = SystemTime::now();
-        let ret = nmap_os_db_parser();
-        for i in 0..5 {
-            let r = &ret[i];
-            println!("{:?}", r.seq.gcd);
-        }
-        // in my homelab server => parse time: 1.285817538s
+        let filename = "nmap-os-db";
+        let lines: Vec<String> = read_to_string(filename)
+            .unwrap()
+            .lines()
+            .map(String::from)
+            .collect();
+
+        let ret = nmap_os_db_parser(lines);
+        // for i in 0..5 {
+        //     let r = &ret[i];
+        //     println!("{:?}", r.seq.gcd);
+        // }
+
+        // in my homelab server: parse time: 1.285817538s
         println!("parse time: {:?}", start.elapsed().unwrap());
+        let serialized = serde_json::to_string(&ret).unwrap();
+        let mut file = File::create("nmap-os-db.pistol").unwrap();
+        file.write_all(serialized.as_bytes()).unwrap();
+    }
+    #[test]
+    fn test_load() {
+        let mut file = File::open("nmap-os-db.pistol").unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        let n = nmap_os_db_pistol_load(contents).unwrap();
+        println!("{:?}", n[0]);
     }
     #[test]
     fn test_convert() {
