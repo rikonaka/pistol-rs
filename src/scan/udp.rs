@@ -24,12 +24,15 @@ pub fn send_udp_scan_packet(
     let (mut udp_tx, mut udp_rx) = return_layer4_udp_channel(UDP_BUFF_SIZE)?;
     let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
 
+    // const UDP_DATA_LEN: usize = 10; // test
+
     // udp header
     let mut udp_buff = [0u8; UDP_HEADER_LEN + UDP_DATA_LEN];
     let mut udp_header = MutableUdpPacket::new(&mut udp_buff[..]).unwrap();
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_LEN + UDP_DATA_LEN) as u16);
+    // udp_header.set_payload(&vec![b'a'; 10]); // test
     let checksum = ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
 
@@ -98,10 +101,11 @@ mod tests {
     use super::*;
     #[test]
     fn test_send_udp_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let src_port = 54338;
-        let dst_port = 53;
+        // let dst_port = 53;
+        let dst_port = 2233;
         let max_loop = 32;
         let timeout = Duration::from_secs(1);
         let ret = send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)

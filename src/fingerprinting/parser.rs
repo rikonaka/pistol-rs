@@ -1,8 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::{prelude::*, Lines};
-use std::{collections::HashMap, fs::read_to_string};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RangeValueTypes {
@@ -1117,6 +1115,8 @@ pub fn nmap_os_db_pistol_load(serialized: String) -> Result<Vec<NmapOsDb>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::{read_to_string, File};
+    use std::io::prelude::*;
     use std::time::SystemTime;
     #[test]
     fn test_parser() {
