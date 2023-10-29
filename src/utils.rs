@@ -227,6 +227,17 @@ pub fn random_port() -> u16 {
     rng.gen_range(1024..=65535)
 }
 
+/// Returns many random ports
+pub fn random_port_multi(num: usize) -> Vec<u16> {
+    let mut rng = rand::thread_rng();
+    let mut ret = Vec::new();
+    for _ in 0..num {
+        let p = rng.gen_range(1024..=65535);
+        ret.push(p)
+    }
+    ret
+}
+
 /// Returns the number of CPUs in the machine
 pub fn get_cpu_num() -> usize {
     num_cpus::get()
@@ -344,21 +355,6 @@ pub fn return_layer4_icmp6_channel(
         Ok((tx, rx)) => Ok((tx, rx)),
         Err(e) => return Err(e.into()),
     }
-}
-
-pub fn standard_deviation_vec(values: &Vec<f32>) -> f32 {
-    let mut sum = 0.0;
-    for v in values {
-        sum += *v;
-    }
-    let mean = sum / values.len() as f32;
-
-    let mut ret = 0.0;
-    for v in values {
-        ret += (v - mean).powi(2);
-    }
-
-    ret.sqrt()
 }
 
 #[cfg(test)]

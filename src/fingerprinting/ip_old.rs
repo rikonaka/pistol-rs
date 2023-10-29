@@ -16,13 +16,13 @@ use pnet::packet::Packet;
 use pnet::transport::transport_channel;
 use pnet::transport::TransportChannelType::Layer3;
 use pnet::transport::{icmp_packet_iter, ipv4_packet_iter, tcp_packet_iter};
+use rand::Rng;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::ops::Rem;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
-use rand::Rng;
 
 use crate::fingerprinting::packet;
 use crate::utils::get_threads_pool;
@@ -30,7 +30,6 @@ use crate::utils::random_port;
 use crate::utils::return_layer3_icmp_channel;
 use crate::utils::return_layer3_tcp_channel;
 use crate::utils::return_layer3_udp_channel;
-use crate::utils::standard_deviation_vec;
 use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
@@ -993,7 +992,7 @@ pub fn gen_seq_ops_win_line(
         }
     }
 
-    let sd = standard_deviation_vec(&seq_rates);
+    let sd: f32 = 1.5; // standard_deviation_vec(&seq_rates);
     let sp = if sd <= 1.0 {
         0
     } else {

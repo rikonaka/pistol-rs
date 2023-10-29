@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
+use std::iter::zip;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
@@ -31,49 +32,73 @@ use std::ops::AddAssign;
 use std::ops::Div;
 use std::ops::Rem;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 
 use crate::fingerprinting::packet;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
+use crate::utils::random_port_multi;
 use crate::utils::return_layer3_icmp_channel;
 use crate::utils::return_layer3_tcp_channel;
 use crate::utils::return_layer3_udp_channel;
-use crate::utils::standard_deviation_vec;
 use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
 
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone)]
-pub struct RequestResponse {
+pub struct RequestAndResponse {
     pub name: String,
     pub request: Vec<u8>,          // layer3
     pub response: Option<Vec<u8>>, // layer3
 }
 
+#[derive(Debug, Clone)]
+pub struct SEQRR {
+    pub seq1: RequestAndResponse,
+    pub seq2: RequestAndResponse,
+    pub seq3: RequestAndResponse,
+    pub seq4: RequestAndResponse,
+    pub seq5: RequestAndResponse,
+    pub seq6: RequestAndResponse,
+}
+
+#[derive(Debug, Clone)]
+pub struct IERR {
+    pub ie1: RequestAndResponse,
+    pub ie2: RequestAndResponse,
+}
+
+#[derive(Debug, Clone)]
+pub struct ECNRR {
+    pub ecn: RequestAndResponse,
+}
+
+#[derive(Debug, Clone)]
+pub struct T2T7RR {
+    pub t2: RequestAndResponse,
+    pub t3: RequestAndResponse,
+    pub t4: RequestAndResponse,
+    pub t5: RequestAndResponse,
+    pub t6: RequestAndResponse,
+    pub t7: RequestAndResponse,
+}
+
+#[derive(Debug, Clone)]
+pub struct U1RR {
+    pub u1: RequestAndResponse,
+}
+
 // HashMap<Name, RR>
 #[derive(Debug, Clone)]
 pub struct AllPacket {
-    pub data: HashMap<String, RequestResponse>,
-}
-
-impl AllPacket {
-    fn add(&mut self, name: &str, request: &[u8], response: Option<Vec<u8>>) {
-        let rr = RequestResponse {
-            name: name.to_string(),
-            request: request.to_vec(),
-            response,
-        };
-        self.data.insert(name.to_string(), rr);
-    }
-    fn get(&self, name: &str) -> Option<RequestResponse> {
-        match self.data.get(name) {
-            Some(rr) => Some(rr.clone()),
-            _ => None,
-        }
-    }
+    pub seq: SEQRR,
+    pub ie: IERR,
+    pub ecn: ECNRR,
+    pub t2_t7: T2T7RR,
+    pub u1: U1RR,
 }
 
 pub fn get_scan_line(
@@ -143,29 +168,30 @@ fn send_seq_probes(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_port: u16, //should be an open port
+    dst_open_port: u16, //should be an open port
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<Vec<RequestResponse>> {
+) -> Result<SEQRR> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_port_p = match src_port {
-        Some(s) => s,
-        None => random_port(),
+    let src_ports = match src_port {
+        Some(s) => vec![s; 6],
+        None => random_port_multi(6),
     };
 
-    let buff_1 = packet::seq_packet_1_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_2 = packet::seq_packet_2_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_3 = packet::seq_packet_3_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_4 = packet::seq_packet_4_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_5 = packet::seq_packet_5_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_6 = packet::seq_packet_6_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
+    let buff_1 = packet::seq_packet_1_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
+    let buff_2 = packet::seq_packet_2_layer3(src_ipv4, src_ports[1], dst_ipv4, dst_open_port)?;
+    let buff_3 = packet::seq_packet_3_layer3(src_ipv4, src_ports[2], dst_ipv4, dst_open_port)?;
+    let buff_4 = packet::seq_packet_4_layer3(src_ipv4, src_ports[3], dst_ipv4, dst_open_port)?;
+    let buff_5 = packet::seq_packet_5_layer3(src_ipv4, src_ports[4], dst_ipv4, dst_open_port)?;
+    let buff_6 = packet::seq_packet_6_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_open_port)?;
 
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
     let buffs_len = buffs.len();
     let mut id = 1;
+
     for buff in buffs {
         let tx = tx.clone();
         pool.execute(move || {
@@ -198,12 +224,11 @@ fn send_seq_probes(
 
                                             if src_port_1 == dst_port_2 && dst_port_1 == src_port_2
                                             {
-                                                let request_buff =
-                                                    request_ipv4_packet.packet().to_vec();
-                                                let response_buff =
-                                                    response_ipv4_packet.packet().to_vec();
-                                                let msg =
-                                                    Ok((id, request_buff, Some(response_buff)));
+                                                let msg = Ok((
+                                                    id,
+                                                    request_ipv4_packet.packet().to_vec(),
+                                                    Some(response_ipv4_packet.packet().to_vec()),
+                                                ));
                                                 match tx.send(msg) {
                                                     _ => (),
                                                 }
@@ -215,11 +240,13 @@ fn send_seq_probes(
                                 },
                                 Err(_) => (),
                             }
+                            if recv_flag {
+                                break; // we have recv packet so just exit early
+                            }
                         }
                         if !recv_flag {
                             // we did not recv any packet
-                            let request_buff = request_ipv4_packet.packet().to_vec();
-                            let msg = Ok((id, request_buff, None));
+                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), None));
                             match tx.send(msg) {
                                 _ => (),
                             }
@@ -236,25 +263,49 @@ fn send_seq_probes(
         id += 1;
     }
 
-    let mut ret = Vec::new();
+    let mut seq1 = None;
+    let mut seq2 = None;
+    let mut seq3 = None;
+    let mut seq4 = None;
+    let mut seq5 = None;
+    let mut seq6 = None;
+
     let iter = rx.into_iter().take(buffs_len);
     for value in iter {
         match value {
             Ok(tp) => {
-                let name = format!("seq_{}", tp.0);
+                let name = format!("seq{}", tp.0);
                 let request = tp.1;
                 let response = tp.2;
-                let rr = RequestResponse {
-                    name,
+                let rr = RequestAndResponse {
+                    name: name.clone(),
                     request,
                     response,
                 };
-                ret.push(rr);
+                match tp.0 {
+                    1 => seq1 = Some(rr),
+                    2 => seq2 = Some(rr),
+                    3 => seq3 = Some(rr),
+                    4 => seq4 = Some(rr),
+                    5 => seq5 = Some(rr),
+                    6 => seq6 = Some(rr),
+                    _ => (),
+                }
             }
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(ret)
+
+    let seqrr = SEQRR {
+        seq1: seq1.unwrap(),
+        seq2: seq2.unwrap(),
+        seq3: seq3.unwrap(),
+        seq4: seq4.unwrap(),
+        seq5: seq5.unwrap(),
+        seq6: seq6.unwrap(),
+    };
+
+    Ok(seqrr)
 }
 
 fn send_ie_probe(
@@ -262,7 +313,7 @@ fn send_ie_probe(
     dst_ipv4: Ipv4Addr,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<Vec<RequestResponse>> {
+) -> Result<IERR> {
     // 2 packets with 2 threads
     let pool = get_threads_pool(2);
     let (tx, rx) = channel();
@@ -296,11 +347,11 @@ fn send_ie_probe(
                                             && response_ipv4_packet.get_next_level_protocol()
                                                 == IpNextHeaderProtocols::Icmp
                                         {
-                                            let request_buff =
-                                                request_ipv4_packet.packet().to_vec();
-                                            let response_buff =
-                                                response_ipv4_packet.packet().to_vec();
-                                            let msg = Ok((id, request_buff, Some(response_buff)));
+                                            let msg = Ok((
+                                                id,
+                                                request_ipv4_packet.packet().to_vec(),
+                                                Some(response_ipv4_packet.packet().to_vec()),
+                                            ));
 
                                             match tx.send(msg) {
                                                 _ => (),
@@ -314,11 +365,13 @@ fn send_ie_probe(
                                 },
                                 Err(_) => (),
                             }
+                            if recv_flag {
+                                break;
+                            }
                         }
                         if !recv_flag {
                             // we did not recv any packet
-                            let request_buff = request_ipv4_packet.packet().to_vec();
-                            let msg = Ok((id, request_buff, None));
+                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), None));
                             match tx.send(msg) {
                                 _ => (),
                             }
@@ -335,35 +388,45 @@ fn send_ie_probe(
         id += 1;
     }
 
-    let mut ret = Vec::new();
+    let mut ie1 = None;
+    let mut ie2 = None;
+
     let iter = rx.into_iter().take(buffs_len);
     for value in iter {
         match value {
             Ok(tp) => {
-                let name = format!("ie_{}", tp.0);
+                let name = format!("ie{}", tp.0);
                 let request = tp.1;
                 let response = tp.2;
-                let rr = RequestResponse {
-                    name,
+                let rr = RequestAndResponse {
+                    name: name.clone(),
                     request,
                     response,
                 };
-                ret.push(rr);
+                match tp.0 {
+                    1 => ie1 = Some(rr),
+                    2 => ie2 = Some(rr),
+                    _ => (),
+                }
             }
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(ret)
+    let ierr = IERR {
+        ie1: ie1.unwrap(),
+        ie2: ie2.unwrap(),
+    };
+    Ok(ierr)
 }
 
 fn send_ecn_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_port: u16, //should be an open port
+    dst_open_port: u16, //should be an open port
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<RequestResponse> {
+) -> Result<ECNRR> {
     // 1 packets with 1 threads
     let pool = get_threads_pool(1);
     let (tx, rx) = channel();
@@ -373,7 +436,7 @@ fn send_ecn_probe(
         None => random_port(),
     };
 
-    let buff = packet::ecn_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
+    let buff = packet::ecn_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_open_port)?;
 
     let tx = tx.clone();
     pool.execute(move || {
@@ -403,11 +466,11 @@ fn send_ecn_probe(
                                         let dst_port_2 = response_tcp_packet.get_destination();
 
                                         if src_port_1 == dst_port_2 && dst_port_1 == src_port_2 {
-                                            let request_buff =
-                                                request_ipv4_packet.packet().to_vec();
-                                            let response_buff =
-                                                response_ipv4_packet.packet().to_vec();
-                                            let msg = Ok((1, request_buff, Some(response_buff)));
+                                            let msg = Ok((
+                                                1,
+                                                request_ipv4_packet.packet().to_vec(),
+                                                Some(response_ipv4_packet.packet().to_vec()),
+                                            ));
                                             match tx.send(msg) {
                                                 _ => (),
                                             }
@@ -419,11 +482,13 @@ fn send_ecn_probe(
                             },
                             Err(_) => (),
                         }
+                        if recv_flag {
+                            break;
+                        }
                     }
                     if !recv_flag {
                         // we did not recv any packet
-                        let request_buff = request_ipv4_packet.packet().to_vec();
-                        let msg = Ok((1, request_buff, None));
+                        let msg = Ok((1, request_ipv4_packet.packet().to_vec(), None));
                         match tx.send(msg) {
                             _ => (),
                         }
@@ -444,12 +509,13 @@ fn send_ecn_probe(
             let name = String::from("ecn");
             let request = tp.1;
             let response = tp.2;
-            let rr = RequestResponse {
+            let rr = RequestAndResponse {
                 name,
                 request,
                 response,
             };
-            return Ok(rr);
+            let ecnrr = ECNRR { ecn: rr };
+            return Ok(ecnrr);
         }
         Err(e) => return Err(e.into()),
     }
@@ -459,27 +525,27 @@ fn send_t2_t7_probes(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_port: u16, //should be an open port
+    dst_open_port: u16, //should be an open port
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<Vec<RequestResponse>> {
+) -> Result<T2T7RR> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_port_p = match src_port {
-        Some(s) => s,
-        None => random_port(),
+    let src_ports = match src_port {
+        Some(s) => vec![s; 6],
+        None => random_port_multi(6),
     };
 
-    let buff_1 = packet::t2_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_2 = packet::t3_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_3 = packet::t4_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_4 = packet::t5_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_5 = packet::t6_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
-    let buff_6 = packet::t7_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
+    let buff_2 = packet::t2_packet_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
+    let buff_3 = packet::t3_packet_layer3(src_ipv4, src_ports[1], dst_ipv4, dst_open_port)?;
+    let buff_4 = packet::t4_packet_layer3(src_ipv4, src_ports[2], dst_ipv4, dst_open_port)?;
+    let buff_5 = packet::t5_packet_layer3(src_ipv4, src_ports[3], dst_ipv4, dst_open_port)?;
+    let buff_6 = packet::t6_packet_layer3(src_ipv4, src_ports[4], dst_ipv4, dst_open_port)?;
+    let buff_7 = packet::t7_packet_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_open_port)?;
 
-    let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
+    let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
     let buffs_len = buffs.len();
     let mut id = 2;
     for buff in buffs {
@@ -514,12 +580,11 @@ fn send_t2_t7_probes(
 
                                             if src_port_1 == dst_port_2 && dst_port_1 == src_port_2
                                             {
-                                                let request_buff =
-                                                    request_ipv4_packet.packet().to_vec();
-                                                let response_buff =
-                                                    response_ipv4_packet.packet().to_vec();
-                                                let msg =
-                                                    Ok((id, request_buff, Some(response_buff)));
+                                                let msg = Ok((
+                                                    id,
+                                                    request_ipv4_packet.packet().to_vec(),
+                                                    Some(response_ipv4_packet.packet().to_vec()),
+                                                ));
                                                 match tx.send(msg) {
                                                     _ => (),
                                                 }
@@ -531,11 +596,13 @@ fn send_t2_t7_probes(
                                 },
                                 Err(_) => (),
                             }
+                            if recv_flag {
+                                break;
+                            }
                         }
                         if !recv_flag {
                             // we did not recv any packet
-                            let request_buff = request_ipv4_packet.packet().to_vec();
-                            let msg = Ok((id, request_buff, None));
+                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), None));
                             match tx.send(msg) {
                                 _ => (),
                             }
@@ -548,39 +615,61 @@ fn send_t2_t7_probes(
             }
         });
         // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
-        sleep(Duration::from_millis(100));
+        // sleep(Duration::from_millis(100));
         id += 1;
     }
 
-    let mut ret = Vec::new();
+    let mut t2 = None;
+    let mut t3 = None;
+    let mut t4 = None;
+    let mut t5 = None;
+    let mut t6 = None;
+    let mut t7 = None;
+
     let iter = rx.into_iter().take(buffs_len);
     for value in iter {
         match value {
             Ok(tp) => {
-                let name = format!("t_{}", tp.0);
+                let name = format!("t{}", tp.0);
                 let request = tp.1;
                 let response = tp.2;
-                let rr = RequestResponse {
-                    name,
+                let rr = RequestAndResponse {
+                    name: name.clone(),
                     request,
                     response,
                 };
-                ret.push(rr);
+                match tp.0 {
+                    2 => t2 = Some(rr),
+                    3 => t3 = Some(rr),
+                    4 => t4 = Some(rr),
+                    5 => t5 = Some(rr),
+                    6 => t6 = Some(rr),
+                    7 => t7 = Some(rr),
+                    _ => (),
+                }
             }
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(ret)
+    let t2t7rr = T2T7RR {
+        t2: t2.unwrap(),
+        t3: t3.unwrap(),
+        t4: t4.unwrap(),
+        t5: t5.unwrap(),
+        t6: t6.unwrap(),
+        t7: t7.unwrap(),
+    };
+    Ok(t2t7rr)
 }
 
 fn send_u1_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_port: u16, //should be an close port
+    dst_closed_port: u16, //should be an closed port
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<RequestResponse> {
+) -> Result<U1RR> {
     // 1 packets with 1 threads
     let pool = get_threads_pool(1);
     let (tx, rx) = channel();
@@ -590,7 +679,7 @@ fn send_u1_probe(
         None => random_port(),
     };
 
-    let buff = packet::udp_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_port)?;
+    let buff = packet::udp_packet_layer3(src_ipv4, src_port_p, dst_ipv4, dst_closed_port)?;
 
     let tx = tx.clone();
     pool.execute(move || {
@@ -610,9 +699,11 @@ fn send_u1_probe(
                                         && response_ipv4_packet.get_next_level_protocol()
                                             == IpNextHeaderProtocols::Icmp
                                     {
-                                        let request_buff = request_ipv4_packet.packet().to_vec();
-                                        let response_buff = response_ipv4_packet.packet().to_vec();
-                                        let msg = Ok((1, request_buff, Some(response_buff)));
+                                        let msg = Ok((
+                                            1,
+                                            request_ipv4_packet.packet().to_vec(),
+                                            Some(response_ipv4_packet.packet().to_vec()),
+                                        ));
                                         match tx.send(msg) {
                                             _ => (),
                                         }
@@ -623,11 +714,13 @@ fn send_u1_probe(
                             },
                             Err(_) => (),
                         }
+                        if recv_flag {
+                            break;
+                        }
                     }
                     if !recv_flag {
                         // we did not recv any packet
-                        let request_buff = request_ipv4_packet.packet().to_vec();
-                        let msg = Ok((1, request_buff, None));
+                        let msg = Ok((1, request_ipv4_packet.packet().to_vec(), None));
                         match tx.send(msg) {
                             _ => (),
                         }
@@ -648,15 +741,94 @@ fn send_u1_probe(
             let name = String::from("u1");
             let request = tp.1;
             let response = tp.2;
-            let rr = RequestResponse {
-                name,
+            let rr = RequestAndResponse {
+                name: name.clone(),
                 request,
                 response,
             };
-            return Ok(rr);
+            let u1rr = U1RR { u1: rr };
+            return Ok(u1rr);
         }
         Err(e) => return Err(e.into()),
     }
+}
+
+fn send_all_probes(
+    src_ipv4: Ipv4Addr,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_open_port: u16,
+    dst_closed_port: u16,
+    max_loop: usize,
+    read_timeout: Duration,
+) -> Result<AllPacket> {
+    let seq = send_seq_probes(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_open_port,
+        max_loop,
+        read_timeout,
+    )?;
+    let ie = send_ie_probe(src_ipv4, dst_ipv4, max_loop, read_timeout)?;
+    let ecn = send_ecn_probe(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_open_port,
+        max_loop,
+        read_timeout,
+    )?;
+    let t2_t7 = send_t2_t7_probes(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_open_port,
+        max_loop,
+        read_timeout,
+    )?;
+    let u1 = send_u1_probe(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_closed_port,
+        max_loop,
+        read_timeout,
+    )?;
+
+    let ap = AllPacket {
+        seq,
+        ie,
+        ecn,
+        t2_t7,
+        u1,
+    };
+
+    Ok(ap)
+}
+
+fn get_seq_fingerprint(seq: &[RequestAndResponse]) {}
+
+fn os_detect(
+    src_ipv4: Ipv4Addr,
+    src_port: Option<u16>,
+    dst_ipv4: Ipv4Addr,
+    dst_open_port: u16,
+    dst_closed_port: u16,
+    max_loop: usize,
+    read_timeout: Duration,
+) -> Result<()> {
+    let ap = send_all_probes(
+        src_ipv4,
+        src_port,
+        dst_ipv4,
+        dst_open_port,
+        dst_closed_port,
+        max_loop,
+        read_timeout,
+    )?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -685,84 +857,115 @@ mod tests {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let src_port = None;
-        let dst_port = 22;
+        let dst_open_port = 22;
         let max_loop = 32;
-        let read_timeout = Duration::from_secs_f32(9.0);
-        let ret = send_seq_probes(
+        let read_timeout = Duration::from_secs_f32(3.0);
+        let seqrr = send_seq_probes(
             src_ipv4,
             src_port,
             dst_ipv4,
-            dst_port,
+            dst_open_port,
             max_loop,
             read_timeout,
         )
         .unwrap();
-        println!("{:?}", ret);
+        println!("{}", seqrr.seq1.name);
+        println!("{}", seqrr.seq2.name);
+        println!("{}", seqrr.seq3.name);
+        println!("{}", seqrr.seq4.name);
+        println!("{}", seqrr.seq5.name);
+        println!("{}", seqrr.seq6.name);
     }
     #[test]
     fn test_ie_probe() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let max_loop = 32;
-        let read_timeout = Duration::from_secs_f32(9.0);
-        let ret = send_ie_probe(src_ipv4, dst_ipv4, max_loop, read_timeout).unwrap();
-        println!("{:?}", ret);
+        let read_timeout = Duration::from_secs_f32(3.0);
+        let ierr = send_ie_probe(src_ipv4, dst_ipv4, max_loop, read_timeout).unwrap();
+        println!("{}", ierr.ie1.name);
+        println!("{}", ierr.ie2.name);
     }
     #[test]
     fn test_ecn_probe() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let src_port = None;
-        let dst_port = 22;
+        let dst_open_port = 22;
         let max_loop = 32;
-        let read_timeout = Duration::from_secs_f32(9.0);
-        let ret = send_ecn_probe(
+        let read_timeout = Duration::from_secs_f32(3.0);
+        let ecnrr = send_ecn_probe(
             src_ipv4,
             src_port,
             dst_ipv4,
-            dst_port,
+            dst_open_port,
             max_loop,
             read_timeout,
         )
         .unwrap();
-        println!("{:?}", ret);
+        println!("{}", ecnrr.ecn.name);
     }
     #[test]
     fn test_t2_t7_probes() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let src_port = None;
-        let dst_port = 22;
+        let dst_open_port = 22;
         let max_loop = 32;
-        let read_timeout = Duration::from_secs_f32(9.0);
-        let ret = send_t2_t7_probes(
+        let read_timeout = Duration::from_secs_f32(3.0);
+        let t2t7rr = send_t2_t7_probes(
             src_ipv4,
             src_port,
             dst_ipv4,
-            dst_port,
+            dst_open_port,
             max_loop,
             read_timeout,
         )
         .unwrap();
-        println!("{:?}", ret);
+        println!("{}", t2t7rr.t2.name);
+        println!("{}", t2t7rr.t3.name);
+        println!("{}", t2t7rr.t4.name);
+        println!("{}", t2t7rr.t5.name);
+        println!("{}", t2t7rr.t6.name);
+        println!("{}", t2t7rr.t7.name);
     }
     #[test]
     fn test_u1_probe() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let src_port = None;
-        let dst_port = 2222;
+        let dst_closed_port = 9999;
         let max_loop = 32;
-        let read_timeout = Duration::from_secs_f32(0.1);
-        let ret = send_u1_probe(
+        let read_timeout = Duration::from_secs_f32(1.0);
+        let u1rr = send_u1_probe(
             src_ipv4,
             src_port,
             dst_ipv4,
-            dst_port,
+            dst_closed_port,
             max_loop,
             read_timeout,
         )
         .unwrap();
-        println!("{:?}", ret);
+        println!("{}", u1rr.u1.name);
+    }
+    #[test]
+    fn test_all_probe() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_port = None;
+        let dst_open_port = 22;
+        let dst_closed_port = 9999;
+        let max_loop = 32;
+        let read_timeout = Duration::from_secs_f32(3.0);
+        let ap = send_all_probes(
+            src_ipv4,
+            src_port,
+            dst_ipv4,
+            dst_open_port,
+            dst_closed_port,
+            max_loop,
+            read_timeout,
+        )
+        .unwrap();
     }
 }

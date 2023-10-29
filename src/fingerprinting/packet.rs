@@ -946,8 +946,6 @@ pub fn udp_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     // ip header
-    const UDP_PROBE_DATA_LEN: usize = 10;
-
     let mut ip_buff = [0u8; IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_PROBE_DATA_LEN];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
     ip_header.set_version(4);
@@ -970,9 +968,8 @@ pub fn udp_packet_layer3(
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_LEN + UDP_PROBE_DATA_LEN) as u16);
     // The character 'C' (0x43) is repeated 300 times for the data field.
-    // let udp_data: Vec<u8> = vec![0x43; 300];
-    let udp_data: Vec<u8> = vec![0x43; 10];
-    // assert_eq!(udp_data.len(), 300);
+    let udp_data: Vec<u8> = vec![0x43; 300];
+    assert_eq!(udp_data.len(), 300);
     udp_header.set_payload(&udp_data);
     let checksum = udp::ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
