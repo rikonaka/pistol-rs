@@ -120,41 +120,6 @@ pub fn get_ips_from_host6(hosts: &[Host6]) -> Vec<Ipv6Addr> {
     target_ips
 }
 
-/// Returns an interface that matches the subnet.
-pub fn find_interface_by_subnet(subnet: &Ipv4Pool) -> Option<NetworkInterface> {
-    let interfaces = get_host_interfaces();
-    for interface in &interfaces {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(i) => {
-                    if subnet.contain(i) {
-                        return Some(interface.clone());
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
-
-pub fn find_interface_by_subnet6(subnet: &Ipv6Pool) -> Option<NetworkInterface> {
-    let interfaces = get_host_interfaces();
-    for interface in &interfaces {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V6(i) => {
-                    if subnet.contain(i) {
-                        return Some(interface.clone());
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
-
 /// Returns an interface that matches the name.
 pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
     for interface in pnet_datalink::interfaces() {
@@ -244,45 +209,6 @@ pub fn parse_interface_from_str6(
     let i = match find_interface_by_name(interface_name) {
         Some(i) => i,
         _ => return Err(FindInterfaceError::new(interface_name).into()),
-    };
-    let ipv6 = match get_interface_ip6(&i) {
-        Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(&i.to_string()).into()),
-    };
-    let mac = match i.mac {
-        Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(&i.to_string()).into()),
-    };
-
-    Ok((i, ipv6, mac))
-}
-
-/// Convert user input subnet and return (NetworkInterface, Ipv4Addr, MacAddr).
-pub fn parse_interface_by_subnet(
-    subnet: Ipv4Pool,
-) -> Result<(NetworkInterface, Ipv4Addr, MacAddr)> {
-    let i = match find_interface_by_subnet(&subnet) {
-        Some(i) => i,
-        _ => return Err(FindInterfaceError::new("counld not find interface by subnet").into()),
-    };
-    let ipv4 = match get_interface_ip(&i) {
-        Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(&i.to_string()).into()),
-    };
-    let mac = match i.mac {
-        Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(&i.to_string()).into()),
-    };
-
-    Ok((i, ipv4, mac))
-}
-
-pub fn parse_interface_by_subnet6(
-    subnet: Ipv6Pool,
-) -> Result<(NetworkInterface, Ipv6Addr, MacAddr)> {
-    let i = match find_interface_by_subnet6(&subnet) {
-        Some(i) => i,
-        _ => return Err(FindInterfaceError::new("counld not find interface by subnet").into()),
     };
     let ipv6 = match get_interface_ip6(&i) {
         Some(ip) => ip,

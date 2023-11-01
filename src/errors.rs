@@ -85,23 +85,3 @@ impl NotSupportIpTypeForArpScan {
 }
 
 impl Error for NotSupportIpTypeForArpScan {}
-
-/* WrongIpType */
-#[derive(Debug, Clone)]
-pub struct WrongTargetType {
-    target_type: TargetType,
-}
-
-impl fmt::Display for WrongTargetType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "wrong target type {:?}", self.target_type)
-    }
-}
-
-impl WrongTargetType {
-    pub fn new(target_type: TargetType) -> WrongTargetType {
-        WrongTargetType { target_type }
-    }
-}
-
-impl Error for WrongTargetType {}

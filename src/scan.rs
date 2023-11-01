@@ -18,7 +18,7 @@ pub mod udp6;
 use crate::utils::{self, get_ips_from_host, get_ips_from_host6};
 use crate::TargetType;
 
-use super::errors::{NotSupportIpTypeForArpScan, WrongTargetType};
+use super::errors::NotSupportIpTypeForArpScan;
 use super::ArpScanResults;
 use super::IpScanResults;
 use super::Target;
@@ -403,7 +403,7 @@ pub fn scan(
 )> {
     let iter = match interface {
         Some(interface) => {
-            let (interface, src_ipv4_interface, _) = utils::parse_interface_from_str(interface)?;
+            let (_, src_ipv4_interface, _) = utils::parse_interface_from_str(interface)?;
             let (tx, rx) = channel();
             let pool = utils::get_threads_pool(threads_num);
             let mut recv_size = 0;
@@ -556,7 +556,7 @@ pub fn scan6(
 ) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
     let iter = match interface {
         Some(interface) => {
-            let (interface, src_ipv6_interface, _) = utils::parse_interface_from_str6(interface)?;
+            let (_, src_ipv6_interface, _) = utils::parse_interface_from_str6(interface)?;
             let (tx, rx) = channel();
             let pool = utils::get_threads_pool(threads_num);
             let mut recv_size = 0;

