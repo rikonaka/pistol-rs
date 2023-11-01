@@ -36,7 +36,6 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::fingerprinting::packet;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -46,6 +45,9 @@ use crate::utils::return_layer3_udp_channel;
 use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
+
+use super::operator::{tcp_gcd, tcp_isr, tcp_sp, tcp_ss, tcp_ti_ci_ii};
+use super::packet;
 
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone)]
@@ -93,11 +95,11 @@ pub struct U1RR {
 
 // HashMap<Name, RR>
 #[derive(Debug, Clone)]
-pub struct AllPacket {
+pub struct AllRRPacket {
     pub seq: SEQRR,
     pub ie: IERR,
     pub ecn: ECNRR,
-    pub t2_t7: T2T7RR,
+    pub t2t7: T2T7RR,
     pub u1: U1RR,
 }
 
@@ -168,7 +170,7 @@ fn send_seq_probes(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_open_port: u16, //should be an open port
+    dst_open_port: u16,
     max_loop: usize,
     read_timeout: Duration,
 ) -> Result<SEQRR> {
@@ -423,7 +425,7 @@ fn send_ecn_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_open_port: u16, //should be an open port
+    dst_open_port: u16,
     max_loop: usize,
     read_timeout: Duration,
 ) -> Result<ECNRR> {
@@ -525,7 +527,8 @@ fn send_t2_t7_probes(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
-    dst_open_port: u16, //should be an open port
+    dst_open_port: u16,
+    dst_closed_port: u16,
     max_loop: usize,
     read_timeout: Duration,
 ) -> Result<T2T7RR> {
@@ -538,12 +541,18 @@ fn send_t2_t7_probes(
         None => random_port_multi(6),
     };
 
+    // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     let buff_2 = packet::t2_packet_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
+    // T3 sends a TCP packet with the SYN, FIN, URG, and PSH flags set and a window field of 256 to an open port. The IP DF bit is not set.
     let buff_3 = packet::t3_packet_layer3(src_ipv4, src_ports[1], dst_ipv4, dst_open_port)?;
+    // T4 sends a TCP ACK packet with IP DF and a window field of 1024 to an open port.
     let buff_4 = packet::t4_packet_layer3(src_ipv4, src_ports[2], dst_ipv4, dst_open_port)?;
-    let buff_5 = packet::t5_packet_layer3(src_ipv4, src_ports[3], dst_ipv4, dst_open_port)?;
-    let buff_6 = packet::t6_packet_layer3(src_ipv4, src_ports[4], dst_ipv4, dst_open_port)?;
-    let buff_7 = packet::t7_packet_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_open_port)?;
+    // T5 sends a TCP SYN packet without IP DF and a window field of 31337 to a closed port.
+    let buff_5 = packet::t5_packet_layer3(src_ipv4, src_ports[3], dst_ipv4, dst_closed_port)?;
+    // T6 sends a TCP ACK packet with IP DF and a window field of 32768 to a closed port.
+    let buff_6 = packet::t6_packet_layer3(src_ipv4, src_ports[4], dst_ipv4, dst_closed_port)?;
+    // T7 sends a TCP packet with the FIN, PSH, and URG flags set and a window field of 65535 to a closed port. The IP DF bit is not set.
+    let buff_7 = packet::t7_packet_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_closed_port)?;
 
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
     let buffs_len = buffs.len();
@@ -761,7 +770,7 @@ fn send_all_probes(
     dst_closed_port: u16,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<AllPacket> {
+) -> Result<AllRRPacket> {
     let seq = send_seq_probes(
         src_ipv4,
         src_port,
@@ -784,6 +793,7 @@ fn send_all_probes(
         src_port,
         dst_ipv4,
         dst_open_port,
+        dst_closed_port,
         max_loop,
         read_timeout,
     )?;
@@ -796,18 +806,30 @@ fn send_all_probes(
         read_timeout,
     )?;
 
-    let ap = AllPacket {
+    let ap = AllRRPacket {
         seq,
         ie,
         ecn,
-        t2_t7,
+        t2t7: t2_t7,
         u1,
     };
 
     Ok(ap)
 }
 
-fn get_seq_fingerprint(seq: &[RequestAndResponse]) {}
+fn get_seq_fingerprint(ap: &AllRRPacket) {
+    let (gcd, diff) = tcp_gcd(&ap.seq).unwrap(); // None mean error
+    let (isr, seq_rates) = tcp_isr(diff);
+    let sp = match tcp_sp(seq_rates, gcd) {
+        Some(sp) => format!("{}", sp), // None mean omitting
+        None => String::from(""),
+    };
+    let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.t2t7, &ap.ie).unwrap();
+    let ss = match tcp_ss(&ap.seq, &ap.ie, &ti, &ii) {
+        Some(ss) => ss,
+        None => String::from(""),
+    };
+}
 
 fn os_detect(
     src_ipv4: Ipv4Addr,
@@ -911,6 +933,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
         let src_port = None;
         let dst_open_port = 22;
+        let dst_closed_port = 9999;
         let max_loop = 32;
         let read_timeout = Duration::from_secs_f32(3.0);
         let t2t7rr = send_t2_t7_probes(
@@ -918,6 +941,7 @@ mod tests {
             src_port,
             dst_ipv4,
             dst_open_port,
+            dst_closed_port,
             max_loop,
             read_timeout,
         )

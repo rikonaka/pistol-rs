@@ -7,12 +7,11 @@ use subnetwork::{Ipv4Pool, Ipv6Pool};
 pub mod icmp;
 pub mod icmp6;
 
-use crate::scan;
 use crate::utils;
 use crate::PingResults;
 use crate::PingStatus;
-use crate::TcpScanStatus;
-use crate::UdpScanStatus;
+use crate::TargetScanStatus;
+use crate::{scan, Target};
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;
@@ -42,7 +41,7 @@ fn _run_icmp_ping_host(
     max_loop: Option<usize>,
 ) -> Result<PingStatus> {
     let src_ipv4 = if src_ipv4.is_none() {
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+        let (_, src_ipv4, _) = utils::parse_interface_from_str(interface.unwrap())?;
         src_ipv4
     } else {
         src_ipv4.unwrap()
@@ -66,7 +65,7 @@ fn _run_icmp_ping_host6(
     max_loop: Option<usize>,
 ) -> Result<PingStatus> {
     let src_ipv6 = if src_ipv6.is_none() {
-        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface.unwrap())?;
         src_ipv6
     } else {
         src_ipv6.unwrap()
@@ -90,7 +89,7 @@ fn _run_icmp_ping_subnet(
     max_loop: Option<usize>,
 ) -> Result<HashMap<IpAddr, PingResults>> {
     let src_ipv4 = if src_ipv4.is_none() {
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+        let (_, src_ipv4, _) = utils::parse_interface_from_str(interface.unwrap())?;
         src_ipv4
     } else {
         src_ipv4.unwrap()
@@ -123,7 +122,7 @@ fn _run_icmp_ping_subnet6(
     max_loop: Option<usize>,
 ) -> Result<HashMap<IpAddr, PingResults>> {
     let src_ipv6 = if src_ipv6.is_none() {
-        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface.unwrap())?;
         src_ipv6
     } else {
         src_ipv6.unwrap()
@@ -165,18 +164,21 @@ fn _run_tcp_ping_host(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::tcp_syn_scan_single_port(
+            let target = Target::new_static_port(&vec![dst_ipv4], &vec![dst_port]);
+            let ret = scan::tcp_syn_scan(
+                target,
                 src_ipv4,
                 src_port,
-                dst_ipv4,
-                dst_port,
                 interface,
                 print_result,
+                8,
                 timeout,
                 max_loop,
             )?;
-            match scan_ret.results.get(&dst_port).unwrap() {
-                TcpScanStatus::Open => PingStatus::Up,
+            let scan_rets = ret.get(&dst_ipv4.into()).unwrap();
+            let status = scan_rets.results.get(&dst_port).unwrap();
+            match status {
+                TargetScanStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
@@ -186,18 +188,21 @@ fn _run_tcp_ping_host(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::tcp_ack_scan_single_port(
+            let target = Target::new_static_port(&vec![dst_ipv4], &vec![dst_port]);
+            let ret = scan::tcp_ack_scan(
+                target,
                 src_ipv4,
                 src_port,
-                dst_ipv4,
-                dst_port,
                 interface,
                 print_result,
+                8,
                 timeout,
                 max_loop,
             )?;
-            match scan_ret.results.get(&dst_port).unwrap() {
-                TcpScanStatus::Unfiltered => PingStatus::Up,
+            let scan_rets = ret.get(&dst_ipv4.into()).unwrap();
+            let status = scan_rets.results.get(&dst_port).unwrap();
+            match status {
+                TargetScanStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
@@ -207,19 +212,22 @@ fn _run_tcp_ping_host(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::udp_scan_single_port(
+            let target = Target::new_static_port(&vec![dst_ipv4], &vec![dst_port]);
+            let ret = scan::udp_scan(
+                target,
                 src_ipv4,
                 src_port,
-                dst_ipv4,
-                dst_port,
                 interface,
                 print_result,
+                8,
                 timeout,
                 max_loop,
             )?;
-            match scan_ret.results.get(&dst_port).unwrap() {
-                UdpScanStatus::Open => PingStatus::Up,
-                UdpScanStatus::OpenOrFiltered => PingStatus::Up,
+            let scan_rets = ret.get(&dst_ipv4.into()).unwrap();
+            let status = scan_rets.results.get(&dst_port).unwrap();
+            match status {
+                TargetScanStatus::Open => PingStatus::Up,
+                TargetScanStatus::OpenOrFiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
@@ -256,18 +264,21 @@ fn _run_tcp_ping_host6(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::tcp_syn_scan_single_port6(
+            let target = Target::new_static_port6(&vec![dst_ipv6], &vec![dst_port]);
+            let ret = scan::tcp_syn_scan6(
+                target,
                 src_ipv6,
                 src_port,
-                dst_ipv6,
-                dst_port,
                 interface,
                 print_result,
+                8,
                 timeout,
                 max_loop,
             )?;
-            match scan_ret.results.get(&dst_port).unwrap() {
-                TcpScanStatus::Open => PingStatus::Up,
+            let scan_rets = ret.get(&dst_ipv6.into()).unwrap();
+            let status = scan_rets.results.get(&dst_port).unwrap();
+            match status {
+                TargetScanStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
@@ -277,18 +288,21 @@ fn _run_tcp_ping_host6(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::tcp_ack_scan_single_port6(
+            let target = Target::new_static_port6(&vec![dst_ipv6], &vec![dst_port]);
+            let ret = scan::tcp_ack_scan6(
+                target,
                 src_ipv6,
                 src_port,
-                dst_ipv6,
-                dst_port,
                 interface,
                 print_result,
+                8,
                 timeout,
                 max_loop,
             )?;
-            match scan_ret.results.get(&dst_port).unwrap() {
-                TcpScanStatus::Unfiltered => PingStatus::Up,
+            let scan_rets = ret.get(&dst_ipv6.into()).unwrap();
+            let status = scan_rets.results.get(&dst_port).unwrap();
+            match status {
+                TargetScanStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
@@ -298,19 +312,22 @@ fn _run_tcp_ping_host6(
             } else {
                 dst_port.unwrap()
             };
-            let scan_ret = scan::udp_scan_single_port6(
+            let target = Target::new_static_port6(&vec![dst_ipv6], &vec![dst_port]);
+            let ret = scan::udp_scan6(
+                target,
                 src_ipv6,
                 src_port,
-                dst_ipv6,
-                dst_port,
                 interface,
                 print_result,
+                8,
                 timeout,
                 max_loop,
             )?;
-            match scan_ret.results.get(&dst_port).unwrap() {
-                UdpScanStatus::Open => PingStatus::Up,
-                UdpScanStatus::OpenOrFiltered => PingStatus::Up,
+            let scan_rets = ret.get(&dst_ipv6.into()).unwrap();
+            let status = scan_rets.results.get(&dst_port).unwrap();
+            match status {
+                TargetScanStatus::Open => PingStatus::Up,
+                TargetScanStatus::OpenOrFiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
@@ -327,268 +344,6 @@ fn _run_tcp_ping_host6(
         addr: dst_ipv6.into(),
         status: ping_status,
     })
-}
-
-fn _run_tcp_ping_subnet(
-    method: TcpPingMethods,
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv4Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    let ret = match method {
-        TcpPingMethods::Syn => {
-            let dst_port = if dst_port.is_none() {
-                SYN_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
-            };
-            let start_port = dst_port;
-            let end_port = dst_port;
-            let scan_ret = scan::tcp_syn_scan_subnet(
-                src_ipv4,
-                src_port,
-                subnet,
-                start_port,
-                end_port,
-                interface,
-                threads_num,
-                print_result,
-                timeout,
-                max_loop,
-            )?;
-            let mut hm = HashMap::new();
-            for k in scan_ret.keys() {
-                let v = scan_ret.get(k).unwrap();
-                let ping_status = match v.results.get(&dst_port).unwrap() {
-                    TcpScanStatus::Open => PingStatus::Up,
-                    _ => PingStatus::Down,
-                };
-                hm.insert(
-                    k.clone(),
-                    PingResults {
-                        addr: k.clone(),
-                        status: ping_status,
-                    },
-                );
-            }
-            hm
-        }
-        TcpPingMethods::Ack => {
-            let dst_port = if dst_port.is_none() {
-                ACK_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
-            };
-            let start_port = dst_port;
-            let end_port = dst_port;
-            let scan_ret = scan::tcp_ack_scan_subnet(
-                src_ipv4,
-                src_port,
-                subnet,
-                start_port,
-                end_port,
-                interface,
-                threads_num,
-                print_result,
-                timeout,
-                max_loop,
-            )?;
-            let mut hm = HashMap::new();
-            for k in scan_ret.keys() {
-                let v = scan_ret.get(k).unwrap();
-                let ping_status = match v.results.get(&dst_port).unwrap() {
-                    TcpScanStatus::Open => PingStatus::Up,
-                    _ => PingStatus::Down,
-                };
-                hm.insert(
-                    k.clone(),
-                    PingResults {
-                        addr: k.clone(),
-                        status: ping_status,
-                    },
-                );
-            }
-            hm
-        }
-        TcpPingMethods::Udp => {
-            let dst_port = if dst_port.is_none() {
-                UDP_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
-            };
-            let start_port = dst_port;
-            let end_port = dst_port;
-            let scan_ret = scan::udp_scan_subnet(
-                src_ipv4,
-                src_port,
-                subnet,
-                start_port,
-                end_port,
-                interface,
-                threads_num,
-                print_result,
-                timeout,
-                max_loop,
-            )?;
-            let mut hm = HashMap::new();
-            for k in scan_ret.keys() {
-                let v = scan_ret.get(k).unwrap();
-                let ping_status = match v.results.get(&dst_port).unwrap() {
-                    UdpScanStatus::Open => PingStatus::Up,
-                    _ => PingStatus::Down,
-                };
-                hm.insert(
-                    k.clone(),
-                    PingResults {
-                        addr: k.clone().into(),
-                        status: ping_status,
-                    },
-                );
-            }
-            hm
-        }
-        TcpPingMethods::Icmp => {
-            _run_icmp_ping_subnet(src_ipv4, subnet, interface, print_result, timeout, max_loop)?
-        }
-    };
-    Ok(ret)
-}
-
-fn _run_tcp_ping_subnet6(
-    method: TcpPingMethods,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv6Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    let ret = match method {
-        TcpPingMethods::Syn => {
-            let dst_port = if dst_port.is_none() {
-                SYN_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
-            };
-            let start_port = dst_port;
-            let end_port = dst_port;
-            let scan_ret = scan::tcp_syn_scan_subnet6(
-                src_ipv6,
-                src_port,
-                subnet,
-                start_port,
-                end_port,
-                interface,
-                threads_num,
-                print_result,
-                timeout,
-                max_loop,
-            )?;
-            let mut hm = HashMap::new();
-            for k in scan_ret.keys() {
-                let v = scan_ret.get(k).unwrap();
-                let ping_status = match v.results.get(&dst_port).unwrap() {
-                    TcpScanStatus::Open => PingStatus::Up,
-                    _ => PingStatus::Down,
-                };
-                hm.insert(
-                    k.clone(),
-                    PingResults {
-                        addr: k.clone(),
-                        status: ping_status,
-                    },
-                );
-            }
-            hm
-        }
-        TcpPingMethods::Ack => {
-            let dst_port = if dst_port.is_none() {
-                ACK_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
-            };
-            let start_port = dst_port;
-            let end_port = dst_port;
-            let scan_ret = scan::tcp_ack_scan_subnet6(
-                src_ipv6,
-                src_port,
-                subnet,
-                start_port,
-                end_port,
-                interface,
-                threads_num,
-                print_result,
-                timeout,
-                max_loop,
-            )?;
-            let mut hm = HashMap::new();
-            for k in scan_ret.keys() {
-                let v = scan_ret.get(k).unwrap();
-                let ping_status = match v.results.get(&dst_port).unwrap() {
-                    TcpScanStatus::Open => PingStatus::Up,
-                    _ => PingStatus::Down,
-                };
-                hm.insert(
-                    k.clone(),
-                    PingResults {
-                        addr: k.clone(),
-                        status: ping_status,
-                    },
-                );
-            }
-            hm
-        }
-        TcpPingMethods::Udp => {
-            let dst_port = if dst_port.is_none() {
-                UDP_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
-            };
-            let start_port = dst_port;
-            let end_port = dst_port;
-            let scan_ret = scan::udp_scan_subnet6(
-                src_ipv6,
-                src_port,
-                subnet,
-                start_port,
-                end_port,
-                interface,
-                threads_num,
-                print_result,
-                timeout,
-                max_loop,
-            )?;
-            let mut hm = HashMap::new();
-            for k in scan_ret.keys() {
-                let v = scan_ret.get(k).unwrap();
-                let ping_status = match v.results.get(&dst_port).unwrap() {
-                    UdpScanStatus::Open => PingStatus::Up,
-                    _ => PingStatus::Down,
-                };
-                hm.insert(
-                    k.clone(),
-                    PingResults {
-                        addr: k.clone().into(),
-                        status: ping_status,
-                    },
-                );
-            }
-            hm
-        }
-        TcpPingMethods::Icmp => {
-            _run_icmp_ping_subnet6(src_ipv6, subnet, interface, print_result, timeout, max_loop)?
-        }
-    };
-    Ok(ret)
 }
 
 pub fn tcp_syn_ping_host(
@@ -631,56 +386,6 @@ pub fn tcp_syn_ping_host6(
         dst_ipv6,
         dst_port,
         interface,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
-pub fn tcp_syn_ping_subnet(
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv4Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet(
-        TcpPingMethods::Syn,
-        src_ipv4,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
-pub fn tcp_syn_ping_subnet6(
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv6Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet6(
-        TcpPingMethods::Syn,
-        src_ipv6,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
         print_result,
         timeout,
         max_loop,
@@ -733,56 +438,6 @@ pub fn tcp_ack_ping_host6(
     )
 }
 
-pub fn tcp_ack_ping_subnet(
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv4Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet(
-        TcpPingMethods::Ack,
-        src_ipv4,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
-pub fn tcp_ack_ping_subnet6(
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv6Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet6(
-        TcpPingMethods::Ack,
-        src_ipv6,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
 pub fn udp_ping_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -829,56 +484,6 @@ pub fn udp_ping_host6(
     )
 }
 
-pub fn udp_ping_subnet(
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv4Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet(
-        TcpPingMethods::Udp,
-        src_ipv4,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
-pub fn udp_ping_subnet6(
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv6Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet6(
-        TcpPingMethods::Udp,
-        src_ipv6,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
 pub fn icmp_ping_host(
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
@@ -919,56 +524,6 @@ pub fn icmp_ping_host6(
         dst_ipv6,
         dst_port,
         interface,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
-pub fn icmp_ping_subnet(
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv4Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet(
-        TcpPingMethods::Icmp,
-        src_ipv4,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
-        print_result,
-        timeout,
-        max_loop,
-    )
-}
-
-pub fn icmp_ping_subnet6(
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    dst_port: Option<u16>,
-    subnet: Ipv6Pool,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    _run_tcp_ping_subnet6(
-        TcpPingMethods::Icmp,
-        src_ipv6,
-        src_port,
-        dst_port,
-        subnet,
-        interface,
-        threads_num,
         print_result,
         timeout,
         max_loop,

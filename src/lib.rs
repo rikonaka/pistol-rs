@@ -2,10 +2,13 @@
 #![doc = include_str!("lib.md")]
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet_datalink::NetworkInterface;
 use std::collections::HashMap;
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use subnetwork::{Ipv4Pool, Ipv6Pool};
 
+mod errors;
 mod fingerprinting;
 mod flood;
 mod ping;
@@ -38,15 +41,7 @@ impl fmt::Display for PingResults {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum IpScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum TcpScanStatus {
+pub enum TargetScanStatus {
     Open,
     Closed,
     Filtered,
@@ -62,46 +57,38 @@ pub struct IdleScanResults {
     pub zombie_ip_id_2: u16,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum UdpScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-}
-
 #[derive(Debug, Clone)]
 pub struct ArpScanResults {
     pub alive_hosts_num: usize,
-    pub alive_hosts: HashMap<Ipv4Addr, Option<MacAddr>>,
+    pub alive_hosts: HashMap<Ipv4Addr, MacAddr>,
 }
 
 #[derive(Debug, Clone)]
-pub struct TcpScanResults {
+pub struct TcpUdpScanResults {
     pub addr: IpAddr,
-    pub results: HashMap<u16, TcpScanStatus>,
+    pub results: HashMap<u16, TargetScanStatus>,
 }
 
-impl TcpScanResults {
-    pub fn new(addr: IpAddr) -> TcpScanResults {
+impl TcpUdpScanResults {
+    pub fn new(addr: IpAddr) -> TcpUdpScanResults {
         let results = HashMap::new();
-        TcpScanResults { addr, results }
+        TcpUdpScanResults { addr, results }
     }
 }
 
-impl fmt::Display for TcpScanResults {
+impl fmt::Display for TcpUdpScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ip = self.addr;
         let mut result_str = String::new();
         for port in self.results.keys() {
             let str = match self.results.get(port).unwrap() {
-                TcpScanStatus::Open => format!("{ip} {port} open"),
-                TcpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
-                TcpScanStatus::Filtered => format!("{ip} {port} filtered"),
-                TcpScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
-                TcpScanStatus::Closed => format!("{ip} {port} closed"),
-                TcpScanStatus::Unreachable => format!("{ip} {port} unreachable"),
-                TcpScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
+                TargetScanStatus::Open => format!("{ip} {port} open"),
+                TargetScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
+                TargetScanStatus::Filtered => format!("{ip} {port} filtered"),
+                TargetScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
+                TargetScanStatus::Closed => format!("{ip} {port} closed"),
+                TargetScanStatus::Unreachable => format!("{ip} {port} unreachable"),
+                TargetScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
             };
             result_str += &str;
         }
@@ -111,12 +98,12 @@ impl fmt::Display for TcpScanResults {
 
 #[derive(Debug, Clone)]
 pub struct IpScanResults {
-    pub addr: Ipv4Addr,
-    pub results: HashMap<IpNextHeaderProtocol, IpScanStatus>,
+    pub addr: IpAddr,
+    pub results: HashMap<IpNextHeaderProtocol, TargetScanStatus>,
 }
 
 impl IpScanResults {
-    pub fn new(addr: Ipv4Addr) -> IpScanResults {
+    pub fn new(addr: IpAddr) -> IpScanResults {
         let results = HashMap::new();
         IpScanResults { addr, results }
     }
@@ -128,10 +115,13 @@ impl fmt::Display for IpScanResults {
         let mut result_str = String::new();
         for protocol in self.results.keys() {
             let str = match self.results.get(protocol).unwrap() {
-                IpScanStatus::Open => format!("{ip} {protocol} open"),
-                IpScanStatus::Filtered => format!("{ip} {protocol} filtered"),
-                IpScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
-                IpScanStatus::Closed => format!("{ip} {protocol} closed"),
+                TargetScanStatus::Open => format!("{ip} {protocol} open"),
+                TargetScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
+                TargetScanStatus::Filtered => format!("{ip} {protocol} filtered"),
+                TargetScanStatus::Unfiltered => format!("{ip} {protocol} unfiltered"),
+                TargetScanStatus::Closed => format!("{ip} {protocol} closed"),
+                TargetScanStatus::Unreachable => format!("{ip} {protocol} unreachable"),
+                TargetScanStatus::ClosedOrFiltered => format!("{ip} {protocol} closed|filtered"),
             };
             result_str += &str;
         }
@@ -140,32 +130,282 @@ impl fmt::Display for IpScanResults {
 }
 
 #[derive(Debug, Clone)]
-pub struct UdpScanResults {
-    pub addr: IpAddr,
-    pub results: HashMap<u16, UdpScanStatus>,
+pub struct Host {
+    pub addr: Ipv4Addr,
+    pub ports: Vec<u16>,
 }
 
-impl UdpScanResults {
-    pub fn new(addr: IpAddr) -> UdpScanResults {
-        let results = HashMap::new();
-        UdpScanResults { addr, results }
+impl Host {
+    pub fn new(addr: Ipv4Addr, ports: &[u16]) -> Host {
+        Host {
+            addr,
+            ports: ports.to_vec(),
+        }
     }
 }
 
-impl fmt::Display for UdpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        for port in self.results.keys() {
-            let str = match self.results.get(port).unwrap() {
-                UdpScanStatus::Open => format!("{ip} {port} open"),
-                UdpScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
-                UdpScanStatus::Filtered => format!("{ip} {port} filtered"),
-                UdpScanStatus::Closed => format!("{ip} {port} closed"),
-            };
-            result_str += &str;
+#[derive(Debug, Clone)]
+pub struct Host6 {
+    pub addr: Ipv6Addr,
+    pub ports: Vec<u16>,
+}
+
+impl Host6 {
+    pub fn new(addr: Ipv6Addr, ports: &[u16]) -> Host6 {
+        Host6 {
+            addr,
+            ports: ports.to_vec(),
         }
-        write!(f, "{}", result_str)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TargetType {
+    Ipv4,
+    Ipv6,
+}
+
+#[derive(Debug, Clone)]
+pub struct Target {
+    pub target_type: TargetType,
+    pub hosts: Vec<Host>,
+    pub hosts6: Vec<Host6>,
+}
+
+impl Target {
+    /// Suitable for functions that do not require a port as a parameter, such as ARP scanning.
+    pub fn new_only_hosts(addrs: &[Ipv4Addr]) -> Target {
+        let mut hosts = Vec::new();
+        for addr in addrs {
+            let h = Host::new(*addr, &vec![]);
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts,
+            hosts6: vec![],
+        }
+    }
+    /// Sometimes we need to process all IPs in a subnet, we can use this function to handle it.
+    pub fn new_only_hosts_subnet(subnet: Ipv4Pool) -> Target {
+        let mut hosts = Vec::new();
+        for addr in subnet {
+            let h = Host::new(addr, &vec![]);
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts,
+            hosts6: vec![],
+        }
+    }
+    /// Ipv6 version of new_only_hosts().
+    pub fn new_only_hosts6(addrs: &[Ipv6Addr]) -> Target {
+        let mut hosts = Vec::new();
+        for addr in addrs {
+            let h = Host6::new(*addr, &vec![]);
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts,
+        }
+    }
+    /// Ipv6 version of new_only_hosts_subnet().
+    pub fn new_only_hosts_subnet6(subnet: Ipv6Pool) -> Target {
+        let mut hosts = Vec::new();
+        for addr in subnet {
+            let h = Host6::new(addr, &vec![]);
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts,
+        }
+    }
+    /// For example: addrs = ["192.168.1.1", "192.168.1.2"], ports = [22, 23],
+    /// eventually, "192.168.1.1:22", "192.168.1.1:23", "192.168.1.2:22", "192.168.1.2:23" will be scanned.
+    pub fn new_static_port(addrs: &[Ipv4Addr], ports: &[u16]) -> Target {
+        let mut hosts = Vec::new();
+        for addr in addrs {
+            let h = Host::new(*addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts,
+            hosts6: vec![],
+        }
+    }
+    /// Sometimes we need to process all IPs in a subnet, we can use this function to handle it.
+    pub fn new_static_port_subnet(subnet: Ipv4Pool, ports: &[u16]) -> Target {
+        let mut hosts = Vec::new();
+        for addr in subnet {
+            let h = Host::new(addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts,
+            hosts6: vec![],
+        }
+    }
+    /// Ipv6 version of new_static_port().
+    pub fn new_static_port6(addrs: &[Ipv6Addr], ports: &[u16]) -> Target {
+        let mut hosts = Vec::new();
+        for addr in addrs {
+            let h = Host6::new(*addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts,
+        }
+    }
+    /// Ipv6 version of new_static_port_subnet().
+    pub fn new_static_port_subnet6(subnet: Ipv6Pool, ports: &[u16]) -> Target {
+        let mut hosts = Vec::new();
+        for addr in subnet {
+            let h = Host6::new(addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts,
+        }
+    }
+    /// For example: addrs = ["192.168.1.1", "192.168.1.2"], start_port = 22, end_port = 100,
+    /// eventually, "192.168.1.1:22", ..., "192.168.1.1:100", "192.168.1.2:22", ..., "192.168.1.2:100" will be scanned.
+    pub fn new_range_port(addrs: &[Ipv4Addr], start_port: u16, end_port: u16) -> Target {
+        let mut hosts = Vec::new();
+        for addr in addrs {
+            let mut ports = Vec::new();
+            for p in start_port..=end_port {
+                ports.push(p);
+            }
+            let h = Host::new(*addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts,
+            hosts6: vec![],
+        }
+    }
+    /// Sometimes we need to process all IPs in a subnet, we can use this function to handle it.
+    pub fn new_range_port_subnet(subnet: Ipv4Pool, start_port: u16, end_port: u16) -> Target {
+        let mut hosts = Vec::new();
+        for addr in subnet {
+            let mut ports = Vec::new();
+            for p in start_port..=end_port {
+                ports.push(p);
+            }
+            let h = Host::new(addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts,
+            hosts6: vec![],
+        }
+    }
+    /// Ipv6 version of new_range_port().
+    pub fn new_range_port6(addrs: &[Ipv6Addr], start_port: u16, end_port: u16) -> Target {
+        let mut hosts = Vec::new();
+        for addr in addrs {
+            let mut ports = Vec::new();
+            for p in start_port..=end_port {
+                ports.push(p);
+            }
+            let h = Host6::new(*addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts,
+        }
+    }
+    /// Ipv6 version of new_range_port_subnet().
+    pub fn new_range_port_subnet6(subnet: Ipv6Pool, start_port: u16, end_port: u16) -> Target {
+        let mut hosts = Vec::new();
+        for addr in subnet {
+            let mut ports = Vec::new();
+            for p in start_port..=end_port {
+                ports.push(p);
+            }
+            let h = Host6::new(addr, &ports.to_vec());
+            hosts.push(h);
+        }
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts,
+        }
+    }
+    /// Scan different ports for different targets,
+    /// for example, we want to scan ports 22 and 23 of "192.168.1.1" and ports 80 and 81 of "192.168.1.2",
+    /// you can define the address and port range of each host yourself.
+    /// ```rust
+    /// use pistol::{Host, Target};
+    /// use std::net::{Ipv4Addr, Ipv6Addr};
+    ///
+    /// fn test() {
+    ///     let host1 = Host::new(Ipv4Addr::new(192, 168, 1, 1), &vec![22, 23]);
+    ///     let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), &vec![80, 81]);
+    ///     let target = Target::new_dynamic_port(&vec![host1, host2]);
+    /// }
+    /// ```
+    pub fn new_dynamic_port(hosts: &[Host]) -> Target {
+        Target {
+            target_type: TargetType::Ipv4,
+            hosts: hosts.to_vec(),
+            hosts6: vec![],
+        }
+    }
+    /// Ipv6 version of new_dynamic_port().
+    pub fn new_dynamic_port6(hosts: &[Host6]) -> Target {
+        Target {
+            target_type: TargetType::Ipv6,
+            hosts: vec![],
+            hosts6: hosts.to_vec(),
+        }
+    }
+}
+
+/// Bind IP address to interface.
+#[derive(Debug, Clone)]
+pub struct BindIp2Interface {
+    pub ipv4: Ipv4Addr,
+    pub interface: Option<NetworkInterface>,
+}
+
+impl BindIp2Interface {
+    pub fn new(ip: Ipv4Addr, interface: Option<NetworkInterface>) -> BindIp2Interface {
+        BindIp2Interface {
+            ipv4: ip,
+            interface,
+        }
+    }
+}
+
+/// Bind IP address to interface.
+#[derive(Debug, Clone)]
+pub struct BindIp2Interface6 {
+    pub ipv6: Ipv6Addr,
+    pub interface: Option<NetworkInterface>,
+}
+
+impl BindIp2Interface6 {
+    pub fn new(ip: Ipv6Addr, interface: Option<NetworkInterface>) -> BindIp2Interface6 {
+        BindIp2Interface6 {
+            ipv6: ip,
+            interface,
+        }
     }
 }
 
@@ -177,7 +417,7 @@ impl fmt::Display for UdpScanResults {
 /// If this option is not present, program will search the system interface list for `subnet` user provided, configured up interface (excluding loopback).
 /// By default, the ARP packets are sent to the Ethernet broadcast address, ff:ff:ff:ff:ff:ff, but that can be changed with the `destaddr` option.
 /// When `threads_num` is 0, means that automatic threads pool mode is used.
-pub use scan::arp_scan_subnet;
+pub use scan::arp_scan;
 
 /// TCP Connect() Scan.
 /// This is the most basic form of TCP scanning.
@@ -192,12 +432,9 @@ pub use scan::arp_scan_subnet;
 /// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
 /// The big downside is that this sort of scan is easily detectable and filterable.
 /// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
-pub use scan::tcp_connect_scan_range_port;
-pub use scan::tcp_connect_scan_range_port6;
-pub use scan::tcp_connect_scan_single_port;
-pub use scan::tcp_connect_scan_single_port6;
-pub use scan::tcp_connect_scan_subnet;
-pub use scan::tcp_connect_scan_subnet6;
+pub use scan::tcp_connect_scan;
+/// Ipv6 version.
+pub use scan::tcp_connect_scan6;
 
 /// TCP SYN Scan.
 /// This technique is often referred to as "half-open" scanning, because you don't open a full TCP connection.
@@ -211,12 +448,9 @@ pub use scan::tcp_connect_scan_subnet6;
 /// It can be performed quickly,
 /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
 /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
-pub use scan::tcp_syn_scan_range_port;
-pub use scan::tcp_syn_scan_range_port6;
-pub use scan::tcp_syn_scan_single_port;
-pub use scan::tcp_syn_scan_single_port6;
-pub use scan::tcp_syn_scan_subnet;
-pub use scan::tcp_syn_scan_subnet6;
+pub use scan::tcp_syn_scan;
+/// Ipv6 version.
+pub use scan::tcp_syn_scan6;
 
 /// TCP FIN Scan.
 /// There are times when even SYN scanning isn't clandestine enough.
@@ -231,12 +465,9 @@ pub use scan::tcp_syn_scan_subnet6;
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
-pub use scan::tcp_fin_scan_range_port;
-pub use scan::tcp_fin_scan_range_port6;
-pub use scan::tcp_fin_scan_single_port;
-pub use scan::tcp_fin_scan_single_port6;
-pub use scan::tcp_fin_scan_subnet;
-pub use scan::tcp_fin_scan_subnet6;
+pub use scan::tcp_fin_scan;
+/// Ipv6 version.
+pub use scan::tcp_fin_scan6;
 
 /// TCP ACK Scan.
 /// This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports.
@@ -244,36 +475,27 @@ pub use scan::tcp_fin_scan_subnet6;
 /// When scanning unfiltered systems, open and closed ports will both return a RST packet.
 /// We then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined.
 /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
-pub use scan::tcp_ack_scan_range_port;
-pub use scan::tcp_ack_scan_range_port6;
-pub use scan::tcp_ack_scan_single_port;
-pub use scan::tcp_ack_scan_single_port6;
-pub use scan::tcp_ack_scan_subnet;
-pub use scan::tcp_ack_scan_subnet6;
+pub use scan::tcp_ack_scan;
+/// Ipv6 version.
+pub use scan::tcp_ack_scan6;
 
 /// TCP Null Scan.
 /// Does not set any bits (TCP flag header is 0).
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
-pub use scan::tcp_null_scan_range_port;
-pub use scan::tcp_null_scan_range_port6;
-pub use scan::tcp_null_scan_single_port;
-pub use scan::tcp_null_scan_single_port6;
-pub use scan::tcp_null_scan_subnet;
-pub use scan::tcp_null_scan_subnet6;
+pub use scan::tcp_null_scan;
+/// Ipv6 version.
+pub use scan::tcp_null_scan6;
 
 /// TCP Xmas Scan.
 /// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
-pub use scan::tcp_xmas_scan_range_port;
-pub use scan::tcp_xmas_scan_range_port6;
-pub use scan::tcp_xmas_scan_single_port;
-pub use scan::tcp_xmas_scan_single_port6;
-pub use scan::tcp_xmas_scan_subnet;
-pub use scan::tcp_xmas_scan_subnet6;
+pub use scan::tcp_xmas_scan;
+/// Ipv6 version.
+pub use scan::tcp_xmas_scan6;
 
 /// TCP Window Scan.
 /// Window scan is exactly the same as ACK scan except that it exploits an implementation detail of certain systems to differentiate open ports from closed ones,
@@ -281,12 +503,9 @@ pub use scan::tcp_xmas_scan_subnet6;
 /// It does this by examining the TCP Window value of the RST packets returned.
 /// On some systems, open ports use a positive window size (even for RST packets) while closed ones have a zero window.
 /// Window scan sends the same bare ACK probe as ACK scan.
-pub use scan::tcp_window_scan_range_port;
-pub use scan::tcp_window_scan_range_port6;
-pub use scan::tcp_window_scan_single_port;
-pub use scan::tcp_window_scan_single_port6;
-pub use scan::tcp_window_scan_subnet;
-pub use scan::tcp_window_scan_subnet6;
+pub use scan::tcp_window_scan;
+/// Ipv6 version.
+pub use scan::tcp_window_scan6;
 
 /// TCP Maimon Scan.
 /// The Maimon scan is named after its discoverer, Uriel Maimon.
@@ -294,12 +513,9 @@ pub use scan::tcp_window_scan_subnet6;
 /// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
 /// According to RFC 793 (TCP), a RST packet should be generated in response to such a probe whether the port is open or closed.
 /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
-pub use scan::tcp_maimon_scan_range_port;
-pub use scan::tcp_maimon_scan_range_port6;
-pub use scan::tcp_maimon_scan_single_port;
-pub use scan::tcp_maimon_scan_single_port6;
-pub use scan::tcp_maimon_scan_subnet;
-pub use scan::tcp_maimon_scan_subnet6;
+pub use scan::tcp_maimon_scan;
+/// Ipv6 version.
+pub use scan::tcp_maimon_scan6;
 
 /// TCP Idle Scan.
 /// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book) posted to the Bugtraq mailing list an ingenious new port scanning technique.
@@ -308,9 +524,7 @@ pub use scan::tcp_maimon_scan_subnet6;
 /// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
 /// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
 /// Besides being extraordinarily stealthy, this scan type permits discovery of IP-based trust relationships between machines.
-pub use scan::tcp_idle_scan_range_port;
-pub use scan::tcp_idle_scan_single_port;
-pub use scan::tcp_idle_scan_subnet;
+pub use scan::tcp_idle_scan;
 
 /// UDP Scan.
 /// While most popular services on the Internet run over the TCP protocol, UDP services are widely deployed.
@@ -320,18 +534,14 @@ pub use scan::tcp_idle_scan_subnet;
 /// UDP scan works by sending a UDP packet to every targeted port.
 /// For most ports, this packet will be empty (no payload), but for a few of the more common ports a protocol-specific payload will be sent.
 /// Based on the response, or lack thereof, the port is assigned to one of four states.
-pub use scan::udp_scan_range_port;
-pub use scan::udp_scan_range_port6;
-pub use scan::udp_scan_single_port;
-pub use scan::udp_scan_single_port6;
-pub use scan::udp_scan_subnet;
-pub use scan::udp_scan_subnet6;
+pub use scan::udp_scan;
+/// Ipv6 version.
+pub use scan::udp_scan6;
 
 /// IP Protocol Scan.
 /// IP protocol scan allows you to determine which IP protocols (TCP, ICMP, IGMP, etc.) are supported by target machines.
 /// This isn't technically a port scan, since it cycles through IP protocol numbers rather than TCP or UDP port numbers.
-pub use scan::ip_procotol_scan_subnet;
-pub use scan::ip_protocol_scan_host;
+pub use scan::ip_procotol_scan;
 
 /* Ping */
 
@@ -341,8 +551,6 @@ pub use scan::ip_protocol_scan_host;
 /// A list of ports may be specified (e.g. 22-25,80,113,1050,35000), in which case probes will be attempted against each port in parallel.
 pub use ping::tcp_syn_ping_host;
 pub use ping::tcp_syn_ping_host6;
-pub use ping::tcp_syn_ping_subnet;
-pub use ping::tcp_syn_ping_subnet6;
 
 /// TCP ACK Ping.
 /// The TCP ACK ping is quite similar to the SYN ping.
@@ -351,8 +559,6 @@ pub use ping::tcp_syn_ping_subnet6;
 /// So remote hosts should always respond with a RST packet, disclosing their existence in the process.
 pub use ping::tcp_ack_ping_host;
 pub use ping::tcp_ack_ping_host6;
-pub use ping::tcp_ack_ping_subnet;
-pub use ping::tcp_ack_ping_subnet6;
 
 /// UDP Ping.
 /// Another host discovery option is the UDP ping, which sends a UDP packet to the given ports.
@@ -360,8 +566,6 @@ pub use ping::tcp_ack_ping_subnet6;
 /// A highly uncommon port is used by default because sending to open ports is often undesirable for this particular scan type.
 pub use ping::udp_ping_host;
 pub use ping::udp_ping_host6;
-pub use ping::udp_ping_subnet;
-pub use ping::udp_ping_subnet6;
 
 /// ICMP Ping.
 /// In addition to the unusual TCP and UDP host discovery types discussed previously, we can send the standard packets sent by the ubiquitous ping program.
@@ -371,8 +575,6 @@ pub use ping::udp_ping_subnet6;
 /// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 pub use ping::icmp_ping_host;
 pub use ping::icmp_ping_host6;
-pub use ping::icmp_ping_subnet;
-pub use ping::icmp_ping_subnet6;
 
 /* Flood */
 
@@ -401,294 +603,217 @@ mod tests {
     use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() {
-        let interface = Some("ens33");
-        let subnet = Ipv4Pool::from("192.168.72.0/24").unwrap();
-        let rets = arp_scan_subnet(subnet, None, interface, 0, true, None).unwrap();
+        let interface: Option<&str> = Some("eno1");
+        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
+        let target: Target = Target::new_only_hosts_subnet(subnet);
+        let rets: ArpScanResults = match arp_scan(target, None, interface, 0, true, None) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", rets);
     }
     #[test]
-    fn test_tcp_connect_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 119);
-        let dst_port: u16 = 80;
+    fn test_arp_scan_subnet_2() {
+        let interface: Option<&str> = None;
+        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
+        let target: Target = Target::new_only_hosts_subnet(subnet);
+        let rets: ArpScanResults = match arp_scan(target, None, interface, 0, true, None) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
+        println!("{:?}", rets);
+    }
+    #[test]
+    fn test_tcp_connect_scan() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
         // let interface: Option<&str> = Some("eno1");
         let interface: Option<&str> = None;
         let print_result: bool = true;
-        let ret = tcp_connect_scan_single_port(
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_connect_scan(
+            target,
             src_ipv4,
             src_port,
-            dst_ipv4,
-            dst_port,
             interface,
             print_result,
-            None,
-            None,
-        )
-        .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_connect_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
-        let start_port: u16 = 1;
-        let end_port: u16 = 100;
-        // let interface: Option<&str> = Some("eno1");
-        let interface = None;
-        let threads_num = 0;
-        let print_result: bool = true;
-        let max_loop = Some(8);
-        let ret = tcp_connect_scan_range_port(
-            src_ipv4,
-            src_port,
-            dst_ipv4,
-            start_port,
-            end_port,
-            interface,
             threads_num,
-            print_result,
-            None,
+            timeout,
             max_loop,
-        )
-        .unwrap();
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_connect_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/30").unwrap();
-        let start_port: u16 = 80;
-        let end_port: u16 = 82;
+    fn test_tcp_syn_scan() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
         // let interface: Option<&str> = Some("eno1");
-        let interface = None;
-        let threads_num: usize = 0;
+        let interface: Option<&str> = None;
         let print_result: bool = true;
-        let max_loop = Some(8);
-        let ret = tcp_connect_scan_subnet(
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_syn_scan(
+            target,
             src_ipv4,
             src_port,
-            subnet,
-            start_port,
-            end_port,
             interface,
-            threads_num,
             print_result,
-            None,
+            threads_num,
+            timeout,
             max_loop,
-        )
-        .unwrap();
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_syn_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = Some(64);
-        let ret =
-            tcp_syn_scan_single_port(src_ipv4, src_port, dst_ipv4, 80, i, true, None, max_loop)
-                .unwrap();
-        println!("{:?}", ret);
-        let ret =
-            tcp_syn_scan_single_port(src_ipv4, src_port, dst_ipv4, 9999, i, true, None, max_loop)
-                .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_syn_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret =
-            tcp_syn_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
-                .unwrap();
+    fn test_tcp_fin_scan() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_fin_scan(
+            target,
+            src_ipv4,
+            src_port,
+            interface,
+            print_result,
+            threads_num,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_syn_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let subnet = Ipv4Pool::from("192.168.1.0/30").unwrap();
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = Some(64);
-        let ret = tcp_syn_scan_subnet(
-            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
-        )
-        .unwrap();
+    fn test_tcp_ack_scan() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_ack_scan(
+            target,
+            src_ipv4,
+            src_port,
+            interface,
+            print_result,
+            threads_num,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_fin_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret = tcp_fin_scan_single_port(src_ipv4, src_port, dst_ipv4, 80, i, true, None, None)
-            .unwrap();
-        println!("{:?}", ret);
-        let ret = tcp_fin_scan_single_port(src_ipv4, src_port, dst_ipv4, 9999, i, true, None, None)
-            .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_fin_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret =
-            tcp_fin_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
-                .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_fin_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let subnet = Ipv4Pool::from("192.168.1.0/30").unwrap();
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = Some(64);
-        let ret = tcp_fin_scan_subnet(
-            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
-        )
-        .unwrap();
+    fn test_tcp_null_scan() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_null_scan(
+            target,
+            src_ipv4,
+            src_port,
+            interface,
+            print_result,
+            threads_num,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_ack_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret = tcp_ack_scan_single_port(src_ipv4, src_port, dst_ipv4, 80, i, true, None, None)
-            .unwrap();
-        println!("{:?}", ret);
-        let ret = tcp_ack_scan_single_port(src_ipv4, src_port, dst_ipv4, 9999, i, true, None, None)
-            .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_ack_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret =
-            tcp_ack_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
-                .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_ack_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let subnet = Ipv4Pool::from("192.168.1.0/30").unwrap();
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = Some(64);
-        let ret = tcp_ack_scan_subnet(
-            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
-        )
-        .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_null_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret = tcp_null_scan_single_port(src_ipv4, src_port, dst_ipv4, 81, i, true, None, None)
-            .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_null_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret =
-            tcp_null_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
-                .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_tcp_null_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let subnet = Ipv4Pool::from("192.168.1.0/30").unwrap();
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = Some(64);
-        let ret = tcp_null_scan_subnet(
-            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
-        )
-        .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_udp_scan_single_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret =
-            udp_scan_single_port(src_ipv4, src_port, dst_ipv4, 53, i, true, None, None).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_udp_scan_range_port() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let ret = udp_scan_range_port(src_ipv4, src_port, dst_ipv4, 22, 90, i, 0, true, None, None)
-            .unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_udp_scan_subnet() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let src_port = None;
-        let subnet = Ipv4Pool::from("192.168.1.0/30").unwrap();
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = Some(64);
-        let ret = udp_scan_subnet(
-            src_ipv4, src_port, subnet, 80, 82, i, 0, true, None, max_loop,
-        )
-        .unwrap();
+    fn test_udp_scan() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = match udp_scan(
+            target,
+            src_ipv4,
+            src_port,
+            interface,
+            print_result,
+            threads_num,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
     fn test_ip_scan_host() {
         use pnet::packet::ip::IpNextHeaderProtocols;
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        // let i = Some("eno1");
-        let i = None;
-        let max_loop = None;
-        let protocol = IpNextHeaderProtocols::Udp;
-        let ret =
-            ip_protocol_scan_host(src_ipv4, dst_ipv4, protocol, i, true, None, max_loop).unwrap();
+        let protocol = Some(IpNextHeaderProtocols::Udp);
+
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret: HashMap<IpAddr, IpScanResults> = match ip_procotol_scan(
+            target,
+            src_ipv4,
+            src_port,
+            protocol,
+            interface,
+            print_result,
+            threads_num,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
@@ -702,33 +827,12 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_syn_ping_subnet() {
-        let src_ipv4 = None;
-        let subnet = Ipv4Pool::from("192.168.1.0/29").unwrap();
-        let i = Some("ens33");
-        let max_loop = Some(16);
-        let ret =
-            tcp_syn_ping_subnet(src_ipv4, None, None, subnet, i, 0, true, None, max_loop).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
     fn test_icmp_ping_host() {
         let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
         let i = None;
         let max_loop = None;
         let ret = icmp_ping_host(src_ipv4, None, dst_ipv4, None, i, true, None, max_loop).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_icmp_ping_subnet() {
-        let src_ipv4 = None;
-        let subnet = Ipv4Pool::from("192.168.213.0/24").unwrap();
-        let i = Some("ens33");
-        let timeout = Some(Duration::from_secs_f32(0.5));
-        let max_loop = Some(4);
-        let ret =
-            icmp_ping_subnet(src_ipv4, None, None, subnet, i, 32, true, timeout, max_loop).unwrap();
         println!("{:?}", ret);
     }
 }

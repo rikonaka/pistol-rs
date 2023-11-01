@@ -23,7 +23,7 @@ use crate::utils::TCP_DATA_LEN;
 use crate::utils::TCP_HEADER_LEN;
 use crate::utils::UDP_DATA_LEN;
 use crate::utils::UDP_HEADER_LEN;
-use crate::IpScanStatus;
+use crate::TargetScanStatus;
 
 fn _build_tcp_packet(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Vec<u8> {
     // tcp header
@@ -74,7 +74,7 @@ pub fn send_ip_procotol_scan_packet(
     protocol: IpNextHeaderProtocol,
     timeout: Duration,
     max_loop: usize,
-) -> Result<IpScanStatus> {
+) -> Result<TargetScanStatus> {
     let next_protocol = Layer3(protocol);
     let (mut tx, mut rx) = match transport_channel(BUFF_SIZE, next_protocol) {
         Ok((tx, rx)) => (tx, rx),
@@ -184,7 +184,7 @@ pub fn send_ip_procotol_scan_packet(
                 Some((_, addr)) => {
                     if addr == dst_ipv4 {
                         // any response in any protocol from target host
-                        return Ok(IpScanStatus::Open);
+                        return Ok(TargetScanStatus::Open);
                     }
                 }
                 _ => (),
@@ -213,10 +213,10 @@ pub fn send_ip_procotol_scan_packet(
                             if icmp_type == IcmpTypes::DestinationUnreachable {
                                 if codes_1.contains(&icmp_code) {
                                     // icmp protocol unreachable error (type 3, code 2)
-                                    return Ok(IpScanStatus::Closed);
+                                    return Ok(TargetScanStatus::Closed);
                                 } else if codes_2.contains(&icmp_code) {
                                     // other icmp unreachable errors (type 3, code 1, 3, 9, 10, or 13)
-                                    return Ok(IpScanStatus::Filtered);
+                                    return Ok(TargetScanStatus::Filtered);
                                 }
                             }
                         }
@@ -228,7 +228,7 @@ pub fn send_ip_procotol_scan_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok(IpScanStatus::OpenOrFiltered)
+    Ok(TargetScanStatus::OpenOrFiltered)
 }
 
 #[cfg(test)]

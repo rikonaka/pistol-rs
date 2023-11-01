@@ -11,7 +11,7 @@ use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
 use crate::utils::UDP_DATA_LEN;
 use crate::utils::UDP_HEADER_LEN;
-use crate::UdpScanStatus;
+use crate::TargetScanStatus;
 
 pub fn send_udp_scan_packet(
     src_ipv6: Ipv6Addr,
@@ -20,7 +20,7 @@ pub fn send_udp_scan_packet(
     dst_port: u16,
     timeout: Duration,
     max_loop: usize,
-) -> Result<UdpScanStatus> {
+) -> Result<TargetScanStatus> {
     let (mut udp_tx, mut udp_rx) = return_layer4_udp6_channel(UDP_BUFF_SIZE)?;
     let (_, mut icmp_rx) = return_layer4_icmp6_channel(ICMP_BUFF_SIZE)?;
 
@@ -49,7 +49,7 @@ pub fn send_udp_scan_packet(
                             && udp_packet.get_source() == dst_port
                         {
                             // any udp response from target port (unusual)
-                            return Ok(UdpScanStatus::Open);
+                            return Ok(TargetScanStatus::Open);
                         }
                     }
                 }
@@ -73,10 +73,10 @@ pub fn send_udp_scan_packet(
                             ];
                             if codes_1.contains(&icmp_code) {
                                 // icmp port unreachable error (type 3, code 4)
-                                return Ok(UdpScanStatus::Closed);
+                                return Ok(TargetScanStatus::Closed);
                             } else if codes_2.contains(&icmp_code) {
                                 // other icmp unreachable errors (type 3, code 1, or 3)
-                                return Ok(UdpScanStatus::Filtered);
+                                return Ok(TargetScanStatus::Filtered);
                             }
                         }
                     }
@@ -87,7 +87,7 @@ pub fn send_udp_scan_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok(UdpScanStatus::OpenOrFiltered)
+    Ok(TargetScanStatus::OpenOrFiltered)
 }
 
 #[cfg(test)]

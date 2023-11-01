@@ -30,7 +30,7 @@ fn _run_flood(
     max_flood_packet: usize,
 ) -> Result<()> {
     let src_ipv4 = if src_ipv4.is_none() {
-        let (_, src_ipv4, _) = utils::parse_interface(interface)?;
+        let (_, src_ipv4, _) = utils::parse_interface_from_str(interface.unwrap())?;
         src_ipv4
     } else {
         src_ipv4.unwrap()
@@ -99,7 +99,7 @@ fn _run_flood6(
     max_flood_packet: usize,
 ) -> Result<()> {
     let src_ipv6 = if src_ipv6.is_none() {
-        let (_, src_ipv6, _) = utils::parse_interface6(interface)?;
+        let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface.unwrap())?;
         src_ipv6
     } else {
         src_ipv6.unwrap()
