@@ -384,7 +384,7 @@ fn run_scan6(
     Ok((dst_ipv6, dst_port, scan_ret))
 }
 
-fn scan_with_interface(
+pub fn scan(
     target: Target,
     method: ScanMethod,
     src_ipv4: Option<Ipv4Addr>,
@@ -392,7 +392,7 @@ fn scan_with_interface(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     protocol: Option<IpNextHeaderProtocol>,
-    interface: &str,
+    interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
@@ -401,205 +401,30 @@ fn scan_with_interface(
     HashMap<IpAddr, TcpUdpScanResults>,
     HashMap<IpAddr, IpScanResults>,
 )> {
-    let (interface, src_ipv4_interface, _) = utils::parse_interface_from_str(interface)?;
-    let (tx, rx) = channel();
-    let pool = utils::get_threads_pool(threads_num);
-    let mut recv_size = 0;
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
+    let iter = match interface {
+        Some(interface) => {
+            let (interface, src_ipv4_interface, _) = utils::parse_interface_from_str(interface)?;
+            let (tx, rx) = channel();
+            let pool = utils::get_threads_pool(threads_num);
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
 
-    let src_ipv4 = match src_ipv4 {
-        Some(s) => s,
-        None => src_ipv4_interface,
-    };
-    let src_port = match src_port {
-        Some(s) => s,
-        None => utils::random_port(),
-    };
+            let src_ipv4 = match src_ipv4 {
+                Some(s) => s,
+                None => src_ipv4_interface,
+            };
+            let src_port = match src_port {
+                Some(s) => s,
+                None => utils::random_port(),
+            };
 
-    for h in &target.hosts {
-        let dst_ipv4 = h.addr;
-        for dst_port in &h.ports {
-            let tx = tx.clone();
-            recv_size += 1;
-            let dst_port = dst_port.clone();
-            pool.execute(move || {
-                let scan_ret = run_scan(
-                    method,
-                    src_ipv4,
-                    src_port,
-                    dst_ipv4,
-                    dst_port,
-                    zombie_ipv4,
-                    zombie_port,
-                    protocol,
-                    print_result,
-                    timeout,
-                    max_loop,
-                );
-                match tx.send(scan_ret) {
-                    _ => (),
-                }
-            });
-        }
-    }
-
-    let iter = rx.into_iter().take(recv_size);
-    let mut ret: HashMap<IpAddr, TcpUdpScanResults> = HashMap::new();
-    let mut ret_procotol: HashMap<IpAddr, IpScanResults> = HashMap::new();
-
-    for v in iter {
-        match v {
-            Ok((dst_ipv4, dst_port, procotol, scan_rets)) => match procotol {
-                Some(p) => {
-                    if ret_procotol.contains_key(&dst_ipv4.into()) {
-                        ret_procotol
-                            .get_mut(&dst_ipv4.into())
-                            .unwrap()
-                            .results
-                            .insert(p, scan_rets);
-                    } else {
-                        let mut v = IpScanResults::new(dst_ipv4.into());
-                        v.results.insert(p, scan_rets);
-                        ret_procotol.insert(dst_ipv4.into(), v);
-                    }
-                }
-                _ => {
-                    if ret.contains_key(&dst_ipv4.into()) {
-                        ret.get_mut(&dst_ipv4.into())
-                            .unwrap()
-                            .results
-                            .insert(dst_port, scan_rets);
-                    } else {
-                        let mut v = TcpUdpScanResults::new(dst_ipv4.into());
-                        v.results.insert(dst_port, scan_rets);
-                        ret.insert(dst_ipv4.into(), v);
-                    }
-                }
-            },
-            Err(e) => return Err(e),
-        }
-    }
-    Ok((ret, ret_procotol))
-}
-
-fn scan_with_interface6(
-    target: Target,
-    method: ScanMethod6,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    interface: &str,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
-    let (interface, src_ipv6_interface, _) = utils::parse_interface_from_str6(interface)?;
-    let (tx, rx) = channel();
-    let pool = utils::get_threads_pool(threads_num);
-    let mut recv_size = 0;
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
-
-    let src_ipv6 = match src_ipv6 {
-        Some(s) => s,
-        None => src_ipv6_interface,
-    };
-    let src_port = match src_port {
-        Some(s) => s,
-        None => utils::random_port(),
-    };
-
-    for h in &target.hosts6 {
-        let dst_ipv6 = h.addr;
-        for dst_port in &h.ports {
-            let tx = tx.clone();
-            recv_size += 1;
-            let dst_port = dst_port.clone();
-            pool.execute(move || {
-                let scan_ret = run_scan6(
-                    method,
-                    src_ipv6,
-                    src_port,
-                    dst_ipv6,
-                    dst_port,
-                    print_result,
-                    timeout,
-                    max_loop,
-                );
-                match tx.send(scan_ret) {
-                    _ => (),
-                }
-            });
-        }
-    }
-
-    let iter = rx.into_iter().take(recv_size);
-    let mut ret: HashMap<IpAddr, TcpUdpScanResults> = HashMap::new();
-
-    for v in iter {
-        match v {
-            Ok((dst_ipv6, dst_port, scan_rets)) => {
-                if ret.contains_key(&dst_ipv6.into()) {
-                    ret.get_mut(&dst_ipv6.into())
-                        .unwrap()
-                        .results
-                        .insert(dst_port, scan_rets);
-                } else {
-                    let mut v = TcpUdpScanResults::new(dst_ipv6.into());
-                    v.results.insert(dst_port, scan_rets);
-                    ret.insert(dst_ipv6.into(), v);
-                }
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(ret)
-}
-
-fn scan_no_interface(
-    target: Target,
-    method: ScanMethod,
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
-    protocol: Option<IpNextHeaderProtocol>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<(
-    HashMap<IpAddr, TcpUdpScanResults>,
-    HashMap<IpAddr, IpScanResults>,
-)> {
-    let target_ips = get_ips_from_host(&target.hosts);
-    let bi_vec = utils::bind_interface(&target_ips);
-
-    let pool = utils::get_threads_pool(threads_num);
-    let (tx, rx) = channel();
-    let mut recv_size = 0;
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
-
-    for (bi, host) in zip(bi_vec, target.hosts) {
-        match bi.interface {
-            Some(interface) => {
-                let src_ipv4 = match src_ipv4 {
-                    Some(s) => s,
-                    None => {
-                        let (src_ipv4, _) = utils::parse_interface(&interface).unwrap();
-                        src_ipv4
-                    }
-                };
-                let src_port = match src_port {
-                    Some(s) => s,
-                    None => utils::random_port(),
-                };
-                let dst_ipv4 = bi.ipv4;
-                for dst_port in host.ports {
+            for h in &target.hosts {
+                let dst_ipv4 = h.addr;
+                for dst_port in &h.ports {
                     let tx = tx.clone();
                     recv_size += 1;
+                    let dst_port = dst_port.clone();
                     pool.execute(move || {
                         let scan_ret = run_scan(
                             method,
@@ -620,11 +445,66 @@ fn scan_no_interface(
                     });
                 }
             }
-            None => (),
-        }
-    }
 
-    let iter = rx.into_iter().take(recv_size);
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+        None => {
+            let target_ips = get_ips_from_host(&target.hosts);
+            let bi_vec = utils::bind_interface(&target_ips);
+
+            let pool = utils::get_threads_pool(threads_num);
+            let (tx, rx) = channel();
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
+
+            for (bi, host) in zip(bi_vec, target.hosts) {
+                match bi.interface {
+                    Some(interface) => {
+                        let src_ipv4 = match src_ipv4 {
+                            Some(s) => s,
+                            None => {
+                                let (src_ipv4, _) = utils::parse_interface(&interface).unwrap();
+                                src_ipv4
+                            }
+                        };
+                        let src_port = match src_port {
+                            Some(s) => s,
+                            None => utils::random_port(),
+                        };
+                        let dst_ipv4 = bi.ipv4;
+                        for dst_port in host.ports {
+                            let tx = tx.clone();
+                            recv_size += 1;
+                            pool.execute(move || {
+                                let scan_ret = run_scan(
+                                    method,
+                                    src_ipv4,
+                                    src_port,
+                                    dst_ipv4,
+                                    dst_port,
+                                    zombie_ipv4,
+                                    zombie_port,
+                                    protocol,
+                                    print_result,
+                                    timeout,
+                                    max_loop,
+                                );
+                                match tx.send(scan_ret) {
+                                    _ => (),
+                                }
+                            });
+                        }
+                    }
+                    None => (),
+                }
+            }
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+    };
     let mut ret: HashMap<IpAddr, TcpUdpScanResults> = HashMap::new();
     let mut ret_procotol: HashMap<IpAddr, IpScanResults> = HashMap::new();
 
@@ -663,43 +543,41 @@ fn scan_no_interface(
     Ok((ret, ret_procotol))
 }
 
-fn scan_no_interface6(
+pub fn scan6(
     target: Target,
     method: ScanMethod6,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
+    interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
-    let target_ips = get_ips_from_host6(&target.hosts6);
-    let bi_vec = utils::bind_interface6(&target_ips);
+    let iter = match interface {
+        Some(interface) => {
+            let (interface, src_ipv6_interface, _) = utils::parse_interface_from_str6(interface)?;
+            let (tx, rx) = channel();
+            let pool = utils::get_threads_pool(threads_num);
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
 
-    let pool = utils::get_threads_pool(threads_num);
-    let (tx, rx) = channel();
-    let mut recv_size = 0;
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
+            let src_ipv6 = match src_ipv6 {
+                Some(s) => s,
+                None => src_ipv6_interface,
+            };
+            let src_port = match src_port {
+                Some(s) => s,
+                None => utils::random_port(),
+            };
 
-    for (bi, host) in zip(bi_vec, target.hosts) {
-        match bi.interface {
-            Some(interface) => {
-                let src_ipv6 = match src_ipv6 {
-                    Some(s) => s,
-                    None => {
-                        let (src_ipv6, _) = utils::parse_interface6(&interface).unwrap();
-                        src_ipv6
-                    }
-                };
-                let src_port = match src_port {
-                    Some(s) => s,
-                    None => utils::random_port(),
-                };
-                let dst_ipv6 = bi.ipv6;
-                for dst_port in host.ports {
+            for h in &target.hosts6 {
+                let dst_ipv6 = h.addr;
+                for dst_port in &h.ports {
                     let tx = tx.clone();
                     recv_size += 1;
+                    let dst_port = dst_port.clone();
                     pool.execute(move || {
                         let scan_ret = run_scan6(
                             method,
@@ -717,115 +595,83 @@ fn scan_no_interface6(
                     });
                 }
             }
-            None => (),
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
         }
-    }
+        None => {
+            let target_ips = get_ips_from_host6(&target.hosts6);
+            let bi_vec = utils::bind_interface6(&target_ips);
 
-    let iter = rx.into_iter().take(recv_size);
+            let pool = utils::get_threads_pool(threads_num);
+            let (tx, rx) = channel();
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
+
+            for (bi, host) in zip(bi_vec, target.hosts) {
+                match bi.interface {
+                    Some(interface) => {
+                        let src_ipv6 = match src_ipv6 {
+                            Some(s) => s,
+                            None => {
+                                let (src_ipv6, _) = utils::parse_interface6(&interface).unwrap();
+                                src_ipv6
+                            }
+                        };
+                        let src_port = match src_port {
+                            Some(s) => s,
+                            None => utils::random_port(),
+                        };
+                        let dst_ipv6 = bi.ipv6;
+                        for dst_port in host.ports {
+                            let tx = tx.clone();
+                            recv_size += 1;
+                            pool.execute(move || {
+                                let scan_ret = run_scan6(
+                                    method,
+                                    src_ipv6,
+                                    src_port,
+                                    dst_ipv6,
+                                    dst_port,
+                                    print_result,
+                                    timeout,
+                                    max_loop,
+                                );
+                                match tx.send(scan_ret) {
+                                    _ => (),
+                                }
+                            });
+                        }
+                    }
+                    None => (),
+                }
+            }
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+    };
+
     let mut ret: HashMap<IpAddr, TcpUdpScanResults> = HashMap::new();
-
     for v in iter {
         match v {
-            Ok((dst_ipv4, dst_port, scan_rets)) => {
-                if ret.contains_key(&dst_ipv4.into()) {
-                    ret.get_mut(&dst_ipv4.into())
+            Ok((dst_ipv6, dst_port, scan_rets)) => {
+                if ret.contains_key(&dst_ipv6.into()) {
+                    ret.get_mut(&dst_ipv6.into())
                         .unwrap()
                         .results
                         .insert(dst_port, scan_rets);
                 } else {
-                    let mut v = TcpUdpScanResults::new(dst_ipv4.into());
+                    let mut v = TcpUdpScanResults::new(dst_ipv6.into());
                     v.results.insert(dst_port, scan_rets);
-                    ret.insert(dst_ipv4.into(), v);
+                    ret.insert(dst_ipv6.into(), v);
                 }
             }
             Err(e) => return Err(e),
         }
     }
     Ok(ret)
-}
-
-pub fn scan(
-    target: Target,
-    method: ScanMethod,
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
-    protocol: Option<IpNextHeaderProtocol>,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<(
-    HashMap<IpAddr, TcpUdpScanResults>,
-    HashMap<IpAddr, IpScanResults>,
-)> {
-    match interface {
-        Some(interface) => scan_with_interface(
-            target,
-            method,
-            src_ipv4,
-            src_port,
-            zombie_ipv4,
-            zombie_port,
-            protocol,
-            interface,
-            threads_num,
-            print_result,
-            timeout,
-            max_loop,
-        ),
-        None => scan_no_interface(
-            target,
-            method,
-            src_ipv4,
-            src_port,
-            zombie_ipv4,
-            zombie_port,
-            protocol,
-            threads_num,
-            print_result,
-            timeout,
-            max_loop,
-        ),
-    }
-}
-
-pub fn scan6(
-    target: Target,
-    method: ScanMethod6,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    interface: Option<&str>,
-    threads_num: usize,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
-    match interface {
-        Some(interface) => scan_with_interface6(
-            target,
-            method,
-            src_ipv6,
-            src_port,
-            interface,
-            threads_num,
-            print_result,
-            timeout,
-            max_loop,
-        ),
-        None => scan_no_interface6(
-            target,
-            method,
-            src_ipv6,
-            src_port,
-            threads_num,
-            print_result,
-            timeout,
-            max_loop,
-        ),
-    }
 }
 
 pub fn tcp_connect_scan(

@@ -1,244 +1,98 @@
 use anyhow::Result;
 use std::collections::HashMap;
+use std::iter::zip;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::mpsc::channel;
 use std::time::Duration;
-use subnetwork::{Ipv4Pool, Ipv6Pool};
 
 pub mod icmp;
 pub mod icmp6;
 
+use crate::scan::{tcp, tcp6, udp, udp6};
 use crate::utils;
 use crate::PingResults;
 use crate::PingStatus;
+use crate::Target;
 use crate::TargetScanStatus;
-use crate::{scan, Target};
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;
 const UDP_PING_DEFAULT_PORT: u16 = 125;
 
-enum TcpPingMethods {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PingMethods {
     Syn,
     Ack,
     Udp,
     Icmp,
 }
 
-fn _print_icmp_result(addr: IpAddr, status: PingStatus) {
-    let str = match status {
-        PingStatus::Up => format!("{addr} up"),
-        PingStatus::Down => format!("{addr} down"),
-    };
-    println!("{str}");
-}
-
-fn _run_icmp_ping_host(
-    src_ipv4: Option<Ipv4Addr>,
-    dst_ipv4: Ipv4Addr,
-    interface: Option<&str>,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<PingStatus> {
-    let src_ipv4 = if src_ipv4.is_none() {
-        let (_, src_ipv4, _) = utils::parse_interface_from_str(interface.unwrap())?;
-        src_ipv4
-    } else {
-        src_ipv4.unwrap()
-    };
-
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
-    let status = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout, max_loop)?;
-    if print_result {
-        _print_icmp_result(dst_ipv4.into(), status);
-    }
-    Ok(status)
-}
-
-fn _run_icmp_ping_host6(
-    src_ipv6: Option<Ipv6Addr>,
-    dst_ipv6: Ipv6Addr,
-    interface: Option<&str>,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<PingStatus> {
-    let src_ipv6 = if src_ipv6.is_none() {
-        let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface.unwrap())?;
-        src_ipv6
-    } else {
-        src_ipv6.unwrap()
-    };
-
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
-    let status = icmp6::send_icmp_ping_packet(src_ipv6, dst_ipv6, timeout, max_loop)?;
-    if print_result {
-        _print_icmp_result(dst_ipv6.into(), status);
-    }
-    Ok(status)
-}
-
-fn _run_icmp_ping_subnet(
-    src_ipv4: Option<Ipv4Addr>,
-    subnet: Ipv4Pool,
-    interface: Option<&str>,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    let src_ipv4 = if src_ipv4.is_none() {
-        let (_, src_ipv4, _) = utils::parse_interface_from_str(interface.unwrap())?;
-        src_ipv4
-    } else {
-        src_ipv4.unwrap()
-    };
-
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
-
-    let mut hm: HashMap<IpAddr, PingResults> = HashMap::new();
-    for dst_ipv4 in subnet {
-        let status = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout, max_loop)?;
-        let results = PingResults {
-            addr: dst_ipv4.into(),
-            status,
+fn _print_icmp_result(rets: &HashMap<u16, PingResults>) {
+    for (port, pr) in rets {
+        let st = pr.status;
+        let ip = pr.addr;
+        let str = match st {
+            PingStatus::Up => format!("{ip} [{port}] up"),
+            PingStatus::Down => format!("{ip} [{port}] down"),
         };
-        if print_result {
-            _print_icmp_result(dst_ipv4.into(), status);
-        }
-        hm.insert(dst_ipv4.into(), results);
+        println!("{str}");
     }
-    Ok(hm)
 }
 
-fn _run_icmp_ping_subnet6(
-    src_ipv6: Option<Ipv6Addr>,
-    subnet: Ipv6Pool,
-    interface: Option<&str>,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
-) -> Result<HashMap<IpAddr, PingResults>> {
-    let src_ipv6 = if src_ipv6.is_none() {
-        let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface.unwrap())?;
-        src_ipv6
-    } else {
-        src_ipv6.unwrap()
-    };
-
-    let max_loop = utils::get_max_loop(max_loop);
-    let timeout = utils::get_timeout(timeout);
-
-    let mut hm: HashMap<IpAddr, PingResults> = HashMap::new();
-    for dst_ipv4 in subnet {
-        let status = icmp6::send_icmp_ping_packet(src_ipv6, dst_ipv4, timeout, max_loop)?;
-        let results = PingResults {
-            addr: dst_ipv4.into(),
-            status,
-        };
-        if print_result {
-            _print_icmp_result(dst_ipv4.into(), status);
-        }
-        hm.insert(dst_ipv4.into(), results);
-    }
-    Ok(hm)
-}
-
-fn _run_tcp_ping_host(
-    method: TcpPingMethods,
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
+fn run_ping(
+    method: PingMethods,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
-    interface: Option<&str>,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
+    timeout: Duration,
+    max_loop: usize,
 ) -> Result<PingResults> {
     let ping_status = match method {
-        TcpPingMethods::Syn => {
-            let dst_port = if dst_port.is_none() {
-                SYN_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
+        PingMethods::Syn => {
+            let dst_port = match dst_port {
+                Some(p) => p,
+                None => SYN_PING_DEFAULT_PORT,
             };
-            let target = Target::new_static_port(&vec![dst_ipv4], &vec![dst_port]);
-            let ret = scan::tcp_syn_scan(
-                target,
-                src_ipv4,
-                src_port,
-                interface,
-                print_result,
-                8,
-                timeout,
-                max_loop,
+
+            let ret = tcp::send_syn_scan_packet(
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             )?;
-            let scan_rets = ret.get(&dst_ipv4.into()).unwrap();
-            let status = scan_rets.results.get(&dst_port).unwrap();
-            match status {
+            match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        TcpPingMethods::Ack => {
-            let dst_port = if dst_port.is_none() {
-                ACK_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
+        PingMethods::Ack => {
+            let dst_port = match dst_port {
+                Some(p) => p,
+                None => ACK_PING_DEFAULT_PORT,
             };
-            let target = Target::new_static_port(&vec![dst_ipv4], &vec![dst_port]);
-            let ret = scan::tcp_ack_scan(
-                target,
-                src_ipv4,
-                src_port,
-                interface,
-                print_result,
-                8,
-                timeout,
-                max_loop,
+
+            let ret = tcp::send_ack_scan_packet(
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             )?;
-            let scan_rets = ret.get(&dst_ipv4.into()).unwrap();
-            let status = scan_rets.results.get(&dst_port).unwrap();
-            match status {
+            match ret {
                 TargetScanStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        TcpPingMethods::Udp => {
-            let dst_port = if dst_port.is_none() {
-                UDP_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
+        PingMethods::Udp => {
+            let dst_port = match dst_port {
+                Some(p) => p,
+                None => UDP_PING_DEFAULT_PORT,
             };
-            let target = Target::new_static_port(&vec![dst_ipv4], &vec![dst_port]);
-            let ret = scan::udp_scan(
-                target,
-                src_ipv4,
-                src_port,
-                interface,
-                print_result,
-                8,
-                timeout,
-                max_loop,
+
+            let ret = udp::send_udp_scan_packet(
+                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
             )?;
-            let scan_rets = ret.get(&dst_ipv4.into()).unwrap();
-            let status = scan_rets.results.get(&dst_port).unwrap();
-            match status {
+            match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 TargetScanStatus::OpenOrFiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        TcpPingMethods::Icmp => _run_icmp_ping_host(
-            src_ipv4,
-            dst_ipv4,
-            interface,
-            print_result,
-            timeout,
-            max_loop,
-        )?,
+        PingMethods::Icmp => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout, max_loop)?,
     };
     Ok(PingResults {
         addr: dst_ipv4.into(),
@@ -246,99 +100,60 @@ fn _run_tcp_ping_host(
     })
 }
 
-fn _run_tcp_ping_host6(
-    method: TcpPingMethods,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
+fn run_ping6(
+    method: PingMethods,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
-    interface: Option<&str>,
-    print_result: bool,
-    timeout: Option<Duration>,
-    max_loop: Option<usize>,
+    timeout: Duration,
+    max_loop: usize,
 ) -> Result<PingResults> {
     let ping_status = match method {
-        TcpPingMethods::Syn => {
-            let dst_port = if dst_port.is_none() {
-                SYN_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
+        PingMethods::Syn => {
+            let dst_port = match dst_port {
+                Some(p) => p,
+                None => SYN_PING_DEFAULT_PORT,
             };
-            let target = Target::new_static_port6(&vec![dst_ipv6], &vec![dst_port]);
-            let ret = scan::tcp_syn_scan6(
-                target,
-                src_ipv6,
-                src_port,
-                interface,
-                print_result,
-                8,
-                timeout,
-                max_loop,
+
+            let ret = tcp6::send_syn_scan_packet(
+                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
             )?;
-            let scan_rets = ret.get(&dst_ipv6.into()).unwrap();
-            let status = scan_rets.results.get(&dst_port).unwrap();
-            match status {
+            match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        TcpPingMethods::Ack => {
-            let dst_port = if dst_port.is_none() {
-                ACK_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
+        PingMethods::Ack => {
+            let dst_port = match dst_port {
+                Some(p) => p,
+                None => ACK_PING_DEFAULT_PORT,
             };
-            let target = Target::new_static_port6(&vec![dst_ipv6], &vec![dst_port]);
-            let ret = scan::tcp_ack_scan6(
-                target,
-                src_ipv6,
-                src_port,
-                interface,
-                print_result,
-                8,
-                timeout,
-                max_loop,
+
+            let ret = tcp6::send_ack_scan_packet(
+                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
             )?;
-            let scan_rets = ret.get(&dst_ipv6.into()).unwrap();
-            let status = scan_rets.results.get(&dst_port).unwrap();
-            match status {
+            match ret {
                 TargetScanStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        TcpPingMethods::Udp => {
-            let dst_port = if dst_port.is_none() {
-                UDP_PING_DEFAULT_PORT
-            } else {
-                dst_port.unwrap()
+        PingMethods::Udp => {
+            let dst_port = match dst_port {
+                Some(p) => p,
+                None => UDP_PING_DEFAULT_PORT,
             };
-            let target = Target::new_static_port6(&vec![dst_ipv6], &vec![dst_port]);
-            let ret = scan::udp_scan6(
-                target,
-                src_ipv6,
-                src_port,
-                interface,
-                print_result,
-                8,
-                timeout,
-                max_loop,
+
+            let ret = udp6::send_udp_scan_packet(
+                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
             )?;
-            let scan_rets = ret.get(&dst_ipv6.into()).unwrap();
-            let status = scan_rets.results.get(&dst_port).unwrap();
-            match status {
+            match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 TargetScanStatus::OpenOrFiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        TcpPingMethods::Icmp => _run_icmp_ping_host6(
-            src_ipv6,
-            dst_ipv6,
-            interface,
-            print_result,
-            timeout,
-            max_loop,
-        )?,
+        PingMethods::Icmp => icmp6::send_icmp_ping_packet(src_ipv6, dst_ipv6, timeout, max_loop)?,
     };
     Ok(PingResults {
         addr: dst_ipv6.into(),
@@ -346,185 +161,525 @@ fn _run_tcp_ping_host6(
     })
 }
 
-pub fn tcp_syn_ping_host(
+pub fn ping(
+    target: Target,
+    method: PingMethods,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    dst_ipv4: Ipv4Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
     print_result: bool,
+    threads_num: usize,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host(
-        TcpPingMethods::Syn,
-        src_ipv4,
-        src_port,
-        dst_ipv4,
-        dst_port,
-        interface,
-        print_result,
-        timeout,
-        max_loop,
-    )
+) -> Result<HashMap<u16, PingResults>> {
+    let iter = match interface {
+        Some(interface) => {
+            let src_ipv4 = match src_ipv4 {
+                Some(s) => s,
+                None => {
+                    let (_, src_ipv4, _) = utils::parse_interface_from_str(interface)?;
+                    src_ipv4
+                }
+            };
+            let src_port = match src_port {
+                Some(p) => p,
+                None => utils::random_port(),
+            };
+
+            let (tx, rx) = channel();
+            let pool = utils::get_threads_pool(threads_num);
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
+
+            for h in &target.hosts {
+                let dst_ipv4 = h.addr;
+                if h.ports.len() > 0 && method != PingMethods::Icmp {
+                    for dst_port in &h.ports {
+                        let tx = tx.clone();
+                        let dst_port = dst_port.clone();
+                        recv_size += 1;
+                        pool.execute(move || {
+                            let ret = run_ping(
+                                method,
+                                src_ipv4,
+                                src_port,
+                                dst_ipv4,
+                                Some(dst_port),
+                                timeout,
+                                max_loop,
+                            );
+                            match ret {
+                                Ok(status) => match tx.send(Ok((dst_port, status))) {
+                                    _ => (),
+                                },
+                                Err(e) => match tx.send(Err(e)) {
+                                    _ => (),
+                                },
+                            };
+                        });
+                    }
+                } else {
+                    let tx = tx.clone();
+                    recv_size += 1;
+                    pool.execute(move || {
+                        let ret = run_ping(
+                            method, src_ipv4, src_port, dst_ipv4, None, timeout, max_loop,
+                        );
+                        match ret {
+                            Ok(status) => match tx.send(Ok((0, status))) {
+                                _ => (),
+                            },
+                            Err(e) => match tx.send(Err(e)) {
+                                _ => (),
+                            },
+                        };
+                    });
+                }
+            }
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+        None => {
+            let src_port = match src_port {
+                Some(p) => p,
+                None => utils::random_port(),
+            };
+            let target_ips = utils::get_ips_from_host(&target.hosts);
+            let bi_vec = utils::bind_interface(&target_ips);
+
+            let pool = utils::get_threads_pool(threads_num);
+            let (tx, rx) = channel();
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
+
+            for (bi, host) in zip(bi_vec, target.hosts) {
+                match bi.interface {
+                    Some(interface) => {
+                        let src_ipv4 = match src_ipv4 {
+                            Some(s) => s,
+                            None => {
+                                let (src_ipv4, _) = utils::parse_interface(&interface).unwrap();
+                                src_ipv4
+                            }
+                        };
+                        let dst_ipv4 = bi.ipv4;
+                        if host.ports.len() > 0 && method != PingMethods::Icmp {
+                            for dst_port in host.ports {
+                                let tx = tx.clone();
+                                recv_size += 1;
+                                pool.execute(move || {
+                                    let ret = run_ping(
+                                        method,
+                                        src_ipv4,
+                                        src_port,
+                                        dst_ipv4,
+                                        Some(dst_port),
+                                        timeout,
+                                        max_loop,
+                                    );
+                                    match ret {
+                                        Ok(status) => match tx.send(Ok((dst_port, status))) {
+                                            _ => (),
+                                        },
+                                        Err(e) => match tx.send(Err(e)) {
+                                            _ => (),
+                                        },
+                                    };
+                                });
+                            }
+                        } else {
+                            let tx = tx.clone();
+                            recv_size += 1;
+                            pool.execute(move || {
+                                let ret = run_ping(
+                                    method, src_ipv4, src_port, dst_ipv4, None, timeout, max_loop,
+                                );
+                                match ret {
+                                    Ok(status) => match tx.send(Ok((0, status))) {
+                                        _ => (),
+                                    },
+                                    Err(e) => match tx.send(Err(e)) {
+                                        _ => (),
+                                    },
+                                };
+                            });
+                        }
+                    }
+                    None => (),
+                }
+            }
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+    };
+    let mut hm: HashMap<u16, PingResults> = HashMap::new();
+    for v in iter {
+        match v {
+            Ok((dst_port, pr)) => {
+                hm.insert(dst_port, pr);
+            }
+            _ => (),
+        }
+    }
+    if print_result {
+        _print_icmp_result(&hm);
+    }
+    Ok(hm)
 }
 
-pub fn tcp_syn_ping_host6(
+pub fn ping6(
+    target: Target,
+    method: PingMethods,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    dst_ipv6: Ipv6Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
     print_result: bool,
+    threads_num: usize,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host6(
-        TcpPingMethods::Syn,
-        src_ipv6,
-        src_port,
-        dst_ipv6,
-        dst_port,
-        interface,
-        print_result,
-        timeout,
-        max_loop,
-    )
+) -> Result<HashMap<u16, PingResults>> {
+    let iter = match interface {
+        Some(interface) => {
+            let src_ipv6 = match src_ipv6 {
+                Some(s) => s,
+                None => {
+                    let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface)?;
+                    src_ipv6
+                }
+            };
+            let src_port = match src_port {
+                Some(p) => p,
+                None => utils::random_port(),
+            };
+
+            let (tx, rx) = channel();
+            let pool = utils::get_threads_pool(threads_num);
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
+
+            for h in &target.hosts6 {
+                let dst_ipv6 = h.addr;
+                if h.ports.len() > 0 && method != PingMethods::Icmp {
+                    for dst_port in &h.ports {
+                        let tx = tx.clone();
+                        let dst_port = dst_port.clone();
+                        recv_size += 1;
+                        pool.execute(move || {
+                            let ret = run_ping6(
+                                method,
+                                src_ipv6,
+                                src_port,
+                                dst_ipv6,
+                                Some(dst_port),
+                                timeout,
+                                max_loop,
+                            );
+                            match ret {
+                                Ok(status) => match tx.send(Ok((dst_port, status))) {
+                                    _ => (),
+                                },
+                                Err(e) => match tx.send(Err(e)) {
+                                    _ => (),
+                                },
+                            };
+                        });
+                    }
+                } else {
+                    let tx = tx.clone();
+                    recv_size += 1;
+                    pool.execute(move || {
+                        let ret = run_ping6(
+                            method, src_ipv6, src_port, dst_ipv6, None, timeout, max_loop,
+                        );
+                        match ret {
+                            Ok(status) => match tx.send(Ok((0, status))) {
+                                _ => (),
+                            },
+                            Err(e) => match tx.send(Err(e)) {
+                                _ => (),
+                            },
+                        };
+                    });
+                }
+            }
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+        None => {
+            let src_port = match src_port {
+                Some(p) => p,
+                None => utils::random_port(),
+            };
+            let target_ips = utils::get_ips_from_host6(&target.hosts6);
+            let bi_vec = utils::bind_interface6(&target_ips);
+
+            let pool = utils::get_threads_pool(threads_num);
+            let (tx, rx) = channel();
+            let mut recv_size = 0;
+            let max_loop = utils::get_max_loop(max_loop);
+            let timeout = utils::get_timeout(timeout);
+
+            for (bi, host) in zip(bi_vec, target.hosts6) {
+                match bi.interface {
+                    Some(interface) => {
+                        let src_ipv6 = match src_ipv6 {
+                            Some(s) => s,
+                            None => {
+                                let (src_ipv6, _) = utils::parse_interface6(&interface).unwrap();
+                                src_ipv6
+                            }
+                        };
+                        let dst_ipv6 = bi.ipv6;
+                        if host.ports.len() > 0 && method != PingMethods::Icmp {
+                            for dst_port in host.ports {
+                                let tx = tx.clone();
+                                recv_size += 1;
+                                pool.execute(move || {
+                                    let ret = run_ping6(
+                                        method,
+                                        src_ipv6,
+                                        src_port,
+                                        dst_ipv6,
+                                        Some(dst_port),
+                                        timeout,
+                                        max_loop,
+                                    );
+                                    match ret {
+                                        Ok(status) => match tx.send(Ok((dst_port, status))) {
+                                            _ => (),
+                                        },
+                                        Err(e) => match tx.send(Err(e)) {
+                                            _ => (),
+                                        },
+                                    };
+                                });
+                            }
+                        } else {
+                            let tx = tx.clone();
+                            recv_size += 1;
+                            pool.execute(move || {
+                                let ret = run_ping6(
+                                    method, src_ipv6, src_port, dst_ipv6, None, timeout, max_loop,
+                                );
+                                match ret {
+                                    Ok(status) => match tx.send(Ok((0, status))) {
+                                        _ => (),
+                                    },
+                                    Err(e) => match tx.send(Err(e)) {
+                                        _ => (),
+                                    },
+                                };
+                            });
+                        }
+                    }
+                    None => (),
+                }
+            }
+
+            let iter = rx.into_iter().take(recv_size);
+            iter
+        }
+    };
+    let mut hm: HashMap<u16, PingResults> = HashMap::new();
+    for v in iter {
+        match v {
+            Ok((dst_port, pr)) => {
+                hm.insert(dst_port, pr);
+            }
+            _ => (),
+        }
+    }
+    if print_result {
+        _print_icmp_result(&hm);
+    }
+    Ok(hm)
 }
 
-pub fn tcp_ack_ping_host(
+pub fn tcp_syn_ping(
+    target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    dst_ipv4: Ipv4Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
+    threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host(
-        TcpPingMethods::Ack,
+) -> Result<HashMap<u16, PingResults>> {
+    ping(
+        target,
+        PingMethods::Syn,
         src_ipv4,
         src_port,
-        dst_ipv4,
-        dst_port,
         interface,
         print_result,
+        threads_num,
         timeout,
         max_loop,
     )
 }
 
-pub fn tcp_ack_ping_host6(
+pub fn tcp_syn_ping6(
+    target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    dst_ipv6: Ipv6Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
+    threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host6(
-        TcpPingMethods::Ack,
+) -> Result<HashMap<u16, PingResults>> {
+    ping6(
+        target,
+        PingMethods::Syn,
         src_ipv6,
         src_port,
-        dst_ipv6,
-        dst_port,
         interface,
         print_result,
+        threads_num,
         timeout,
         max_loop,
     )
 }
 
-pub fn udp_ping_host(
+pub fn tcp_ack_ping(
+    target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    dst_ipv4: Ipv4Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
+    threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host(
-        TcpPingMethods::Udp,
+) -> Result<HashMap<u16, PingResults>> {
+    ping(
+        target,
+        PingMethods::Ack,
         src_ipv4,
         src_port,
-        dst_ipv4,
-        dst_port,
         interface,
         print_result,
+        threads_num,
         timeout,
         max_loop,
     )
 }
 
-pub fn udp_ping_host6(
+pub fn tcp_ack_ping6(
+    target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    dst_ipv6: Ipv6Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
+    threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host6(
-        TcpPingMethods::Udp,
+) -> Result<HashMap<u16, PingResults>> {
+    ping6(
+        target,
+        PingMethods::Ack,
         src_ipv6,
         src_port,
-        dst_ipv6,
-        dst_port,
         interface,
         print_result,
+        threads_num,
         timeout,
         max_loop,
     )
 }
 
-pub fn icmp_ping_host(
+pub fn udp_ping(
+    target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    dst_ipv4: Ipv4Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
+    threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host(
-        TcpPingMethods::Icmp,
+) -> Result<HashMap<u16, PingResults>> {
+    ping(
+        target,
+        PingMethods::Udp,
         src_ipv4,
         src_port,
-        dst_ipv4,
-        dst_port,
         interface,
         print_result,
+        threads_num,
         timeout,
         max_loop,
     )
 }
 
-pub fn icmp_ping_host6(
+pub fn udp_ping6(
+    target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    dst_ipv6: Ipv6Addr,
-    dst_port: Option<u16>,
     interface: Option<&str>,
+    threads_num: usize,
     print_result: bool,
     timeout: Option<Duration>,
     max_loop: Option<usize>,
-) -> Result<PingResults> {
-    _run_tcp_ping_host6(
-        TcpPingMethods::Icmp,
+) -> Result<HashMap<u16, PingResults>> {
+    ping6(
+        target,
+        PingMethods::Udp,
         src_ipv6,
         src_port,
-        dst_ipv6,
-        dst_port,
         interface,
         print_result,
+        threads_num,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn icmp_ping(
+    target: Target,
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<u16, PingResults>> {
+    ping(
+        target,
+        PingMethods::Icmp,
+        src_ipv4,
+        src_port,
+        interface,
+        print_result,
+        threads_num,
+        timeout,
+        max_loop,
+    )
+}
+
+pub fn icmp_ping6(
+    target: Target,
+    src_ipv6: Option<Ipv6Addr>,
+    src_port: Option<u16>,
+    interface: Option<&str>,
+    threads_num: usize,
+    print_result: bool,
+    timeout: Option<Duration>,
+    max_loop: Option<usize>,
+) -> Result<HashMap<u16, PingResults>> {
+    ping6(
+        target,
+        PingMethods::Icmp,
+        src_ipv6,
+        src_port,
+        interface,
+        print_result,
+        threads_num,
         timeout,
         max_loop,
     )

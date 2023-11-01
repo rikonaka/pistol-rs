@@ -543,29 +543,33 @@ pub use scan::udp_scan6;
 /// This isn't technically a port scan, since it cycles through IP protocol numbers rather than TCP or UDP port numbers.
 pub use scan::ip_procotol_scan;
 
+/// General scan function.
+pub use scan::scan;
+pub use scan::scan6;
+
 /* Ping */
 
 /// TCP SYN Ping.
 /// The function send an empty TCP packet with the SYN flag set.
 /// The destination port an alternate port can be specified as a parameter.
 /// A list of ports may be specified (e.g. 22-25,80,113,1050,35000), in which case probes will be attempted against each port in parallel.
-pub use ping::tcp_syn_ping_host;
-pub use ping::tcp_syn_ping_host6;
+pub use ping::tcp_syn_ping;
+pub use ping::tcp_syn_ping6;
 
 /// TCP ACK Ping.
 /// The TCP ACK ping is quite similar to the SYN ping.
 /// The difference, as you could likely guess, is that the TCP ACK flag is set instead of the SYN flag.
 /// Such an ACK packet purports to be acknowledging data over an established TCP connection, but no such connection exists.
 /// So remote hosts should always respond with a RST packet, disclosing their existence in the process.
-pub use ping::tcp_ack_ping_host;
-pub use ping::tcp_ack_ping_host6;
+pub use ping::tcp_ack_ping;
+pub use ping::tcp_ack_ping6;
 
 /// UDP Ping.
 /// Another host discovery option is the UDP ping, which sends a UDP packet to the given ports.
 /// If no ports are specified, the default is 125.
 /// A highly uncommon port is used by default because sending to open ports is often undesirable for this particular scan type.
-pub use ping::udp_ping_host;
-pub use ping::udp_ping_host6;
+pub use ping::udp_ping;
+pub use ping::udp_ping6;
 
 /// ICMP Ping.
 /// In addition to the unusual TCP and UDP host discovery types discussed previously, we can send the standard packets sent by the ubiquitous ping program.
@@ -573,8 +577,8 @@ pub use ping::udp_ping_host6;
 /// As noted at the beginning of this chapter, many hosts and firewalls now block these packets, rather than responding as required by RFC 1122.
 /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
 /// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
-pub use ping::icmp_ping_host;
-pub use ping::icmp_ping_host6;
+pub use ping::icmp_ping;
+pub use ping::icmp_ping6;
 
 /* Flood */
 
@@ -786,7 +790,7 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_ip_scan_host() {
+    fn test_ip_scan() {
         use pnet::packet::ip::IpNextHeaderProtocols;
         let protocol = Some(IpNextHeaderProtocols::Udp);
 
@@ -817,22 +821,57 @@ mod tests {
         println!("{:?}", ret);
     }
     #[test]
-    fn test_tcp_syn_ping_host() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let i = None;
-        let max_loop = None;
-        let ret =
-            tcp_syn_ping_host(src_ipv4, None, dst_ipv4, None, i, true, None, max_loop).unwrap();
+    fn test_tcp_syn_ping() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret = match tcp_syn_ping(
+            target,
+            src_ipv4,
+            src_port,
+            interface,
+            threads_num,
+            print_result,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
     #[test]
-    fn test_icmp_ping_host() {
-        let src_ipv4 = Some(Ipv4Addr::new(192, 168, 1, 206));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let i = None;
-        let max_loop = None;
-        let ret = icmp_ping_host(src_ipv4, None, dst_ipv4, None, i, true, None, max_loop).unwrap();
+    fn test_icmp_ping() {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 1, 33));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 233);
+        // let interface: Option<&str> = Some("eno1");
+        let interface: Option<&str> = None;
+        let print_result: bool = true;
+        let threads_num: usize = 8;
+        let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
+        let max_loop: Option<usize> = Some(8);
+        let target: Target = Target::new_static_port(&vec![dst_ipv4], &vec![22, 99]);
+        let ret = match icmp_ping(
+            target,
+            src_ipv4,
+            src_port,
+            interface,
+            threads_num,
+            print_result,
+            timeout,
+            max_loop,
+        ) {
+            Ok(r) => r,
+            Err(e) => panic!("{}", e),
+        };
         println!("{:?}", ret);
     }
 }
