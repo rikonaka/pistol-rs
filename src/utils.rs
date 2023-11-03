@@ -358,9 +358,70 @@ pub fn return_layer4_icmp6_channel(
     }
 }
 
+pub struct Hex {
+    pub hex: Option<String>, // hex => dec
+}
+
+impl Hex {
+    pub fn new_hex(hex_str: &str) -> Hex {
+        Hex {
+            hex: Some(Hex::length_completion(hex_str).to_string()),
+        }
+    }
+    pub fn length_completion(hex_str: &str) -> String {
+        let hex_str_len = hex_str.len();
+        if hex_str_len % 2 == 1 {
+            format!("0{}", hex_str)
+        } else {
+            hex_str.to_string()
+        }
+    }
+    pub fn vec_4u8_to_u32(input: Vec<u8>) -> u32 {
+        let mut ret = 0;
+        let mut i = input.len();
+        for v in input {
+            let mut new_v = v as u32;
+            i -= 1;
+            new_v <<= i * 8;
+            ret += new_v;
+        }
+        ret
+    }
+    pub fn decode(&self) -> Result<u32> {
+        match &self.hex {
+            Some(hex_str) => match hex::decode(hex_str) {
+                Ok(d) => Ok(Hex::vec_4u8_to_u32(d)),
+                Err(e) => Err(e.into()),
+            },
+            None => panic!("set value before decode!"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_convert() {
+        let v: Vec<u8> = vec![1, 1];
+        let r = Hex::vec_4u8_to_u32(v);
+        assert_eq!(r, 257);
+
+        let s = "51E80C";
+        let h = Hex::new_hex(s);
+        let r = h.decode().unwrap();
+        assert_eq!(r, 5367820);
+
+        let s = "1C";
+        let h = Hex::new_hex(s);
+        let r = h.decode().unwrap();
+        assert_eq!(r, 28);
+
+        let s = "A";
+        let h = Hex::new_hex(s);
+        let r = h.decode().unwrap();
+        assert_eq!(r, 10);
+    }
     #[test]
     fn test_list_interfaces() {
         for interface in pnet_datalink::interfaces() {

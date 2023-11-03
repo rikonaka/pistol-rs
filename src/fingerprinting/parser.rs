@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::utils::Hex;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RangeValueTypes {
     Left,  // 10 <= x
@@ -902,68 +904,6 @@ pub struct NmapOsDb {
     pub ie: IE,
 }
 
-struct Hex {
-    _dec: Option<Vec<u8>>, // reserved for program integrity (dec => hex function)
-    hex: Option<String>,   // hex => dec
-}
-impl Hex {
-    fn _new_dec_u32(dec_u32: u32) -> Hex {
-        Hex {
-            _dec: Some(Hex::_u32_to_vec(dec_u32)),
-            hex: None,
-        }
-    }
-    fn new_hex(hex_str: &str) -> Hex {
-        Hex {
-            _dec: None,
-            hex: Some(Hex::length_completion(hex_str).to_string()),
-        }
-    }
-    fn length_completion(hex_str: &str) -> String {
-        let hex_str_len = hex_str.len();
-        if hex_str_len % 2 == 1 {
-            format!("0{}", hex_str)
-        } else {
-            hex_str.to_string()
-        }
-    }
-    fn vec_to_u32(input: Vec<u8>) -> u32 {
-        let mut ret: u32 = 0;
-        let mut i = input.len();
-        for v in input {
-            let mut new_v: u32 = v as u32;
-            i -= 1;
-            new_v <<= i * 8;
-            ret += new_v;
-        }
-        ret
-    }
-    fn _u32_to_vec(input: u32) -> Vec<u8> {
-        let mut ret = Vec::new();
-        for i in 0..4 {
-            let value = (input >> i * 8) as u8;
-            ret.push(value)
-        }
-        ret.reverse();
-        ret
-    }
-    fn decode(&self) -> Result<u32> {
-        match &self.hex {
-            Some(hex_str) => match hex::decode(hex_str) {
-                Ok(d) => Ok(Hex::vec_to_u32(d)),
-                Err(e) => Err(e.into()),
-            },
-            None => panic!("set value before decode!"),
-        }
-    }
-    fn _encode(&self) -> Result<String> {
-        match &self._dec {
-            Some(dec_vec) => Ok(hex::encode(dec_vec)),
-            None => panic!("set value before decode!"),
-        }
-    }
-}
-
 fn value_parser_u32(info: &str) -> Result<NmapOsDbValueTypes> {
     let value_split: Vec<&str> = info.split("=").collect();
     let value = value_split[1];
@@ -1147,25 +1087,5 @@ mod tests {
         file.read_to_string(&mut contents).unwrap();
         let n = nmap_os_db_pistol_load(contents).unwrap();
         println!("{:?}", n[0]);
-    }
-    #[test]
-    fn test_convert() {
-        let v: Vec<u8> = vec![0, 0, 1, 1];
-        let r = Hex::vec_to_u32(v);
-        assert_eq!(r, 257);
-
-        let s = "51E80C";
-        let h = Hex::new_hex(s);
-        let r = h.decode().unwrap();
-        assert_eq!(r, 5367820);
-
-        let s = "1C";
-        let h = Hex::new_hex(s);
-        let r = h.decode().unwrap();
-        assert_eq!(r, 28);
-
-        let v = 257;
-        let v2 = Hex::_u32_to_vec(v);
-        assert_eq!(v2, vec![0, 0, 1, 1]);
     }
 }

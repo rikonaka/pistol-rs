@@ -626,6 +626,9 @@ pub use fingerprinting::parser::nmap_os_db_parser;
 /// Load our processed files `nmap-os-db.pistol`.
 pub use fingerprinting::parser::nmap_os_db_pistol_load;
 
+/// Detect target machine OS.
+pub use fingerprinting::osscan::os_detect;
+
 #[cfg(test)]
 mod tests {
     use super::*;

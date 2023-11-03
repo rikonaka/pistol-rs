@@ -46,15 +46,16 @@ use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
 
-use super::operator::{tcp_gcd, tcp_isr, tcp_sp, tcp_ss, tcp_ti_ci_ii};
+use super::operator::{tcp_gcd, tcp_isr, tcp_ox, tcp_sp, tcp_ss, tcp_ti_ci_ii, tcp_ts};
 use super::packet;
+use super::parser::{MixValue, NmapOsDb, NmapOsDbValueTypes, ECN, IE, OPS, SEQ, TX, U1, WIN};
 
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone)]
 pub struct RequestAndResponse {
     pub name: String,
-    pub request: Vec<u8>,          // layer3
-    pub response: Option<Vec<u8>>, // layer3
+    pub request: Vec<u8>,  // layer3
+    pub response: Vec<u8>, // layer3, if no response: response.len() == 0
 }
 
 #[derive(Debug, Clone)]
@@ -226,10 +227,15 @@ fn send_seq_probes(
 
                                             if src_port_1 == dst_port_2 && dst_port_1 == src_port_2
                                             {
+                                                // println!(
+                                                //     "id: {}, response seq: {}",
+                                                //     id,
+                                                //     response_tcp_packet.get_sequence()
+                                                // );
                                                 let msg = Ok((
                                                     id,
                                                     request_ipv4_packet.packet().to_vec(),
-                                                    Some(response_ipv4_packet.packet().to_vec()),
+                                                    response_ipv4_packet.packet().to_vec(),
                                                 ));
                                                 match tx.send(msg) {
                                                     _ => (),
@@ -248,7 +254,7 @@ fn send_seq_probes(
                         }
                         if !recv_flag {
                             // we did not recv any packet
-                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), None));
+                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), vec![]));
                             match tx.send(msg) {
                                 _ => (),
                             }
@@ -352,7 +358,7 @@ fn send_ie_probe(
                                             let msg = Ok((
                                                 id,
                                                 request_ipv4_packet.packet().to_vec(),
-                                                Some(response_ipv4_packet.packet().to_vec()),
+                                                response_ipv4_packet.packet().to_vec(),
                                             ));
 
                                             match tx.send(msg) {
@@ -373,7 +379,7 @@ fn send_ie_probe(
                         }
                         if !recv_flag {
                             // we did not recv any packet
-                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), None));
+                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), vec![]));
                             match tx.send(msg) {
                                 _ => (),
                             }
@@ -471,7 +477,7 @@ fn send_ecn_probe(
                                             let msg = Ok((
                                                 1,
                                                 request_ipv4_packet.packet().to_vec(),
-                                                Some(response_ipv4_packet.packet().to_vec()),
+                                                response_ipv4_packet.packet().to_vec(),
                                             ));
                                             match tx.send(msg) {
                                                 _ => (),
@@ -490,7 +496,7 @@ fn send_ecn_probe(
                     }
                     if !recv_flag {
                         // we did not recv any packet
-                        let msg = Ok((1, request_ipv4_packet.packet().to_vec(), None));
+                        let msg = Ok((1, request_ipv4_packet.packet().to_vec(), vec![]));
                         match tx.send(msg) {
                             _ => (),
                         }
@@ -592,7 +598,7 @@ fn send_t2_t7_probes(
                                                 let msg = Ok((
                                                     id,
                                                     request_ipv4_packet.packet().to_vec(),
-                                                    Some(response_ipv4_packet.packet().to_vec()),
+                                                    response_ipv4_packet.packet().to_vec(),
                                                 ));
                                                 match tx.send(msg) {
                                                     _ => (),
@@ -611,7 +617,7 @@ fn send_t2_t7_probes(
                         }
                         if !recv_flag {
                             // we did not recv any packet
-                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), None));
+                            let msg = Ok((id, request_ipv4_packet.packet().to_vec(), vec![]));
                             match tx.send(msg) {
                                 _ => (),
                             }
@@ -711,7 +717,7 @@ fn send_u1_probe(
                                         let msg = Ok((
                                             1,
                                             request_ipv4_packet.packet().to_vec(),
-                                            Some(response_ipv4_packet.packet().to_vec()),
+                                            response_ipv4_packet.packet().to_vec(),
                                         ));
                                         match tx.send(msg) {
                                             _ => (),
@@ -729,7 +735,7 @@ fn send_u1_probe(
                     }
                     if !recv_flag {
                         // we did not recv any packet
-                        let msg = Ok((1, request_ipv4_packet.packet().to_vec(), None));
+                        let msg = Ok((1, request_ipv4_packet.packet().to_vec(), vec![]));
                         match tx.send(msg) {
                             _ => (),
                         }
@@ -817,21 +823,57 @@ fn send_all_probes(
     Ok(ap)
 }
 
-fn get_seq_fingerprint(ap: &AllRRPacket) {
+fn get_seq_fingerprint(ap: &AllRRPacket) -> String {
     let (gcd, diff) = tcp_gcd(&ap.seq).unwrap(); // None mean error
     let (isr, seq_rates) = tcp_isr(diff);
-    let sp = match tcp_sp(seq_rates, gcd) {
-        Some(sp) => format!("{}", sp), // None mean omitting
-        None => String::from(""),
-    };
-    let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.t2t7, &ap.ie).unwrap();
+    let sp = tcp_sp(seq_rates, gcd);
+    let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.t2t7, &ap.ie);
     let ss = match tcp_ss(&ap.seq, &ap.ie, &ti, &ii) {
         Some(ss) => ss,
         None => String::from(""),
     };
+    let ts = tcp_ts(&ap.seq);
+
+    // println!("gcd [{:X}]", gcd);
+    // println!("isr [{:X}]", isr);
+    // println!("sp [{:X}]", sp.unwrap());
+    // println!("ti [{}] ci [{}] ii [{}]", ti, ci, ii);
+    // println!("ss [{}]", ss);
+    // println!("ts [{}]", ts);
+    let ret = match sp {
+        Some(sp) => format!(
+            "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
+            sp, gcd, isr, ti, ci, ii, ts
+        ),
+        None => format!(
+            "SEQ(SP=%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
+            gcd, isr, ti, ci, ii, ts
+        ),
+    };
+    ret
 }
 
-fn os_detect(
+fn get_ops_fingerprint(ap: &AllRRPacket) -> String {
+    let (o1, o2, o3, o4, o5, o6) = tcp_ox(&ap.seq);
+    // println!("o [{:?}]", o1);
+    // println!("o [{:?}]", o2);
+    // println!("o [{:?}]", o3);
+    // println!("o [{:?}]", o4);
+    // println!("o [{:?}]", o5);
+    // println!("o [{:?}]", o6);
+    let ops = format!(
+        "OPS(O1={}%O2={}%O3={}%O4={}%O5={}%O6={})",
+        o1.unwrap(),
+        o2.unwrap(),
+        o3.unwrap(),
+        o4.unwrap(),
+        o5.unwrap(),
+        o6.unwrap()
+    );
+    ops
+}
+
+pub fn os_detect(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -850,12 +892,44 @@ fn os_detect(
         read_timeout,
     )?;
 
+    let seq_line = get_seq_fingerprint(&ap);
+    let ops_line = get_ops_fingerprint(&ap);
+
+    println!("{}", seq_line);
+    println!("{}", ops_line);
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_detect() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_port = None;
+        let dst_open_port = 22;
+        let dst_closed_port = 9999;
+        let max_loop = 8;
+        let read_timeout = Duration::from_secs_f32(0.5);
+        let _ = os_detect(
+            src_ipv4,
+            src_port,
+            dst_ipv4,
+            dst_open_port,
+            dst_closed_port,
+            max_loop,
+            read_timeout,
+        );
+    }
+    #[test]
+    fn test_w() {
+        let a = 7;
+        let b = 8;
+        let c = format!("W{:X}W{:X}", a, b);
+        println!("{c}");
+    }
     #[test]
     fn test_scan_str() {
         let dst_mac = MacAddr::new(01, 12, 34, 56, 00, 90);

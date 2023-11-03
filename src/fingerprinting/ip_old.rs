@@ -383,12 +383,6 @@ fn tcp_packet_get_info(tcp_packet: TcpPacket) -> (u32, u32, String, u16) {
     let window = tcp_packet.get_window();
     for option in options_vec {
         match option.number {
-            TcpOptionNumbers::EOL => {
-                o = format!("{}{}", o, "L");
-            }
-            TcpOptionNumbers::NOP => {
-                o = format!("{}{}", o, "N");
-            }
             TcpOptionNumbers::MSS => {
                 o = format!("{}{}", o, "M");
                 let mut data = 0;
@@ -400,6 +394,13 @@ fn tcp_packet_get_info(tcp_packet: TcpPacket) -> (u32, u32, String, u16) {
                 }
                 o = format!("{}{:X}", o, data);
             }
+            TcpOptionNumbers::EOL => {
+                o = format!("{}{}", o, "L");
+            }
+            TcpOptionNumbers::NOP => {
+                o = format!("{}{}", o, "N");
+            }
+
             TcpOptionNumbers::WSCALE => {
                 o = format!("{}{}", o, "W");
                 let mut data = 0;
