@@ -828,28 +828,38 @@ fn get_seq_fingerprint(ap: &AllRRPacket) -> String {
     let (isr, seq_rates) = tcp_isr(diff);
     let sp = tcp_sp(seq_rates, gcd);
     let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.t2t7, &ap.ie);
-    let ss = match tcp_ss(&ap.seq, &ap.ie, &ti, &ii) {
-        Some(ss) => ss,
-        None => String::from(""),
-    };
+    let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii);
     let ts = tcp_ts(&ap.seq);
 
     // println!("gcd [{:X}]", gcd);
     // println!("isr [{:X}]", isr);
     // println!("sp [{:X}]", sp.unwrap());
     // println!("ti [{}] ci [{}] ii [{}]", ti, ci, ii);
-    // println!("ss [{}]", ss);
+    // println!("ss [{}]", ss.unwrap());
     // println!("ts [{}]", ts);
-    let ret = match sp {
-        Some(sp) => format!(
-            "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
-            sp, gcd, isr, ti, ci, ii, ts
-        ),
-        None => format!(
-            "SEQ(SP=%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
-            gcd, isr, ti, ci, ii, ts
-        ),
+    let ret = match ss {
+        Some(ss) => match sp {
+            Some(sp) => format!(
+                "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%SS={}%TS={})",
+                sp, gcd, isr, ti, ci, ii, ss, ts
+            ),
+            None => format!(
+                "SEQ(SP=%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%SS={}%TS={})",
+                gcd, isr, ti, ci, ii, ss, ts
+            ),
+        },
+        None => match sp {
+            Some(sp) => format!(
+                "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
+                sp, gcd, isr, ti, ci, ii, ts
+            ),
+            None => format!(
+                "SEQ(SP=%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
+                gcd, isr, ti, ci, ii, ts
+            ),
+        },
     };
+
     ret
 }
 
