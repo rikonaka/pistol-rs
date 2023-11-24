@@ -44,6 +44,12 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 | [x] UDP Flood     | IPv4 & IPv6 support          |
 | [x] ICMP Flood    | IPv4 & IPv6 support (ICMPv6) |
 
+## Operating system detect
+
+Under implementation.
+
+Supports the detecting and analysis of nmap operating system fingerprint database format, perfectly compatible with nmap operating system detection algorithms.
+
 ## CLI program
 
 I also implement a demo [code](https://github.com/rikonaka/pistol_cli-rs) here.

@@ -46,7 +46,7 @@ use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
 
-use super::operator::{tcp_gcd, tcp_isr, tcp_ox, tcp_sp, tcp_ss, tcp_ti_ci_ii, tcp_ts};
+use super::operator::{tcp_gcd, tcp_isr, tcp_ox, tcp_sp, tcp_ss, tcp_ti_ci_ii, tcp_ts, tcp_wx};
 use super::packet;
 use super::parser::{MixValue, NmapOsDb, NmapOsDbValueTypes, ECN, IE, OPS, SEQ, TX, U1, WIN};
 
@@ -883,6 +883,23 @@ fn get_ops_fingerprint(ap: &AllRRPacket) -> String {
     ops
 }
 
+fn get_win_fingerprint(ap: &AllRRPacket) -> String {
+    let (w1, w2, w3, w4, w5, w6) = tcp_wx(&ap.seq);
+    let win = format!(
+        "WIN(W1={}%W2={}%W3={}%W4={}%W5={}%W6={})",
+        w1.unwrap(),
+        w2.unwrap(),
+        w3.unwrap(),
+        w4.unwrap(),
+        w5.unwrap(),
+        w6.unwrap()
+    );
+    win
+}
+
+fn get_ecn_fingerprint(ap: &AllRRPacket) -> String {
+}
+
 pub fn os_detect(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
@@ -904,9 +921,11 @@ pub fn os_detect(
 
     let seq_line = get_seq_fingerprint(&ap);
     let ops_line = get_ops_fingerprint(&ap);
+    let win_line = get_win_fingerprint(&ap);
 
     println!("{}", seq_line);
     println!("{}", ops_line);
+    println!("{}", win_line);
 
     Ok(())
 }
@@ -917,9 +936,9 @@ mod tests {
     #[test]
     fn test_detect() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let src_port = None;
-        let dst_open_port = 22;
+        let dst_open_port = 80;
         let dst_closed_port = 9999;
         let max_loop = 8;
         let read_timeout = Duration::from_secs_f32(0.5);

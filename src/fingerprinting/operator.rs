@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 
-use super::osscan::{ECNRR, IERR, SEQRR, T2T7RR, U1RR};
+use super::osscan::{RequestAndResponse, ECNRR, IERR, SEQRR, T2T7RR, U1RR};
 
 use crate::utils::Hex;
 
@@ -662,4 +662,76 @@ pub fn tcp_ox(
     let o5 = get_ox(&seqrr.seq5.response);
     let o6 = get_ox(&seqrr.seq6.response);
     (o1, o2, o3, o4, o5, o6)
+}
+
+fn get_wx(ipv4_buff: &Vec<u8>) -> Option<String> {
+    match gen_ipv4_pakcet(ipv4_buff) {
+        Some(ipv4_packet) => {
+            let tcp_buff = ipv4_packet.payload().to_vec();
+            match gen_tcp_packet(&tcp_buff) {
+                Some(tcp_packet) => {
+                    let window = tcp_packet.get_window();
+                    let window_hex = format!("{:X}", window);
+                    Some(window_hex)
+                }
+                None => None,
+            }
+        }
+        None => None,
+    }
+}
+
+pub fn tcp_wx(
+    seqrr: &SEQRR,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    let w1 = get_wx(&seqrr.seq1.response);
+    let w2 = get_wx(&seqrr.seq2.response);
+    let w3 = get_wx(&seqrr.seq3.response);
+    let w4 = get_wx(&seqrr.seq4.response);
+    let w5 = get_wx(&seqrr.seq5.response);
+    let w6 = get_wx(&seqrr.seq6.response);
+    (w1, w2, w3, w4, w5, w6)
+}
+
+fn tcp_r(ipv4_buff: &Vec<u8>) -> String {
+    match ipv4_buff.len() {
+        0 => String::from("N"),
+        _ => String::from("Y"),
+    }
+}
+
+fn tcp_df(ipv4_buff: &Vec<u8>) -> Option<String> {
+    match gen_ipv4_pakcet(ipv4_buff) {
+        Some(ipv4_packet) => {
+            let ipv4_flags = ipv4_packet.get_flags();
+            let df_mask: u8 = 0b0010;
+            let ret = if ipv4_flags & df_mask == df_mask {
+                String::from("Y")
+            } else {
+                String::from("N")
+            };
+            Some(ret)
+        }
+        None => None,
+    }
+}
+
+fn udp_hops(u1rr: &U1RR) -> u8 {
+    let request = Ipv4Packet::new(&u1rr.u1.request).unwrap();
+    let response = Ipv4Packet::new(&u1rr.u1.response).unwrap();
+    let request_ttl = request.get_ttl();
+    let response_ttl = response.get_ttl();
+    let hops = request_ttl - response_ttl;
+    hops
+}
+
+fn tcp_t(seqrr: &SEQRR, u1rr: &U1RR) {
+    let hops = udp_hops(u1rr);
 }
