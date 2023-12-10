@@ -990,7 +990,7 @@ mod tests {
     fn tcp_options_test() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let src_port = 39876;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let dst_port = 80;
         let _ = seq_packet_1_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = seq_packet_2_layer3(src_ipv4, src_port, dst_ipv4, dst_port);

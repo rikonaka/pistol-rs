@@ -101,8 +101,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_send_udp_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = 54338;
         // let dst_port = 53;
         let dst_port = 2233;

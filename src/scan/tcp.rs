@@ -1001,7 +1001,7 @@ mod tests {
     fn test_send_idle_scan_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let zombie_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
+        let zombie_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
 
         let src_port = utils::random_port();
         let dst_port = 80;

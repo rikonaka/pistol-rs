@@ -34,6 +34,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use super::osscan::{RequestAndResponse, ECNRR, IERR, SEQRR, T2T7RR, U1RR};
+use crate::errors;
 
 use crate::utils::Hex;
 
@@ -48,41 +49,51 @@ fn get_tcp_seq(ipv4_buff: &Vec<u8>) -> Option<u32> {
 }
 
 fn get_diff_u32(input: &Vec<u32>) -> Vec<u32> {
-    let mut vec_1 = Vec::new();
-    vec_1.push(0);
-    vec_1.extend(input.clone()); // [0, 1, 2]
-    let mut vec_2 = input.clone();
-    vec_2.push(u32::MAX); // [1, 2, 0]
+    if input.len() >= 2 {
+        let mut vec_1 = Vec::new();
+        vec_1.push(0);
+        vec_1.extend(input.clone()); // [0, 1, 2]
+        let mut vec_2 = input.clone();
+        vec_2.push(u32::MAX); // [1, 2, 0]
 
-    let mut diff = Vec::new();
-    for (x, y) in zip(vec_1, vec_2) {
-        let k = if x < y { y - x } else { !(x - y) };
-        diff.push(k);
-    }
-    diff.remove(0);
-    if diff.len() > 0 {
-        diff.remove(diff.len() - 1);
-    }
+        let mut diff = Vec::new();
+        for (x, y) in zip(vec_1, vec_2) {
+            let k = if x < y { y - x } else { !(x - y) };
+            diff.push(k);
+        }
+        diff.remove(0);
+        if diff.len() > 0 {
+            diff.remove(diff.len() - 1);
+        }
 
-    diff
+        diff
+    } else {
+        panic!("input vec length is not long enough to calculate diff vec")
+    }
 }
 
 fn get_diff_u16(input: &Vec<u16>) -> Vec<u16> {
-    let mut vec_1 = Vec::new();
-    vec_1.push(0);
-    vec_1.extend(input.clone()); // [0, 1, 2]
-    let mut vec_2 = input.clone();
-    vec_2.push(u16::MAX); // [1, 2, 0]
+    if input.len() >= 2 {
+        let mut vec_1 = Vec::new();
+        vec_1.push(0);
+        vec_1.extend(input.clone()); // [0, 1, 2]
+        let mut vec_2 = input.clone();
+        vec_2.push(u16::MAX); // [1, 2, 0]
 
-    let mut diff = Vec::new();
-    for (x, y) in zip(vec_1, vec_2) {
-        let k = if x < y { y - x } else { !(x - y) };
-        diff.push(k);
+        let mut diff = Vec::new();
+        for (x, y) in zip(vec_1, vec_2) {
+            let k = if x < y { y - x } else { !(x - y) };
+            diff.push(k);
+        }
+        diff.remove(0);
+        if diff.len() > 0 {
+            diff.remove(diff.len() - 1);
+        }
+
+        diff
+    } else {
+        panic!("input vec length is not long enough to calculate diff vec")
     }
-    diff.remove(0);
-    diff.remove(diff.len() - 1);
-
-    diff
 }
 
 /// TCP ISN greatest common divisor (GCD)
@@ -109,6 +120,9 @@ pub fn tcp_gcd(seqrr: &SEQRR) -> Option<(u32, Vec<u32>)> {
     let diff = get_diff_u32(&seq_vec);
     if diff.len() > 1 {
         let gcd = gcdx(&diff).unwrap();
+        Some((gcd, diff))
+    } else if diff.len() == 1 {
+        let gcd = diff[0];
         Some((gcd, diff))
     } else {
         None
@@ -581,7 +595,7 @@ pub fn tcp_ts(seqrr: &SEQRR) -> String {
     ts
 }
 
-fn get_ox(ipv4_buff: &Vec<u8>) -> Option<String> {
+pub fn tcp_o(ipv4_buff: &Vec<u8>) -> Option<String> {
     match gen_ipv4_pakcet(ipv4_buff) {
         Some(ipv4_packet) => {
             let tcp_buff = ipv4_packet.payload().to_vec();
@@ -655,16 +669,16 @@ pub fn tcp_ox(
     Option<String>,
     Option<String>,
 ) {
-    let o1 = get_ox(&seqrr.seq1.response);
-    let o2 = get_ox(&seqrr.seq2.response);
-    let o3 = get_ox(&seqrr.seq3.response);
-    let o4 = get_ox(&seqrr.seq4.response);
-    let o5 = get_ox(&seqrr.seq5.response);
-    let o6 = get_ox(&seqrr.seq6.response);
+    let o1 = tcp_o(&seqrr.seq1.response);
+    let o2 = tcp_o(&seqrr.seq2.response);
+    let o3 = tcp_o(&seqrr.seq3.response);
+    let o4 = tcp_o(&seqrr.seq4.response);
+    let o5 = tcp_o(&seqrr.seq5.response);
+    let o6 = tcp_o(&seqrr.seq6.response);
     (o1, o2, o3, o4, o5, o6)
 }
 
-fn get_wx(ipv4_buff: &Vec<u8>) -> Option<String> {
+pub fn tcp_w(ipv4_buff: &Vec<u8>) -> Option<String> {
     match gen_ipv4_pakcet(ipv4_buff) {
         Some(ipv4_packet) => {
             let tcp_buff = ipv4_packet.payload().to_vec();
@@ -691,24 +705,24 @@ pub fn tcp_wx(
     Option<String>,
     Option<String>,
 ) {
-    let w1 = get_wx(&seqrr.seq1.response);
-    let w2 = get_wx(&seqrr.seq2.response);
-    let w3 = get_wx(&seqrr.seq3.response);
-    let w4 = get_wx(&seqrr.seq4.response);
-    let w5 = get_wx(&seqrr.seq5.response);
-    let w6 = get_wx(&seqrr.seq6.response);
+    let w1 = tcp_w(&seqrr.seq1.response);
+    let w2 = tcp_w(&seqrr.seq2.response);
+    let w3 = tcp_w(&seqrr.seq3.response);
+    let w4 = tcp_w(&seqrr.seq4.response);
+    let w5 = tcp_w(&seqrr.seq5.response);
+    let w6 = tcp_w(&seqrr.seq6.response);
     (w1, w2, w3, w4, w5, w6)
 }
 
-fn tcp_r(ipv4_buff: &Vec<u8>) -> String {
-    match ipv4_buff.len() {
+pub fn tcp_r(ipv4_response: &Vec<u8>) -> String {
+    match ipv4_response.len() {
         0 => String::from("N"),
         _ => String::from("Y"),
     }
 }
 
-fn tcp_df(ipv4_buff: &Vec<u8>) -> Option<String> {
-    match gen_ipv4_pakcet(ipv4_buff) {
+pub fn tcp_df(ipv4_response: &Vec<u8>) -> Option<String> {
+    match gen_ipv4_pakcet(ipv4_response) {
         Some(ipv4_packet) => {
             let ipv4_flags = ipv4_packet.get_flags();
             let df_mask: u8 = 0b0010;
@@ -723,15 +737,87 @@ fn tcp_df(ipv4_buff: &Vec<u8>) -> Option<String> {
     }
 }
 
-fn udp_hops(u1rr: &U1RR) -> u8 {
-    let request = Ipv4Packet::new(&u1rr.u1.request).unwrap();
-    let response = Ipv4Packet::new(&u1rr.u1.response).unwrap();
-    let request_ttl = request.get_ttl();
-    let response_ttl = response.get_ttl();
-    let hops = request_ttl - response_ttl;
-    hops
+pub fn tcp_t(ipv4_response: &Vec<u8>, u1rr: &U1RR) -> Option<u16> {
+    let hops = udp_hops(u1rr);
+    match hops {
+        Some(hops) => {
+            let response = Ipv4Packet::new(ipv4_response).unwrap();
+            let response_ttl = response.get_ttl();
+            // Avoid overflow in integer addition.
+            Some(hops as u16 + response_ttl as u16)
+        }
+        None => None,
+    }
 }
 
-fn tcp_t(seqrr: &SEQRR, u1rr: &U1RR) {
-    let hops = udp_hops(u1rr);
+fn udp_hops(u1rr: &U1RR) -> Option<u8> {
+    if u1rr.u1.response.len() > 0 {
+        // It is not uncommon for Nmap to receive no response to the U1 probe.
+        let request = Ipv4Packet::new(&u1rr.u1.request).unwrap();
+        let response = Ipv4Packet::new(&u1rr.u1.response).unwrap();
+        let request_ttl = request.get_ttl();
+        let response_ttl = response.get_ttl();
+        let hops = request_ttl - response_ttl;
+        Some(hops)
+    } else {
+        None
+    }
+}
+
+pub fn tcp_tg(ipv4_response: &Vec<u8>) -> u8 {
+    let response = Ipv4Packet::new(ipv4_response).unwrap();
+    let response_ttl = response.get_ttl();
+    let ret = if response_ttl <= 32 {
+        32
+    } else if response_ttl <= 64 {
+        64
+    } else if response_ttl <= 128 {
+        128
+    } else {
+        // if response <= 255
+        255
+    };
+    ret
+}
+
+pub fn tcp_cc(ipv4_response: &Vec<u8>) -> String {
+    let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
+    let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
+    let tcp_flag = tcp_packet.get_flags();
+    let cwr_mask: u8 = 0b1000000;
+    let ece_mask: u8 = 0b0100000;
+    if tcp_flag & ece_mask != 0 {
+        // Only the ECE bit is set (not CWR). This host supports ECN.
+        String::from("Y")
+    } else if (tcp_flag & cwr_mask == 0) && (tcp_flag & ece_mask == 0) {
+        // Neither of these two bits is set. The target does not support ECN.
+        String::from("N")
+    } else if (tcp_flag & cwr_mask != 0) && (tcp_flag & ece_mask != 0) {
+        // Both bits are set. The target does not support ECN, but it echoes back what it thinks is a reserved bit.
+        String::from("S")
+    } else {
+        // The one remaining combination of these two bits (other).
+        String::from("O")
+    }
+}
+
+pub fn tcp_q(ipv4_response: &Vec<u8>) -> String {
+    let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
+    let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
+    let mut ret = String::from("");
+
+    let tcp_reserved = tcp_packet.get_reserved();
+    if tcp_reserved != 0 {
+        // The first is that the reserved field in the TCP header (right after the header length) is nonzero.
+        // This is particularly likely to happen in response to the ECN test as that one sets a reserved bit in the probe.
+        // If this is seen in a packet, an "R" is recorded in the Q string.
+        ret += "R"
+    }
+    if tcp_packet.get_urgent_ptr() != 0 {
+        // The other quirk Nmap tests for is a nonzero urgent pointer field value when the URG flag is not set.
+        // This is also particularly likely to be seen in response to the ECN probe, which sets a non-zero urgent field.
+        // A "U" is appended to the Q string when this is seen.
+        ret += "U"
+    }
+    ret
 }

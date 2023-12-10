@@ -46,9 +46,10 @@ use crate::utils::ICMP_BUFF_SIZE;
 use crate::utils::TCP_BUFF_SIZE;
 use crate::utils::UDP_BUFF_SIZE;
 
-use super::operator::{tcp_gcd, tcp_isr, tcp_ox, tcp_sp, tcp_ss, tcp_ti_ci_ii, tcp_ts, tcp_wx};
+use super::dbparser::{MixValue, NmapOsDb, NmapOsDbValueTypes, ECN, IE, OPS, SEQ, TX, U1, WIN};
+use super::operator::{tcp_cc, tcp_o, tcp_t, tcp_tg, tcp_ti_ci_ii, tcp_ts, tcp_w, tcp_wx};
+use super::operator::{tcp_df, tcp_gcd, tcp_isr, tcp_ox, tcp_q, tcp_r, tcp_sp, tcp_ss};
 use super::packet;
-use super::parser::{MixValue, NmapOsDb, NmapOsDbValueTypes, ECN, IE, OPS, SEQ, TX, U1, WIN};
 
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone)]
@@ -66,6 +67,31 @@ pub struct SEQRR {
     pub seq4: RequestAndResponse,
     pub seq5: RequestAndResponse,
     pub seq6: RequestAndResponse,
+}
+
+impl SEQRR {
+    pub fn response_num(&self) -> u32 {
+        let mut seq_response_num = 0;
+        if self.seq1.response.len() > 0 {
+            seq_response_num += 1;
+        }
+        if self.seq2.response.len() > 0 {
+            seq_response_num += 1;
+        }
+        if self.seq3.response.len() > 0 {
+            seq_response_num += 1;
+        }
+        if self.seq4.response.len() > 0 {
+            seq_response_num += 1;
+        }
+        if self.seq5.response.len() > 0 {
+            seq_response_num += 1;
+        }
+        if self.seq6.response.len() > 0 {
+            seq_response_num += 1;
+        }
+        seq_response_num
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -823,7 +849,28 @@ fn send_all_probes(
     Ok(ap)
 }
 
-fn get_seq_fingerprint(ap: &AllRRPacket) -> String {
+pub struct SEQX {
+    pub sp: u32,
+    pub gcd: u32,
+    pub isr: u32,
+    pub ti: String,
+    pub ci: String,
+    pub ii: String,
+    pub ss: String,
+    pub ts: String,
+}
+
+impl fmt::Display for SEQX {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = format!(
+            "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%SS={}%TS={})",
+            self.sp, self.gcd, self.isr, self.ti, self.ci, self.ii, self.ss, self.ts
+        );
+        write!(f, "{}", output)
+    }
+}
+
+fn seq_fingerprint(ap: &AllRRPacket) -> SEQX {
     let (gcd, diff) = tcp_gcd(&ap.seq).unwrap(); // None mean error
     let (isr, seq_rates) = tcp_isr(diff);
     let sp = tcp_sp(seq_rates, gcd);
@@ -831,73 +878,183 @@ fn get_seq_fingerprint(ap: &AllRRPacket) -> String {
     let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii);
     let ts = tcp_ts(&ap.seq);
 
-    // println!("gcd [{:X}]", gcd);
-    // println!("isr [{:X}]", isr);
-    // println!("sp [{:X}]", sp.unwrap());
-    // println!("ti [{}] ci [{}] ii [{}]", ti, ci, ii);
-    // println!("ss [{}]", ss.unwrap());
-    // println!("ts [{}]", ts);
-    let ret = match ss {
-        Some(ss) => match sp {
-            Some(sp) => format!(
-                "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%SS={}%TS={})",
-                sp, gcd, isr, ti, ci, ii, ss, ts
-            ),
-            None => format!(
-                "SEQ(SP=%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%SS={}%TS={})",
-                gcd, isr, ti, ci, ii, ss, ts
-            ),
-        },
-        None => match sp {
-            Some(sp) => format!(
-                "SEQ(SP={:X}%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
-                sp, gcd, isr, ti, ci, ii, ts
-            ),
-            None => format!(
-                "SEQ(SP=%GCD={:X}%ISR={:X}%TI={}%CI={}%II={}%TS={})",
-                gcd, isr, ti, ci, ii, ts
-            ),
-        },
+    let sp = match sp {
+        Some(sp) => sp,
+        None => 0,
+    };
+    let ss = match ss {
+        Some(ss) => ss,
+        None => String::from(""),
     };
 
-    ret
+    SEQX {
+        sp,
+        gcd,
+        isr,
+        ti,
+        ci,
+        ii,
+        ss,
+        ts,
+    }
 }
 
-fn get_ops_fingerprint(ap: &AllRRPacket) -> String {
+pub struct OPSX {
+    pub o1: String,
+    pub o2: String,
+    pub o3: String,
+    pub o4: String,
+    pub o5: String,
+    pub o6: String,
+}
+
+impl fmt::Display for OPSX {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = format!(
+            "OPS(O1={}%O2={}%O3={}%O4={}%O5={}%O6={})",
+            self.o1, self.o2, self.o3, self.o4, self.o5, self.o6
+        );
+        write!(f, "{}", output)
+    }
+}
+
+fn ops_fingerprint(ap: &AllRRPacket) -> OPSX {
     let (o1, o2, o3, o4, o5, o6) = tcp_ox(&ap.seq);
-    // println!("o [{:?}]", o1);
-    // println!("o [{:?}]", o2);
-    // println!("o [{:?}]", o3);
-    // println!("o [{:?}]", o4);
-    // println!("o [{:?}]", o5);
-    // println!("o [{:?}]", o6);
-    let ops = format!(
-        "OPS(O1={}%O2={}%O3={}%O4={}%O5={}%O6={})",
-        o1.unwrap(),
-        o2.unwrap(),
-        o3.unwrap(),
-        o4.unwrap(),
-        o5.unwrap(),
-        o6.unwrap()
-    );
-    ops
+    let ovalue = |x: Option<String>, i: i32| -> String {
+        match x {
+            Some(v) => v,
+            None => {
+                println!("o{i} is empty");
+                String::from("")
+            }
+        }
+    };
+
+    OPSX {
+        o1: ovalue(o1, 1),
+        o2: ovalue(o2, 2),
+        o3: ovalue(o3, 3),
+        o4: ovalue(o4, 4),
+        o5: ovalue(o5, 5),
+        o6: ovalue(o6, 6),
+    }
 }
 
-fn get_win_fingerprint(ap: &AllRRPacket) -> String {
+pub struct WINX {
+    pub w1: String,
+    pub w2: String,
+    pub w3: String,
+    pub w4: String,
+    pub w5: String,
+    pub w6: String,
+}
+
+impl fmt::Display for WINX {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = format!(
+            "WIN(W1={}%W2={}%W3={}%W4={}%W5={}%W6={})",
+            self.w1, self.w2, self.w3, self.w4, self.w5, self.w6
+        );
+        write!(f, "{}", output)
+    }
+}
+
+fn win_fingerprint(ap: &AllRRPacket) -> WINX {
     let (w1, w2, w3, w4, w5, w6) = tcp_wx(&ap.seq);
-    let win = format!(
-        "WIN(W1={}%W2={}%W3={}%W4={}%W5={}%W6={})",
-        w1.unwrap(),
-        w2.unwrap(),
-        w3.unwrap(),
-        w4.unwrap(),
-        w5.unwrap(),
-        w6.unwrap()
-    );
-    win
+    let wvalue = |x: Option<String>, i: i32| -> String {
+        match x {
+            Some(v) => v,
+            None => {
+                println!("w{i} is empty");
+                String::from("")
+            }
+        }
+    };
+
+    WINX {
+        w1: wvalue(w1, 1),
+        w2: wvalue(w2, 2),
+        w3: wvalue(w3, 3),
+        w4: wvalue(w4, 4),
+        w5: wvalue(w5, 5),
+        w6: wvalue(w6, 6),
+    }
 }
 
-fn get_ecn_fingerprint(ap: &AllRRPacket) -> String {
+pub struct ECNX {
+    pub r: String,
+    pub df: String,
+    pub t: u16,
+    pub tg: u8,
+    pub w: String,
+    pub o: String,
+    pub cc: String,
+    pub q: String,
+}
+
+impl fmt::Display for ECNX {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = format!(
+            "ECN(R={}%DF={}%T={:X}%TG={:X}%W={}%O={}%CC={}%Q={})",
+            self.r, self.df, self.t, self.tg, self.w, self.o, self.cc, self.q,
+        );
+        write!(f, "{}", output)
+    }
+}
+
+fn ecn_fingerprint(ap: &AllRRPacket) -> ECNX {
+    let r = tcp_r(&ap.ecn.ecn.response);
+    let (df, t, tg, w, o, cc, q) = match r.as_str() {
+        "Y" => {
+            let df = tcp_df(&ap.ecn.ecn.response);
+            let t = tcp_t(&ap.ecn.ecn.response, &ap.u1);
+            let tg = tcp_tg(&ap.ecn.ecn.response);
+            let w = tcp_w(&ap.ecn.ecn.response);
+            let o = tcp_o(&ap.ecn.ecn.response);
+            let cc = tcp_cc(&ap.ecn.ecn.response);
+            let q = tcp_q(&ap.ecn.ecn.response);
+
+            let evalue = |x: Option<String>, name: &str| match x {
+                Some(v) => v,
+                None => {
+                    println!("{name} is empty");
+                    String::from("")
+                }
+            };
+
+            let df = evalue(df, "df");
+            let w = evalue(w, "w");
+            let o = evalue(o, "o");
+
+            let t = match t {
+                Some(t) => t,
+                None => 0,
+            };
+
+            (df, t, tg, w, o, cc, q)
+        }
+        _ => {
+            let df = String::from("");
+            let t = 0;
+            let tg = 0;
+            let w = String::from("");
+            let o = String::from("");
+            let cc = String::from("");
+            let q = String::from("");
+            (df, t, tg, w, o, cc, q)
+        }
+    };
+
+    ECNX {
+        r,
+        df,
+        t,
+        tg,
+        w,
+        o,
+        cc,
+        q,
+    }
 }
 
 pub fn os_detect(
@@ -919,13 +1076,15 @@ pub fn os_detect(
         read_timeout,
     )?;
 
-    let seq_line = get_seq_fingerprint(&ap);
-    let ops_line = get_ops_fingerprint(&ap);
-    let win_line = get_win_fingerprint(&ap);
+    let seq = seq_fingerprint(&ap);
+    let ops = ops_fingerprint(&ap);
+    let win = win_fingerprint(&ap);
+    let ecn = ecn_fingerprint(&ap);
 
-    println!("{}", seq_line);
-    println!("{}", ops_line);
-    println!("{}", win_line);
+    println!("{}", seq);
+    println!("{}", ops);
+    println!("{}", win);
+    println!("{}", ecn);
 
     Ok(())
 }
@@ -935,8 +1094,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_detect() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = None;
         let dst_open_port = 80;
         let dst_closed_port = 9999;
@@ -965,7 +1124,7 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 1;
         let dst_closed_udp_port = 42341;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let ret = get_scan_line(
             Some(dst_mac),
             dst_open_tcp_port,
@@ -979,8 +1138,8 @@ mod tests {
     }
     #[test]
     fn test_seq_probes() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = None;
         let dst_open_port = 22;
         let max_loop = 32;
@@ -1003,8 +1162,8 @@ mod tests {
     }
     #[test]
     fn test_ie_probe() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let max_loop = 32;
         let read_timeout = Duration::from_secs_f32(3.0);
         let ierr = send_ie_probe(src_ipv4, dst_ipv4, max_loop, read_timeout).unwrap();
@@ -1013,8 +1172,8 @@ mod tests {
     }
     #[test]
     fn test_ecn_probe() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = None;
         let dst_open_port = 22;
         let max_loop = 32;
@@ -1032,8 +1191,8 @@ mod tests {
     }
     #[test]
     fn test_t2_t7_probes() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = None;
         let dst_open_port = 22;
         let dst_closed_port = 9999;
@@ -1058,8 +1217,8 @@ mod tests {
     }
     #[test]
     fn test_u1_probe() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = None;
         let dst_closed_port = 9999;
         let max_loop = 32;
@@ -1077,8 +1236,8 @@ mod tests {
     }
     #[test]
     fn test_all_probe() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 233);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
         let src_port = None;
         let dst_open_port = 22;
         let dst_closed_port = 9999;
