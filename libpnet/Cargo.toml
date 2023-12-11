@@ -1,0 +1,63 @@
+[package]
+name = "pnet"
+version = "0.34.0"
+authors = [ "Robert Clipsham <robert@octarineparrot.com>" ]
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/libpnet/libpnet"
+repository = "https://github.com/libpnet/libpnet"
+description = "Cross-platform, low level networking using the Rust programming language."
+readme = "README.md"
+keywords = ["networking", "transport", "datalink", "packet", "protocol"]
+categories = ["network-programming", "parser-implementations"]
+build = "build.rs"
+edition = "2021"
+
+[features]
+benchmark = []
+netmap = ["pnet_datalink/netmap_sys", "pnet_datalink/netmap"]
+pcap = ["pnet_datalink/pcap"]
+appveyor = []
+travis = []
+serde = ["pnet_base/serde", "pnet_datalink?/serde"]
+std = ["pnet_base/std", "pnet_sys", "pnet_datalink", "pnet_transport", "ipnetwork"]
+default = ["std"]
+
+[dependencies]
+ipnetwork = { version = "0.20.0", optional = true }
+
+pnet_base = { path = "pnet_base", version = "0.34.0", default-features = false }
+pnet_sys = { path = "pnet_sys", version = "0.34.0", optional = true, default-features = false }
+pnet_datalink = { path = "pnet_datalink", version = "0.34.0", optional = true, default-features = false }
+pnet_transport = { path = "pnet_transport", version = "0.34.0", optional = true, default-features = false }
+pnet_packet = { path = "pnet_packet", version = "0.34.0", default-features = false }
+
+[dev-dependencies]
+time = "0.3.23"
+
+[[example]]
+name = "arp_packet"
+required-features = ["std"]
+
+[[example]]
+name = "fanout"
+required-features = ["std"]
+
+[[example]]
+name = "list_interfaces"
+required-features = ["std"]
+
+[[example]]
+name = "packetdump"
+required-features = ["std"]
+
+[[example]]
+name = "transport_echo_server"
+required-features = ["std"]
+
+[[bench]]
+name = "rs_sender"
+required-features = ["std"]
+
+[[bench]]
+name = "rs_receiver"
+required-features = ["std"]
