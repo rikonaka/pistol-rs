@@ -15,11 +15,6 @@ keywords = ["port-scan", "host-discovery", "penetration-test", "cybersecurity", 
 [dependencies]
 anyhow = "^1"
 num_cpus = "^1"
-pnet = "^0"
-pnet_datalink = "^0"
-pnet_macros_support = "^0"
-pnet_macros = "^0"
-pnet_packet = "^0"
 rand = "^0"
 subnetwork = "^0"
 threadpool = "^1"
@@ -29,3 +24,13 @@ crc32fast = "^1"
 hex = "^0"
 serde = { version="^1", features = ["derive"] }
 serde_json = "^1"
+pnet = { path = "./libpnet" }
+pnet_datalink = { path = "./libpnet/pnet_datalink" }
+pnet_macros_support = { path = "./libpnet/pnet_macros_support" }
+pnet_macros = { path = "./libpnet/pnet_macros" }
+pnet_packet = { path = "./libpnet/pnet_packet" }
+# pnet = "^0"
+# pnet_datalink = "^0"
+# pnet_macros_support = "^0"
+# pnet_macros = "^0"
+# pnet_packet = "^0"

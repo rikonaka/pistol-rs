@@ -120,9 +120,27 @@ pub fn get_ips_from_host6(hosts: &[Host6]) -> Vec<Ipv6Addr> {
     target_ips
 }
 
+pub fn find_mac_by_src_ip(find_ip: &Ipv4Addr) -> Option<MacAddr> {
+    let interfaces = get_host_interfaces();
+    for interface in &interfaces {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V4(ipv4) => {
+                    if ipv4 == *find_ip {
+                        return interface.mac;
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    None
+}
+
 /// Returns an interface that matches the name.
 pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
-    for interface in pnet_datalink::interfaces() {
+    let interfaces = get_host_interfaces();
+    for interface in interfaces {
         // println!("{}", interface)
         if interface.name == interface_name {
             return Some(interface);
@@ -376,11 +394,11 @@ impl Hex {
             hex_str.to_string()
         }
     }
-    pub fn vec_4u8_to_u32(input: Vec<u8>) -> u32 {
+    pub fn vec_4u8_to_u32(input: &Vec<u8>) -> u32 {
         let mut ret = 0;
         let mut i = input.len();
         for v in input {
-            let mut new_v = v as u32;
+            let mut new_v = *v as u32;
             i -= 1;
             new_v <<= i * 8;
             ret += new_v;
@@ -390,7 +408,7 @@ impl Hex {
     pub fn decode(&self) -> Result<u32> {
         match &self.hex {
             Some(hex_str) => match hex::decode(hex_str) {
-                Ok(d) => Ok(Hex::vec_4u8_to_u32(d)),
+                Ok(d) => Ok(Hex::vec_4u8_to_u32(&d)),
                 Err(e) => Err(e.into()),
             },
             None => panic!("set value before decode!"),
@@ -404,7 +422,7 @@ mod tests {
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
-        let r = Hex::vec_4u8_to_u32(v);
+        let r = Hex::vec_4u8_to_u32(&v);
         assert_eq!(r, 257);
 
         let s = "51E80C";

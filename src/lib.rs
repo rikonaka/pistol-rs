@@ -6,7 +6,6 @@ use pnet_datalink::NetworkInterface;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use subnetwork::{Ipv4Pool, Ipv6Pool};
 
 mod errors;
 mod fingerprinting;
@@ -147,6 +146,13 @@ impl Host {
     }
 }
 
+impl fmt::Display for Host {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result_str = format!("{} {:?}", self.addr, self.ports);
+        write!(f, "{}", result_str)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Host6 {
     pub addr: Ipv6Addr,
@@ -165,6 +171,13 @@ impl Host6 {
     }
 }
 
+impl fmt::Display for Host6 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result_str = format!("{} {:?}", self.addr, self.ports);
+        write!(f, "{}", result_str)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum TargetType {
     Ipv4,
@@ -176,6 +189,28 @@ pub struct Target {
     pub target_type: TargetType,
     pub hosts: Vec<Host>,
     pub hosts6: Vec<Host6>,
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result_str = format!("Type: {:?}", self.target_type);
+        match self.target_type {
+            TargetType::Ipv4 => {
+                for host in &self.hosts {
+                    let s = format!("\n      {}", host);
+                    result_str += &s;
+                }
+            }
+            TargetType::Ipv6 => {
+                for host6 in &self.hosts6 {
+                    let s = format!("\n      {}", host6);
+                    result_str += &s;
+                }
+            }
+        }
+
+        write!(f, "{}", result_str)
+    }
 }
 
 impl Target {
@@ -477,16 +512,35 @@ mod tests {
     use std::time::Duration;
     use subnetwork::Ipv4Pool;
     #[test]
+    fn test_target_print() {
+        let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 136), Some(vec![22, 23]));
+        let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]));
+        let target = Target::new(vec![host1, host2]);
+        println!("{}", target);
+    }
+    #[test]
     fn test_arp_scan_subnet() {
-        let interface: Option<&str> = Some("eno1");
-        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
+        let interface: Option<&str> = Some("ens33");
+        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.72.0/24").unwrap();
         let mut hosts = vec![];
         for ip in subnet {
             let host = Host::new(ip, None);
             hosts.push(host);
         }
         let target: Target = Target::new(hosts);
-        let rets: ArpScanResults = match arp_scan(target, None, interface, 0, true, None) {
+        let dst_mac = None;
+        let threads_num = 16;
+        let max_loop = Some(8);
+        let print_result = true;
+        // let print_result = false;
+        let rets: ArpScanResults = match arp_scan(
+            target,
+            dst_mac,
+            interface,
+            threads_num,
+            print_result,
+            max_loop,
+        ) {
             Ok(r) => r,
             Err(e) => panic!("{}", e),
         };
