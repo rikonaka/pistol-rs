@@ -372,8 +372,8 @@ fn send_ie_probe(
                 },
             }
         });
-        // here sleep is non-hard requirements
-        sleep(Duration::from_millis(100));
+        // Avoid two ip id become same.
+        sleep(Duration::from_millis(10));
         id += 1;
     }
 
@@ -610,8 +610,6 @@ fn send_t2_t7_probes(
                 },
             }
         });
-        // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
-        // sleep(Duration::from_millis(100));
         id += 1;
     }
 
@@ -815,44 +813,89 @@ pub struct SEQX {
     pub ii: String,
     pub ss: String,
     pub ts: String,
+    // Fit the db file.
+    pub r: String,
 }
 
 impl fmt::Display for SEQX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!("SEQ(SP={:X}%GCD={:X}%ISR={:X}", self.sp, self.gcd, self.isr);
-        if self.ti.len() > 0 {
-            let ti_str = format!("%TI={}", self.ti);
-            output += &ti_str;
+        match self.r.as_str() {
+            "Y" => {
+                // Do not show R if R == Y.
+                let mut output =
+                    format!("SEQ(SP={:X}%GCD={:X}%ISR={:X}", self.sp, self.gcd, self.isr);
+                if self.ti.len() > 0 {
+                    let ti_str = format!("%TI={}", self.ti);
+                    output += &ti_str;
+                }
+                if self.ci.len() > 0 {
+                    let ci_str = format!("%CI={}", self.ci);
+                    output += &ci_str;
+                }
+                if self.ii.len() > 0 {
+                    let ii_str = format!("%II={}", self.ii);
+                    output += &ii_str;
+                }
+                if self.ss.len() > 0 {
+                    let ss_str = format!("%SS={}", self.ss);
+                    output += &ss_str;
+                }
+                if self.ts.len() > 0 {
+                    let ts_str = format!("%TS={}", self.ts);
+                    output += &ts_str;
+                }
+                output += ")";
+                write!(f, "{}", output)
+            }
+            _ => {
+                let output = format!("SEQ(R={})", self.r);
+                write!(f, "{}", output)
+            }
         }
-        if self.ci.len() > 0 {
-            let ci_str = format!("%CI={}", self.ci);
-            output += &ci_str;
-        }
-        if self.ii.len() > 0 {
-            let ii_str = format!("%II={}", self.ii);
-            output += &ii_str;
-        }
-        if self.ss.len() > 0 {
-            let ss_str = format!("%SS={}", self.ss);
-            output += &ss_str;
-        }
-        if self.ts.len() > 0 {
-            let ts_str = format!("%TS={}", self.ts);
-            output += &ts_str;
-        }
-        output += ")";
-        write!(f, "{}", output)
     }
 }
 
 pub fn seq_fingerprint(ap: &AllRRPacket) -> Result<SEQX> {
-    let (gcd, diff) = tcp_gcd(&ap.seq)?; // None mean error
-    let (isr, seq_rates) = tcp_isr(diff)?;
-    let sp = tcp_sp(seq_rates, gcd)?;
-    let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.t2t7, &ap.ie)?;
-    let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii)?;
-    let ts = tcp_ts(&ap.seq)?;
+    let rynum = |rvec: Vec<String>| -> usize {
+        let mut num = 0;
+        for r in rvec {
+            if r == "Y" {
+                num += 1;
+            }
+        }
+        num
+    };
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response)?;
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response)?;
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response)?;
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response)?;
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response)?;
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response)?;
+    let rvec = vec![r1, r2, r3, r4, r5, r6];
+    let num = rynum(rvec);
 
+    // At least four responses should be returned.
+    let (r, sp, gcd, isr, ti, ci, ii, ss, ts) = if num >= 4 {
+        let (gcd, diff) = tcp_gcd(&ap.seq)?; // None mean error
+        let (isr, seq_rates) = tcp_isr(diff)?;
+        let sp = tcp_sp(seq_rates, gcd)?;
+        let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.t2t7, &ap.ie)?;
+        let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii)?;
+        let ts = tcp_ts(&ap.seq)?;
+        let r = String::from("Y");
+        (r, sp, gcd, isr, ti, ci, ii, ss, ts)
+    } else {
+        let r = String::from("N");
+        let gcd = 0;
+        let isr = 0;
+        let sp = 0;
+        let ti = String::from("");
+        let ci = String::from("");
+        let ii = String::from("");
+        let ss = String::from("");
+        let ts = String::from("");
+        (r, sp, gcd, isr, ti, ci, ii, ss, ts)
+    };
     Ok(SEQX {
         sp,
         gcd,
@@ -862,6 +905,7 @@ pub fn seq_fingerprint(ap: &AllRRPacket) -> Result<SEQX> {
         ii,
         ss,
         ts,
+        r,
     })
 }
 
@@ -872,73 +916,107 @@ pub struct OPSX {
     pub o4: String,
     pub o5: String,
     pub o6: String,
+    // Fit the db file.
+    pub r: String,
 }
 
 impl fmt::Display for OPSX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first_elem = true;
-        let mut output = String::from("OPS(");
-        if self.o1.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("O1={}", self.o1)
-            } else {
-                format!("%O1={}", self.o1)
-            };
-            output += &ox_str;
+        match self.r.as_str() {
+            "Y" => {
+                let mut first_elem = true;
+                let mut output = String::from("OPS(");
+                if self.o1.len() > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("O1={}", self.o1)
+                    } else {
+                        format!("%O1={}", self.o1)
+                    };
+                    output += &ox_str;
+                }
+                if self.o2.len() > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("O2={}", self.o2)
+                    } else {
+                        format!("%O2={}", self.o2)
+                    };
+                    output += &ox_str;
+                }
+                if self.o3.len() > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("O3={}", self.o3)
+                    } else {
+                        format!("%O3={}", self.o3)
+                    };
+                    output += &ox_str;
+                }
+                if self.o4.len() > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("O4={}", self.o4)
+                    } else {
+                        format!("%O4={}", self.o4)
+                    };
+                    output += &ox_str;
+                }
+                if self.o5.len() > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("O5={}", self.o5)
+                    } else {
+                        format!("%O5={}", self.o5)
+                    };
+                    output += &ox_str;
+                }
+                if self.o6.len() > 0 {
+                    let ox_str = if first_elem {
+                        // first_elem = false;
+                        format!("O6={}", self.o6)
+                    } else {
+                        format!("%O6={}", self.o6)
+                    };
+                    output += &ox_str;
+                }
+                output += ")";
+                write!(f, "{}", output)
+            }
+            _ => {
+                let output = format!("OPS(R={})", self.r);
+                write!(f, "{}", output)
+            }
         }
-        if self.o2.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("O2={}", self.o2)
-            } else {
-                format!("%O2={}", self.o2)
-            };
-            output += &ox_str;
-        }
-        if self.o3.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("O3={}", self.o3)
-            } else {
-                format!("%O3={}", self.o3)
-            };
-            output += &ox_str;
-        }
-        if self.o4.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("O4={}", self.o4)
-            } else {
-                format!("%O4={}", self.o4)
-            };
-            output += &ox_str;
-        }
-        if self.o5.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("O5={}", self.o5)
-            } else {
-                format!("%O5={}", self.o5)
-            };
-            output += &ox_str;
-        }
-        if self.o6.len() > 0 {
-            let ox_str = if first_elem {
-                // first_elem = false;
-                format!("O6={}", self.o6)
-            } else {
-                format!("%O6={}", self.o6)
-            };
-            output += &ox_str;
-        }
-        output += ")";
-        write!(f, "{}", output)
     }
 }
 
 pub fn ops_fingerprint(ap: &AllRRPacket) -> Result<OPSX> {
+    let rops = |rvec: Vec<String>| -> bool {
+        let mut flag = true;
+        for r in rvec {
+            if r == "N" {
+                flag = false;
+            }
+        }
+        flag
+    };
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response)?;
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response)?;
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response)?;
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response)?;
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response)?;
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response)?;
+    let rvec = vec![r1, r2, r3, r4, r5, r6];
+    let flag = rops(rvec);
+    let r = if flag {
+        String::from("Y")
+    } else {
+        String::from("N")
+    };
+
     let (o1, o2, o3, o4, o5, o6) = tcp_ox(&ap.seq)?;
+
     Ok(OPSX {
         o1,
         o2,
@@ -946,82 +1024,116 @@ pub fn ops_fingerprint(ap: &AllRRPacket) -> Result<OPSX> {
         o4,
         o5,
         o6,
+        r,
     })
 }
 
 pub struct WINX {
-    pub w1: String,
-    pub w2: String,
-    pub w3: String,
-    pub w4: String,
-    pub w5: String,
-    pub w6: String,
+    pub w1: u16,
+    pub w2: u16,
+    pub w3: u16,
+    pub w4: u16,
+    pub w5: u16,
+    pub w6: u16,
+    // Fit.
+    pub r: String,
 }
 
 impl fmt::Display for WINX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first_elem = true;
-        let mut output = String::from("WIN(");
-        if self.w1.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("W1={}", self.w1)
-            } else {
-                format!("%W1={}", self.w1)
-            };
-            output += &ox_str;
+        match self.r.as_str() {
+            "Y" => {
+                let mut first_elem = true;
+                let mut output = String::from("WIN(");
+                if self.w1 > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("W1={:X}", self.w1)
+                    } else {
+                        format!("%W1={:X}", self.w1)
+                    };
+                    output += &ox_str;
+                }
+                if self.w2 > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("W2={:X}", self.w2)
+                    } else {
+                        format!("%W2={:X}", self.w2)
+                    };
+                    output += &ox_str;
+                }
+                if self.w3 > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("W3={:X}", self.w3)
+                    } else {
+                        format!("%W3={:X}", self.w3)
+                    };
+                    output += &ox_str;
+                }
+                if self.w4 > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("W4={:X}", self.w4)
+                    } else {
+                        format!("%W4={:X}", self.w4)
+                    };
+                    output += &ox_str;
+                }
+                if self.w5 > 0 {
+                    let ox_str = if first_elem {
+                        first_elem = false;
+                        format!("W5={:X}", self.w5)
+                    } else {
+                        format!("%W5={:X}", self.w5)
+                    };
+                    output += &ox_str;
+                }
+                if self.w6 > 0 {
+                    let ox_str = if first_elem {
+                        // first_elem = false;
+                        format!("W6={:X}", self.w6)
+                    } else {
+                        format!("%W6={:X}", self.w6)
+                    };
+                    output += &ox_str;
+                }
+                output += ")";
+                write!(f, "{}", output)
+            }
+            _ => {
+                let output = format!("WIN(R={})", self.r);
+                write!(f, "{}", output)
+            }
         }
-        if self.w2.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("W2={}", self.w2)
-            } else {
-                format!("%W2={}", self.w2)
-            };
-            output += &ox_str;
-        }
-        if self.w3.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("W3={}", self.w3)
-            } else {
-                format!("%W3={}", self.w3)
-            };
-            output += &ox_str;
-        }
-        if self.w4.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("W4={}", self.w4)
-            } else {
-                format!("%W4={}", self.w4)
-            };
-            output += &ox_str;
-        }
-        if self.w5.len() > 0 {
-            let ox_str = if first_elem {
-                first_elem = false;
-                format!("W5={}", self.w5)
-            } else {
-                format!("%W5={}", self.w5)
-            };
-            output += &ox_str;
-        }
-        if self.w6.len() > 0 {
-            let ox_str = if first_elem {
-                // first_elem = false;
-                format!("W6={}", self.w6)
-            } else {
-                format!("%W6={}", self.w6)
-            };
-            output += &ox_str;
-        }
-        output += ")";
-        write!(f, "{}", output)
     }
 }
 
 pub fn win_fingerprint(ap: &AllRRPacket) -> Result<WINX> {
+    let rwin = |rvec: Vec<String>| -> bool {
+        let mut flag = true;
+        for r in rvec {
+            if r == "N" {
+                flag = false;
+            }
+        }
+        flag
+    };
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response)?;
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response)?;
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response)?;
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response)?;
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response)?;
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response)?;
+    let rvec = vec![r1, r2, r3, r4, r5, r6];
+    let flag = rwin(rvec);
+    let r = if flag {
+        String::from("Y")
+    } else {
+        String::from("N")
+    };
+
     let (w1, w2, w3, w4, w5, w6) = tcp_wx(&ap.seq)?;
     Ok(WINX {
         w1,
@@ -1030,6 +1142,7 @@ pub fn win_fingerprint(ap: &AllRRPacket) -> Result<WINX> {
         w4,
         w5,
         w6,
+        r,
     })
 }
 
@@ -1039,7 +1152,7 @@ pub struct ECNX {
     pub df: String,
     pub t: u16,
     pub tg: u8,
-    pub w: String,
+    pub w: u16,
     pub o: String,
     pub cc: String,
     pub q: String,
@@ -1047,160 +1160,25 @@ pub struct ECNX {
 
 impl fmt::Display for ECNX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first_elem = true;
-        let mut output = String::from("ECN(");
-        if self.r.len() > 0 {
-            let r_str = if first_elem {
-                first_elem = false;
-                format!("R={}", self.r)
-            } else {
-                format!("%R={}", self.r)
-            };
-            output += &r_str;
-        }
-        if self.df.len() > 0 {
-            let df_str = if first_elem {
-                first_elem = false;
-                format!("DF={}", self.df)
-            } else {
-                format!("%DF={}", self.df)
-            };
-            output += &df_str;
-        }
-        if self.t > 0 {
-            let t_str = if first_elem {
-                first_elem = false;
-                format!("T={:X}", self.t)
-            } else {
-                format!("%T={:X}", self.t)
-            };
-            output += &t_str;
-        }
-        if self.t <= 0 && self.tg > 0 {
-            // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
-            let tg_str = if first_elem {
-                first_elem = false;
-                format!("TG={:X}", self.tg)
-            } else {
-                format!("%TG={:X}", self.tg)
-            };
-            output += &tg_str;
-        }
-        if self.w.len() > 0 {
-            let w_str = if first_elem {
-                first_elem = false;
-                format!("W={}", self.w)
-            } else {
-                format!("%W={}", self.w)
-            };
-            output += &w_str;
-        }
-        if self.o.len() > 0 {
-            let o_str = if first_elem {
-                first_elem = false;
-                format!("O={}", self.o)
-            } else {
-                format!("%O={}", self.o)
-            };
-            output += &o_str;
-        }
-        if self.cc.len() > 0 {
-            let cc_str = if first_elem {
-                first_elem = false;
-                format!("CC={}", self.cc)
-            } else {
-                format!("%CC={}", self.cc)
-            };
-            output += &cc_str;
-        }
-        let q_str = if first_elem {
-            // first_elem = false;
-            format!("Q={}", self.q)
-        } else {
-            format!("%Q={}", self.q)
-        };
-        output += &q_str;
-        output += ")";
-        write!(f, "{}", output)
-    }
-}
-
-pub fn ecn_fingerprint(ap: &AllRRPacket) -> Result<ECNX> {
-    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
-    let (df, t, tg, w, o, cc, q) = match r.as_str() {
-        "Y" => {
-            let df = tcp_udp_df(&ap.ecn.ecn.response)?;
-            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response, &ap.u1)?;
-            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response)?;
-            let w = tcp_w(&ap.ecn.ecn.response)?;
-            let o = tcp_o(&ap.ecn.ecn.response)?;
-            let cc = tcp_cc(&ap.ecn.ecn.response)?;
-            let q = tcp_q(&ap.ecn.ecn.response)?;
-
-            (df, t, tg, w, o, cc, q)
-        }
-        _ => {
-            //  If there is no reply, remaining fields for the test are omitted.
-            let df = String::from("");
-            let t = 0;
-            let tg = 0;
-            let w = String::from("");
-            let o = String::from("");
-            let cc = String::from("");
-            let q = String::from("");
-            (df, t, tg, w, o, cc, q)
-        }
-    };
-
-    Ok(ECNX {
-        r,
-        df,
-        t,
-        tg,
-        w,
-        o,
-        cc,
-        q,
-    })
-}
-
-pub struct TXX {
-    // R, DF, T, TG, W, S, A, F, O, RD, and Q tests.
-    pub name: String,
-    pub r: String,
-    pub df: String,
-    pub t: u16,
-    pub tg: u8,
-    pub w: String,
-    pub s: String,
-    pub a: String,
-    pub f: String,
-    pub o: String,
-    pub rd: u32, // CRC32
-    pub q: String,
-}
-
-impl fmt::Display for TXX {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first_elem = true;
-        let mut output = format!("{}(", self.name);
-        if self.r.len() > 0 {
-            let r_str = if first_elem {
-                first_elem = false;
-                format!("R={}", self.r)
-            } else {
-                format!("%R={}", self.r)
-            };
-            output += &r_str;
-        }
         match self.r.as_str() {
             "Y" => {
+                let mut first_elem = true;
+                let mut output = String::from("ECN(");
+                if self.r.len() > 0 {
+                    let r_str = if first_elem {
+                        first_elem = false;
+                        format!("R={}", self.r)
+                    } else {
+                        format!("%R={}", self.r)
+                    };
+                    output += &r_str;
+                }
                 if self.df.len() > 0 {
                     let df_str = if first_elem {
                         first_elem = false;
                         format!("DF={}", self.df)
                     } else {
-                        format!("%Df={}", self.df)
+                        format!("%DF={}", self.df)
                     };
                     output += &df_str;
                 }
@@ -1223,12 +1201,155 @@ impl fmt::Display for TXX {
                     };
                     output += &tg_str;
                 }
-                if self.w.len() > 0 {
+                if self.w > 0 {
                     let w_str = if first_elem {
                         first_elem = false;
-                        format!("W={}", self.w)
+                        format!("W={:X}", self.w)
                     } else {
-                        format!("%W={}", self.w)
+                        format!("%W={:X}", self.w)
+                    };
+                    output += &w_str;
+                }
+                if self.o.len() > 0 {
+                    let o_str = if first_elem {
+                        first_elem = false;
+                        format!("O={}", self.o)
+                    } else {
+                        format!("%O={}", self.o)
+                    };
+                    output += &o_str;
+                }
+                if self.cc.len() > 0 {
+                    let cc_str = if first_elem {
+                        first_elem = false;
+                        format!("CC={}", self.cc)
+                    } else {
+                        format!("%CC={}", self.cc)
+                    };
+                    output += &cc_str;
+                }
+                let q_str = if first_elem {
+                    // first_elem = false;
+                    format!("Q={}", self.q)
+                } else {
+                    format!("%Q={}", self.q)
+                };
+                output += &q_str;
+                output += ")";
+                write!(f, "{}", output)
+            }
+            _ => {
+                let output = format!("ECN(R={})", self.r);
+                write!(f, "{}", output)
+            }
+        }
+    }
+}
+
+pub fn ecn_fingerprint(ap: &AllRRPacket) -> Result<ECNX> {
+    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
+    let (df, t, tg, w, o, cc, q) = match r.as_str() {
+        "Y" => {
+            let df = tcp_udp_df(&ap.ecn.ecn.response)?;
+            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response, &ap.u1)?;
+            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response)?;
+            let w = tcp_w(&ap.ecn.ecn.response)?;
+            let o = tcp_o(&ap.ecn.ecn.response)?;
+            let cc = tcp_cc(&ap.ecn.ecn.response)?;
+            let q = tcp_q(&ap.ecn.ecn.response)?;
+
+            (df, t, tg, w, o, cc, q)
+        }
+        _ => {
+            //  If there is no reply, remaining fields for the test are omitted.
+            let df = String::from("");
+            let t = 0;
+            let tg = 0;
+            let w = 0;
+            let o = String::from("");
+            let cc = String::from("");
+            let q = String::from("");
+            (df, t, tg, w, o, cc, q)
+        }
+    };
+
+    Ok(ECNX {
+        r,
+        df,
+        t,
+        tg,
+        w,
+        o,
+        cc,
+        q,
+    })
+}
+
+pub struct TXX {
+    pub name: String,
+    // R, DF, T, TG, W, S, A, F, O, RD, and Q tests.
+    pub r: String,
+    pub df: String,
+    pub t: u16,
+    pub tg: u8,
+    pub w: u16,
+    pub s: String,
+    pub a: String,
+    pub f: String,
+    pub o: String,
+    pub rd: u32, // CRC32
+    pub q: String,
+}
+
+impl fmt::Display for TXX {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.r.as_str() {
+            "Y" => {
+                let mut first_elem = true;
+                let mut output = format!("{}(", self.name);
+                if self.r.len() > 0 {
+                    let r_str = if first_elem {
+                        first_elem = false;
+                        format!("R={}", self.r)
+                    } else {
+                        format!("%R={}", self.r)
+                    };
+                    output += &r_str;
+                }
+                if self.df.len() > 0 {
+                    let df_str = if first_elem {
+                        first_elem = false;
+                        format!("DF={}", self.df)
+                    } else {
+                        format!("%DF={}", self.df)
+                    };
+                    output += &df_str;
+                }
+                if self.t > 0 {
+                    let t_str = if first_elem {
+                        first_elem = false;
+                        format!("T={:X}", self.t)
+                    } else {
+                        format!("%T={:X}", self.t)
+                    };
+                    output += &t_str;
+                }
+                if self.t <= 0 && self.tg > 0 {
+                    // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
+                    let tg_str = if first_elem {
+                        first_elem = false;
+                        format!("TG={:X}", self.tg)
+                    } else {
+                        format!("%TG={:X}", self.tg)
+                    };
+                    output += &tg_str;
+                }
+                if self.name != "T1" {
+                    let w_str = if first_elem {
+                        first_elem = false;
+                        format!("W={:X}", self.w)
+                    } else {
+                        format!("%W={:X}", self.w)
                     };
                     output += &w_str;
                 }
@@ -1259,13 +1380,15 @@ impl fmt::Display for TXX {
                     };
                     output += &f_str;
                 }
-                let o_str = if first_elem {
-                    first_elem = false;
-                    format!("O={}", self.o)
-                } else {
-                    format!("%O={}", self.o)
-                };
-                output += &o_str;
+                if self.name != "T1" {
+                    let o_str = if first_elem {
+                        first_elem = false;
+                        format!("O={}", self.o)
+                    } else {
+                        format!("%O={}", self.o)
+                    };
+                    output += &o_str;
+                }
                 let rd_str = if first_elem {
                     first_elem = false;
                     format!("RD={:X}", self.rd)
@@ -1281,13 +1404,14 @@ impl fmt::Display for TXX {
                 };
                 output += &q_str;
                 output += ")";
+
+                write!(f, "{}", output)
             }
             _ => {
-                output += ")";
+                let output = format!("{}(R={})", self.name, self.r);
+                write!(f, "{}", output)
             }
         }
-
-        write!(f, "{}", output)
     }
 }
 
@@ -1299,8 +1423,8 @@ fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<T
             let t = tcp_udp_icmp_t(&tx.response, u1rr)?;
             let tg = tcp_udp_icmp_tg(&tx.response)?;
             let w = tcp_w(&tx.response)?;
-            let s = tcp_s(&tx.response)?;
-            let a = tcp_a(&tx.response)?;
+            let s = tcp_s(&tx.request, &tx.response)?;
+            let a = tcp_a(&tx.request, &tx.response)?;
             let f = tcp_f(&tx.response)?;
             let o = tcp_o(&tx.response)?;
             let rd = tcp_rd(&tx.response)?;
@@ -1312,7 +1436,7 @@ fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<T
             let df = String::from("");
             let t = 0;
             let tg = 0;
-            let w = String::from("");
+            let w = 0;
             let s = String::from("");
             let a = String::from("");
             let f = String::from("");
@@ -1339,7 +1463,9 @@ fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<T
     })
 }
 
-pub fn tx_fingerprint(ap: &AllRRPacket) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX)> {
+pub fn tx_fingerprint(ap: &AllRRPacket) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX)> {
+    // The final line related to these probes, T1, contains various test values for packet #1.
+    let t1 = _tx_fingerprint(&ap.seq.seq1, &ap.u1, "T1")?;
     let t2 = _tx_fingerprint(&ap.t2t7.t2, &ap.u1, "T2")?;
     let t3 = _tx_fingerprint(&ap.t2t7.t3, &ap.u1, "T3")?;
     let t4 = _tx_fingerprint(&ap.t2t7.t4, &ap.u1, "T4")?;
@@ -1347,7 +1473,7 @@ pub fn tx_fingerprint(ap: &AllRRPacket) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX)
     let t6 = _tx_fingerprint(&ap.t2t7.t6, &ap.u1, "T6")?;
     let t7 = _tx_fingerprint(&ap.t2t7.t7, &ap.u1, "T7")?;
 
-    Ok((t2, t3, t4, t5, t6, t7))
+    Ok((t1, t2, t3, t4, t5, t6, t7))
 }
 
 pub struct U1X {
@@ -1609,7 +1735,57 @@ pub fn ie_fingerprint(ap: &AllRRPacket) -> Result<IEX> {
     Ok(IEX { r, dfi, t, tg, cd })
 }
 
-pub fn os_detect(
+pub struct NmapFingerprint {
+    pub scan: String,
+    pub seqx: SEQX,
+    pub opsx: OPSX,
+    pub winx: WINX,
+    pub ecnx: ECNX,
+    pub t1x: TXX,
+    pub t2x: TXX,
+    pub t3x: TXX,
+    pub t4x: TXX,
+    pub t5x: TXX,
+    pub t6x: TXX,
+    pub t7x: TXX,
+    pub u1x: U1X,
+    pub iex: IEX,
+}
+
+impl fmt::Display for NmapFingerprint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = format!("{}", self.scan);
+        let seqx_str = format!("\n{}", self.seqx);
+        let opsx_str = format!("\n{}", self.opsx);
+        let winx_str = format!("\n{}", self.winx);
+        let ecnx_str = format!("\n{}", self.ecnx);
+        let t1x_str = format!("\n{}", self.t1x);
+        let t2x_str = format!("\n{}", self.t2x);
+        let t3x_str = format!("\n{}", self.t3x);
+        let t4x_str = format!("\n{}", self.t4x);
+        let t5x_str = format!("\n{}", self.t5x);
+        let t6x_str = format!("\n{}", self.t6x);
+        let t7x_str = format!("\n{}", self.t7x);
+        let u1x_str = format!("\n{}", self.u1x);
+        let iex_str = format!("\n{}", self.iex);
+        output += &seqx_str;
+        output += &opsx_str;
+        output += &winx_str;
+        output += &ecnx_str;
+        output += &t1x_str;
+        output += &t2x_str;
+        output += &t3x_str;
+        output += &t4x_str;
+        output += &t5x_str;
+        output += &t6x_str;
+        output += &t7x_str;
+        output += &u1x_str;
+        output += &iex_str;
+        write!(f, "{}", output)
+    }
+}
+
+pub fn os_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
@@ -1618,7 +1794,7 @@ pub fn os_detect(
     dst_closed_udp_port: u16,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<()> {
+) -> Result<NmapFingerprint> {
     let ap = send_all_probes(
         src_ipv4,
         src_port,
@@ -1644,30 +1820,32 @@ pub fn os_detect(
     );
 
     // Use seq to judge target is alive or not.
-    let seq = seq_fingerprint(&ap);
-    match seq {
-        Ok(seq) => {
-            let ops = ops_fingerprint(&ap)?;
-            let win = win_fingerprint(&ap)?;
-            let ecn = ecn_fingerprint(&ap)?;
-            let (t2, t3, t4, t5, t6, t7) = tx_fingerprint(&ap)?;
-            let u1 = u1_fingerprint(&ap)?;
-            let ie = ie_fingerprint(&ap)?;
+    let seqx = seq_fingerprint(&ap);
+    match seqx {
+        Ok(seqx) => {
+            let opsx = ops_fingerprint(&ap)?;
+            let winx = win_fingerprint(&ap)?;
+            let ecnx = ecn_fingerprint(&ap)?;
+            let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap)?;
+            let u1x = u1_fingerprint(&ap)?;
+            let iex = ie_fingerprint(&ap)?;
 
-            println!("{}", scan);
-            println!("{}", seq);
-            println!("{}", ops);
-            println!("{}", win);
-            println!("{}", ecn);
-            println!("{}", t2);
-            println!("{}", t3);
-            println!("{}", t4);
-            println!("{}", t5);
-            println!("{}", t6);
-            println!("{}", t7);
-            println!("{}", u1);
-            println!("{}", ie);
-            Ok(())
+            Ok(NmapFingerprint {
+                scan,
+                seqx,
+                opsx,
+                winx,
+                ecnx,
+                t1x,
+                t2x,
+                t3x,
+                t4x,
+                t5x,
+                t6x,
+                t7x,
+                u1x,
+                iex,
+            })
         }
         Err(e) => Err(e),
     }
@@ -1687,7 +1865,7 @@ mod tests {
         let max_loop = 8;
         let read_timeout = Duration::from_secs_f32(0.5);
 
-        let _ = os_detect(
+        let _ = os_probe(
             src_ipv4,
             src_port,
             dst_ipv4,
@@ -1696,7 +1874,8 @@ mod tests {
             dst_closed_udp_port,
             max_loop,
             read_timeout,
-        ).unwrap();
+        )
+        .unwrap();
     }
     #[test]
     fn test_w() {

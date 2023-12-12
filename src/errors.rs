@@ -158,17 +158,3 @@ impl CalcISRFailed {
     }
 }
 impl Error for CalcISRFailed {}
-
-#[derive(Debug, Clone)]
-pub struct GetTsvalFailed {}
-impl fmt::Display for GetTsvalFailed {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "get tsval failed")
-    }
-}
-impl GetTsvalFailed {
-    pub fn new() -> GetTsvalFailed {
-        GetTsvalFailed {}
-    }
-}
-impl Error for GetTsvalFailed {}

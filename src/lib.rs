@@ -500,11 +500,14 @@ pub use flood::udp_flood6;
 /// Process standard nmap-os-db files and return a structure that can be processed by the program.
 pub use fingerprinting::dbparser::nmap_os_db_parser;
 
+/// Dump `name-os-db` file to `nmap-os-db.pistol`.
+pub use fingerprinting::dbparser::nmape_os_db_pistol_dump;
+
 /// Load our processed files `nmap-os-db.pistol`.
 pub use fingerprinting::dbparser::nmap_os_db_pistol_load;
 
 /// Detect target machine OS.
-pub use fingerprinting::osscan::os_detect;
+pub use fingerprinting::os_detect;
 
 #[cfg(test)]
 mod tests {

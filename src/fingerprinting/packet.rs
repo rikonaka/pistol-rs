@@ -518,7 +518,7 @@ pub fn ie_packet_2_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     // the code is zero
     icmp_header.set_icmp_code(IcmpCode(9));
     icmp_header.set_icmp_type(IcmpType(8));
-    icmp_header.set_sequence_number(295 + 1);
+    icmp_header.set_sequence_number(296);
     // and the ICMP request ID and sequence numbers are incremented by one from the previous query values
     icmp_header.set_identifier(idtf);
 

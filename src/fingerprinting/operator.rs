@@ -6,14 +6,12 @@ use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
+use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
-
-use pnet_packet::udp::UdpPacket;
-use std::iter::zip;
 
 use super::osscan::{IERR, SEQRR, T2T7RR, U1RR};
 use crate::errors::{CalcDiffFailed, CalcISRFailed, GetIpv4PacketFailed, GetTcpPacketFailed};
-use crate::errors::{GetIcmpPacketFailed, GetTsvalFailed, GetUdpPacketFailed};
+use crate::errors::{GetIcmpPacketFailed, GetUdpPacketFailed};
 
 use crate::utils::Hex;
 
@@ -25,6 +23,12 @@ const PSH_MASK: u8 = 0b00001000;
 const RST_MASK: u8 = 0b00000100;
 const SYN_MASK: u8 = 0b00000010;
 const FIN_MASK: u8 = 0b00000001;
+
+// Because different programs wait, process, and send probebao for different times,
+// so there is a certain error in the two indicators calculated based on time.
+// Program estimation error, ISR, SP use.
+const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.4;
+const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.4;
 
 fn get_ipv4_packet(ipv4_buff: &[u8]) -> Result<Ipv4Packet> {
     match Ipv4Packet::new(ipv4_buff) {
@@ -62,20 +66,13 @@ fn get_tcp_seq(ipv4_buff: &Vec<u8>) -> Result<u32> {
 
 fn get_diff_u32(input: &Vec<u32>) -> Result<Vec<u32>> {
     if input.len() >= 2 {
-        let mut vec_1 = Vec::new();
-        vec_1.push(0);
-        vec_1.extend(input.clone()); // [0, 1, 2]
-        let mut vec_2 = input.clone();
-        vec_2.push(u32::MAX); // [1, 2, 0]
-
+        let input_slice = input[0..(input.len() - 1)].to_vec();
         let mut diff = Vec::new();
-        for (x, y) in zip(vec_1, vec_2) {
-            let k = if x < y { y - x } else { !(x - y) };
+        for (i, x) in input_slice.iter().enumerate() {
+            let y = input[i + 1];
+            let x = *x;
+            let k = if x <= y { y - x } else { !(x - y) };
             diff.push(k);
-        }
-        diff.remove(0);
-        if diff.len() > 0 {
-            diff.remove(diff.len() - 1);
         }
 
         Ok(diff)
@@ -86,20 +83,13 @@ fn get_diff_u32(input: &Vec<u32>) -> Result<Vec<u32>> {
 
 fn get_diff_u16(input: &Vec<u16>) -> Result<Vec<u16>> {
     if input.len() >= 2 {
-        let mut vec_1 = Vec::new();
-        vec_1.push(0);
-        vec_1.extend(input.clone()); // [0, 1, 2]
-        let mut vec_2 = input.clone();
-        vec_2.push(u16::MAX); // [1, 2, 0]
-
+        let input_slice = input[0..(input.len() - 1)].to_vec();
         let mut diff = Vec::new();
-        for (x, y) in zip(vec_1, vec_2) {
-            let k = if x < y { y - x } else { !(x - y) };
+        for (i, x) in input_slice.iter().enumerate() {
+            let y = input[i + 1];
+            let x = *x;
+            let k = if x <= y { y - x } else { !(x - y) };
             diff.push(k);
-        }
-        diff.remove(0);
-        if diff.len() > 0 {
-            diff.remove(diff.len() - 1);
         }
 
         Ok(diff)
@@ -152,7 +142,7 @@ pub fn tcp_isr(diff: Vec<u32>) -> Result<(u32, Vec<f32>)> {
         let isr = if avg < 1.0 {
             0
         } else {
-            (8.0 * avg.log2()).round() as u32
+            ((8.0 - PROGRAM_ESTIMATION_ERROR_ISR) * avg.log2()).round() as u32
         };
         Ok((isr, seq_rates))
     } else {
@@ -189,7 +179,7 @@ pub fn tcp_sp(seq_rates: Vec<f32>, gcd: u32) -> Result<u32> {
         let sp = if sd <= 1.0 {
             0
         } else {
-            (8.0 * sd.log2()).round() as u32
+            ((8.0 - PROGRAM_ESTIMATION_ERROR_SP) * sd.log2()).round() as u32
         };
         Ok(sp)
     } else {
@@ -380,6 +370,8 @@ pub fn tcp_ti_ci_ii(
 
     let ie_ip_id_vec = vec![ie1_ip_id, ie2_ip_id];
     let ie_diff = get_diff_u16(&ie_ip_id_vec)?;
+    // println!("{:?}", ie_ip_id_vec);
+    // println!("{:?}", ie_diff);
 
     // RD result isn't possible for II because there are not enough samples to support it.
     let ii = if ie_ip_id_vec.len() >= 2 {
@@ -486,9 +478,9 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
     }
 }
 
-fn get_tsval(ipv4_response: &Vec<u8>) -> Result<u32> {
-    let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
-    let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
+fn get_tsval(ipv4_response: &Vec<u8>) -> Result<Option<u32>> {
+    let ipv4_packet = get_ipv4_packet(ipv4_response)?;
+    let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
     let options_vec = tcp_packet.get_options();
     let mut tsval_vec: Vec<u8> = Vec::new();
     for option in options_vec {
@@ -507,14 +499,25 @@ fn get_tsval(ipv4_response: &Vec<u8>) -> Result<u32> {
     }
     if tsval_vec.len() != 0 {
         let tsval = Hex::vec_4u8_to_u32(&tsval_vec);
-        Ok(tsval)
+        Ok(Some(tsval))
     } else {
-        Err(GetTsvalFailed::new().into())
+        Ok(None)
     }
 }
 
 /// TCP timestamp option algorithm (TS)
 pub fn tcp_ts(seqrr: &SEQRR) -> Result<String> {
+    let true_tsval_vec = |tsval_vec: Vec<Option<u32>>| -> Vec<u32> {
+        let mut ret = Vec::new();
+        for tsval in tsval_vec {
+            match tsval {
+                Some(t) => ret.push(t),
+                None => (),
+            }
+        }
+        ret
+    };
+
     let tsval_1 = get_tsval(&seqrr.seq1.response)?;
     let tsval_2 = get_tsval(&seqrr.seq2.response)?;
     let tsval_3 = get_tsval(&seqrr.seq3.response)?;
@@ -523,6 +526,7 @@ pub fn tcp_ts(seqrr: &SEQRR) -> Result<String> {
     let tsval_6 = get_tsval(&seqrr.seq6.response)?;
 
     let tsval_vec = vec![tsval_1, tsval_2, tsval_3, tsval_4, tsval_5, tsval_6];
+    let tsval_vec = true_tsval_vec(tsval_vec);
 
     let mut one_tsval_zero = false;
     for tsval in &tsval_vec {
@@ -638,16 +642,15 @@ pub fn tcp_ox(seqrr: &SEQRR) -> Result<(String, String, String, String, String, 
 }
 
 /// TCP initial window size (W, W1–W6)
-pub fn tcp_w(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_w(ipv4_response: &Vec<u8>) -> Result<u16> {
     let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
     let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
     let window = tcp_packet.get_window();
-    let window_hex = format!("{:X}", window);
-    Ok(window_hex)
+    Ok(window)
 }
 
 /// TCP initial window size (W, W1–W6)
-pub fn tcp_wx(seqrr: &SEQRR) -> Result<(String, String, String, String, String, String)> {
+pub fn tcp_wx(seqrr: &SEQRR) -> Result<(u16, u16, u16, u16, u16, u16)> {
     let w1 = tcp_w(&seqrr.seq1.response)?;
     let w2 = tcp_w(&seqrr.seq2.response)?;
     let w3 = tcp_w(&seqrr.seq3.response)?;
@@ -761,18 +764,21 @@ pub fn tcp_q(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// TCP sequence number (S)
-pub fn tcp_s(ipv4_response: &Vec<u8>) -> Result<String> {
-    let ipv4_packet = get_ipv4_packet(ipv4_response)?;
-    let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
-    let tcp_seq = tcp_packet.get_sequence();
-    let tcp_ack = tcp_packet.get_acknowledgement();
-    let ret = if tcp_seq == 0 {
+pub fn tcp_s(ipv4_request: &Vec<u8>, ipv4_response: &Vec<u8>) -> Result<String> {
+    let ipv4_packet_request = get_ipv4_packet(ipv4_request)?;
+    let tcp_packet_request = get_tcp_packet(ipv4_packet_request.payload())?;
+    let ipv4_packet_response = get_ipv4_packet(ipv4_response)?;
+    let tcp_packet_response = get_tcp_packet(ipv4_packet_response.payload())?;
+
+    let ack_request = tcp_packet_request.get_acknowledgement();
+    let seq_response = tcp_packet_response.get_sequence();
+    let ret = if seq_response == 0 {
         // Sequence number is zero.
         String::from("Z")
-    } else if tcp_seq == tcp_ack {
+    } else if seq_response == ack_request {
         // Sequence number is the same as the acknowledgment number in the probe.
         String::from("A")
-    } else if tcp_seq == (tcp_ack + 1) {
+    } else if seq_response == (ack_request + 1) {
         // Sequence number is the same as the acknowledgment number in the probe plus one.
         String::from("A+")
     } else {
@@ -783,18 +789,21 @@ pub fn tcp_s(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// TCP acknowledgment number (A)
-pub fn tcp_a(ipv4_response: &Vec<u8>) -> Result<String> {
-    let ipv4_packet = get_ipv4_packet(ipv4_response)?;
-    let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
-    let tcp_seq = tcp_packet.get_sequence();
-    let tcp_ack = tcp_packet.get_acknowledgement();
-    let ret = if tcp_ack == 0 {
+pub fn tcp_a(ipv4_request: &Vec<u8>, ipv4_response: &Vec<u8>) -> Result<String> {
+    let ipv4_packet_request = get_ipv4_packet(ipv4_request)?;
+    let tcp_packet_request = get_tcp_packet(ipv4_packet_request.payload())?;
+    let ipv4_packet_response = get_ipv4_packet(ipv4_response)?;
+    let tcp_packet_response = get_tcp_packet(ipv4_packet_response.payload())?;
+
+    let seq_request = tcp_packet_request.get_sequence();
+    let ack_response = tcp_packet_response.get_acknowledgement();
+    let ret = if ack_response == 0 {
         // Acknowledgment number is zero.
         String::from("Z")
-    } else if tcp_ack == tcp_seq {
+    } else if ack_response == seq_request {
         // Acknowledgment number is the same as the sequence number in the probe.
         String::from("S")
-    } else if tcp_ack == (tcp_seq + 1) {
+    } else if ack_response == (seq_request + 1) {
         // Acknowledgment number is the same as the sequence number in the probe plus one.
         String::from("S+")
     } else {
@@ -870,7 +879,7 @@ pub fn udp_ripl(u1: &U1RR) -> Result<String> {
     let response = &u1.u1.response;
     let ipv4_packet = get_ipv4_packet(response)?;
     let icmp_packet = get_icmp_packet(ipv4_packet.payload())?;
-    let ripl = icmp_packet.payload().len();
+    let ripl = icmp_packet.payload().len() - 4;
     let ret = if ripl == 328 {
         // If the correct value of 0x148 (328) is returned, the value G (for good) is stored instead of the actual value.
         String::from("G")
@@ -919,17 +928,18 @@ pub fn udp_ripck(u1: &U1RR) -> Result<String> {
 
 /// Integrity of returned probe UDP checksum (RUCK)
 pub fn udp_ruck(u1: &U1RR) -> Result<String> {
-    let response = &u1.u1.response;
     let request = &u1.u1.request;
-
-    let ipv4_packet_response = get_ipv4_packet(response)?;
-    let icmp_packet_response = get_icmp_packet(ipv4_packet_response.payload())?;
-    let udp_packet_response = get_udp_packet(&icmp_packet_response.payload()[4..])?;
-    let checksum_response = udp_packet_response.get_checksum();
+    let response = &u1.u1.response;
 
     let ipv4_packet_request = get_ipv4_packet(request)?;
     let udp_packet_request = get_udp_packet(ipv4_packet_request.payload())?;
     let checksum_request = udp_packet_request.get_checksum();
+
+    let ipv4_packet_response = get_ipv4_packet(response)?;
+    let icmp_packet_response = get_icmp_packet(ipv4_packet_response.payload())?;
+    let r_ipv4_packet_response = get_ipv4_packet(&icmp_packet_response.payload()[4..])?;
+    let udp_packet_response = get_udp_packet(r_ipv4_packet_response.payload())?;
+    let checksum_response = udp_packet_response.get_checksum();
 
     let ret = if checksum_response == checksum_request {
         // The UDP header checksum value should be returned exactly as it was sent.
@@ -944,18 +954,22 @@ pub fn udp_ruck(u1: &U1RR) -> Result<String> {
 /// Integrity of returned UDP data (RUD)
 pub fn udp_rud(u1: &U1RR) -> Result<String> {
     let response = &u1.u1.response;
-    let request = &u1.u1.request;
-
     let ipv4_packet_response = get_ipv4_packet(response)?;
     let icmp_packet_response = get_icmp_packet(ipv4_packet_response.payload())?;
-    let udp_packet_response = get_udp_packet(&icmp_packet_response.payload()[4..])?;
+    let r_ipv4_packet_response = get_ipv4_packet(&icmp_packet_response.payload()[4..])?;
+    let r_udp_packet_response = get_udp_packet(&r_ipv4_packet_response.payload())?;
 
-    let ipv4_packet_request = get_ipv4_packet(request)?;
-    let udp_packet_request = get_udp_packet(ipv4_packet_request.payload())?;
+    let payload_c_judge = |payload: &[u8]| -> bool {
+        for p in payload {
+            if *p != 0x43 {
+                return false;
+            }
+        }
+        true
+    };
+    let c = payload_c_judge(r_udp_packet_response.payload());
 
-    let ret = if (udp_packet_response.payload().to_vec() == udp_packet_request.payload().to_vec())
-        || (udp_packet_response.payload().len() == udp_packet_request.payload().len())
-    {
+    let ret = if c || r_udp_packet_response.payload().len() == 0 {
         // This test checks the integrity of the (possibly truncated) returned UDP payload.
         // If all the payload bytes are the expected 'C' (0x43), or if the payload was truncated to zero length, G is recorded;
         String::from("G")
@@ -1040,4 +1054,14 @@ pub fn icmp_cd(ie: &IERR) -> Result<String> {
         String::from("O")
     };
     Ok(ret)
+}
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_error() {
+        // let nmap_sp_vec = vec![0x104, 0x105, 0xFC, 0xFF];
+        // let nmap_isr_vec = vec![0x10B, 0x10C, 0x108, 0x10F];
+    }
 }
