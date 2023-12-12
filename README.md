@@ -60,6 +60,10 @@ fn main() {
 ### OS detect
 
 ```rust
+use pistol::os_detect;
+use std::time::Duration;
+use std::net::Ipv4Addr;
+
 fn main() {
     // The source and destination address is required.
     let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
