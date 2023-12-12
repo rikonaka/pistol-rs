@@ -103,7 +103,7 @@ fn main() {
 }
 ```
 
-#### Output (target os is ubuntu 22.04 desktop)
+#### Output (target OS is Ubuntu 22.04 desktop)
 
 ```bash
 SCAN(V=PISTOL%D=12/12%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=6578A740%P=RUST)
