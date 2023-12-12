@@ -4,7 +4,7 @@ The library must be run as root (Linux) or administrator (Windows).
 
 ## Example
 
-### Syn port scan example
+### SYN port scan
 
 ```rust
 use pistol::tcp_syn_scan;
@@ -57,7 +57,7 @@ fn main() {
 192.168.72.136 22 open
 ```
 
-### OS detect example
+### OS detect
 
 ```rust
 fn main() {
