@@ -72,7 +72,10 @@ fn main() {
     let dst_closed_tcp_port = 8765;
     // `dst_closed_udp_port` must be a certain closed udp port.
     let dst_closed_udp_port = 9876;
+    // Same as above.
     let max_loop = 8;
+    // The timeout for the program to read the package.
+    // It is recommended to set it to twice the RTT.
     let read_timeout = Duration::from_secs_f32(0.2);
     let nmap_os_db_file_path = "./nmap-os-db";
     let top_k = 3;
