@@ -211,7 +211,7 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 | Methods            | Detailed Documentation                                              |
 | :----------------- | :------------------------------------------------------------------ |
 | [x] IPv4 OS detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |
-| [] IPv6 OS detect  | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) |
+| [ ] IPv6 OS detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) |
 
 ## CLI program
 
