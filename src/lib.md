@@ -96,10 +96,9 @@ fn main() {
 }
 ```
 
-### Output (test with ubuntu 22.04 desktop)
+### Output (target os is ubuntu 22.04 desktop)
 
 ```bash
-running 1 test
 SCAN(V=PISTOL%D=12/12%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=6578A740%P=RUST)
 SEQ(SP=106%GCD=1%ISR=105%TI=Z%CI=Z%II=I%TS=A)
 OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
