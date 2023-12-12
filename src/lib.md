@@ -74,7 +74,7 @@ fn main() {
     let top_k = 3;
 
     // The `fingerprint` is the obtained fingerprint of the target OS.
-    // Return the `top_k` best results (the number os result may not equal to `top_k`), sorted by score.
+    // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
     let (fingerprint, detect_ret) = os_detect(
         src_ipv4,
         src_port,
