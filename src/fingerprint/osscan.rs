@@ -125,7 +125,7 @@ pub fn get_scan_line(
     // Leading zeros are not included. This field is omitted unless the target is on the same ethernet network (DS=1).
     let m = if ds == 1 {
         let mut dst_mac_vec: [u8; 6] = dst_mac.unwrap().octets();
-        let mut dst_mac_str = String::from("");
+        let mut dst_mac_str = String::new();
         for m in &mut dst_mac_vec[0..3] {
             dst_mac_str = format!("{}{:X}", dst_mac_str, m);
         }
@@ -889,11 +889,11 @@ pub fn seq_fingerprint(ap: &AllRRPacket) -> Result<SEQX> {
         let gcd = 0;
         let isr = 0;
         let sp = 0;
-        let ti = String::from("");
-        let ci = String::from("");
-        let ii = String::from("");
-        let ss = String::from("");
-        let ts = String::from("");
+        let ti = String::new();
+        let ci = String::new();
+        let ii = String::new();
+        let ss = String::new();
+        let ts = String::new();
         (r, sp, gcd, isr, ti, ci, ii, ss, ts)
     };
     Ok(SEQX {
@@ -1262,13 +1262,13 @@ pub fn ecn_fingerprint(ap: &AllRRPacket) -> Result<ECNX> {
         }
         _ => {
             //  If there is no reply, remaining fields for the test are omitted.
-            let df = String::from("");
+            let df = String::new();
             let t = 0;
             let tg = 0;
             let w = 0;
-            let o = String::from("");
-            let cc = String::from("");
-            let q = String::from("");
+            let o = String::new();
+            let cc = String::new();
+            let q = String::new();
             (df, t, tg, w, o, cc, q)
         }
     };
@@ -1433,16 +1433,16 @@ fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<T
             (df, t, tg, w, s, a, f, o, rd, q)
         }
         _ => {
-            let df = String::from("");
+            let df = String::new();
             let t = 0;
             let tg = 0;
             let w = 0;
-            let s = String::from("");
-            let a = String::from("");
-            let f = String::from("");
-            let o = String::from("");
+            let s = String::new();
+            let a = String::new();
+            let f = String::new();
+            let o = String::new();
             let rd = 0;
-            let q = String::from("");
+            let q = String::new();
             (df, t, tg, w, s, a, f, o, rd, q)
         }
     };
@@ -1616,16 +1616,16 @@ pub fn u1_fingerprint(ap: &AllRRPacket) -> Result<U1X> {
             (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud)
         }
         _ => {
-            let df = String::from("");
+            let df = String::new();
             let t = 0;
             let tg = 0;
             let ipl = 0;
             let un = 0;
-            let ripl = String::from("");
-            let rid = String::from("");
-            let ripck = String::from("");
-            let ruck = String::from("");
-            let rud = String::from("");
+            let ripl = String::new();
+            let rid = String::new();
+            let ripck = String::new();
+            let ruck = String::new();
+            let rud = String::new();
 
             (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud)
         }
@@ -1724,10 +1724,10 @@ pub fn ie_fingerprint(ap: &AllRRPacket) -> Result<IEX> {
         (r, dfi, t, tg, cd)
     } else {
         let r = String::from("N");
-        let dfi = String::from("");
+        let dfi = String::new();
         let t = 0;
         let tg = 0;
-        let cd = String::from("");
+        let cd = String::new();
 
         (r, dfi, t, tg, cd)
     };

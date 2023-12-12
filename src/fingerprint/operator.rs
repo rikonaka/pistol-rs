@@ -315,11 +315,11 @@ pub fn tcp_ti_ci_ii(
             String::from("I")
         } else {
             // If none of the previous steps identify the generation algorithm, the test is omitted from the fingerprint.
-            String::from("")
+            String::new()
         }
     } else {
         // For TI, at least three responses must be received for the test to be included.
-        String::from("")
+        String::new()
     };
 
     // CI is from the responses to the three TCP probes sent to a closed port: T5, T6, and T7.
@@ -357,11 +357,11 @@ pub fn tcp_ti_ci_ii(
             String::from("I")
         } else {
             // If none of the previous steps identify the generation algorithm, the test is omitted from the fingerprint.
-            String::from("")
+            String::new()
         }
     } else {
         // for CI, at least two responses are required.
-        String::from("")
+        String::new()
     };
 
     // II comes from the ICMP responses to the two IE ping probes.
@@ -397,11 +397,11 @@ pub fn tcp_ti_ci_ii(
             String::from("I")
         } else {
             // If none of the previous steps identify the generation algorithm, the test is omitted from the fingerprint.
-            String::from("")
+            String::new()
         }
     } else {
         // and for II, both ICMP responses must be received.
-        String::from("")
+        String::new()
     };
     Ok((ti, ci, ii))
 }
@@ -433,7 +433,7 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
         } else if seqrr.seq6.response.len() > 0 {
             (get_ip_id(&seqrr.seq6.response).unwrap(), 6)
         } else {
-            return Ok(String::from(""));
+            return Ok(String::new());
         };
 
         let (seq_last_ip_id, last) = if seqrr.seq6.response.len() > 0 {
@@ -449,11 +449,11 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
         } else if seqrr.seq1.response.len() > 0 {
             (get_ip_id(&seqrr.seq1.response).unwrap(), 1)
         } else {
-            return Ok(String::from(""));
+            return Ok(String::new());
         };
 
         if last <= first {
-            return Ok(String::from(""));
+            return Ok(String::new());
         }
 
         let difference = if seq_last_ip_id > seq_first_ip_id {
@@ -474,7 +474,7 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
         };
         Ok(ss)
     } else {
-        Ok(String::from(""))
+        Ok(String::new())
     }
 }
 
@@ -577,7 +577,7 @@ pub fn tcp_o(ipv4_response: &Vec<u8>) -> Result<String> {
     let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
     let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
     let options_vec = tcp_packet.get_options();
-    let mut o_ret = String::from("");
+    let mut o_ret = String::new();
     for option in options_vec {
         match option.number {
             TcpOptionNumbers::MSS => {
@@ -746,7 +746,7 @@ pub fn tcp_cc(ipv4_response: &Vec<u8>) -> Result<String> {
 pub fn tcp_q(ipv4_response: &Vec<u8>) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
-    let mut ret = String::from("");
+    let mut ret = String::new();
     let tcp_reserved = tcp_packet.get_reserved();
     if tcp_reserved != 0 {
         // The first is that the reserved field in the TCP header (right after the header length) is nonzero.
@@ -818,7 +818,7 @@ pub fn tcp_f(ipv4_response: &Vec<u8>) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
     let tcp_flag = tcp_packet.get_flags();
-    let mut ret = String::from("");
+    let mut ret = String::new();
     if tcp_flag & ECE_MASK != 0 {
         // ECN Echo (ECE)
         ret += "E";

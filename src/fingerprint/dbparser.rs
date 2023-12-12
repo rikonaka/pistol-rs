@@ -1248,7 +1248,7 @@ pub fn nmap_os_db_parser(filename: &str) -> Result<Vec<NmapOsDb>> {
     let option_string = |x: Option<String>| -> String {
         match x {
             Some(x) => x,
-            _ => String::from(""),
+            _ => String::new(),
         }
     };
 

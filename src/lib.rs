@@ -8,7 +8,7 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 mod errors;
-mod fingerprinting;
+mod fingerprint;
 mod flood;
 mod ping;
 mod scan;
@@ -35,6 +35,7 @@ impl fmt::Display for PingResults {
             PingStatus::Down => format!("{ip} down"),
         };
         result_str += &str;
+        result_str += "\n";
         write!(f, "{}", result_str)
     }
 }
@@ -60,6 +61,21 @@ pub struct IdleScanResults {
 pub struct ArpScanResults {
     pub alive_hosts_num: usize,
     pub alive_hosts: HashMap<Ipv4Addr, MacAddr>,
+}
+
+impl fmt::Display for ArpScanResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result_str = String::new();
+        let s = format!("Alive hosts: {}", self.alive_hosts_num);
+        result_str += &s;
+        result_str += "\n";
+        for (ip, mac) in &self.alive_hosts {
+            let s = format!("{}: {}", ip, mac);
+            result_str += &s;
+            result_str += "\n";
+        }
+        write!(f, "{}", result_str)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +106,7 @@ impl fmt::Display for TcpUdpScanResults {
                 TargetScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
             };
             result_str += &str;
+            result_str += "\n";
         }
         write!(f, "{}", result_str)
     }
@@ -123,6 +140,7 @@ impl fmt::Display for IpScanResults {
                 TargetScanStatus::ClosedOrFiltered => format!("{ip} {protocol} closed|filtered"),
             };
             result_str += &str;
+            result_str += "\n";
         }
         write!(f, "{}", result_str)
     }
@@ -496,18 +514,17 @@ pub use flood::udp_flood6;
 
 /* Finger Printing */
 
-/// Nmap OS DB Parser.
 /// Process standard nmap-os-db files and return a structure that can be processed by the program.
-pub use fingerprinting::dbparser::nmap_os_db_parser;
+pub use fingerprint::dbparser::nmap_os_db_parser;
 
 /// Dump `name-os-db` file to `nmap-os-db.pistol`.
-pub use fingerprinting::dbparser::nmape_os_db_pistol_dump;
+pub use fingerprint::dbparser::nmape_os_db_pistol_dump;
 
 /// Load our processed files `nmap-os-db.pistol`.
-pub use fingerprinting::dbparser::nmap_os_db_pistol_load;
+pub use fingerprint::dbparser::nmap_os_db_pistol_load;
 
 /// Detect target machine OS.
-pub use fingerprinting::os_detect;
+pub use fingerprint::os_detect;
 
 #[cfg(test)]
 mod tests {
@@ -536,18 +553,16 @@ mod tests {
         let max_loop = Some(8);
         let print_result = true;
         // let print_result = false;
-        let rets: ArpScanResults = match arp_scan(
+        let ret: ArpScanResults = arp_scan(
             target,
             dst_mac,
             interface,
             threads_num,
             print_result,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", rets);
+        )
+        .unwrap();
+        println!("{}", ret);
     }
     #[test]
     fn test_tcp_connect_scan() {
@@ -562,7 +577,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_connect_scan(
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_connect_scan(
             target,
             src_ipv4,
             src_port,
@@ -571,11 +586,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_tcp_syn_scan() {
@@ -584,13 +599,13 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 136);
         // let interface: Option<&str> = Some("eno1");
         let interface: Option<&str> = None;
-        let print_result: bool = true;
+        let print_result: bool = false;
         let threads_num: usize = 8;
         let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.5));
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_syn_scan(
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_syn_scan(
             target,
             src_ipv4,
             src_port,
@@ -599,11 +614,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_tcp_fin_scan() {
@@ -618,7 +633,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_fin_scan(
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_fin_scan(
             target,
             src_ipv4,
             src_port,
@@ -627,11 +642,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_tcp_ack_scan() {
@@ -646,7 +661,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_ack_scan(
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_ack_scan(
             target,
             src_ipv4,
             src_port,
@@ -655,11 +670,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_tcp_null_scan() {
@@ -674,7 +689,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> = match tcp_null_scan(
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_null_scan(
             target,
             src_ipv4,
             src_port,
@@ -683,11 +698,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_udp_scan() {
@@ -702,7 +717,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> = match udp_scan(
+        let ret: HashMap<IpAddr, TcpUdpScanResults> = udp_scan(
             target,
             src_ipv4,
             src_port,
@@ -711,11 +726,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_ip_scan() {
@@ -733,7 +748,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, IpScanResults> = match ip_procotol_scan(
+        let ret: HashMap<IpAddr, IpScanResults> = ip_procotol_scan(
             target,
             src_ipv4,
             src_port,
@@ -743,11 +758,11 @@ mod tests {
             threads_num,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_tcp_syn_ping() {
@@ -762,7 +777,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret = match tcp_syn_ping(
+        let ret = tcp_syn_ping(
             target,
             src_ipv4,
             src_port,
@@ -771,11 +786,11 @@ mod tests {
             print_result,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
     #[test]
     fn test_icmp_ping() {
@@ -790,7 +805,7 @@ mod tests {
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
-        let ret = match icmp_ping(
+        let ret = icmp_ping(
             target,
             src_ipv4,
             src_port,
@@ -799,10 +814,10 @@ mod tests {
             print_result,
             timeout,
             max_loop,
-        ) {
-            Ok(r) => r,
-            Err(e) => panic!("{}", e),
-        };
-        println!("{:?}", ret);
+        )
+        .unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
     }
 }

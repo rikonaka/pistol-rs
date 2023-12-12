@@ -21,7 +21,7 @@ pub struct NmapOsDetectRet {
 
 impl fmt::Display for NmapOsDetectRet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = String::from("");
+        let mut output = String::new();
         let s = format!(">>> Score: {}/{}\n", self.score, self.total);
         output += &s;
 
@@ -37,6 +37,7 @@ impl fmt::Display for NmapOsDetectRet {
         }
         let fingerprint_split: Vec<&str> = self.db.fingerprint.split("\n").collect();
         for (i, v) in fingerprint_split.iter().enumerate() {
+            let v = v.replace("Fingerprint ", "");
             let s = if i == 0 {
                 format!(">>> Fingerprint:\n{}\n", v)
             } else {
@@ -46,6 +47,7 @@ impl fmt::Display for NmapOsDetectRet {
         }
         let class_split: Vec<&str> = self.db.class.split("\n").collect();
         for (i, v) in class_split.iter().enumerate() {
+            let v = v.replace("Class ", "");
             let s = if i == 0 {
                 format!(">>> Class:\n{}\n", v)
             } else {
@@ -55,6 +57,7 @@ impl fmt::Display for NmapOsDetectRet {
         }
         let cpe_split: Vec<&str> = self.db.cpe.split("\n").collect();
         for (i, v) in cpe_split.iter().enumerate() {
+            let v = v.replace("CPE ", "");
             let s = if i == 0 {
                 format!(">>> CPE:\n{}\n", v)
             } else {
@@ -164,7 +167,7 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
         let max_loop = 8;
-        let read_timeout = Duration::from_secs_f32(1.0);
+        let read_timeout = Duration::from_secs_f32(0.2);
         let nmap_os_db_file_path = "./nmap-os-db";
         let top_k = 3;
 
@@ -182,7 +185,7 @@ mod tests {
         )
         .unwrap();
 
-        println!("{}", f);
+        println!("{}\n", f);
         for r in ret {
             println!("{}", r);
         }
