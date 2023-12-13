@@ -1739,7 +1739,7 @@ pub fn ie_fingerprint(ap: &AllRRPacket) -> Result<IEX> {
     Ok(IEX { r, dfi, t, tg, cd })
 }
 
-pub struct NmapFingerprint {
+pub struct PistolFingerprint {
     pub scan: String,
     pub seqx: SEQX,
     pub opsx: OPSX,
@@ -1756,7 +1756,7 @@ pub struct NmapFingerprint {
     pub iex: IEX,
 }
 
-impl fmt::Display for NmapFingerprint {
+impl fmt::Display for PistolFingerprint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let seqx_str = format!("\n{}", self.seqx);
@@ -1798,7 +1798,7 @@ pub fn os_probe(
     dst_closed_udp_port: u16,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<NmapFingerprint> {
+) -> Result<PistolFingerprint> {
     let ap = send_all_probes(
         src_ipv4,
         src_port,
@@ -1834,7 +1834,7 @@ pub fn os_probe(
             let u1x = u1_fingerprint(&ap)?;
             let iex = ie_fingerprint(&ap)?;
 
-            Ok(NmapFingerprint {
+            Ok(PistolFingerprint {
                 scan,
                 seqx,
                 opsx,

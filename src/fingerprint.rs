@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::errors::OsDetectPortError;
 use crate::fingerprint::dbparser::NmapOsDb;
-use crate::fingerprint::osscan::NmapFingerprint;
+use crate::fingerprint::osscan::PistolFingerprint;
 use crate::utils::get_threads_pool;
 use crate::Target;
 
@@ -116,7 +116,7 @@ fn os_detect_thread(
     top_k: usize,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<(NmapFingerprint, Vec<NmapOsDetectRet>)> {
+) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
     let nmap_fingerprint = osscan::os_probe(
         src_ipv4,
         src_port,
@@ -228,7 +228,7 @@ pub fn os_detect(
     threads_num: usize,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<HashMap<Ipv4Addr, (NmapFingerprint, Vec<NmapOsDetectRet>)>> {
+) -> Result<HashMap<Ipv4Addr, (PistolFingerprint, Vec<NmapOsDetectRet>)>> {
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -262,7 +262,7 @@ pub fn os_detect(
             return Err(OsDetectPortError::new().into());
         }
     }
-    let mut ret: HashMap<Ipv4Addr, (NmapFingerprint, Vec<NmapOsDetectRet>)> = HashMap::new();
+    let mut ret: HashMap<Ipv4Addr, (PistolFingerprint, Vec<NmapOsDetectRet>)> = HashMap::new();
     let iter = rx.into_iter().take(recv_size);
     for (i, r) in iter {
         match r {
@@ -329,7 +329,7 @@ mod tests {
 
         for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
-            println!(">>> Fingerprint:\n{}", fingerprint);
+            println!(">>> Pistol fingerprint:\n{}", fingerprint);
             println!(">>> Details:");
             for d in detect_ret {
                 println!("{}", d);

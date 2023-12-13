@@ -62,7 +62,7 @@ fn main() {
 
     for (ip, (fingerprint, detect_ret)) in ret {
         println!(">>> IP:\n{}", ip);
-        println!(">>> Fingerprint:\n{}", fingerprint);
+        println!(">>> Pistol fingerprint:\n{}", fingerprint);
         println!(">>> Details:");
         for d in detect_ret {
             println!("{}", d);
@@ -81,7 +81,7 @@ fn main() {
 ```bash
 >>> IP:
 192.168.72.130
->>> Fingerprint:
+>>> Pistol fingerprint:
 SCAN(V=PISTOL%D=12/13%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=65796111%P=RUST)
 SEQ(SP=102%GCD=1%ISR=FC%TI=Z%CI=Z%II=I%TS=A)
 OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
@@ -168,7 +168,7 @@ cpe:/o:linux:linux_kernel:5.4 auto
 ```bash
 >>> IP:
 192.168.72.129
->>> Fingerprint:
+>>> Pistol fingerprint:
 SCAN(V=PISTOL%D=12/13%OT=22%CT=54532%CU=34098PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=65796111%P=RUST)
 SEQ(SP=108%GCD=1%ISR=107%TI=Z%II=I%TS=A)
 OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)

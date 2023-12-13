@@ -6,7 +6,7 @@ use std::io::prelude::*;
 
 use crate::utils::Hex;
 
-use super::osscan::{NmapFingerprint, ECNX, IEX, OPSX, SEQX, TXX, U1X, WINX};
+use super::osscan::{PistolFingerprint, ECNX, IEX, OPSX, SEQX, TXX, U1X, WINX};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DbRangeValueTypes {
@@ -1115,7 +1115,7 @@ pub struct NmapOsDb {
 }
 
 impl NmapOsDb {
-    pub fn check(&self, probe_ret: &NmapFingerprint) -> (usize, usize) {
+    pub fn check(&self, probe_ret: &PistolFingerprint) -> (usize, usize) {
         let (seq_score, seq_total) = self.seq.check(&probe_ret.seqx);
         // println!("SEQ: {}", seq_check);
         let (ops_score, ops_total) = self.ops.check(&probe_ret.opsx);
