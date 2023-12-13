@@ -330,7 +330,7 @@ mod tests {
         for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
             println!(">>> Fingerprint:\n{}", fingerprint);
-            println!(">>> Details:\n");
+            println!(">>> Details:");
             for d in detect_ret {
                 println!("{}", d);
             }

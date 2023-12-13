@@ -63,7 +63,7 @@ fn main() {
     for (ip, (fingerprint, detect_ret)) in ret {
         println!(">>> IP:\n{}", ip);
         println!(">>> Fingerprint:\n{}", fingerprint);
-        println!(">>> Details:\n");
+        println!(">>> Details:");
         for d in detect_ret {
             println!("{}", d);
         }
@@ -97,7 +97,6 @@ T7(R=Y%DF=Y%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
 U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 IE(R=Y%DFI=N%TG=40%CD=S)
 >>> Details:
-
 >>> Score: 82/101
 >>> Info:
 Linux 4.15.0-88-generic #88~16.04.1-Ubuntu SMP Wed Feb 12 04:19:15 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
@@ -185,7 +184,6 @@ T7(R=N)
 U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 IE(R=Y%DFI=N%TG=40%CD=S)
 >>> Details:
-
 >>> Score: 55/101
 >>> Info:
 Linux 3.10.0-327.13.1.el7.x86_64
