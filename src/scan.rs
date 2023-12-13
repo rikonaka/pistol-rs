@@ -15,7 +15,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::utils::{self, get_ips_from_host, get_ips_from_host6};
+use crate::utils;
 use crate::TargetType;
 
 use super::errors::NotSupportIpTypeForArpScan;
@@ -159,7 +159,7 @@ fn arp_scan_no_interface(
         alive_hosts: HashMap::new(),
     };
 
-    let target_ips = get_ips_from_host(&target.hosts);
+    let target_ips = utils::get_ips_from_host(&target.hosts);
     let bi_vec = utils::bind_interface(&target_ips);
     // println!("{:?}", bi_vec);
 
@@ -450,7 +450,7 @@ pub fn scan(
             iter
         }
         None => {
-            let target_ips = get_ips_from_host(&target.hosts);
+            let target_ips = utils::get_ips_from_host(&target.hosts);
             let bi_vec = utils::bind_interface(&target_ips);
 
             let pool = utils::get_threads_pool(threads_num);
@@ -600,7 +600,7 @@ pub fn scan6(
             iter
         }
         None => {
-            let target_ips = get_ips_from_host6(&target.hosts6);
+            let target_ips = utils::get_ips_from_host6(&target.hosts6);
             let bi_vec = utils::bind_interface6(&target_ips);
 
             let pool = utils::get_threads_pool(threads_num);

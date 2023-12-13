@@ -158,3 +158,31 @@ impl CalcISRFailed {
     }
 }
 impl Error for CalcISRFailed {}
+
+#[derive(Debug, Clone)]
+pub struct CalcSSFailed {}
+impl fmt::Display for CalcSSFailed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "calculation of SS failed")
+    }
+}
+impl CalcSSFailed {
+    pub fn new() -> CalcSSFailed {
+        CalcSSFailed {}
+    }
+}
+impl Error for CalcSSFailed {}
+
+#[derive(Debug, Clone)]
+pub struct OsDetectPortError {}
+impl fmt::Display for OsDetectPortError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "not enough port value for os detect")
+    }
+}
+impl OsDetectPortError {
+    pub fn new() -> OsDetectPortError {
+        OsDetectPortError {}
+    }
+}
+impl Error for OsDetectPortError {}

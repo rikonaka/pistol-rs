@@ -237,7 +237,7 @@ impl Target {
     /// you can define the address and port range of each host yourself.
     /// ```rust
     /// use pistol::{Host, Target};
-    /// use std::net::{Ipv4Addr, Ipv6Addr};
+    /// use std::net::Ipv4Addr;
     ///
     /// fn test() {
     ///     let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 136), Some(vec![22, 23]));

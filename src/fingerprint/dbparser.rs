@@ -1238,7 +1238,7 @@ fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
 
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
-pub fn nmap_os_db_parser(filename: &str) -> Result<Vec<NmapOsDb>> {
+pub fn nmap_os_db_parser(filename: String) -> Result<Vec<NmapOsDb>> {
     let lines: Vec<String> = read_to_string(filename)
         .unwrap()
         .lines()
@@ -1367,7 +1367,7 @@ pub fn nmap_os_db_parser(filename: &str) -> Result<Vec<NmapOsDb>> {
     Ok(result)
 }
 
-pub fn nmape_os_db_pistol_dump(filename: &str, output: Option<&str>) -> Result<()> {
+pub fn nmape_os_db_pistol_dump(filename: String, output: Option<&str>) -> Result<()> {
     let output = match output {
         Some(o) => o.to_string(),
         _ => "nmap-os-db.pistol".to_string(), // default name
@@ -1394,7 +1394,7 @@ mod tests {
     #[test]
     fn test_parser() {
         let start = SystemTime::now();
-        let filename = "nmap-os-db";
+        let filename = "nmap-os-db".to_string();
 
         let _ret = nmap_os_db_parser(filename).unwrap();
         // for i in 0..5 {

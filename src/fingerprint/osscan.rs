@@ -1185,13 +1185,14 @@ impl fmt::Display for ECNX {
                 if self.t > 0 {
                     let t_str = if first_elem {
                         first_elem = false;
-                        format!("T={:X}", self.t)
+                        // format!("T={:X}", self.t)
+                        format!("TG={:X}", self.t)
                     } else {
-                        format!("%T={:X}", self.t)
+                        // format!("%T={:X}", self.t)
+                        format!("%TG={:X}", self.t)
                     };
                     output += &t_str;
-                }
-                if self.t <= 0 && self.tg > 0 {
+                } else if self.tg > 0 {
                     // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
                     let tg_str = if first_elem {
                         first_elem = false;
@@ -1328,13 +1329,14 @@ impl fmt::Display for TXX {
                 if self.t > 0 {
                     let t_str = if first_elem {
                         first_elem = false;
-                        format!("T={:X}", self.t)
+                        // format!("T={:X}", self.t)
+                        format!("TG={:X}", self.t)
                     } else {
-                        format!("%T={:X}", self.t)
+                        // format!("%T={:X}", self.t)
+                        format!("%TG={:X}", self.t)
                     };
                     output += &t_str;
-                }
-                if self.t <= 0 && self.tg > 0 {
+                } else if self.tg > 0 {
                     // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
                     let tg_str = if first_elem {
                         first_elem = false;
@@ -1516,13 +1518,14 @@ impl fmt::Display for U1X {
         if self.t > 0 {
             let t_str = if first_elem {
                 first_elem = false;
-                format!("T={:X}", self.t)
+                // format!("T={:X}", self.t)
+                format!("TG={:X}", self.t)
             } else {
-                format!("%T={:X}", self.t)
+                // format!("%T={:X}", self.t)
+                format!("%TG={:X}", self.t)
             };
             output += &t_str;
-        }
-        if self.t <= 0 && self.tg > 0 {
+        } else if self.tg > 0 {
             // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
             let tg_str = if first_elem {
                 first_elem = false;
@@ -1680,13 +1683,14 @@ impl fmt::Display for IEX {
         if self.t > 0 {
             let t_str = if first_elem {
                 first_elem = false;
-                format!("T={:X}", self.t)
+                // format!("T={:X}", self.t)
+                format!("TG={:X}", self.t)
             } else {
-                format!("%T={:X}", self.t)
+                // format!("%T={:X}", self.t)
+                format!("%TG={:X}", self.t)
             };
             output += &t_str;
-        }
-        if self.t <= 0 && self.tg > 0 {
+        } else if self.tg > 0 {
             // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
             let tg_str = if first_elem {
                 first_elem = false;

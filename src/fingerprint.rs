@@ -1,10 +1,15 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::fmt;
 use std::net::Ipv4Addr;
+use std::sync::mpsc::channel;
 use std::time::Duration;
 
-use self::dbparser::NmapOsDb;
-use self::osscan::NmapFingerprint;
+use crate::errors::OsDetectPortError;
+use crate::fingerprint::dbparser::NmapOsDb;
+use crate::fingerprint::osscan::NmapFingerprint;
+use crate::utils::get_threads_pool;
+use crate::Target;
 
 pub mod dbparser;
 pub mod operator;
@@ -100,17 +105,14 @@ fn score_top_k(score_vec: &Vec<usize>, k: usize) -> Vec<usize> {
     top_k_vec
 }
 
-
-/// Operation system detection is performed on the target server,
-/// and return the fingerprint, and guess results (will be returned according to the score from high to low).
-pub fn os_detect(
+fn os_detect_thread(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    nmap_os_db_file_path: &str,
+    nmap_os_db_file_path: String,
     top_k: usize,
     max_loop: usize,
     read_timeout: Duration,
@@ -155,39 +157,183 @@ pub fn os_detect(
     Ok((nmap_fingerprint, dr_vec))
 }
 
+/// Operation system detection is performed on the target server,
+/// and return the fingerprint, and guess results (will be returned according to the score from high to low).
+/// ```rust
+/// use pistol::{Host, Target};
+/// use std::net::Ipv4Addr;
+///
+/// fn test() {
+///     let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+///     let src_port = None;
+///     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
+///     let dst_open_tcp_port = 22;
+///     let dst_closed_tcp_port = 8765;
+///     let dst_closed_udp_port = 9876;
+///     let host1 = Host::new(
+///         dst_ipv4,
+///         Some(vec![
+///             dst_open_tcp_port,
+///             dst_closed_tcp_port,
+///             dst_closed_udp_port,
+///         ]),
+///     );
+///     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+///     let dst_open_tcp_port = 22;
+///     let dst_closed_tcp_port = 8765;
+///     let dst_closed_udp_port = 9876;
+///     let host2 = Host::new(
+///         dst_ipv4,
+///         Some(vec![
+///             dst_open_tcp_port,
+///             dst_closed_tcp_port,
+///             dst_closed_udp_port,
+///         ]),
+///     );
+///     let target = Target::new(vec![host1, host2]);
+///     let max_loop = 8;
+///     let read_timeout = Duration::from_secs_f32(0.2);
+///     let nmap_os_db_file_path = "./nmap-os-db".to_string();
+///     let top_k = 3;
+///     let threads_num = 8;
+
+///     let ret = os_detect(
+///         target,
+///         src_ipv4,
+///         src_port,
+///         nmap_os_db_file_path,
+///         top_k,
+///         threads_num,
+///         max_loop,
+///         read_timeout,
+///     )
+///     .unwrap();
+
+///     for (ip, (fingerprint, detect_ret)) in ret {
+///         println!(">>> IP:\n{}", ip);
+///         println!(">>> Fingerprint:\n{}", fingerprint);
+///         println!(">>> Details:\n");
+///         for d in detect_ret {
+///             println!("{}", d);
+///         }
+///     }
+/// }
+/// ```
+pub fn os_detect(
+    target: Target,
+    src_ipv4: Ipv4Addr,
+    src_port: Option<u16>,
+    nmap_os_db_file_path: String,
+    top_k: usize,
+    threads_num: usize,
+    max_loop: usize,
+    read_timeout: Duration,
+) -> Result<HashMap<Ipv4Addr, (NmapFingerprint, Vec<NmapOsDetectRet>)>> {
+    let (tx, rx) = channel();
+    let pool = get_threads_pool(threads_num);
+    let mut recv_size = 0;
+    for t in target.hosts {
+        let dst_ipv4 = t.addr;
+        if t.ports.len() >= 3 {
+            recv_size += 1;
+            let dst_open_tcp_port = t.ports[0];
+            let dst_closed_tcp_port = t.ports[1];
+            let dst_closed_udp_port = t.ports[2];
+            let tx = tx.clone();
+            let nmap_os_db_file_path = nmap_os_db_file_path.clone();
+            pool.execute(move || {
+                let os_detect_ret = os_detect_thread(
+                    src_ipv4,
+                    src_port,
+                    dst_ipv4,
+                    dst_open_tcp_port,
+                    dst_closed_tcp_port,
+                    dst_closed_udp_port,
+                    nmap_os_db_file_path,
+                    top_k,
+                    max_loop,
+                    read_timeout,
+                );
+                match tx.send((dst_ipv4, os_detect_ret)) {
+                    _ => (),
+                }
+            });
+        } else {
+            return Err(OsDetectPortError::new().into());
+        }
+    }
+    let mut ret: HashMap<Ipv4Addr, (NmapFingerprint, Vec<NmapOsDetectRet>)> = HashMap::new();
+    let iter = rx.into_iter().take(recv_size);
+    for (i, r) in iter {
+        match r {
+            Ok(r) => {
+                ret.insert(i, r);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(ret)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Host;
     #[test]
     fn test_os_detect() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
         let src_port = None;
-        let dst_open_tcp_port = 22;
-        let dst_closed_tcp_port = 8765;
-        let dst_closed_udp_port = 9876;
+        let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_open_tcp_port_1 = 22;
+        let dst_closed_tcp_port_1 = 8765;
+        let dst_closed_udp_port_1 = 9876;
+        let host1 = Host::new(
+            dst_ipv4_1,
+            Some(vec![
+                dst_open_tcp_port_1,
+                dst_closed_tcp_port_1,
+                dst_closed_udp_port_1,
+            ]),
+        );
+        let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 129);
+        let dst_open_tcp_port_2 = 22;
+        let dst_closed_tcp_port_2 = 54532;
+        let dst_closed_udp_port_2 = 34098;
+        let host2 = Host::new(
+            dst_ipv4_2,
+            Some(vec![
+                dst_open_tcp_port_2,
+                dst_closed_tcp_port_2,
+                dst_closed_udp_port_2,
+            ]),
+        );
+        let target = Target::new(vec![host1, host2]);
+        // let target = Target::new(vec![host2]);
         let max_loop = 8;
         let read_timeout = Duration::from_secs_f32(0.2);
-        let nmap_os_db_file_path = "./nmap-os-db";
+        let nmap_os_db_file_path = "./nmap-os-db".to_string();
         let top_k = 3;
+        let threads_num = 8;
 
-        let (f, ret) = os_detect(
+        let ret = os_detect(
+            target,
             src_ipv4,
             src_port,
-            dst_ipv4,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            dst_closed_udp_port,
             nmap_os_db_file_path,
             top_k,
+            threads_num,
             max_loop,
             read_timeout,
         )
         .unwrap();
 
-        println!("{}\n", f);
-        for r in ret {
-            println!("{}", r);
+        for (ip, (fingerprint, detect_ret)) in ret {
+            println!(">>> IP:\n{}", ip);
+            println!(">>> Fingerprint:\n{}", fingerprint);
+            println!(">>> Details:\n");
+            for d in detect_ret {
+                println!("{}", d);
+            }
         }
     }
 }
