@@ -14,7 +14,7 @@ pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
 ### SYN Port Scan
 
 ```rust
-use pistol::tcp_syn_scan;
+use pistol::{tcp_syn_scan, Host, Target};
 use std::net::Ipv4Addr;
 
 fn main() {
@@ -119,9 +119,9 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ### Why not IPv6?
 
-First, it is also the most important reason, the `libpnet` doesn't have good support for IPv6 (the transport layer `libpnet` are well supported, but only using the transport layer protocol cannot realize Nmap's system detection in the [IPv6 environment](https://nmap.org/book/osdetect-ipv6-methods.html), such as `IE1` probe, it requires modifying the IPv6 header and populating the extension headers), which mean I can't modify, send and recv any IPv6 packets. I tried to bypass the limitations of `libpnet` and send data directly using the datalink layer, but I found that this method is too cumbersome and complicated in engineering practice.
+First, it is also the most important reason, the `libpnet` doesn't have good support for IPv6, which mean I can't modify, send and recv any IPv6 packets in internet layer. Although the transport layer `libpnet` are well supported, but only using the transport layer protocol cannot realize nmap's system detection in the [IPv6 environment](https://nmap.org/book/osdetect-ipv6-methods.html). For example, the `IE1` probe, it requires modifying the IPv6 header and padding a extension header, I tried to bypass the limitations of `libpnet` and send data directly using the datalink layer, but I found that this method is too cumbersome and complicated in engineering practice.
 
-Second, at the same time, according to Nmap's [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), Nmap abandoned the `nmap-os-db` file and related matching technology originally used in IPv4, and instead used machine learning methods for fingerprint matching in IPv6. However, Nmap does not provide any OS data files that other programs can parse, and instead writes all fingerprint information into `FPModel.cc` file, which makes it extremely complicated for me to obtain and process these fingerprints.
+Second, at the same time, according to nmap's [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), nmap abandoned the `nmap-os-db` file and related matching technology originally used in IPv4, and instead used machine learning methods for fingerprint matching in IPv6. However, nmap does not provide any OS data files that other programs can parse, and instead writes all fingerprint information into `FPModel.cc` file, which makes it extremely complicated for me to obtain and process these fingerprints.
 
 To sum up, unless there is substantial progress in the above two conditions, OS detection in the IPv6 environment will be suspended indefinitely.
 
