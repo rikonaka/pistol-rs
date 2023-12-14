@@ -186,3 +186,47 @@ impl OsDetectPortError {
     }
 }
 impl Error for OsDetectPortError {}
+
+/* layer */
+
+// #[derive(Debug, Clone)]
+// pub struct CreateDatalinkChannelFailed {}
+// impl fmt::Display for CreateDatalinkChannelFailed {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "create datalink channel failed")
+//     }
+// }
+// impl CreateDatalinkChannelFailed {
+//     pub fn new() -> CreateDatalinkChannelFailed {
+//         CreateDatalinkChannelFailed {}
+//     }
+// }
+// impl Error for CreateDatalinkChannelFailed {}
+// 
+// #[derive(Debug, Clone)]
+// pub struct CanNotFoundMacAddress {}
+// impl fmt::Display for CanNotFoundMacAddress {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "can not found the mac address")
+//     }
+// }
+// impl CanNotFoundMacAddress {
+//     pub fn new() -> CanNotFoundMacAddress {
+//         CanNotFoundMacAddress {}
+//     }
+// }
+// impl Error for CanNotFoundMacAddress {}
+// 
+// #[derive(Debug, Clone)]
+// pub struct CanNotFoundInterface {}
+// impl fmt::Display for CanNotFoundInterface {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "can not found the interface")
+//     }
+// }
+// impl CanNotFoundInterface {
+//     pub fn new() -> CanNotFoundInterface {
+//         CanNotFoundInterface {}
+//     }
+// }
+// impl Error for CanNotFoundInterface {}

@@ -10,7 +10,6 @@ use pnet::packet::tcp;
 use pnet::packet::tcp::{MutableTcpPacket, TcpFlags, TcpOption};
 use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
-use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv4Addr;
 
@@ -21,7 +20,6 @@ use crate::utils::UDP_HEADER_LEN;
 use crate::utils::{ICMP_HEADER_LEN, TCP_HEADER_LEN};
 
 // const TCP_PROBE_HEADER_WITH_OPTIONS_LEN: usize = 40; // 20 + 20 (options)
-const ICMP_PROBE_DATA_LEN: usize = 120; // and 120 bytes of 0x00 for the data payload
 const UDP_PROBE_DATA_LEN: usize = 300;
 
 /* 8 options:
@@ -114,9 +112,9 @@ pub fn seq_packet_1_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -132,8 +130,7 @@ pub fn seq_packet_1_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -160,9 +157,8 @@ pub fn seq_packet_1_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn seq_packet_2_layer3(
@@ -174,9 +170,9 @@ pub fn seq_packet_2_layer3(
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -192,8 +188,7 @@ pub fn seq_packet_2_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -219,9 +214,8 @@ pub fn seq_packet_2_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn seq_packet_3_layer3(
@@ -234,9 +228,9 @@ pub fn seq_packet_3_layer3(
     const TCP_OPTIONS_LEN: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -252,8 +246,7 @@ pub fn seq_packet_3_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -281,9 +274,8 @@ pub fn seq_packet_3_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn seq_packet_4_layer3(
@@ -295,9 +287,9 @@ pub fn seq_packet_4_layer3(
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -313,8 +305,7 @@ pub fn seq_packet_4_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -339,9 +330,8 @@ pub fn seq_packet_4_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn seq_packet_5_layer3(
@@ -353,9 +343,9 @@ pub fn seq_packet_5_layer3(
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -371,8 +361,7 @@ pub fn seq_packet_5_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -398,9 +387,8 @@ pub fn seq_packet_5_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn seq_packet_6_layer3(
@@ -412,9 +400,9 @@ pub fn seq_packet_6_layer3(
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -430,8 +418,7 @@ pub fn seq_packet_6_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -456,17 +443,17 @@ pub fn seq_packet_6_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const ICMP_PROBE_DATA_LEN: usize = 120; // and 120 bytes of 0x00 for the data payload
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN) as u16);
@@ -485,8 +472,8 @@ pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
-    let mut icmp_buff = [0u8; ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut icmp_buff[..]).unwrap();
+    // icmp header
+    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     // a code of nine (even though it should be zero)
     icmp_header.set_icmp_code(IcmpCode(9));
     icmp_header.set_icmp_type(IcmpType(8));
@@ -494,22 +481,24 @@ pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     icmp_header.set_sequence_number(295);
     // a random IP ID and ICMP request identifier
     icmp_header.set_identifier(idtf);
+    let icmp_data: Vec<u8> = vec![0x00; ICMP_PROBE_DATA_LEN];
+    icmp_header.set_payload(&icmp_data);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut icmp_buff).unwrap();
+    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    ip_header.set_payload(&icmp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn ie_packet_2_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> Result<Vec<u8>> {
     // 150 bytes of data is sent
     let mut rng = rand::thread_rng();
+    const ICMP_PROBE_DATA_LEN: usize = 150; // 150 bytes of data is sent
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN) as u16);
@@ -528,21 +517,22 @@ pub fn ie_packet_2_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
-    let mut icmp_buff = [0u8; ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut icmp_buff[..]).unwrap();
+    // icmp header
+    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     // the code is zero
-    icmp_header.set_icmp_code(IcmpCode(9));
+    icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_icmp_type(IcmpType(8));
     icmp_header.set_sequence_number(296);
     // and the ICMP request ID and sequence numbers are incremented by one from the previous query values
     icmp_header.set_identifier(idtf);
+    let icmp_data: Vec<u8> = vec![0x00; ICMP_PROBE_DATA_LEN];
+    icmp_header.set_payload(&icmp_data);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut icmp_buff).unwrap();
+    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    ip_header.set_payload(&icmp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn ecn_packet_layer3(
@@ -552,12 +542,21 @@ pub fn ecn_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
-        WSCALE_SIZE + 1 + NOP_SIZE + 3 + MSS_SIZE + SACK_PERM_SIZE + 2 + NOP_SIZE + 1 + NOP_SIZE + 1;
+    const TCP_OPTIONS_LEN: usize = WSCALE_SIZE
+        + 1
+        + NOP_SIZE
+        + 3
+        + MSS_SIZE
+        + SACK_PERM_SIZE
+        + 2
+        + NOP_SIZE
+        + 1
+        + NOP_SIZE
+        + 1;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -566,7 +565,7 @@ pub fn ecn_packet_layer3(
     let id = rng.gen();
     ip_header.set_identification(id);
     ip_header.set_ttl(IP_TTL);
-    ip_header.set_ecn(0); // ECN
+    ip_header.set_ecn(0);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -574,8 +573,7 @@ pub fn ecn_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
@@ -607,9 +605,8 @@ pub fn ecn_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn t2_packet_layer3(
@@ -622,9 +619,9 @@ pub fn t2_packet_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -640,8 +637,7 @@ pub fn t2_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -651,7 +647,7 @@ pub fn t2_packet_layer3(
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     tcp_header.set_flags(0);
     tcp_header.set_window(PRB_WINDOW_SZ[7]);
-    tcp_header.set_data_offset(10); // 4 * 10 = 40
+    tcp_header.set_data_offset(10); // 5 (header: 5 * 4 = 20) + 5 (options: 5 * 4 = 20)
 
     // Those 20 bytes correspond to window scale (10), NOP, MSS (265), Timestamp (TSval: 0xFFFFFFFF; TSecr: 0), then SACK permitted.
     tcp_header.set_options(&vec![
@@ -666,9 +662,8 @@ pub fn t2_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn t3_packet_layer3(
@@ -681,9 +676,9 @@ pub fn t3_packet_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -699,8 +694,7 @@ pub fn t3_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -725,9 +719,8 @@ pub fn t3_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn t4_packet_layer3(
@@ -740,9 +733,9 @@ pub fn t4_packet_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -758,8 +751,7 @@ pub fn t4_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -784,9 +776,8 @@ pub fn t4_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn t5_packet_layer3(
@@ -799,9 +790,9 @@ pub fn t5_packet_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -817,8 +808,7 @@ pub fn t5_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -843,9 +833,8 @@ pub fn t5_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn t6_packet_layer3(
@@ -858,9 +847,9 @@ pub fn t6_packet_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -876,8 +865,7 @@ pub fn t6_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -902,9 +890,8 @@ pub fn t6_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn t7_packet_layer3(
@@ -917,9 +904,9 @@ pub fn t7_packet_layer3(
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
+    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -935,8 +922,7 @@ pub fn t7_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -963,9 +949,8 @@ pub fn t7_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    ip_header.set_payload(tcp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 pub fn udp_packet_layer3(
@@ -974,9 +959,9 @@ pub fn udp_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
+    let mut buff = [0u8; IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_PROBE_DATA_LEN];
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_PROBE_DATA_LEN];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_PROBE_DATA_LEN) as u16);
@@ -991,8 +976,7 @@ pub fn udp_packet_layer3(
     ip_header.set_checksum(c);
 
     // udp header
-    let mut udp_buff = [0u8; UDP_HEADER_LEN + UDP_PROBE_DATA_LEN];
-    let mut udp_header = MutableUdpPacket::new(&mut udp_buff[..]).unwrap();
+    let mut udp_header = MutableUdpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_LEN + UDP_PROBE_DATA_LEN) as u16);
@@ -1002,9 +986,8 @@ pub fn udp_packet_layer3(
     udp_header.set_payload(&udp_data);
     let checksum = udp::ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
-    ip_header.set_payload(udp_header.packet());
 
-    Ok(ip_buff.to_vec())
+    Ok(buff.to_vec())
 }
 
 #[cfg(test)]
@@ -1027,6 +1010,8 @@ mod tests {
         let _ = seq_packet_4_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = seq_packet_5_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = seq_packet_6_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = ie_packet_1_layer3(src_ipv4, dst_ipv4, 0);
+        let _ = ie_packet_2_layer3(src_ipv4, dst_ipv4, 1);
         let _ = ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = t2_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = t3_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
@@ -1034,5 +1019,6 @@ mod tests {
         let _ = t5_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = t6_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = t7_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
+        let _ = udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
     }
 }

@@ -1,6 +1,7 @@
 use pnet::datalink::{channel, Channel, MacAddr, NetworkInterface};
 use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
 use pnet::packet::ethernet::EtherTypes;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::{MutablePacket, Packet};
 use std::net::Ipv4Addr;
@@ -18,7 +19,6 @@ pub fn send_arp_scan_packet(
         Ok(_) => panic!("unknown channel type"),
         Err(e) => panic!("error happened {}", e),
     };
-
     let mut ethernet_buffer = [0u8; 42];
     let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
 
@@ -44,13 +44,14 @@ pub fn send_arp_scan_packet(
 
     // ignore the send unexpect error
     match sender.send_to(ethernet_packet.packet(), None) {
-        Some(_) => (),
         _ => (),
     }
 
     for _ in 0..max_loop {
         let buf = receiver.next().unwrap();
-        let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
+        let re = EthernetPacket::new(buf).unwrap();
+        // let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
+        let arp = ArpPacket::new(re.payload()).unwrap();
         if arp.get_sender_proto_addr() == dst_ipv4 && arp.get_target_hw_addr() == src_mac {
             return Some(arp.get_sender_hw_addr());
         }
@@ -65,9 +66,9 @@ mod tests {
     fn test_send_arp_scan_packet() {
         use crate::utils;
         let interface: NetworkInterface = utils::find_interface_by_name("ens33").unwrap();
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 119);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 1);
         let dst_mac: MacAddr = MacAddr::broadcast();
-        let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 206);
+        let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 128);
         let src_mac: MacAddr = interface.mac.unwrap();
         let max_loop = 32;
         let ret = send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, max_loop)

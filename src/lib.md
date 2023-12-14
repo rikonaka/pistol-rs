@@ -1,6 +1,6 @@
 An implementation of a subset of the nmap scanning tool.
 
-## SYN port scan
+## SYN Port Scan
 
 ```rust
 use pistol::tcp_syn_scan;

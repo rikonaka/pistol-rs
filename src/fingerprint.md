@@ -1,4 +1,4 @@
-# OS detect example
+# OS Detect Example
 
 ```rust
 use pistol::{os_detect, Host, Target};

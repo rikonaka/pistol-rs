@@ -77,7 +77,7 @@ pub struct U1RR {
 
 // HashMap<Name, RR>
 #[derive(Debug, Clone)]
-pub struct AllRRPacket {
+pub struct AllPacketRR {
     pub seq: SEQRR,
     pub ie: IERR,
     pub ecn: ECNRR,
@@ -756,7 +756,7 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     max_loop: usize,
     read_timeout: Duration,
-) -> Result<AllRRPacket> {
+) -> Result<AllPacketRR> {
     let seq = send_seq_probes(
         src_ipv4,
         src_port,
@@ -792,7 +792,7 @@ fn send_all_probes(
         read_timeout,
     )?;
 
-    let ap = AllRRPacket {
+    let ap = AllPacketRR {
         seq,
         ie,
         ecn,
@@ -855,7 +855,7 @@ impl fmt::Display for SEQX {
     }
 }
 
-pub fn seq_fingerprint(ap: &AllRRPacket) -> Result<SEQX> {
+pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX> {
     let rynum = |rvec: Vec<String>| -> usize {
         let mut num = 0;
         for r in rvec {
@@ -991,7 +991,7 @@ impl fmt::Display for OPSX {
     }
 }
 
-pub fn ops_fingerprint(ap: &AllRRPacket) -> Result<OPSX> {
+pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX> {
     let rops = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
@@ -1110,7 +1110,7 @@ impl fmt::Display for WINX {
     }
 }
 
-pub fn win_fingerprint(ap: &AllRRPacket) -> Result<WINX> {
+pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX> {
     let rwin = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
@@ -1247,7 +1247,7 @@ impl fmt::Display for ECNX {
     }
 }
 
-pub fn ecn_fingerprint(ap: &AllRRPacket) -> Result<ECNX> {
+pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX> {
     let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
     let (df, t, tg, w, o, cc, q) = match r.as_str() {
         "Y" => {
@@ -1465,7 +1465,7 @@ fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<T
     })
 }
 
-pub fn tx_fingerprint(ap: &AllRRPacket) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX)> {
+pub fn tx_fingerprint(ap: &AllPacketRR) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX)> {
     // The final line related to these probes, T1, contains various test values for packet #1.
     let t1 = _tx_fingerprint(&ap.seq.seq1, &ap.u1, "T1")?;
     let t2 = _tx_fingerprint(&ap.t2t7.t2, &ap.u1, "T2")?;
@@ -1601,7 +1601,7 @@ impl fmt::Display for U1X {
     }
 }
 
-pub fn u1_fingerprint(ap: &AllRRPacket) -> Result<U1X> {
+pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X> {
     let r = tcp_udp_icmp_r(&ap.u1.u1.response)?;
     let (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud) = match r.as_str() {
         "Y" => {
@@ -1714,7 +1714,7 @@ impl fmt::Display for IEX {
     }
 }
 
-pub fn ie_fingerprint(ap: &AllRRPacket) -> Result<IEX> {
+pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX> {
     let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response)?;
     let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response)?;
     let (r, dfi, t, tg, cd) = if r1 == "Y" && r2 == "Y" {

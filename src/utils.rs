@@ -1,17 +1,19 @@
 use anyhow::Result;
 use num_cpus;
-use pnet_datalink::{MacAddr, NetworkInterface};
-use rand::Rng;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::time::Duration;
-use subnetwork;
-use subnetwork::{Ipv4Pool, Ipv6Pool};
-// use subnetwork::Ipv4Pool;
+use pnet::datalink;
+// use pnet::datalink::Channel::Ethernet;
+// use pnet::datalink::{DataLinkReceiver, DataLinkSender};
+use pnet::datalink::{MacAddr, NetworkInterface};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::transport::TransportChannelType::Layer3;
 use pnet::transport::TransportChannelType::Layer4;
 use pnet::transport::TransportProtocol::{Ipv4, Ipv6};
 use pnet::transport::{transport_channel, TransportReceiver, TransportSender};
+use rand::Rng;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::Duration;
+use subnetwork;
+use subnetwork::{Ipv4Pool, Ipv6Pool};
 use threadpool::ThreadPool;
 
 use super::errors::{FindInterfaceError, GetInterfaceIPError, GetInterfaceMACError};
@@ -25,11 +27,11 @@ const DEFAILT_TIMEOUT: f32 = 1.5;
 pub const IP_TTL: u8 = 64;
 
 pub const BUFF_SIZE: usize = 4096;
+pub const ICMP_BUFF_SIZE: usize = 4096;
 pub const TCP_BUFF_SIZE: usize = 4096;
 pub const UDP_BUFF_SIZE: usize = 4096;
-
 pub const IPV4_HEADER_LEN: usize = 20;
-pub const ICMP_BUFF_SIZE: usize = 4096;
+// pub const IPV6_HEADER_LEN: usize = 40;
 
 pub const TCP_HEADER_LEN: usize = 20;
 pub const TCP_DATA_LEN: usize = 0;
@@ -40,10 +42,13 @@ pub const UDP_DATA_LEN: usize = 0;
 pub const ICMP_HEADER_LEN: usize = 8;
 pub const ICMP_DATA_LEN: usize = 0;
 
+// pub const ICMPV6_HEADER_LEN: usize = 8;
+// pub const ICMPV6_DATA_LEN: usize = 0;
+
 /* CODE */
 
 pub fn get_host_interfaces() -> Vec<NetworkInterface> {
-    pnet_datalink::interfaces()
+    datalink::interfaces()
 }
 
 pub fn bind_interface(target_ips: &[Ipv4Addr]) -> Vec<BindIp2Interface> {

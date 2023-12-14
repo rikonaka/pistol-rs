@@ -4,7 +4,7 @@ The library must be run as root (Linux) or administrator (Windows).
 
 ## Example
 
-### SYN port scan
+### SYN Port Scan
 
 ```rust
 use pistol::tcp_syn_scan;
@@ -57,11 +57,11 @@ fn main() {
 192.168.72.136 22 open
 ```
 
-### OS detect
+### OS Detect
 
 See OS detect example [here](./src/fingerprint.md).
 
-## Host discovery (Ping Scanning)
+## Host Discovery (Ping Scanning)
 
 I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
@@ -93,7 +93,7 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 | [x] IP Protocol Scan    | [nmap references](https://nmap.org/book/scan-methods-ip-protocol-scan.html)   | IPv4 support                            |
 | [ ] TCP FTP Bounce Scan | [nmap references](https://nmap.org/book/scan-methods-ftp-bounce-scan.html)    | The bugs exploited have long been fixed |
 
-## Flood attack
+## Flood Attack
 
 | Methods           | Notes                        |
 | :---------------- | :--------------------------- |
@@ -102,12 +102,25 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 | [x] UDP Flood     | IPv4 & IPv6 support          |
 | [x] ICMP Flood    | IPv4 & IPv6 support (ICMPv6) |
 
-## Operating system detect
+## Remote OS Detection
 
-| Methods            | Detailed Documentation                                              |
-| :----------------- | :------------------------------------------------------------------ |
-| [x] IPv4 OS detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |
-| [ ] IPv6 OS detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) |
+| Methods            | Detailed Documentation                                              | Notes           |
+| :----------------- | :------------------------------------------------------------------ | :-------------- |
+| [x] IPv4 OS detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                 |
+| [ ] IPv6 OS detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Not implemented |
+
+
+### Why not IPv6?
+
+First, it is also the most important reason, the `libpnet` doesn't have good support for IPv6 (the transport layer `libpnet` are well supported, but only using the transport layer protocol cannot realize Nmap's system detection in the [IPv6 environment](https://nmap.org/book/osdetect-ipv6-methods.html), such as `IE1` probe, it requires modifying the IPv6 header and populating the extension headers), which mean I can't modify, send and recv any IPv6 packets. I tried to bypass the limitations of `libpnet` and send data directly using the datalink layer, but I found that this method is too cumbersome and complicated in engineering practice.
+
+Second, at the same time, according to Nmap's [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), Nmap abandoned the `nmap-os-db` file and related matching technology originally used in IPv4, and instead used machine learning methods for fingerprint matching in IPv6. However, Nmap does not provide any OS data files that other programs can parse, and instead writes all fingerprint information into `FPModel.cc` file, which makes it extremely complicated for me to obtain and process these fingerprints.
+
+To sum up, unless there is substantial progress in the above two conditions, OS detection in the IPv6 environment will be suspended indefinitely.
+
+## Service and Application Version Detection
+
+TODO.
 
 ## CLI program
 

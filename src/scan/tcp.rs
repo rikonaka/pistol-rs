@@ -696,8 +696,8 @@ pub fn send_idle_scan_packet(
     ) -> Result<Vec<u8>> {
         let mut rng = rand::thread_rng();
         // ip header
-        let mut ip_buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN];
-        let mut ip_header = MutableIpv4Packet::new(&mut ip_buff[..]).unwrap();
+        let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN];
+        let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
         ip_header.set_version(4);
         ip_header.set_header_length(5);
         ip_header.set_total_length((IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN) as u16);
@@ -712,9 +712,7 @@ pub fn send_idle_scan_packet(
         ip_header.set_destination(dst_ipv4);
 
         // tcp header
-        let mut rng = rand::thread_rng();
-        let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-        let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+        let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
         tcp_header.set_source(src_port);
         tcp_header.set_destination(dst_port);
         tcp_header.set_sequence(rng.gen());
@@ -727,10 +725,7 @@ pub fn send_idle_scan_packet(
         let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
         tcp_header.set_checksum(checksum);
 
-        // set tcp header as ip payload
-        ip_header.set_payload(tcp_header.packet());
-
-        Ok(ip_buff.to_vec())
+        Ok(buff.to_vec())
     }
 
     let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);

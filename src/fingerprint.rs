@@ -14,9 +14,9 @@ use crate::Target;
 pub mod dbparser;
 pub mod operator;
 pub mod osscan;
-pub mod osscan6;
 pub mod packet;
-pub mod packet6;
+// pub mod packet6;
+// pub mod osscan6;
 
 pub struct NmapOsDetectRet {
     pub score: usize,
@@ -283,7 +283,7 @@ mod tests {
     fn test_os_detect() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let src_port = None;
-        let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 130);
+        let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 136);
         let dst_open_tcp_port_1 = 22;
         let dst_closed_tcp_port_1 = 8765;
         let dst_closed_udp_port_1 = 9876;
