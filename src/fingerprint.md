@@ -78,12 +78,12 @@ fn main() {
 
 ### Ubuntu 22.04
 
-```bash
+```
 >>> IP:
-192.168.72.130
+192.168.72.136
 >>> Pistol fingerprint:
-SCAN(V=PISTOL%D=12/13%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=65796111%P=RUST)
-SEQ(SP=102%GCD=1%ISR=FC%TI=Z%CI=Z%II=I%TS=A)
+SCAN(V=PISTOL%D=12/14%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=657B21AA%P=RUST)
+SEQ(SP=107%GCD=1%ISR=105%TI=Z%CI=Z%II=I%TS=A)
 OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
 WIN(W1=FE88%W2=FE88%W3=FE88%W4=FE88%W5=FE88%W6=FE88)
 ECN(R=Y%DF=Y%TG=40%W=FAF0%O=M5B4NNSNW7%CC=Y%Q=)
@@ -97,7 +97,7 @@ T7(R=Y%DF=Y%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
 U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 IE(R=Y%DFI=N%TG=40%CD=S)
 >>> Details:
->>> Score: 82/101
+>>> Score: 83/101
 >>> Info:
 Linux 4.15.0-88-generic #88~16.04.1-Ubuntu SMP Wed Feb 12 04:19:15 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
 Linux 4.19.0-9-amd64 #1 SMP Debian 4.19.118-2 (2020-04-29) x86_64 GNU/Linux
@@ -130,29 +130,7 @@ Linux | Linux | 5.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:5 auto
 
->>> Score: 81/101
->>> Info:
-Linux 5.4.0-1008-raspi #8-Ubuntu SMP Wed Apr 8 11:13:06 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux
->>> Fingerprint:
-Linux 5.4
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5.4 auto
-
->>> Score: 81/101
->>> Info:
-Linux 5.0.0-23-generic #24-Ubuntu SMP Mon Jul 29 15:36:44 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
-Linux 5.3.0-24-generic x86_64 Ubuntu 19.10
-Linux 5.3.9-sunxi (root@builder) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02
->>> Fingerprint:
-Linux 5.0 - 5.3
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5 auto
-
->>> Score: 81/101
+>>> Score: 80/101
 >>> Info:
 Linux 5.4.0-1008-raspi #8-Ubuntu SMP Wed Apr 8 11:13:06 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux
 >>> Fingerprint:
@@ -165,12 +143,12 @@ cpe:/o:linux:linux_kernel:5.4 auto
 
 ### CentOS 7
 
-```bash
+```
 >>> IP:
 192.168.72.129
 >>> Pistol fingerprint:
-SCAN(V=PISTOL%D=12/13%OT=22%CT=54532%CU=34098PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=65796111%P=RUST)
-SEQ(SP=108%GCD=1%ISR=107%TI=Z%II=I%TS=A)
+SCAN(V=PISTOL%D=12/14%OT=22%CT=54532%CU=34098PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=657B21AA%P=RUST)
+SEQ(SP=103%GCD=1%ISR=101%TI=Z%II=I%TS=A)
 OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
 WIN(W1=7120%W2=7120%W3=7120%W4=7120%W5=7120%W6=7120)
 ECN(R=Y%DF=Y%TG=40%W=7210%O=M5B4NNSNW7%CC=Y%Q=)
@@ -204,68 +182,6 @@ Linux  4.2.0-27-generic #32~14.04.1-Ubuntu SMP Fri Jan 22 15:32:26 UTC 2016 x86_
 Linux 4.11.6-3-ARCH #1 SMP PREEMPT Thu Jun 22 12:21:46 CEST 2017 x86_64 GNU/Linux
 >>> Fingerprint:
 Linux 3.10 - 4.11
->>> Class:
-Linux | Linux | 3.X | general purpose
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3 auto
-cpe:/o:linux:linux_kernel:4 auto
-
->>> Score: 55/101
->>> Info:
-Linux 5.1.9-arch1-1-ARCH #1 SMP PREEMPT Tue Jun 11 16:18:09 UTC 2019 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 5.1
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5.1 auto
-
->>> Score: 55/101
->>> Info:
-Linux 3.10.0-327.13.1.el7.x86_64
-Linux 3.12.5-200.fc19.i686 #1 SMP Tue Dec 17 22:46:33 UTC 2013 i686 i686 i386 GNU/Linux
-Linux 3.13.5-200.fc20.x86_64 #1 SMP Mon Feb 24 16:51:35 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.11.0-17-generic #31-Ubuntu SMP Mon Feb 3 21:52:43 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.13.0-19-generic #40-Ubuntu SMP Mon Mar 24 02:36:06 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.14.3-1-ARCH #1 SMP PREEMPT Tue May 6 22:44:19 CEST 2014 x86_64 GNU/Linux
-Linux 3.12.21-gentoo-r1 #1 SMP PREEMPT x86_64
-Linux 3.12.28-1-ARCH #1 PREEMPT Tue Sep 9 12:57:11 MDT 2014 armv6l GNU/Linux
-Linux 3.19.2-1-ARCH #1 SMP PREEMPT Wed Mar 18 16:36:01 CET 2015 i686 GNU/Linux
-Linux 3.10.72 #10878 Thu Mar 19 04:41:15 CET 2015 mips GNU/Linux
-Linux raspberrypi 4.1.7+ #817 PREEMPT Sat Sep 19 15:25:36 BST 2015 armv6l GNU/Linux
-Linux 3.18.26 #8771 Fri Feb 5 03:08:28 CET 2016 mips
-Linux 3.18.31 DD-WRT
-Linux  4.2.0-27-generic #32~14.04.1-Ubuntu SMP Fri Jan 22 15:32:26 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
-4.8.6-201.fc24.x86_64 #1 SMP Thu Nov 3 14:38:57 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
-Linux 4.11.6-3-ARCH #1 SMP PREEMPT Thu Jun 22 12:21:46 CEST 2017 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 3.10 - 4.11
->>> Class:
-Linux | Linux | 3.X | general purpose
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3 auto
-cpe:/o:linux:linux_kernel:4 auto
-
->>> Score: 55/101
->>> Info:
-Linux 5.1.9-arch1-1-ARCH #1 SMP PREEMPT Tue Jun 11 16:18:09 UTC 2019 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 5.1
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5.1 auto
-
->>> Score: 54/101
->>> Info:
-Linux 3.18.13-2-ARCH #1 SMP PREEMPT Mon May 18 20:19:37 MDT 2015 armv7l GNU/Linux
-Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:45 UTC 2015 i686 i686 i686 GNU/Linux
-Linux 3.16.0-navtech-epu #4 SMP PREEMPT Wed Dec 2 13:16:34 GMT 2015 armv7l armv7l armv7l GNU/Linux
-Linux 4.6.4-1-ARCH #1 SMP PREEMPT Mon Jul 11 19:12:32 CEST 2016 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 3.16 - 4.6
 >>> Class:
 Linux | Linux | 3.X | general purpose
 Linux | Linux | 4.X | general purpose
@@ -328,16 +244,6 @@ cpe:/o:linux:linux_kernel:4.10 auto
 
 >>> Score: 54/101
 >>> Info:
-Linux 4.10.13-1-ARCH #1 SMP PREEMPT Thu Apr 27 12:15:09 CEST 2017 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 4.10
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.10 auto
-
->>> Score: 54/101
->>> Info:
 Linux 4.4.5-1-ARCH #1 SMP PREEMPT Thu Mar 10 07:38:19 CET 2016 x86_64 GNU/Linux
 >>> Fingerprint:
 Linux 4.4
@@ -347,6 +253,115 @@ Linux | Linux | 4.X | general purpose
 cpe:/o:linux:linux_kernel:4.4 auto
 
 >>> Score: 54/101
+>>> Info:
+Linux 5.1.9-arch1-1-ARCH #1 SMP PREEMPT Tue Jun 11 16:18:09 UTC 2019 x86_64 GNU/Linux
+>>> Fingerprint:
+Linux 5.1
+>>> Class:
+Linux | Linux | 5.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:5.1 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 3.13.0-1-smp #2 SMP Fri Oct 17 14:29:25 BST 2014 x86_64 GNU/Linux
+Linux 3.16.0-4-amd64 #1 SMP Debian 3.16.7-ckt9-3~deb8u1 (2015-04-24) x86_64 GNU/Linux
+Linux linux.netzwerk 3.16.6-2-desktop #1 SMP PREEMPT Mon Oct 20 13:47:22  UTC 2014 (feb42ea) i686 athlon i386 GNU/Linux openSUSE 13.2
+>>> Fingerprint:
+Linux 3.13 - 3.16
+>>> Class:
+Linux | Linux | 3.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:3 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 3.16.0-4-686-pae #1 SMP Debian 3.16.7-ckt25-1 (2016-03-06) i686 GNU/Linux
+>>> Fingerprint:
+Linux 3.16
+>>> Class:
+Linux | Linux | 3.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:3.16 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 3.18.13-2-ARCH #1 SMP PREEMPT Mon May 18 20:19:37 MDT 2015 armv7l GNU/Linux
+Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:45 UTC 2015 i686 i686 i686 GNU/Linux
+Linux 3.16.0-navtech-epu #4 SMP PREEMPT Wed Dec 2 13:16:34 GMT 2015 armv7l armv7l armv7l GNU/Linux
+Linux 4.6.4-1-ARCH #1 SMP PREEMPT Mon Jul 11 19:12:32 CEST 2016 x86_64 GNU/Linux
+>>> Fingerprint:
+Linux 3.16 - 4.6
+>>> Class:
+Linux | Linux | 3.X | general purpose
+Linux | Linux | 4.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:3 auto
+cpe:/o:linux:linux_kernel:4 auto
+
+>>> Score: 53/101
+>>> Info:
+OpenWRT CHAOS CALMER (Bleeding Edge, r45264) kernel 3.18.10-1-db18831523892bc50953de74ea42b8ac
+Linksys wrt1900ac running OpenWrt Chaos Calmer r44455
+Linux OpenWrt 3.18.8 #1 Thu Mar 12 19:12:22 UTC 2015 mips GNU/Linux
+Linux OpenWrt 3.18.17 #1 Fri Jul 3 18:06:43 CEST 2015 mips GNU/Linux
+Linux 3.18.20 #1 Fri Sep 4 21:55:57 CEST 2015 mips GNU/Linux
+Linux 3.18.20 (buildbot@builder1) (gcc version 4.8.3 (OpenWrt/Linaro GCC 4.8-2014.04 r46450) ) #1 Fri Sep 4 21:55:57 CEST 2015
+Linux 4.1.13 #1 Sun Dec 27 17:57:31 CET 2015 mips GNU/Linux
+OpenWRT CHAOS CALMER (15.05.1, r48532)
+OpenWrt Chaos Calmer 15.05.1 / LuCI 15.05-188-g87e9837 Release (git-16.018.33482-3201903), Linux 3.18.23
+OpenWrt omnia 15.05 r47055 / LuCI 5ca9e5d2391f6ca149db4e53cda7c8f5d3ef6644 branch (git-16.335.29518-5ca9e5d), Linux 4.4.38
+>>> Fingerprint:
+OpenWrt Chaos Calmer 15.05 (Linux 3.18) or Designated Driver (Linux 4.1 or 4.4)
+>>> Class:
+Linux | Linux | 3.X | WAP
+Linux | Linux | 4.X | WAP
+>>> CPE:
+cpe:/o:linux:linux_kernel:3.18
+cpe:/o:linux:linux_kernel:4.1 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 4.10
+>>> Fingerprint:
+Linux 4.10
+>>> Class:
+Linux | Linux | 4.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:4.10 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 4.10.13-1-ARCH #1 SMP PREEMPT Thu Apr 27 12:15:09 CEST 2017 x86_64 GNU/Linux
+>>> Fingerprint:
+Linux 4.10
+>>> Class:
+Linux | Linux | 4.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:4.10 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 4.4.13-v7+ #894 SMP Mon Jun 13 13:13:27 BST 2016 armv7l GNU/Linux
+Linux 4.4.21-v7+ #911 SMP Thu Sep 15 14:22:38 BST 2016 armv7l GNU/Linux
+>>> Fingerprint:
+Linux 4.4
+>>> Class:
+Linux | Linux | 4.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:4.4 auto
+
+>>> Score: 53/101
+>>> Info:
+Linux 4.4.13-v7+ #894 SMP Mon Jun 13 13:13:27 BST 2016 armv7l GNU/Linux
+>>> Fingerprint:
+Linux 4.4
+>>> Class:
+Linux | Linux | 4.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:4.4 auto
+
+>>> Score: 53/101
 >>> Info:
 Linksys EA3500
 >>> Fingerprint:

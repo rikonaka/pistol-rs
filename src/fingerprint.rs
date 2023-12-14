@@ -75,17 +75,26 @@ impl fmt::Display for NmapOsDetectRet {
     }
 }
 
-fn find_position(score_vec: &Vec<usize>, value: usize) -> Vec<usize> {
+fn find_position_multi(score_vec: &Vec<usize>, value: usize) -> Vec<usize> {
     let mut position = Vec::new();
     for (i, s) in score_vec.iter().enumerate() {
         if *s == value {
-            position.push(i);
+            position.push(i)
         }
     }
     position
 }
 
-fn score_top_k(score_vec: &Vec<usize>, k: usize) -> Vec<usize> {
+fn find_position_one(score_vec: &Vec<usize>, value: usize) -> Option<usize> {
+    for (i, s) in score_vec.iter().enumerate() {
+        if *s == value {
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn top_k_score(score_vec: &Vec<usize>, k: usize) -> Vec<usize> {
     let mut score_vec = score_vec.clone();
     let mut top_k_vec = Vec::new();
     for _ in 0..k {
@@ -96,10 +105,15 @@ fn score_top_k(score_vec: &Vec<usize>, k: usize) -> Vec<usize> {
             }
         }
 
-        let position = find_position(&score_vec, max_score);
-        for p in position {
-            score_vec.remove(p);
+        loop {
+            match find_position_one(&score_vec, max_score) {
+                Some(p) => {
+                    score_vec.remove(p);
+                }
+                None => break,
+            }
         }
+
         top_k_vec.push(max_score);
     }
     top_k_vec
@@ -137,16 +151,16 @@ fn os_detect_thread(
         total_vec.push(total);
     }
 
-    let top_k_vec = score_top_k(&score_vec, top_k);
-    let mut top_k_index = Vec::new();
-    for k in top_k_vec {
-        for p in find_position(&score_vec, k) {
-            top_k_index.push(p);
+    let top_k_score_vec = top_k_score(&score_vec, top_k);
+    let mut top_k_index_vec = Vec::new();
+    for k in top_k_score_vec {
+        for p in find_position_multi(&score_vec, k) {
+            top_k_index_vec.push(p);
         }
     }
 
     let mut dr_vec = Vec::new();
-    for i in top_k_index {
+    for i in top_k_index_vec {
         let dr = NmapOsDetectRet {
             score: score_vec[i],
             total: total_vec[i],
