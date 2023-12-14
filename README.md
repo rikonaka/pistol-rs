@@ -72,14 +72,14 @@ See OS detect example [here](./src/fingerprint.md).
 
 I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
-| Methods              | Detailed Documentation                                                                          | Notes                           |
-| :------------------- | :---------------------------------------------------------------------------------------------- | :------------------------------ |
-| [x] TCP SYN Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6 support             |
-| [x] TCP ACK Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6 support             |
-| [x] UDP Ping         | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       | IPv4 & IPv6 support             |
-| [x] ICMP Ping        | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 support (ICMPv6)    |
-| [x] ARP Scan         | [nmap references](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                | IPv4 support                    |
-| [ ] IP Protocol Ping | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful |
+| Methods              | Detailed Documentation                                                                          | Notes                              |
+| :------------------- | :---------------------------------------------------------------------------------------------- | :--------------------------------- |
+| [x] TCP SYN Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6 support                |
+| [x] TCP ACK Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6 support                |
+| [x] UDP Ping         | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       | IPv4 & IPv6 support                |
+| [x] ICMP Ping        | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 support (ICMP, ICMPv6) |
+| [x] ARP Scan         | [nmap references](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                | IPv4 support                       |
+| [ ] IP Protocol Ping | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful    |
 
 ## Port Scanning Techniques and Algorithms
 
@@ -102,12 +102,12 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ## Flood Attack
 
-| Methods           | Notes                        |
-| :---------------- | :--------------------------- |
-| [x] TCP SYN Flood | IPv4 & IPv6 support          |
-| [x] TCP ACK Flood | IPv4 & IPv6 support          |
-| [x] UDP Flood     | IPv4 & IPv6 support          |
-| [x] ICMP Flood    | IPv4 & IPv6 support (ICMPv6) |
+| Methods           | Notes                              |
+| :---------------- | :--------------------------------- |
+| [x] TCP SYN Flood | IPv4 & IPv6 support                |
+| [x] TCP ACK Flood | IPv4 & IPv6 support                |
+| [x] UDP Flood     | IPv4 & IPv6 support                |
+| [x] ICMP Flood    | IPv4 & IPv6 support (ICMP, ICMPv6) |
 
 ## Remote OS Detection
 
