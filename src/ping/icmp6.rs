@@ -80,10 +80,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_icmp_ping_packet() {
-        // 240e:34c:8b:25b0:17c1:ac6c:9baa:ade
-        let src_ipv6 = Ipv6Addr::new(0x240e, 0x34c, 0x8b, 0x25b0, 0x17c1, 0xac6c, 0x9baa, 0xade);
-        // 240e:34c:8b:25b0:20c:29ff:fe0c:237e
-        let dst_ipv6 = Ipv6Addr::new(0x240e, 0x34c, 0x8b, 0x25b0, 0x20c, 0x29ff, 0xfe0c, 0x237e);
+        let src_ipv6 = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+        let dst_ipv6 = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let timeout = Duration::from_secs(1);
         let max_loop = 8;
         let ret = send_icmp_ping_packet(src_ipv6, dst_ipv6, timeout, max_loop).unwrap();
