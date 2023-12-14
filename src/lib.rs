@@ -518,12 +518,6 @@ pub use flood::udp_flood6;
 /// Process standard nmap-os-db files and return a structure that can be processed by the program.
 pub use fingerprint::dbparser::nmap_os_db_parser;
 
-/// Dump `name-os-db` file to `nmap-os-db.pistol`.
-pub use fingerprint::dbparser::nmape_os_db_pistol_dump;
-
-/// Load our processed files `nmap-os-db.pistol`.
-pub use fingerprint::dbparser::nmap_os_db_pistol_load;
-
 /// Detect target machine OS.
 pub use fingerprint::os_detect;
 

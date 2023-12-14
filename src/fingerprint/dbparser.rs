@@ -1,8 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{read_to_string, File};
-use std::io::prelude::*;
+use std::fs::read_to_string;
 
 use crate::utils::Hex;
 
@@ -1367,24 +1366,6 @@ pub fn nmap_os_db_parser(filename: String) -> Result<Vec<NmapOsDb>> {
     Ok(result)
 }
 
-pub fn nmape_os_db_pistol_dump(filename: String, output: Option<&str>) -> Result<()> {
-    let output = match output {
-        Some(o) => o.to_string(),
-        _ => "nmap-os-db.pistol".to_string(), // default name
-    };
-
-    let ret = nmap_os_db_parser(filename)?;
-    let serialized = serde_json::to_string(&ret)?;
-    let mut file_write = File::create(output)?;
-    file_write.write_all(serialized.as_bytes())?;
-    Ok(())
-}
-
-pub fn nmap_os_db_pistol_load(serialized: String) -> Result<Vec<NmapOsDb>> {
-    let deserialized: Vec<NmapOsDb> = serde_json::from_str(&serialized)?;
-    Ok(deserialized)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1407,13 +1388,5 @@ mod tests {
         // let serialized = serde_json::to_string(&ret).unwrap();
         // let mut file_write = File::create("nmap-os-db.pistol").unwrap();
         // file_write.write_all(serialized.as_bytes()).unwrap();
-    }
-    #[test]
-    fn test_load() {
-        let mut file = File::open("nmap-os-db.pistol").unwrap();
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap();
-        let n = nmap_os_db_pistol_load(contents).unwrap();
-        println!("{:?}", n[0]);
     }
 }
