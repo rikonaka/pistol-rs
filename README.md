@@ -128,7 +128,3 @@ To sum up, unless there is substantial progress in the above two conditions, OS 
 ## Service and Application Version Detection
 
 TODO.
-
-## CLI program
-
-I also implement a demo [code](https://github.com/rikonaka/pistol_cli-rs) here.
