@@ -126,7 +126,7 @@ fn os_detect_thread(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    nmap_os_db_file_path: String,
+    nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     max_loop: usize,
     read_timeout: Duration,
@@ -142,10 +142,9 @@ fn os_detect_thread(
         read_timeout,
     )?;
 
-    let nmap_od_db = dbparser::nmap_os_db_parser(nmap_os_db_file_path)?;
     let mut score_vec = Vec::new();
     let mut total_vec = Vec::new();
-    for n in &nmap_od_db {
+    for n in &nmap_os_db {
         let (score, total) = n.check(&nmap_fingerprint);
         score_vec.push(score);
         total_vec.push(total);
@@ -164,7 +163,7 @@ fn os_detect_thread(
         let dr = NmapOsDetectRet {
             score: score_vec[i],
             total: total_vec[i],
-            db: nmap_od_db[i].clone(),
+            db: nmap_os_db[i].clone(),
         };
         dr_vec.push(dr);
     }
@@ -243,6 +242,7 @@ pub fn os_detect(
     max_loop: usize,
     read_timeout: Duration,
 ) -> Result<HashMap<Ipv4Addr, (PistolFingerprint, Vec<NmapOsDetectRet>)>> {
+    let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_db_file_path)?;
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -254,7 +254,7 @@ pub fn os_detect(
             let dst_closed_tcp_port = t.ports[1];
             let dst_closed_udp_port = t.ports[2];
             let tx = tx.clone();
-            let nmap_os_db_file_path = nmap_os_db_file_path.clone();
+            let nmap_os_db = nmap_os_db.to_vec();
             pool.execute(move || {
                 let os_detect_ret = os_detect_thread(
                     src_ipv4,
@@ -263,7 +263,7 @@ pub fn os_detect(
                     dst_open_tcp_port,
                     dst_closed_tcp_port,
                     dst_closed_udp_port,
-                    nmap_os_db_file_path,
+                    nmap_os_db,
                     top_k,
                     max_loop,
                     read_timeout,

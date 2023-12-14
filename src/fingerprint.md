@@ -1,5 +1,8 @@
 # OS Detect Example
 
+* 192.168.72.129 - CentOS 7
+* 192.168.72.136 - Ubuntu 22.04
+
 ```rust
 use pistol::{os_detect, Host, Target};
 use std::time::Duration;
@@ -10,7 +13,7 @@ fn main() {
     let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
     // If the value of `source port` is `None`, the program will generate the source port randomly.
     let src_port = None;
-    let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 130);
+    let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 129);
     // `dst_open_tcp_port` must be a certain open tcp port.
     let dst_open_tcp_port_1 = 22;
     // `dst_closed_tcp_port` must be a certain closed tcp port.
@@ -72,9 +75,6 @@ fn main() {
 ```
 
 ## Output
-
-* 192.168.72.130 - Ubuntu 22.04
-* 192.168.72.129 - CentOS 7
 
 ### Ubuntu 22.04
 
