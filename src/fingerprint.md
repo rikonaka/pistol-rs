@@ -20,7 +20,7 @@ fn main() {
     let host1 = Host::new(
         dst_ipv4_1,
         Some(vec![
-            dst_open_tcp_port_1, // The order of these three ports cannot be disrupted
+            dst_open_tcp_port_1,   // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port_1,
             dst_closed_udp_port_1,
         ]),
