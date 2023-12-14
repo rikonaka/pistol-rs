@@ -2,6 +2,13 @@
 
 The library must be run as root (Linux) or administrator (Windows).
 
+Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet. But you can add this library through git.
+
+```toml
+[dependencies]
+pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
+```
+
 ## Example
 
 ### SYN Port Scan
