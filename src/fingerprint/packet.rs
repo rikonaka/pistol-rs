@@ -13,14 +13,10 @@ use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
 use std::net::Ipv4Addr;
 
-use crate::utils::IPV4_HEADER_LEN;
-use crate::utils::IP_TTL;
-use crate::utils::TCP_DATA_LEN;
-use crate::utils::UDP_HEADER_LEN;
-use crate::utils::{ICMP_HEADER_LEN, TCP_HEADER_LEN};
-
-// const TCP_PROBE_HEADER_WITH_OPTIONS_LEN: usize = 40; // 20 + 20 (options)
-const UDP_PROBE_DATA_LEN: usize = 300;
+use crate::layers::ICMP_HEADER_SIZE;
+use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::TCP_HEADER_SIZE;
+use crate::layers::UDP_HEADER_SIZE;
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.
@@ -101,6 +97,7 @@ const MSS_SIZE: usize = 4;
 const WSCALE_SIZE: usize = 3;
 const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
+const TTL: u8 = 64;
 
 pub fn seq_packet_1_layer3(
     src_ipv4: Ipv4Addr,
@@ -109,20 +106,21 @@ pub fn seq_packet_1_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv4_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut ipv4_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -130,7 +128,7 @@ pub fn seq_packet_1_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv4_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -158,7 +156,7 @@ pub fn seq_packet_1_layer3(
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv4_buff.to_vec())
 }
 
 pub fn seq_packet_2_layer3(
@@ -168,19 +166,20 @@ pub fn seq_packet_2_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -188,7 +187,7 @@ pub fn seq_packet_2_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -225,20 +224,21 @@ pub fn seq_packet_3_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -246,7 +246,7 @@ pub fn seq_packet_3_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -285,19 +285,20 @@ pub fn seq_packet_4_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -305,7 +306,7 @@ pub fn seq_packet_4_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -341,19 +342,20 @@ pub fn seq_packet_5_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -361,7 +363,7 @@ pub fn seq_packet_5_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -398,19 +400,20 @@ pub fn seq_packet_6_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
@@ -418,7 +421,7 @@ pub fn seq_packet_6_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -449,20 +452,20 @@ pub fn seq_packet_6_layer3(
 
 pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const ICMP_PROBE_DATA_LEN: usize = 120; // and 120 bytes of 0x00 for the data payload
+    const ICMP_DATA_SIZE: usize = 120; // and 120 bytes of 0x00 for the data payload
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
-    ip_header.set_total_length((IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     // a random IP ID and ICMP request identifier
     let id = rng.gen();
     ip_header.set_identification(id);
     // the first one has the IP DF bit set
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     // a type-of-service (TOS) byte value of zero
     ip_header.set_dscp(0);
     ip_header.set_ecn(0);
@@ -473,7 +476,7 @@ pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     ip_header.set_checksum(c);
 
     // icmp header
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     // a code of nine (even though it should be zero)
     icmp_header.set_icmp_code(IcmpCode(9));
     icmp_header.set_icmp_type(IcmpType(8));
@@ -481,10 +484,10 @@ pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     icmp_header.set_sequence_number(295);
     // a random IP ID and ICMP request identifier
     icmp_header.set_identifier(idtf);
-    let icmp_data: Vec<u8> = vec![0x00; ICMP_PROBE_DATA_LEN];
+    let icmp_data: Vec<u8> = vec![0x00; ICMP_DATA_SIZE];
     icmp_header.set_payload(&icmp_data);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
@@ -494,19 +497,19 @@ pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
 pub fn ie_packet_2_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> Result<Vec<u8>> {
     // 150 bytes of data is sent
     let mut rng = rand::thread_rng();
-    const ICMP_PROBE_DATA_LEN: usize = 150; // 150 bytes of data is sent
+    const ICMP_DATA_SIZE: usize = 150; // 150 bytes of data is sent
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
-    ip_header.set_total_length((IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_PROBE_DATA_LEN) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     let id = rng.gen();
     ip_header.set_identification(id);
     // the first one has the IP DF bit set
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     // a TOS of four (IP_TOS_RELIABILITY) is used
     // 000001|00
     ip_header.set_dscp(1);
@@ -518,17 +521,17 @@ pub fn ie_packet_2_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     ip_header.set_checksum(c);
 
     // icmp header
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     // the code is zero
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_icmp_type(IcmpType(8));
     icmp_header.set_sequence_number(296);
     // and the ICMP request ID and sequence numbers are incremented by one from the previous query values
     icmp_header.set_identifier(idtf);
-    let icmp_data: Vec<u8> = vec![0x00; ICMP_PROBE_DATA_LEN];
+    let icmp_data: Vec<u8> = vec![0x00; ICMP_DATA_SIZE];
     icmp_header.set_payload(&icmp_data);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
@@ -542,6 +545,7 @@ pub fn ecn_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = WSCALE_SIZE
         + 1
         + NOP_SIZE
@@ -554,17 +558,17 @@ pub fn ecn_packet_layer3(
         + NOP_SIZE
         + 1;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
-    ip_header.set_ttl(IP_TTL);
+    ip_header.set_ttl(TTL);
     ip_header.set_ecn(0);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
@@ -573,7 +577,7 @@ pub fn ecn_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
@@ -616,16 +620,17 @@ pub fn t2_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
@@ -633,11 +638,12 @@ pub fn t2_packet_layer3(
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    ip_header.set_ttl(TTL);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -673,16 +679,17 @@ pub fn t3_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
@@ -690,11 +697,12 @@ pub fn t3_packet_layer3(
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    ip_header.set_ttl(TTL);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -730,16 +738,17 @@ pub fn t4_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
@@ -747,11 +756,12 @@ pub fn t4_packet_layer3(
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    ip_header.set_ttl(TTL);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -787,16 +797,17 @@ pub fn t5_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
@@ -804,11 +815,12 @@ pub fn t5_packet_layer3(
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    ip_header.set_ttl(TTL);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -844,16 +856,17 @@ pub fn t6_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
@@ -861,11 +874,12 @@ pub fn t6_packet_layer3(
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    ip_header.set_ttl(TTL);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -901,16 +915,17 @@ pub fn t7_packet_layer3(
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
     let id = rng.gen();
     ip_header.set_identification(id);
@@ -918,11 +933,12 @@ pub fn t7_packet_layer3(
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    ip_header.set_ttl(TTL);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -959,27 +975,28 @@ pub fn udp_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
-    let mut buff = [0u8; IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_PROBE_DATA_LEN];
+    const UDP_DATA_SIZE: usize = 300;
+    let mut buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
-    ip_header.set_total_length((IPV4_HEADER_LEN + UDP_HEADER_LEN + UDP_PROBE_DATA_LEN) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
     // The IP ID value is set to 0x1042 for operating systems which allow us to set this.
     ip_header.set_identification(0x1042);
     // ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF not set
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Udp);
     ip_header.set_source(src_ipv4);
-    ip_header.set_ttl(64);
+    ip_header.set_ttl(TTL);
     ip_header.set_destination(dst_ipv4);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
     // udp header
-    let mut udp_header = MutableUdpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+    let mut udp_header = MutableUdpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
-    udp_header.set_length((UDP_HEADER_LEN + UDP_PROBE_DATA_LEN) as u16);
+    udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
     // The character 'C' (0x43) is repeated 300 times for the data field.
     let udp_data: Vec<u8> = vec![0x43; 300];
     assert_eq!(udp_data.len(), 300);
@@ -1002,7 +1019,7 @@ mod tests {
     fn tcp_options_test() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let src_port = 39876;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
         let dst_port = 80;
         let _ = seq_packet_1_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
         let _ = seq_packet_2_layer3(src_ipv4, src_port, dst_ipv4, dst_port);

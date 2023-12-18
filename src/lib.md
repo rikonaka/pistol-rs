@@ -1,9 +1,9 @@
-An implementation of a subset of the nmap scanning tool.
+A rust implemented nmap library.
 
-## SYN Port Scan
+## SYN Port Scan Example
 
 ```rust
-use pistol::tcp_syn_scan;
+use pistol::{tcp_syn_scan, Host, Target};
 use std::net::Ipv4Addr;
 
 fn main() {
@@ -19,9 +19,6 @@ fn main() {
     // If set to True, scan result will be printed in real time during the scanning process.
     let print_result: bool = true;
     let threads_num: usize = 8;
-    // The timeout for the program to read the package.
-    // It is recommended to set it to twice the RTT.
-    let timeout: Option<Duration> = Some(Duration::from_secs_f32(0.2));
     // `max_loop` indicates the maximum number of loops that the program will wait for the target packet.
     // The larger the value, the longer the wait time for the program to scan.
     // The smaller the value, the less reliable the scan results will be.
@@ -37,7 +34,6 @@ fn main() {
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     ).unwrap();
     for (_ip, r) in ret {

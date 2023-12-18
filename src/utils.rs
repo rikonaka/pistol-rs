@@ -1,17 +1,9 @@
 use anyhow::Result;
 use num_cpus;
 use pnet::datalink;
-// use pnet::datalink::Channel::Ethernet;
-// use pnet::datalink::{DataLinkReceiver, DataLinkSender};
 use pnet::datalink::{MacAddr, NetworkInterface};
-use pnet::packet::ip::IpNextHeaderProtocols;
-use pnet::transport::TransportChannelType::Layer3;
-use pnet::transport::TransportChannelType::Layer4;
-use pnet::transport::TransportProtocol::{Ipv4, Ipv6};
-use pnet::transport::{transport_channel, TransportReceiver, TransportSender};
 use rand::Rng;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::time::Duration;
 use subnetwork;
 use subnetwork::{Ipv4Pool, Ipv6Pool};
 use threadpool::ThreadPool;
@@ -22,28 +14,6 @@ use super::Host6;
 use super::{BindIp2Interface, BindIp2Interface6};
 
 const DEFAILT_MAX_LOOP: usize = 32;
-const DEFAILT_TIMEOUT: f32 = 1.5;
-
-pub const IP_TTL: u8 = 64;
-
-pub const BUFF_SIZE: usize = 4096;
-pub const ICMP_BUFF_SIZE: usize = 4096;
-pub const TCP_BUFF_SIZE: usize = 4096;
-pub const UDP_BUFF_SIZE: usize = 4096;
-pub const IPV4_HEADER_LEN: usize = 20;
-// pub const IPV6_HEADER_LEN: usize = 40;
-
-pub const TCP_HEADER_LEN: usize = 20;
-pub const TCP_DATA_LEN: usize = 0;
-
-pub const UDP_HEADER_LEN: usize = 8;
-pub const UDP_DATA_LEN: usize = 0;
-
-pub const ICMP_HEADER_LEN: usize = 8;
-pub const ICMP_DATA_LEN: usize = 0;
-
-// pub const ICMPV6_HEADER_LEN: usize = 8;
-// pub const ICMPV6_DATA_LEN: usize = 0;
 
 /* CODE */
 
@@ -125,7 +95,7 @@ pub fn get_ips_from_host6(hosts: &[Host6]) -> Vec<Ipv6Addr> {
     target_ips
 }
 
-pub fn find_mac_by_src_ip(find_ip: &Ipv4Addr) -> Option<MacAddr> {
+pub fn find_mac_by_src_ipv4(find_ip: &Ipv4Addr) -> Option<MacAddr> {
     let interfaces = get_host_interfaces();
     for interface in &interfaces {
         for ip in &interface.ips {
@@ -284,103 +254,6 @@ pub fn get_max_loop(max_loop: Option<usize>) -> usize {
     }
 }
 
-pub fn get_timeout(timeout: Option<Duration>) -> Duration {
-    match timeout {
-        Some(t) => t,
-        _ => Duration::from_secs_f32(DEFAILT_TIMEOUT),
-    }
-}
-
-pub fn return_layer3_tcp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
-    match transport_channel(buffer_size, tcp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer4_tcp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let tcp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Tcp));
-    match transport_channel(buffer_size, tcp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer4_tcp6_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let tcp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Tcp));
-    match transport_channel(buffer_size, tcp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer3_udp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let udp_protocol = Layer3(IpNextHeaderProtocols::Udp);
-    match transport_channel(buffer_size, udp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer4_udp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let udp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Udp));
-    match transport_channel(buffer_size, udp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer4_udp6_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let udp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Udp));
-    match transport_channel(buffer_size, udp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer3_icmp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let icmp_protocol = Layer3(IpNextHeaderProtocols::Icmp);
-    match transport_channel(buffer_size, icmp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer4_icmp_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let icmp_protocol = Layer4(Ipv4(IpNextHeaderProtocols::Icmp));
-    match transport_channel(buffer_size, icmp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
-pub fn return_layer4_icmp6_channel(
-    buffer_size: usize,
-) -> Result<(TransportSender, TransportReceiver)> {
-    let icmp_protocol = Layer4(Ipv6(IpNextHeaderProtocols::Icmpv6));
-    match transport_channel(buffer_size, icmp_protocol) {
-        Ok((tx, rx)) => Ok((tx, rx)),
-        Err(e) => return Err(e.into()),
-    }
-}
-
 pub struct Hex {
     pub hex: Option<String>, // hex => dec
 }
@@ -424,6 +297,7 @@ impl Hex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pnet::datalink::interfaces;
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
@@ -447,7 +321,7 @@ mod tests {
     }
     #[test]
     fn test_list_interfaces() {
-        for interface in pnet_datalink::interfaces() {
+        for interface in interfaces() {
             // println!("{}", interface)
             let ips = interface.ips;
             for ip in ips {

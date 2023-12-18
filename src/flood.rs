@@ -72,7 +72,7 @@ fn run_flood6(
     max_flood_packet: usize,
 ) {
     let func = match method {
-        FloodMethods::Icmp => icmp6::send_icmp_flood_packet,
+        FloodMethods::Icmp => icmp6::send_icmpv6_flood_packet,
         FloodMethods::Syn => tcp6::send_syn_flood_packet,
         FloodMethods::Ack => tcp6::send_ack_flood_packet,
         FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet,

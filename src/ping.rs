@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
-use std::time::Duration;
 
 pub mod icmp;
 pub mod icmp6;
@@ -45,7 +44,6 @@ fn run_ping(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<PingResults> {
     let ping_status = match method {
@@ -55,9 +53,7 @@ fn run_ping(
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp::send_syn_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            )?;
+            let ret = tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop)?;
             match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -69,9 +65,7 @@ fn run_ping(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp::send_ack_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            )?;
+            let ret = tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop)?;
             match ret {
                 TargetScanStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -83,16 +77,14 @@ fn run_ping(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let ret = udp::send_udp_scan_packet(
-                src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop,
-            )?;
+            let ret = udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop)?;
             match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 TargetScanStatus::OpenOrFiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        PingMethods::Icmp => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout, max_loop)?,
+        PingMethods::Icmp => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, max_loop)?,
     };
     Ok(PingResults {
         addr: dst_ipv4.into(),
@@ -106,7 +98,6 @@ fn run_ping6(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<PingResults> {
     let ping_status = match method {
@@ -116,9 +107,7 @@ fn run_ping6(
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp6::send_syn_scan_packet(
-                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
-            )?;
+            let ret = tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop)?;
             match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -130,9 +119,7 @@ fn run_ping6(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp6::send_ack_scan_packet(
-                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
-            )?;
+            let ret = tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop)?;
             match ret {
                 TargetScanStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -144,16 +131,14 @@ fn run_ping6(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let ret = udp6::send_udp_scan_packet(
-                src_ipv6, src_port, dst_ipv6, dst_port, timeout, max_loop,
-            )?;
+            let ret = udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop)?;
             match ret {
                 TargetScanStatus::Open => PingStatus::Up,
                 TargetScanStatus::OpenOrFiltered => PingStatus::Up,
                 _ => PingStatus::Down,
             }
         }
-        PingMethods::Icmp => icmp6::send_icmp_ping_packet(src_ipv6, dst_ipv6, timeout, max_loop)?,
+        PingMethods::Icmp => icmp6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, max_loop)?,
     };
     Ok(PingResults {
         addr: dst_ipv6.into(),
@@ -169,7 +154,6 @@ pub fn ping(
     interface: Option<&str>,
     print_result: bool,
     threads_num: usize,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     let iter = match interface {
@@ -190,7 +174,6 @@ pub fn ping(
             let pool = utils::get_threads_pool(threads_num);
             let mut recv_size = 0;
             let max_loop = utils::get_max_loop(max_loop);
-            let timeout = utils::get_timeout(timeout);
 
             for h in &target.hosts {
                 let dst_ipv4 = h.addr;
@@ -206,7 +189,6 @@ pub fn ping(
                                 src_port,
                                 dst_ipv4,
                                 Some(dst_port),
-                                timeout,
                                 max_loop,
                             );
                             match ret {
@@ -223,9 +205,7 @@ pub fn ping(
                     let tx = tx.clone();
                     recv_size += 1;
                     pool.execute(move || {
-                        let ret = run_ping(
-                            method, src_ipv4, src_port, dst_ipv4, None, timeout, max_loop,
-                        );
+                        let ret = run_ping(method, src_ipv4, src_port, dst_ipv4, None, max_loop);
                         match ret {
                             Ok(status) => match tx.send(Ok((0, status))) {
                                 _ => (),
@@ -253,7 +233,6 @@ pub fn ping(
             let (tx, rx) = channel();
             let mut recv_size = 0;
             let max_loop = utils::get_max_loop(max_loop);
-            let timeout = utils::get_timeout(timeout);
 
             for (bi, host) in zip(bi_vec, target.hosts) {
                 match bi.interface {
@@ -277,7 +256,6 @@ pub fn ping(
                                         src_port,
                                         dst_ipv4,
                                         Some(dst_port),
-                                        timeout,
                                         max_loop,
                                     );
                                     match ret {
@@ -294,9 +272,8 @@ pub fn ping(
                             let tx = tx.clone();
                             recv_size += 1;
                             pool.execute(move || {
-                                let ret = run_ping(
-                                    method, src_ipv4, src_port, dst_ipv4, None, timeout, max_loop,
-                                );
+                                let ret =
+                                    run_ping(method, src_ipv4, src_port, dst_ipv4, None, max_loop);
                                 match ret {
                                     Ok(status) => match tx.send(Ok((0, status))) {
                                         _ => (),
@@ -339,7 +316,6 @@ pub fn ping6(
     interface: Option<&str>,
     print_result: bool,
     threads_num: usize,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     let iter = match interface {
@@ -360,7 +336,6 @@ pub fn ping6(
             let pool = utils::get_threads_pool(threads_num);
             let mut recv_size = 0;
             let max_loop = utils::get_max_loop(max_loop);
-            let timeout = utils::get_timeout(timeout);
 
             for h in &target.hosts6 {
                 let dst_ipv6 = h.addr;
@@ -376,7 +351,6 @@ pub fn ping6(
                                 src_port,
                                 dst_ipv6,
                                 Some(dst_port),
-                                timeout,
                                 max_loop,
                             );
                             match ret {
@@ -393,9 +367,7 @@ pub fn ping6(
                     let tx = tx.clone();
                     recv_size += 1;
                     pool.execute(move || {
-                        let ret = run_ping6(
-                            method, src_ipv6, src_port, dst_ipv6, None, timeout, max_loop,
-                        );
+                        let ret = run_ping6(method, src_ipv6, src_port, dst_ipv6, None, max_loop);
                         match ret {
                             Ok(status) => match tx.send(Ok((0, status))) {
                                 _ => (),
@@ -423,7 +395,6 @@ pub fn ping6(
             let (tx, rx) = channel();
             let mut recv_size = 0;
             let max_loop = utils::get_max_loop(max_loop);
-            let timeout = utils::get_timeout(timeout);
 
             for (bi, host) in zip(bi_vec, target.hosts6) {
                 match bi.interface {
@@ -447,7 +418,6 @@ pub fn ping6(
                                         src_port,
                                         dst_ipv6,
                                         Some(dst_port),
-                                        timeout,
                                         max_loop,
                                     );
                                     match ret {
@@ -464,9 +434,8 @@ pub fn ping6(
                             let tx = tx.clone();
                             recv_size += 1;
                             pool.execute(move || {
-                                let ret = run_ping6(
-                                    method, src_ipv6, src_port, dst_ipv6, None, timeout, max_loop,
-                                );
+                                let ret =
+                                    run_ping6(method, src_ipv6, src_port, dst_ipv6, None, max_loop);
                                 match ret {
                                     Ok(status) => match tx.send(Ok((0, status))) {
                                         _ => (),
@@ -508,7 +477,6 @@ pub fn tcp_syn_ping(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping(
@@ -519,7 +487,6 @@ pub fn tcp_syn_ping(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -531,7 +498,6 @@ pub fn tcp_syn_ping6(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping6(
@@ -542,7 +508,6 @@ pub fn tcp_syn_ping6(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -554,7 +519,6 @@ pub fn tcp_ack_ping(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping(
@@ -565,7 +529,6 @@ pub fn tcp_ack_ping(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -577,7 +540,6 @@ pub fn tcp_ack_ping6(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping6(
@@ -588,7 +550,6 @@ pub fn tcp_ack_ping6(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -600,7 +561,6 @@ pub fn udp_ping(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping(
@@ -611,7 +571,6 @@ pub fn udp_ping(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -623,7 +582,6 @@ pub fn udp_ping6(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping6(
@@ -634,7 +592,6 @@ pub fn udp_ping6(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -646,7 +603,6 @@ pub fn icmp_ping(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping(
@@ -657,7 +613,6 @@ pub fn icmp_ping(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }
@@ -669,7 +624,6 @@ pub fn icmp_ping6(
     interface: Option<&str>,
     threads_num: usize,
     print_result: bool,
-    timeout: Option<Duration>,
     max_loop: Option<usize>,
 ) -> Result<HashMap<u16, PingResults>> {
     ping6(
@@ -680,7 +634,6 @@ pub fn icmp_ping6(
         interface,
         print_result,
         threads_num,
-        timeout,
         max_loop,
     )
 }

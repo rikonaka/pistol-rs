@@ -19,8 +19,8 @@ pub fn send_arp_scan_packet(
         Ok(_) => panic!("unknown channel type"),
         Err(e) => panic!("error happened {}", e),
     };
-    let mut ethernet_buffer = [0u8; 42];
-    let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
+    let mut ethernet_buff = [0u8; 42];
+    let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buff).unwrap();
 
     ethernet_packet.set_destination(dst_mac);
     // ethernet_packet.set_destination(MacAddr::broadcast());
@@ -48,8 +48,8 @@ pub fn send_arp_scan_packet(
     }
 
     for _ in 0..max_loop {
-        let buf = receiver.next().unwrap();
-        let re = EthernetPacket::new(buf).unwrap();
+        let buff = receiver.next().unwrap();
+        let re = EthernetPacket::new(buff).unwrap();
         // let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
         let arp = ArpPacket::new(re.payload()).unwrap();
         if arp.get_sender_proto_addr() == dst_ipv4 && arp.get_target_hw_addr() == src_mac {

@@ -1,12 +1,11 @@
 use anyhow::Result;
 use pnet::packet::icmp::{destination_unreachable, IcmpPacket, IcmpTypes};
 use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::ipv4;
 use pnet::packet::ipv4::{checksum, Ipv4Flags, Ipv4Packet, MutableIpv4Packet};
+use pnet::packet::tcp;
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags, TcpPacket};
 use pnet::packet::Packet;
-use pnet::transport::transport_channel;
-use pnet::transport::TransportChannelType::Layer3;
-use pnet::transport::{icmp_packet_iter, ipv4_packet_iter, tcp_packet_iter};
 use rand::Rng;
 use std::error::Error;
 use std::fmt;
@@ -14,18 +13,14 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
-use std::time::Duration;
 
-use crate::utils::return_layer4_icmp_channel;
-use crate::utils::return_layer4_tcp_channel;
-use crate::utils::ICMP_BUFF_SIZE;
-use crate::utils::IPV4_HEADER_LEN;
-use crate::utils::IP_TTL;
-use crate::utils::TCP_BUFF_SIZE;
-use crate::utils::TCP_DATA_LEN;
-use crate::utils::TCP_HEADER_LEN;
+use crate::layers::{layer3_ipv4_send, MatchResp};
+use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
 use crate::IdleScanResults;
 use crate::TargetScanStatus;
+
+const TCP_DATA_SIZE: usize = 0;
+const TTL: u8 = 64;
 
 /* IdleScanAllZeroError */
 #[derive(Debug, Clone)]
@@ -65,16 +60,27 @@ pub fn send_syn_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -84,65 +90,69 @@ pub fn send_syn_scan_packet(
     tcp_header.set_urgent_ptr(0);
     tcp_header.set_window(1024);
     tcp_header.set_data_offset(5);
-    let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
+    let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_source() == dst_port
-                            && tcp_packet.get_destination() == src_port
-                        {
-                            let tcp_flags = tcp_packet.get_flags();
-                            if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
-                                // tcp syn/ack response
-                                return Ok(TargetScanStatus::Open);
-                            } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                // tcp rst response
-                                return Ok(TargetScanStatus::Closed);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
+                                        // tcp syn/ack response
+                                        return Ok(TargetScanStatus::Open);
+                                    } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        // tcp rst response
+                                        return Ok(TargetScanStatus::Closed);
+                                    }
+                                }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (), // do nothing
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::Filtered)
@@ -153,16 +163,27 @@ pub fn send_fin_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -175,62 +196,66 @@ pub fn send_fin_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_source() == dst_port
-                            && tcp_packet.get_destination() == src_port
-                        {
-                            let tcp_flags = tcp_packet.get_flags();
-                            if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
-                                // tcp syn/ack response
-                                return Ok(TargetScanStatus::Open);
-                            } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                // tcp rst packet
-                                return Ok(TargetScanStatus::Closed);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
+                                        // tcp syn/ack response
+                                        return Ok(TargetScanStatus::Open);
+                                    } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        // tcp rst packet
+                                        return Ok(TargetScanStatus::Closed);
+                                    }
+                                }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::OpenOrFiltered)
@@ -241,16 +266,27 @@ pub fn send_ack_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -263,59 +299,63 @@ pub fn send_ack_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_destination() == src_port
-                            && tcp_packet.get_source() == dst_port
-                        {
-                            let tcp_flags = tcp_packet.get_flags();
-                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                // tcp rst response
-                                return Ok(TargetScanStatus::Unfiltered);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        // tcp rst response
+                                        return Ok(TargetScanStatus::Unfiltered);
+                                    }
+                                }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::Filtered)
@@ -326,16 +366,27 @@ pub fn send_null_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -348,63 +399,63 @@ pub fn send_null_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_destination() == src_port
-                            && tcp_packet.get_source() == dst_port
-                        {
-                            if tcp_packet.get_source() == dst_port
-                                && tcp_packet.get_destination() == src_port
-                            {
-                                let tcp_flags = tcp_packet.get_flags();
-                                if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                    // tcp rst response
-                                    return Ok(TargetScanStatus::Closed);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        // tcp rst response
+                                        return Ok(TargetScanStatus::Closed);
+                                    }
                                 }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::OpenOrFiltered)
@@ -415,16 +466,28 @@ pub fn send_xmas_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
 
     // tcp header
     let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -437,63 +500,63 @@ pub fn send_xmas_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_destination() == src_port
-                            && tcp_packet.get_source() == dst_port
-                        {
-                            if tcp_packet.get_source() == dst_port
-                                && tcp_packet.get_destination() == src_port
-                            {
-                                let tcp_flags = tcp_packet.get_flags();
-                                if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                    // tcp rst response
-                                    return Ok(TargetScanStatus::Closed);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        // tcp rst response
+                                        return Ok(TargetScanStatus::Closed);
+                                    }
                                 }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::OpenOrFiltered)
@@ -504,16 +567,27 @@ pub fn send_window_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -526,64 +600,68 @@ pub fn send_window_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_destination() == src_port
-                            && tcp_packet.get_source() == dst_port
-                        {
-                            let tcp_flags = tcp_packet.get_flags();
-                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                if tcp_packet.get_window() > 0 {
-                                    // tcp rst response with non-zero window field
-                                    return Ok(TargetScanStatus::Open);
-                                } else {
-                                    // tcp rst response with zero window field
-                                    return Ok(TargetScanStatus::Closed);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        if tcp_packet.get_window() > 0 {
+                                            // tcp rst response with non-zero window field
+                                            return Ok(TargetScanStatus::Open);
+                                        } else {
+                                            // tcp rst response with zero window field
+                                            return Ok(TargetScanStatus::Closed);
+                                        }
+                                    }
                                 }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::Filtered)
@@ -594,16 +672,27 @@ pub fn send_maimon_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<TargetScanStatus> {
-    let (mut tcp_tx, mut tcp_rx) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
-    let (_, mut icmp_rx) = return_layer4_icmp_channel(ICMP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -616,63 +705,63 @@ pub fn send_maimon_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    match tcp_tx.send_to(tcp_header, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_object_1 = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
-    let mut tcp_iter = tcp_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = icmp_packet_iter(&mut icmp_rx);
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((tcp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if tcp_packet.get_destination() == src_port
-                            && tcp_packet.get_source() == dst_port
-                        {
-                            if tcp_packet.get_source() == dst_port
-                                && tcp_packet.get_destination() == src_port
-                            {
-                                let tcp_flags = tcp_packet.get_flags();
-                                if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                                    // tcp rst response
-                                    return Ok(TargetScanStatus::Closed);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![match_object_1, match_object_2],
+        max_loop,
+    )?;
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    let tcp_flags = tcp_packet.get_flags();
+                                    if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                        // tcp rst response
+                                        return Ok(TargetScanStatus::Closed);
+                                    }
                                 }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((icmp_packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                        ];
-                        if icmp_type == IcmpTypes::DestinationUnreachable
-                            && codes.contains(&icmp_code)
-                        {
-                            // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        return Ok(TargetScanStatus::Filtered);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
     // no response received (even after retransmissions)
     Ok(TargetScanStatus::OpenOrFiltered)
@@ -685,7 +774,6 @@ pub fn send_idle_scan_packet(
     dst_port: u16,
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
-    timeout: Duration,
     max_loop: usize,
 ) -> Result<(TargetScanStatus, Option<IdleScanResults>)> {
     fn _forge_syn_packet(
@@ -696,23 +784,23 @@ pub fn send_idle_scan_packet(
     ) -> Result<Vec<u8>> {
         let mut rng = rand::thread_rng();
         // ip header
-        let mut buff = [0u8; IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN];
-        let mut ip_header = MutableIpv4Packet::new(&mut buff[..IPV4_HEADER_LEN]).unwrap();
+        let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+        let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
         ip_header.set_version(4);
         ip_header.set_header_length(5);
-        ip_header.set_total_length((IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN) as u16);
+        ip_header.set_source(src_ipv4);
+        ip_header.set_destination(dst_ipv4);
+        ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
         let id = rng.gen();
         ip_header.set_identification(id);
         ip_header.set_flags(Ipv4Flags::DontFragment);
-        ip_header.set_ttl(IP_TTL);
+        ip_header.set_ttl(TTL);
         ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
         let c = checksum(&ip_header.to_immutable());
         ip_header.set_checksum(c);
-        ip_header.set_source(src_ipv4);
-        ip_header.set_destination(dst_ipv4);
 
         // tcp header
-        let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_LEN..]).unwrap();
+        let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
         tcp_header.set_source(src_port);
         tcp_header.set_destination(dst_port);
         tcp_header.set_sequence(rng.gen());
@@ -725,183 +813,144 @@ pub fn send_idle_scan_packet(
         let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
         tcp_header.set_checksum(checksum);
 
-        Ok(buff.to_vec())
+        Ok(ip_buff.to_vec())
     }
-
-    let tcp_protocol = Layer3(IpNextHeaderProtocols::Tcp);
-    let (mut tcp_tx, mut tcp_rx) = match transport_channel(TCP_BUFF_SIZE, tcp_protocol) {
-        Ok((tx, rx)) => (tx, rx),
-        Err(e) => return Err(e.into()),
-    };
-    let icmp_protocol = Layer3(IpNextHeaderProtocols::Icmp);
-    let (_, mut icmp_rx) = match transport_channel(ICMP_BUFF_SIZE, icmp_protocol) {
-        Ok((tx, rx)) => (tx, rx),
-        Err(e) => return Err(e.into()),
-    };
-    let mut tcp_iter = ipv4_packet_iter(&mut tcp_rx);
-    let mut icmp_iter = ipv4_packet_iter(&mut icmp_rx);
 
     // 1. probe the zombie's ip id
+    let match_tcp_zombie = MatchResp::new_layer4_tcp_udp(src_port, zombie_port, false);
+    let match_icmp_zombie = MatchResp::new_layer4_icmp(src_ipv4, zombie_ipv4, false);
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
-    let ip_packet = Ipv4Packet::new(&ip_buff).unwrap();
-    match tcp_tx.send_to(ip_packet, zombie_ipv4.into()) {
-        Ok(n) => assert_eq!(n, IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        zombie_ipv4,
+        &ip_buff,
+        vec![match_tcp_zombie, match_icmp_zombie],
+        max_loop,
+    )?;
 
     let mut zombie_ip_id_1 = 0;
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((packet, addr)) => {
-                    if addr == zombie_ipv4 {
-                        if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4 {
-                                let ipv4_payload = packet.payload();
-                                let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
-                                println!(">>> {}", tcp_packet.get_flags());
-                                if tcp_packet.get_source() == zombie_port
-                                    && tcp_packet.get_destination() == src_port
-                                {
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    // println!(">>> {}", tcp_packet.get_flags());
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // 2. zombie return rst packet, get this packet ip id
-                                        zombie_ip_id_1 = packet.get_identification();
-                                        if zombie_ip_id_1 == 0 {
-                                            return Err(IdleScanAllZeroError::new(
-                                                zombie_ipv4,
-                                                zombie_port,
-                                            )
-                                            .into());
-                                        } else {
-                                            break;
-                                        }
+                                        zombie_ip_id_1 = ipv4_packet.get_identification();
                                     }
                                 }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if packet.get_next_level_protocol() == IpNextHeaderProtocols::Icmp {
-                            let ipv4_payload = packet.payload();
-                            let icmp_packet = IcmpPacket::new(ipv4_payload).unwrap();
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // dst is unreachable ignore this port
-                                return Ok((TargetScanStatus::Unreachable, None));
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        // dst is unreachable ignore this port
+                                        return Ok((TargetScanStatus::Unreachable, None));
+                                    }
+                                }
+                                None => (),
                             }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
 
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = _forge_syn_packet(zombie_ipv4, dst_ipv4, zombie_port, dst_port)?;
-    let ip_packet_2 = Ipv4Packet::new(&ip_buff_2).unwrap();
-    match tcp_tx.send_to(ip_packet_2, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    // ignore the response
+    let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff_2, vec![], max_loop)?;
 
     // 4. probe the zombie's ip id again
     let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
-    let ip_packet_3 = Ipv4Packet::new(&ip_buff_3).unwrap();
-    match tcp_tx.send_to(ip_packet_3, dst_ipv4.into()) {
-        Ok(n) => assert_eq!(n, IPV4_HEADER_LEN + TCP_HEADER_LEN + TCP_DATA_LEN),
-        Err(e) => return Err(e.into()),
-    }
+    let match_tcp = MatchResp::new_layer4_tcp_udp(src_port, dst_port, false);
+    let match_icmp = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let ret = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff_3,
+        vec![match_tcp, match_icmp],
+        max_loop,
+    )?;
+
     let mut zombie_ip_id_2 = 0;
-    for _ in 0..max_loop {
-        match tcp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((packet, addr)) => {
-                    if addr == zombie_ipv4 {
-                        if packet.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-                            if packet.get_destination() == src_ipv4
-                                && packet.get_source() == zombie_ipv4
-                            {
-                                let ipv4_payload = packet.payload();
-                                let tcp_packet = TcpPacket::new(ipv4_payload).unwrap();
-                                if tcp_packet.get_source() == zombie_port {
+    match ret {
+        Some(r) => {
+            match Ipv4Packet::new(&r) {
+                Some(ipv4_packet) => {
+                    match ipv4_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            match TcpPacket::new(ipv4_packet.payload()) {
+                                Some(tcp_packet) => {
+                                    // println!(">>> {}", tcp_packet.get_flags());
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // 5. zombie return rst packet again, get this packet ip id
-                                        zombie_ip_id_2 = packet.get_identification();
-                                        if zombie_ip_id_2 == 0 {
-                                            return Err(IdleScanAllZeroError::new(
-                                                zombie_ipv4,
-                                                zombie_port,
-                                            )
-                                            .into());
-                                        } else {
-                                            break;
-                                        }
+                                        zombie_ip_id_2 = ipv4_packet.get_identification();
                                     }
                                 }
+                                None => (),
                             }
                         }
-                    }
-                }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
-        }
-        match icmp_iter.next_with_timeout(timeout) {
-            Ok(r) => match r {
-                Some((packet, addr)) => {
-                    if addr == dst_ipv4 {
-                        if packet.get_next_level_protocol() == IpNextHeaderProtocols::Icmp {
-                            let ipv4_payload = packet.payload();
-                            let icmp_packet = IcmpPacket::new(ipv4_payload).unwrap();
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                            ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // dst is unreachable ignore this port
-                                return Ok((TargetScanStatus::Unreachable, None));
+                        IpNextHeaderProtocols::Icmp => {
+                            match IcmpPacket::new(ipv4_packet.payload()) {
+                                Some(icmp_packet) => {
+                                    let icmp_type = icmp_packet.get_icmp_type();
+                                    let icmp_code = icmp_packet.get_icmp_code();
+                                    let codes = vec![
+                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+                                    ];
+                                    if icmp_type == IcmpTypes::DestinationUnreachable
+                                        && codes.contains(&icmp_code)
+                                    {
+                                        // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                        // dst is unreachable ignore this port
+                                        return Ok((TargetScanStatus::Unreachable, None));
+                                    }
+                                }
+                                None => (),
                             }
                         }
+                        _ => (),
                     }
                 }
-                _ => (),
-            },
-            Err(e) => return Err(e.into()),
+                None => (),
+            }
         }
+        None => (),
     }
-
-    if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
+    if zombie_ip_id_1 == 0 && zombie_ip_id_2 == 0 {
+        return Err(IdleScanAllZeroError::new(zombie_ipv4, zombie_port).into());
+    } else if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
         Ok((
             TargetScanStatus::Open,
             Some(IdleScanResults {
@@ -925,11 +974,10 @@ pub fn send_connect_scan_packet(
     _: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
     _: usize,
 ) -> Result<TargetScanStatus> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
-    match TcpStream::connect_timeout(&addr, timeout) {
+    match TcpStream::connect(&addr) {
         Ok(_) => Ok(TargetScanStatus::Open),
         Err(_) => Ok(TargetScanStatus::Closed),
     }
@@ -943,66 +991,72 @@ mod tests {
     fn test_send_syn_scan_packet() {
         // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
         let src_port = utils::random_port();
-        let dst_port = 80;
-        let timeout = Duration::from_secs(1);
-        let max_loop = 4;
-        let ret = send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout, max_loop)
-            .unwrap();
+        let dst_port = 99;
+        // let dst_port = 80;
+        let max_loop = 32;
+        let ret = send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop).unwrap();
         println!("{:?}", ret);
     }
     #[test]
     fn test_send_fin_scan_packet() {
         // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let timeout = Duration::from_secs(1);
-        let max_loop = 8;
-        let ret = send_fin_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+        let src_port = utils::random_port();
+        // let dst_port = 99;
+        let dst_port = 80;
+        let max_loop = 32;
+        let ret = send_fin_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
         println!("{:?}", ret);
     }
     #[test]
     fn test_send_ack_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let timeout = Duration::from_secs(1);
-        let max_loop = 8;
-        let ret = send_ack_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+        let src_port = utils::random_port();
+        // let dst_port = 99;
+        let dst_port = 80;
+        let max_loop = 32;
+        let ret = send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
         println!("{:?}", ret);
     }
     #[test]
     fn test_send_null_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let timeout = Duration::from_secs(1);
-        let max_loop = 8;
-        let ret = send_null_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+        let src_port = utils::random_port();
+        // let dst_port = 99;
+        let dst_port = 80;
+        let max_loop = 32;
+        let ret = send_null_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
         println!("{:?}", ret);
     }
     #[test]
     fn test_send_window_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let timeout = Duration::from_secs(1);
-        let max_loop = 8;
-        let ret = send_window_scan_packet(src_ipv4, 53511, dst_ipv4, 80, timeout, max_loop);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+        let src_port = utils::random_port();
+        // let dst_port = 99;
+        let dst_port = 80;
+        let max_loop = 32;
+        let ret = send_window_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
         println!("{:?}", ret);
     }
     #[test]
     #[should_panic]
     fn test_send_idle_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let zombie_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+        let zombie_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
 
         let src_port = utils::random_port();
-        let dst_port = 80;
+        let dst_port = 22;
         let zombie_port = utils::random_port();
-        let timeout = Duration::from_secs(1);
-        let max_loop = 8;
+        let max_loop = 32;
         let (ret, i) = send_idle_scan_packet(
             src_ipv4,
             src_port,
@@ -1010,7 +1064,6 @@ mod tests {
             dst_port,
             zombie_ipv4,
             zombie_port,
-            timeout,
             max_loop,
         )
         .unwrap();
@@ -1018,14 +1071,14 @@ mod tests {
         println!("{:?}", i.unwrap());
     }
     #[test]
-    fn test_send_tcp_handshark() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 206);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 207);
-        let timeout = Duration::from_secs(10);
+    fn test_send_tcp_connect_scan_packet() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
         let max_loop = 64;
         let src_port = utils::random_port();
+        let dst_port = 80;
         let ret =
-            send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, 81, timeout, max_loop).unwrap();
+            send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop).unwrap();
         println!("{:?}", ret);
     }
 }

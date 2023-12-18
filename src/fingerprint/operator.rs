@@ -9,7 +9,7 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
-use super::osscan::{IERR, SEQRR, T2T7RR, U1RR};
+use super::rr::{IERR, SEQRR, TXRR, U1RR};
 use crate::errors::{CalcDiffFailed, CalcISRFailed, GetIpv4PacketFailed, GetTcpPacketFailed};
 use crate::errors::{CalcSSFailed, GetIcmpPacketFailed, GetUdpPacketFailed};
 
@@ -27,8 +27,8 @@ const FIN_MASK: u8 = 0b00000001;
 // Because different programs wait, process, and send probebao for different times,
 // so there is a certain error in the two indicators calculated based on time.
 // Program estimation error, ISR, SP use.
-const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.4;
-const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.4;
+const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.35;
+const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.35;
 
 fn get_ipv4_packet(ipv4_buff: &[u8]) -> Result<Option<Ipv4Packet>> {
     if ipv4_buff.len() > 0 {
@@ -229,11 +229,7 @@ fn get_ip_id(ipv4_buff: &Vec<u8>) -> Result<Option<u16>> {
 }
 
 /// IP ID sequence generation algorithm (TI, CI, II)
-pub fn tcp_ti_ci_ii(
-    seqrr: &SEQRR,
-    t2t7rr: &T2T7RR,
-    ierr: &IERR,
-) -> Result<(String, String, String)> {
+pub fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> Result<(String, String, String)> {
     let z_judgement = |x: &Vec<u16>| -> bool {
         let mut conditon = true; // all of the ID numbers are zero
         for v in x {
@@ -678,60 +674,71 @@ pub fn tcp_ts(seqrr: &SEQRR) -> Result<String> {
 
 /// TCP options (O, O1–O6)
 pub fn tcp_o(ipv4_response: &Vec<u8>) -> Result<String> {
-    let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
-    let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
-    let options_vec = tcp_packet.get_options();
-    let mut o_ret = String::new();
-    for option in options_vec {
-        match option.number {
-            TcpOptionNumbers::MSS => {
-                let data = Hex::vec_4u8_to_u32(&option.data);
-                let o_str = format!("M{:X}", data);
-                o_ret += &o_str;
-            }
-            TcpOptionNumbers::SACK_PERMITTED => {
-                o_ret += "S";
-            }
-            TcpOptionNumbers::EOL => {
-                o_ret += "L";
-            }
-            TcpOptionNumbers::NOP => {
-                o_ret += "N";
-            }
-            TcpOptionNumbers::WSCALE => {
-                let data = Hex::vec_4u8_to_u32(&option.data);
-                let o_str = format!("W{:X}", data);
-                o_ret += &o_str;
-            }
-            TcpOptionNumbers::TIMESTAMPS => {
-                o_ret += "T";
-                let mut t0 = Vec::new();
-                let mut t1 = Vec::new();
-                for i in 0..option.data.len() {
-                    if i < 4 {
-                        // get first 4 u8 values
-                        t0.push(option.data[i]);
-                    } else {
-                        t1.push(option.data[i]);
+    let ipv4_packet = get_ipv4_packet(ipv4_response)?;
+    match ipv4_packet {
+        Some(ipv4_packet) => {
+            let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
+            match tcp_packet {
+                Some(tcp_packet) => {
+                    let options_vec = tcp_packet.get_options();
+                    let mut o_ret = String::new();
+                    for option in options_vec {
+                        match option.number {
+                            TcpOptionNumbers::MSS => {
+                                let data = Hex::vec_4u8_to_u32(&option.data);
+                                let o_str = format!("M{:X}", data);
+                                o_ret += &o_str;
+                            }
+                            TcpOptionNumbers::SACK_PERMITTED => {
+                                o_ret += "S";
+                            }
+                            TcpOptionNumbers::EOL => {
+                                o_ret += "L";
+                            }
+                            TcpOptionNumbers::NOP => {
+                                o_ret += "N";
+                            }
+                            TcpOptionNumbers::WSCALE => {
+                                let data = Hex::vec_4u8_to_u32(&option.data);
+                                let o_str = format!("W{:X}", data);
+                                o_ret += &o_str;
+                            }
+                            TcpOptionNumbers::TIMESTAMPS => {
+                                o_ret += "T";
+                                let mut t0 = Vec::new();
+                                let mut t1 = Vec::new();
+                                for i in 0..option.data.len() {
+                                    if i < 4 {
+                                        // get first 4 u8 values
+                                        t0.push(option.data[i]);
+                                    } else {
+                                        t1.push(option.data[i]);
+                                    }
+                                }
+                                let t0_u32 = Hex::vec_4u8_to_u32(&t0);
+                                let t1_u32 = Hex::vec_4u8_to_u32(&t1);
+                                if t0_u32 == 0 {
+                                    o_ret += "0";
+                                } else {
+                                    o_ret += "1";
+                                }
+                                if t1_u32 == 0 {
+                                    o_ret += "0";
+                                } else {
+                                    o_ret += "1";
+                                }
+                            }
+                            _ => (),
+                        }
                     }
+                    return Ok(o_ret);
                 }
-                let t0_u32 = Hex::vec_4u8_to_u32(&t0);
-                let t1_u32 = Hex::vec_4u8_to_u32(&t1);
-                if t0_u32 == 0 {
-                    o_ret += "0";
-                } else {
-                    o_ret += "1";
-                }
-                if t1_u32 == 0 {
-                    o_ret += "0";
-                } else {
-                    o_ret += "1";
-                }
+                None => (),
             }
-            _ => (),
         }
+        None => (),
     }
-    Ok(o_ret)
+    Ok(String::new())
 }
 
 /// TCP options (O, O1–O6)
@@ -747,10 +754,21 @@ pub fn tcp_ox(seqrr: &SEQRR) -> Result<(String, String, String, String, String, 
 
 /// TCP initial window size (W, W1–W6)
 pub fn tcp_w(ipv4_response: &Vec<u8>) -> Result<u16> {
-    let ipv4_packet = Ipv4Packet::new(ipv4_response).unwrap();
-    let tcp_packet = TcpPacket::new(ipv4_packet.payload()).unwrap();
-    let window = tcp_packet.get_window();
-    Ok(window)
+    let ipv4_packet = get_ipv4_packet(ipv4_response)?;
+    match ipv4_packet {
+        Some(ipv4_packet) => {
+            let tcp_packet = get_tcp_packet(ipv4_packet.payload())?;
+            match tcp_packet {
+                Some(tcp_packet) => {
+                    let window = tcp_packet.get_window();
+                    return Ok(window);
+                }
+                None => (),
+            }
+        }
+        None => (),
+    }
+    Ok(0)
 }
 
 /// TCP initial window size (W, W1–W6)

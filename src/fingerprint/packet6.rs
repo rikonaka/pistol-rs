@@ -2,10 +2,12 @@ use anyhow::Result;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
+use pnet::packet::icmpv6::ndp::NdpOption;
+use pnet::packet::icmpv6::ndp::NdpOptionTypes;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
-use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type};
+use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type, Icmpv6Types};
+use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
-use pnet::packet::ipv6;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::ipv6::{MutableDestinationPacket, MutableHopByHopPacket, MutableRoutingPacket};
 use pnet::packet::tcp;
@@ -13,16 +15,17 @@ use pnet::packet::tcp::{MutableTcpPacket, TcpFlags, TcpOption};
 use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::Packet;
-use pnet_packet::ip::IpNextHeaderProtocol;
 use rand::Rng;
 use std::net::Ipv6Addr;
+use subnetwork::Ipv6;
 
-use crate::utils::TCP_DATA_LEN;
-use crate::utils::UDP_HEADER_LEN;
-use crate::utils::{ICMPV6_HEADER_LEN, TCP_HEADER_LEN};
-use crate::utils::{ICMP_HEADER_LEN, IPV6_HEADER_LEN};
-
-const UDP_PROBE_DATA_LEN: usize = 300;
+use crate::errors::CanNotFoundInterface;
+use crate::errors::CanNotFoundMacAddress;
+use crate::layers::{
+    ICMPV6_ER_HEADER_SIZE, ICMPV6_NI_HEADER_SIZE, ICMPV6_NS_HEADER_SIZE, IPV6_HEADER_SIZE,
+    TCP_HEADER_SIZE, UDP_HEADER_SIZE,
+};
+use crate::layers::{find_interface_by_ipv6, multicast_mac};
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.
@@ -104,19 +107,35 @@ const WSCALE_SIZE: usize = 3;
 const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
 
-pub fn seq_packet_1_layer4(
+pub fn seq_packet_1_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
+    const TCP_DATA_SIZE: usize = 0;
+
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -144,10 +163,10 @@ pub fn seq_packet_1_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(tcp_buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn seq_packet_2_layer4(
+pub fn seq_packet_2_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
@@ -155,10 +174,25 @@ pub fn seq_packet_2_layer4(
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
+    const TCP_DATA_SIZE: usize = 0;
+
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -185,10 +219,10 @@ pub fn seq_packet_2_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(tcp_buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn seq_packet_3_layer4(
+pub fn seq_packet_3_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
@@ -197,10 +231,25 @@ pub fn seq_packet_3_layer4(
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
+    const TCP_DATA_SIZE: usize = 0;
+
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -229,10 +278,10 @@ pub fn seq_packet_3_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(tcp_buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn seq_packet_4_layer4(
+pub fn seq_packet_4_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
@@ -240,10 +289,25 @@ pub fn seq_packet_4_layer4(
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
+    const TCP_DATA_SIZE: usize = 0;
+
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -269,10 +333,10 @@ pub fn seq_packet_4_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(tcp_buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn seq_packet_5_layer4(
+pub fn seq_packet_5_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
@@ -280,10 +344,25 @@ pub fn seq_packet_5_layer4(
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
+    const TCP_DATA_SIZE: usize = 0;
+
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -310,10 +389,10 @@ pub fn seq_packet_5_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(tcp_buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn seq_packet_6_layer4(
+pub fn seq_packet_6_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
@@ -321,10 +400,25 @@ pub fn seq_packet_6_layer4(
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
+    const TCP_DATA_SIZE: usize = 0;
+
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
-    let mut tcp_header = MutableTcpPacket::new(&mut tcp_buff[..]).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -350,66 +444,26 @@ pub fn seq_packet_6_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(tcp_buff.to_vec())
-}
-
-pub fn icmpv6_test_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
-    let mut rng = rand::thread_rng();
-    const ICMPV6_PROBE_DATA_LEN: usize = 120;
-
-    // ipv6 header
-    let mut buff = [0u8; IPV6_HEADER_LEN + ICMPV6_HEADER_LEN + ICMPV6_PROBE_DATA_LEN];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut buff[..IPV6_HEADER_LEN]).unwrap();
-    ipv6_header.set_version(6);
-    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
-    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
-    // ipv6_header.set_flow_label(0x12345);
-    ipv6_header.set_flow_label(0);
-    // let payload_length = ICMPV6_HEADER_LEN + ICMPV6_PROBE_DATA_LEN;
-    let payload_length = 0;
-    ipv6_header.set_payload_length(payload_length as u16);
-    // Hop-by-Hop Options
-    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
-    // hop limits are set randomly
-    ipv6_header.set_hop_limit(hop_limit);
-    ipv6_header.set_source(src_ipv6);
-    ipv6_header.set_destination(dst_ipv6);
-
-    // icmp header
-    let mut icmpv6_header = MutableEchoRequestPacket::new(&mut buff[IPV6_HEADER_LEN..]).unwrap();
-    // The type is 128 (Echo Request) and the code is 9, though it should be 0.
-    icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
-    icmpv6_header.set_icmpv6_code(Icmpv6Code(9));
-    // The ICMPv6 ID is 0xabcd and the sequence number is 0.
-    icmpv6_header.set_identifier(0xabcd);
-    icmpv6_header.set_sequence_number(0);
-    // The data payload is 120 zero bytes.
-    let icmp_data: Vec<u8> = vec![0x00; ICMPV6_PROBE_DATA_LEN];
-    icmpv6_header.set_payload(&icmp_data);
-
-    let mut icmp_header = MutableIcmpv6Packet::new(&mut buff[IPV6_HEADER_LEN..]).unwrap();
-    let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
-    icmp_header.set_checksum(checksum);
-
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
 pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const ICMPV6_PROBE_DATA_LEN: usize = 120;
-    const HOPBYHOP_OPTION: usize = 16;
+    const ICMPV6_PROBE_DATA_SIZE: usize = 120;
+    const HOPBYHOP_OPTION_SIZE: usize = 8;
 
     // ipv6 header
-    let mut buff =
-        [0u8; IPV6_HEADER_LEN + HOPBYHOP_OPTION + ICMPV6_HEADER_LEN + ICMPV6_PROBE_DATA_LEN];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut buff[..IPV6_HEADER_LEN]).unwrap();
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE
+        + HOPBYHOP_OPTION_SIZE
+        + ICMPV6_ER_HEADER_SIZE
+        + ICMPV6_PROBE_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     // ipv6_header.set_flow_label(0x12345);
     ipv6_header.set_flow_label(0x12345);
-    let payload_length = HOPBYHOP_OPTION + ICMPV6_HEADER_LEN + ICMPV6_PROBE_DATA_LEN;
+    let payload_length = HOPBYHOP_OPTION_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_PROBE_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     // Hop-by-Hop Options
     ipv6_header.set_next_header(IpNextHeaderProtocol(0));
@@ -420,13 +474,16 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_destination(dst_ipv6);
 
     // there is one Hop-By-Hop extension header containing only padding
-    let mut hop_option = MutableHopByHopPacket::new(&mut buff[IPV6_HEADER_LEN..]).unwrap();
+    let mut hop_option = MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     hop_option.set_next_header(IpNextHeaderProtocols::Icmpv6);
-    hop_option.set_hdr_ext_len(15);
+    hop_option.set_hdr_ext_len(0);
+    let options = [0x01, 0x04, 0x00, 0x00, 0x00, 0x00];
+    hop_option.set_options(&options);
 
     // icmp header
     let mut icmpv6_header =
-        MutableEchoRequestPacket::new(&mut buff[(IPV6_HEADER_LEN + HOPBYHOP_OPTION)..]).unwrap();
+        MutableEchoRequestPacket::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
+            .unwrap();
     // The type is 128 (Echo Request) and the code is 9, though it should be 0.
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(9));
@@ -434,41 +491,47 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     icmpv6_header.set_identifier(0xabcd);
     icmpv6_header.set_sequence_number(0);
     // The data payload is 120 zero bytes.
-    let icmp_data: Vec<u8> = vec![0x00; ICMPV6_PROBE_DATA_LEN];
+    let icmp_data = [0x00; ICMPV6_PROBE_DATA_SIZE];
     icmpv6_header.set_payload(&icmp_data);
 
-    let mut icmp_header =
-        MutableIcmpv6Packet::new(&mut buff[(IPV6_HEADER_LEN + HOPBYHOP_OPTION)..]).unwrap();
-    let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
-    icmp_header.set_checksum(checksum);
+    let mut icmpv6_header =
+        MutableIcmpv6Packet::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
+            .unwrap();
+    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
+    icmpv6_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
 pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
     // 150 bytes of data is sent
     let mut rng = rand::thread_rng();
-    const ICMPV6_PROBE_DATA_LEN: usize = 0;
-    const HOPBYHOP_OPTION_LEN: usize = 16;
-    const DESTINATION_OPTION_LEN: usize = 16;
-    const ROUTING_OPTION_LEN: usize = 16;
+    const ICMPV6_PROBE_DATA_SIZE: usize = 0;
+    const HOPBYHOP_OPTION_SIZE: usize = 8;
+    const DESTINATION_OPTION_SIZE: usize = 8;
+    const ROUTING_OPTION_SIZE: usize = 8;
 
     // ipv6 header
-    let mut buff = [0u8; IPV6_HEADER_LEN
-        + HOPBYHOP_OPTION_LEN
-        + DESTINATION_OPTION_LEN
-        + ROUTING_OPTION_LEN
-        + HOPBYHOP_OPTION_LEN
-        + ICMPV6_HEADER_LEN
-        + ICMPV6_PROBE_DATA_LEN];
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE
+        + HOPBYHOP_OPTION_SIZE
+        + DESTINATION_OPTION_SIZE
+        + ROUTING_OPTION_SIZE
+        + HOPBYHOP_OPTION_SIZE
+        + ICMPV6_ER_HEADER_SIZE
+        + ICMPV6_PROBE_DATA_SIZE];
 
-    let mut ipv6_header = MutableIpv6Packet::new(&mut buff[..IPV6_HEADER_LEN]).unwrap();
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     // ipv6_header.set_flow_label(0x12345);
-    ipv6_header.set_flow_label(0);
-    let payload_length = HOPBYHOP_OPTION_LEN + ICMPV6_HEADER_LEN + ICMPV6_PROBE_DATA_LEN;
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = HOPBYHOP_OPTION_SIZE
+        + DESTINATION_OPTION_SIZE
+        + ROUTING_OPTION_SIZE
+        + HOPBYHOP_OPTION_SIZE
+        + ICMPV6_ER_HEADER_SIZE
+        + ICMPV6_PROBE_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     // Hop-by-Hop Options
     ipv6_header.set_next_header(IpNextHeaderProtocol(0));
@@ -485,67 +548,97 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     // 3) Routing
     // 4) Hop-By-Hop
 
-    let mut hop_option = MutableHopByHopPacket::new(&mut buff[IPV6_HEADER_LEN..]).unwrap();
+    // Hop-By-Hop
+    let mut hop_option = MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     // Destination Options (before upper-layer header)
     hop_option.set_next_header(IpNextHeaderProtocol(60));
-    hop_option.set_hdr_ext_len(15);
+    hop_option.set_hdr_ext_len(0);
+    let padn = [0x01, 0x04, 0x00, 0x00, 0x00, 0x00];
+    hop_option.set_options(&padn);
 
+    // Destination Options
     let mut dest_option =
-        MutableDestinationPacket::new(&mut buff[(IPV6_HEADER_LEN + HOPBYHOP_OPTION_LEN)..])
+        MutableDestinationPacket::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
             .unwrap();
     // Routing
     dest_option.set_next_header(IpNextHeaderProtocol(43));
-    dest_option.set_hdr_ext_len(15);
+    dest_option.set_hdr_ext_len(0);
+    dest_option.set_options(&padn);
 
+    // Routing
     let mut routing_option = MutableRoutingPacket::new(
-        &mut buff[(IPV6_HEADER_LEN + HOPBYHOP_OPTION_LEN + DESTINATION_OPTION_LEN)..],
+        &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE + DESTINATION_OPTION_SIZE)..],
     )
     .unwrap();
     // Hop-by-Hop Options
     routing_option.set_next_header(IpNextHeaderProtocol(0));
-    routing_option.set_hdr_ext_len(15);
+    routing_option.set_hdr_ext_len(0);
+    routing_option.set_routing_type(0x00);
+    routing_option.set_segments_left(0x00);
 
+    // Hop-By-Hop
     let mut hop_option = MutableHopByHopPacket::new(
-        &mut buff[(IPV6_HEADER_LEN
-            + HOPBYHOP_OPTION_LEN
-            + DESTINATION_OPTION_LEN
-            + ROUTING_OPTION_LEN)..],
+        &mut ipv6_buff[(IPV6_HEADER_SIZE
+            + HOPBYHOP_OPTION_SIZE
+            + DESTINATION_OPTION_SIZE
+            + ROUTING_OPTION_SIZE)..],
     )
     .unwrap();
     // Destination Options (before upper-layer header)
     hop_option.set_next_header(IpNextHeaderProtocols::Icmpv6);
-    hop_option.set_hdr_ext_len(15);
+    hop_option.set_hdr_ext_len(0);
+    hop_option.set_options(&padn);
 
-    let mut icmp_header = MutableEchoRequestPacket::new(
-        &mut buff[(IPV6_HEADER_LEN
-            + HOPBYHOP_OPTION_LEN
-            + DESTINATION_OPTION_LEN
-            + ROUTING_OPTION_LEN
-            + HOPBYHOP_OPTION_LEN)..],
+    // ICMPV6
+    let mut icmpv6_header = MutableEchoRequestPacket::new(
+        &mut ipv6_buff[(IPV6_HEADER_SIZE
+            + HOPBYHOP_OPTION_SIZE
+            + DESTINATION_OPTION_SIZE
+            + ROUTING_OPTION_SIZE
+            + HOPBYHOP_OPTION_SIZE)..],
     )
     .unwrap();
     // This is an echo request with a type of 128 (Echo Request) and a code of 0.
-    icmp_header.set_icmpv6_type(Icmpv6Type(128));
-    icmp_header.set_icmpv6_code(Icmpv6Code(0));
+    icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
+    icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
     // The ICMPv6 ID is 0xabcd and the sequence is 1.
-    icmp_header.set_identifier(0xabcd);
-    icmp_header.set_sequence_number(1);
+    icmpv6_header.set_identifier(0xabcd);
+    icmpv6_header.set_sequence_number(1);
 
     let mut icmpv6_header = MutableIcmpv6Packet::new(
-        &mut buff[(IPV6_HEADER_LEN
-            + HOPBYHOP_OPTION_LEN
-            + DESTINATION_OPTION_LEN
-            + ROUTING_OPTION_LEN
-            + HOPBYHOP_OPTION_LEN)..],
+        &mut ipv6_buff[(IPV6_HEADER_SIZE
+            + HOPBYHOP_OPTION_SIZE
+            + DESTINATION_OPTION_SIZE
+            + ROUTING_OPTION_SIZE
+            + HOPBYHOP_OPTION_SIZE)..],
     )
     .unwrap();
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn ni_packet_layer4(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
+pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
+    let mut rng = rand::thread_rng();
+    const ICMPV6_DATA_SIZE: usize = 0;
+    // ipv6 header
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE];
+
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    // ipv6_header.set_flow_label(0x12345);
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
     // Echo or Echo Reply Message
     /* https://datatracker.ietf.org/doc/html/rfc792
 
@@ -578,13 +671,10 @@ pub fn ni_packet_layer4(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     |                                                               |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
      */
-    const ICMPV6_PROBE_HEADER_LEN: usize = 16;
-    const ICMPV6_PROBE_DATA_LEN: usize = 0;
-
-    let mut buff = [0u8; ICMPV6_PROBE_HEADER_LEN + ICMPV6_PROBE_DATA_LEN];
 
     // icmp header
-    let mut icmpv6_header = MutableEchoRequestPacket::new(&mut buff).unwrap();
+    let mut icmpv6_header =
+        MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     // The NI probe has type 139 (ICMP Node Information Query) and code 0 (indicating that the subject is an IPv6 address).
     icmpv6_header.set_icmpv6_type(Icmpv6Type(139));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -605,79 +695,114 @@ pub fn ni_packet_layer4(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     // The nonce is set to the fixed string "\x01\x02\x03\x04\x05\x06\x07\x0a".
     icmpv6_header.set_payload(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0a]);
 
-    let mut icmp_header = MutableIcmpv6Packet::new(&mut buff).unwrap();
+    let mut icmp_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
 pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
     // This probe is only sent to hosts on the same subnet.
-    const ICMPV6_PROBE_HEADER_LEN: usize = 12;
-    const ICMPV6_PROBE_DATA_LEN: usize = 0;
+    let interface = match find_interface_by_ipv6(src_ipv6) {
+        Some(i) => i,
+        None => return Err(CanNotFoundInterface::new().into()),
+    };
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(CanNotFoundMacAddress::new().into()),
+    };
 
-    let mut buff = [0u8; IPV6_HEADER_LEN + ICMPV6_PROBE_HEADER_LEN + ICMPV6_PROBE_DATA_LEN];
+    // let mut rng = rand::thread_rng();
+    const ICMPV6_DATA_SIZE: usize = 0;
 
-    // ipv6 header
-    let mut ipv6_header = MutableIpv6Packet::new(&mut buff[..IPV6_HEADER_LEN]).unwrap();
+    // ipv6
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE + ICMPV6_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
     ipv6_header.set_version(6);
+    ipv6_header.set_traffic_class(0);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     // ipv6_header.set_flow_label(0x12345);
-    ipv6_header.set_flow_label(0);
-    let payload_length = ICMPV6_PROBE_HEADER_LEN + ICMPV6_PROBE_DATA_LEN;
-    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_flow_label(0x12345);
+    ipv6_header.set_payload_length((ICMPV6_NS_HEADER_SIZE + ICMPV6_DATA_SIZE) as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
     // The hop limit is always set to 255.
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    ipv6_header.set_destination(dst_ipv6);
+    let dst_multicast = Ipv6::new(dst_ipv6).link_multicast();
+    ipv6_header.set_destination(dst_multicast);
 
-    // icmp header
+    // icmpv6
     let mut icmpv6_header =
-        MutableNeighborSolicitPacket::new(&mut buff[IPV6_HEADER_LEN..]).unwrap();
-    // The type is 135 and the code is 0.
-    icmpv6_header.set_icmpv6_type(Icmpv6Type(135));
+        MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    // Neighbor Solicitation
+    icmpv6_header.set_icmpv6_type(Icmpv6Types::NeighborSolicit);
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
+    icmpv6_header.set_reserved(0);
+    icmpv6_header.set_target_addr(dst_ipv6);
+    let ndp_option = NdpOption {
+        option_type: NdpOptionTypes::SourceLLAddr,
+        length: 1,
+        data: src_mac.octets().to_vec(),
+    };
+    icmpv6_header.set_options(&vec![ndp_option]);
 
-    let mut icmp_header = MutableIcmpv6Packet::new(&mut buff).unwrap();
-    let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
-    icmp_header.set_checksum(checksum);
+    let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_multicast);
+    icmpv6_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn udp_packet_layer4(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
-    dst_ipv6: Ipv6Addr,
-    dst_port: u16,
-) -> Result<Vec<u8>> {
-    let mut buff = [0u8; UDP_HEADER_LEN + UDP_PROBE_DATA_LEN];
-    // udp header
-    let mut udp_header = MutableUdpPacket::new(&mut buff).unwrap();
-    udp_header.set_source(src_port);
-    udp_header.set_destination(dst_port);
-    udp_header.set_length((UDP_HEADER_LEN + UDP_PROBE_DATA_LEN) as u16);
-    // The character 'C' (0x43) is repeated 300 times for the data field.
-    let udp_data: Vec<u8> = vec![0x43; 300];
-    assert_eq!(udp_data.len(), 300);
-    udp_header.set_payload(&udp_data);
-    let checksum = udp::ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
-    udp_header.set_checksum(checksum);
-
-    Ok(buff.to_vec())
-}
-
-pub fn tecn_packet_layer4(
+pub fn udp_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize = WSCALE_SIZE
+    const UDP_DATA_SIZE: usize = 300;
+
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = UDP_HEADER_SIZE + UDP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Udp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
+
+    // udp header
+    let mut udp_header = MutableUdpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    udp_header.set_source(src_port);
+    udp_header.set_destination(dst_port);
+    udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
+    // The character 'C' (0x43) is repeated 300 times for the data field.
+    let udp_data: Vec<u8> = vec![0x43; UDP_DATA_SIZE];
+    assert_eq!(udp_data.len(), UDP_DATA_SIZE);
+    udp_header.set_payload(&udp_data);
+    let checksum = udp::ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
+    udp_header.set_checksum(checksum);
+
+    Ok(ipv6_buff.to_vec())
+}
+
+pub fn tecn_packet_layer3(
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+) -> Result<Vec<u8>> {
+    let mut rng = rand::thread_rng();
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize = WSCALE_SIZE
         + 1
         + NOP_SIZE
         + 3
@@ -689,10 +814,24 @@ pub fn tecn_packet_layer4(
         + NOP_SIZE
         + 1;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
@@ -725,23 +864,38 @@ pub fn tecn_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn t2_packet_layer4(
+pub fn t2_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -767,23 +921,38 @@ pub fn t2_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn t3_packet_layer4(
+pub fn t3_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -809,23 +978,38 @@ pub fn t3_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn t4_packet_layer4(
+pub fn t4_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -851,23 +1035,38 @@ pub fn t4_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn t5_packet_layer4(
+pub fn t5_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -893,23 +1092,38 @@ pub fn t5_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn t6_packet_layer4(
+pub fn t6_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -935,23 +1149,38 @@ pub fn t6_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
-pub fn t7_packet_layer4(
+pub fn t7_packet_layer3(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>> {
     let mut rng = rand::thread_rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_DATA_SIZE: usize = 0;
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; TCP_HEADER_LEN + TCP_OPTIONS_LEN + TCP_DATA_LEN];
+    let mut ipv6_buff =
+        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
+    ipv6_header.set_payload_length(payload_length as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
+    let hop_limit = rng.gen();
+    // hop limits are set randomly
+    ipv6_header.set_hop_limit(hop_limit);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff).unwrap();
+    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.gen();
@@ -979,7 +1208,7 @@ pub fn t7_packet_layer4(
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
 
-    Ok(buff.to_vec())
+    Ok(ipv6_buff.to_vec())
 }
 
 #[cfg(test)]
@@ -1000,21 +1229,21 @@ mod tests {
             0xfe80, 0xfe80, 0xfe80, 0xfe80, 0xfa1d, 0x58e, 0x7449, 0xe54b,
         );
         let dst_port = 80;
-        let _ = seq_packet_1_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = seq_packet_2_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = seq_packet_3_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = seq_packet_4_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = seq_packet_5_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = seq_packet_6_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = seq_packet_1_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = seq_packet_2_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = seq_packet_3_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = seq_packet_4_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = seq_packet_5_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = seq_packet_6_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
         let _ = ie_packet_1_layer3(src_ipv6, dst_ipv6);
-        let _ = ie_packet_2_layer3(src_ipv6, dst_ipv6);
-        let _ = udp_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = tecn_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = t2_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = t3_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = t4_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = t5_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = t6_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
-        let _ = t7_packet_layer4(src_ipv6, src_port, dst_ipv6, dst_port);
+        // let _ = ie_packet_2_layer3(src_ipv6, dst_ipv6);
+        let _ = udp_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = tecn_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = t2_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = t3_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = t4_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = t5_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = t6_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
+        let _ = t7_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_port);
     }
 }
