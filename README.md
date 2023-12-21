@@ -64,7 +64,7 @@ Fingerprints is not supported means that the program will not generate fingerpri
 
 Here are my arguments. The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, and I don't know why nmap would keep them in the final fingerprint.
 
-The second is `NI` probes. In the relevant document (https://nmap.org/book/osdetect-ipv6-methods.html#osdetect-features-ipv6) of nmap, it describes the specific structure of `NI` probe, but I don't see anything about it in the code, and it seems to completely ignore this package when do predict use logistic regression.
+The second is `NI` probes. In the relevant [document](https://nmap.org/book/osdetect-ipv6-methods.html#osdetect-features-ipv6) of nmap, it describes the specific structure of `NI` probe, but I don't see anything about it in the code, and it seems to completely ignore this package when do predict use logistic regression.
 
 Above all, for the current mainstream operating systems, ipv6 support is not as rich as ipv4, so try the ipv4 first.
 
