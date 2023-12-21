@@ -227,68 +227,6 @@ fn os_detect_thread(
     Ok((nmap_fingerprint, dr_vec))
 }
 
-/// Operation system detection is performed on the target server,
-/// and return the fingerprint, and guess results (will be returned according to the score from high to low).
-/// ```rust
-/// use pistol::{Host, Target};
-/// use std::net::Ipv4Addr;
-///
-/// fn test() {
-///     let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-///     let src_port = None;
-///     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 130);
-///     let dst_open_tcp_port = 22;
-///     let dst_closed_tcp_port = 8765;
-///     let dst_closed_udp_port = 9876;
-///     let host1 = Host::new(
-///         dst_ipv4,
-///         Some(vec![
-///             dst_open_tcp_port,
-///             dst_closed_tcp_port,
-///             dst_closed_udp_port,
-///         ]),
-///     );
-///     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
-///     let dst_open_tcp_port = 22;
-///     let dst_closed_tcp_port = 8765;
-///     let dst_closed_udp_port = 9876;
-///     let host2 = Host::new(
-///         dst_ipv4,
-///         Some(vec![
-///             dst_open_tcp_port,
-///             dst_closed_tcp_port,
-///             dst_closed_udp_port,
-///         ]),
-///     );
-///     let target = Target::new(vec![host1, host2]);
-///     let max_loop = 8;
-///     let read_timeout = Duration::from_secs_f32(0.2);
-///     let nmap_os_db_file_path = "./nmap-os-db".to_string();
-///     let top_k = 3;
-///     let threads_num = 8;
-
-///     let ret = os_detect(
-///         target,
-///         src_ipv4,
-///         src_port,
-///         nmap_os_db_file_path,
-///         top_k,
-///         threads_num,
-///         max_loop,
-///         read_timeout,
-///     )
-///     .unwrap();
-
-///     for (ip, (fingerprint, detect_ret)) in ret {
-///         println!(">>> IP:\n{}", ip);
-///         println!(">>> Fingerprint:\n{}", fingerprint);
-///         println!(">>> Details:\n");
-///         for d in detect_ret {
-///             println!("{}", d);
-///         }
-///     }
-/// }
-/// ```
 pub fn os_detect(
     target: Target,
     src_ipv4: Ipv4Addr,
