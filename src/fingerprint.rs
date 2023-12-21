@@ -1,17 +1,20 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
 
 use crate::errors::OsDetectPortError;
 use crate::fingerprint::dbparser::NmapOsDb;
 use crate::fingerprint::osscan::PistolFingerprint;
+use crate::fingerprint::osscan6::PistolFingerprint6;
 use crate::utils::get_threads_pool;
 use crate::Target;
 
 pub mod dbparser;
 pub mod operator;
+pub mod operator6;
 pub mod osscan;
 pub mod osscan6;
 pub mod packet;
@@ -73,6 +76,62 @@ impl fmt::Display for NmapOsDetectRet {
         // let output = output.trim();
         write!(f, "{}", output)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct NmapOsDetectRet6 {
+    pub name: String,
+    pub osclass: Vec<Vec<String>>,
+    pub cpe: Vec<String>,
+    pub prob: f64,
+    pub label: usize,
+}
+
+impl fmt::Display for NmapOsDetectRet6 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = format!(">>> Fingerprint:\n{}\n", self.name);
+        output += ">>> Class:\n";
+        for o in &self.osclass {
+            let mut o_str = String::new();
+            for c in o {
+                let c_str = format!(" {} |", c);
+                o_str += &c_str;
+            }
+            let o_str = o_str[1..o_str.len() - 2].to_string();
+            output += &o_str;
+            output += "\n";
+        }
+        output += ">>> CPE:\n";
+        for c in &self.cpe {
+            output += c;
+            output += "\n";
+        }
+        let output = output.trim();
+        write!(f, "{}", output)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NmapJsonParameters {
+    pub name: String,
+    pub value: Vec<f64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CPE {
+    pub name: String,
+    pub osclass: Vec<Vec<String>>,
+    pub cpe: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Linear {
+    pub namelist: Vec<String>,
+    pub w: Vec<Vec<f64>>,
+    pub scale: Vec<Vec<f64>>,
+    pub mean: Vec<Vec<f64>>,
+    pub variance: Vec<Vec<f64>>,
+    pub cpe: Vec<CPE>,
 }
 
 fn find_position_multi(score_vec: &Vec<usize>, value: usize) -> Vec<usize> {
@@ -234,12 +293,13 @@ pub fn os_detect(
     target: Target,
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
-    nmap_os_db_file_path: String,
     top_k: usize,
     threads_num: usize,
     max_loop: usize,
 ) -> Result<HashMap<Ipv4Addr, (PistolFingerprint, Vec<NmapOsDetectRet>)>> {
-    let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_db_file_path)?;
+    let nmap_os_file = include_str!("./osdb/nmap-os-db");
+    let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
+    let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -285,10 +345,202 @@ pub fn os_detect(
     Ok(ret)
 }
 
+fn gen_linear() -> Result<Linear> {
+    let variance_json_data = include_str!("./osdb/variance.json");
+    let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
+
+    let mut namelist = Vec::new();
+    let mut variance = Vec::new();
+    for v in variance_json {
+        variance.push(v.value);
+        namelist.push(v.name);
+    }
+    assert_eq!(namelist.len(), 92);
+    assert_eq!(variance.len(), 92);
+
+    let mean_json_data = include_str!("./osdb/mean.json");
+    let mean_json: Vec<NmapJsonParameters> = serde_json::from_str(mean_json_data)?;
+    let mut mean = Vec::new();
+    for m in mean_json {
+        mean.push(m.value);
+    }
+    assert_eq!(mean.len(), 92);
+
+    let scale_json_data = include_str!("./osdb/scale.json"); // static
+    let scale_json: Vec<NmapJsonParameters> = serde_json::from_str(scale_json_data)?;
+    let mut scale: Vec<Vec<f64>> = Vec::new();
+    for s in scale_json {
+        scale.push(s.value)
+    }
+    assert_eq!(scale.len(), 695);
+
+    let w_json_data = include_str!("./osdb/w.json"); // static
+    let w_json: Vec<NmapJsonParameters> = serde_json::from_str(w_json_data)?;
+    assert_eq!(w_json.len(), 695);
+
+    let mut w = Vec::new();
+    // [695, 92] => [92, 695]
+    for i in 0..w_json[0].value.len() {
+        let mut tmp = Vec::new();
+        for x in &w_json {
+            tmp.push(x.value[i]);
+        }
+        w.push(tmp);
+    }
+
+    let cpe_json_data = include_str!("./osdb/cpe.json"); // static
+    let cpe: Vec<CPE> = serde_json::from_str(cpe_json_data)?;
+    assert_eq!(cpe.len(), 92);
+
+    let linear = Linear {
+        namelist,
+        scale,
+        w,
+        mean,
+        variance,
+        cpe,
+    };
+    Ok(linear)
+}
+
+pub fn os_detect6(
+    target: Target,
+    src_ipv6: Ipv6Addr,
+    src_port: Option<u16>,
+    top_k: usize,
+    threads_num: usize,
+    max_loop: usize,
+) -> Result<HashMap<Ipv6Addr, PistolFingerprint6>> {
+    let linear = gen_linear()?;
+
+    let (tx, rx) = channel();
+    let pool = get_threads_pool(threads_num);
+    let mut recv_size = 0;
+    for t in target.hosts6 {
+        let dst_ipv6 = t.addr;
+        if t.ports.len() >= 3 {
+            recv_size += 1;
+            let dst_open_tcp_port = t.ports[0];
+            let dst_closed_tcp_port = t.ports[1];
+            let dst_closed_udp_port = t.ports[2];
+            let tx = tx.clone();
+            let linear = linear.clone();
+            pool.execute(move || {
+                let os_detect_ret = osscan6::os_probe6(
+                    src_ipv6,
+                    src_port,
+                    dst_ipv6,
+                    dst_open_tcp_port,
+                    dst_closed_tcp_port,
+                    dst_closed_udp_port,
+                    top_k,
+                    max_loop,
+                    linear,
+                );
+                match tx.send((dst_ipv6, os_detect_ret)) {
+                    _ => (),
+                }
+            });
+        } else {
+            return Err(OsDetectPortError::new().into());
+        }
+    }
+
+    let mut ret: HashMap<Ipv6Addr, PistolFingerprint6> = HashMap::new();
+    let iter = rx.into_iter().take(recv_size);
+    for (i, r) in iter {
+        match r {
+            Ok(r) => {
+                ret.insert(i, r);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(ret)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nmap_os_db_parser;
     use crate::Host;
+    use crate::Host6;
+    use std::net::Ipv6Addr;
+    use std::time::SystemTime;
+    #[test]
+    fn test_os_detect6() {
+        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
+        let dst_open_tcp_port_1 = 22;
+        let dst_closed_tcp_port_1 = 8765;
+        let dst_closed_udp_port_1 = 9876;
+        let host1 = Host6::new(
+            dst_ipv6,
+            Some(vec![
+                dst_open_tcp_port_1,
+                dst_closed_tcp_port_1,
+                dst_closed_udp_port_1,
+            ]),
+        );
+
+        let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
+        let dst_open_tcp_port_2 = 22;
+        let dst_closed_tcp_port_2 = 8765;
+        let dst_closed_udp_port_2 = 9876;
+        let host2 = Host6::new(
+            dst_ipv6,
+            Some(vec![
+                dst_open_tcp_port_2,
+                dst_closed_tcp_port_2,
+                dst_closed_udp_port_2,
+            ]),
+        );
+
+        let target = Target::new6(vec![host1, host2]);
+
+        // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
+        let src_port = None;
+        let max_loop = 8;
+        let top_k = 3;
+        let threads_num = 8;
+
+        let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, max_loop).unwrap();
+        for (i, p) in ret {
+            println!(">>> IP:\n{}", i);
+            println!(">>> Novelty:\n{}", p.novelty);
+            for pred in p.predict {
+                println!("{}", pred);
+            }
+            println!("\n");
+        }
+    }
+    #[test]
+    fn test_os_probe() {
+        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
+        // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
+        let src_port = None;
+        let dst_open_tcp_port = 22;
+        let dst_closed_tcp_port = 99;
+        let dst_closed_udp_port = 7890;
+        let max_loop = 8;
+        let top_k = 3;
+
+        let linear = gen_linear().unwrap();
+        let _ret = osscan6::os_probe6(
+            src_ipv6,
+            src_port,
+            dst_ipv6,
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
+            top_k,
+            max_loop,
+            linear,
+        )
+        .unwrap();
+    }
     #[test]
     fn test_os_detect() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
@@ -320,20 +572,10 @@ mod tests {
         let target = Target::new(vec![host1, host2]);
         // let target = Target::new(vec![host1]);
         let max_loop = 8;
-        let nmap_os_db_file_path = "./nmap-os-db".to_string();
         let top_k = 1;
         let threads_num = 8;
 
-        let ret = os_detect(
-            target,
-            src_ipv4,
-            src_port,
-            nmap_os_db_file_path,
-            top_k,
-            threads_num,
-            max_loop,
-        )
-        .unwrap();
+        let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, max_loop).unwrap();
 
         for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
@@ -343,5 +585,23 @@ mod tests {
                 println!("{}", d);
             }
         }
+    }
+    #[test]
+    fn test_parser() {
+        let start = SystemTime::now();
+
+        let nmap_os_file = include_str!("./osdb/nmap-os-db");
+        let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
+        let _ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        // for i in 0..5 {
+        //     let r = &ret[i];
+        //     println!("{:?}", r.seq.gcd);
+        // }
+
+        // in my homelab server: parse time: 1.285817538s
+        println!("parse time: {:?}", start.elapsed().unwrap());
+        // let serialized = serde_json::to_string(&ret).unwrap();
+        // let mut file_write = File::create("nmap-os-db.pistol").unwrap();
+        // file_write.write_all(serialized.as_bytes()).unwrap();
     }
 }

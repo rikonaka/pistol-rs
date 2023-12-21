@@ -27,8 +27,10 @@ const FIN_MASK: u8 = 0b00000001;
 // Because different programs wait, process, and send probebao for different times,
 // so there is a certain error in the two indicators calculated based on time.
 // Program estimation error, ISR, SP use.
-const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.35;
-const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.35;
+// const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.35;
+// const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.35;
+const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.0;
+const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.0;
 
 fn get_ipv4_packet(ipv4_buff: &[u8]) -> Result<Option<Ipv4Packet>> {
     if ipv4_buff.len() > 0 {
@@ -162,12 +164,12 @@ pub fn tcp_gcd(seqrr: &SEQRR) -> Result<(u32, Vec<u32>)> {
 }
 
 /// TCP ISN counter rate (ISR)
-pub fn tcp_isr(diff: Vec<u32>) -> Result<(u32, Vec<f32>)> {
+pub fn tcp_isr(diff: Vec<u32>, elapsed: f32) -> Result<(u32, Vec<f32>)> {
     if diff.len() > 0 {
         let mut seq_rates: Vec<f32> = Vec::new();
         let mut sum = 0.0;
         for d in &diff {
-            let f = (*d as f32) / 0.1;
+            let f = (*d as f32) / elapsed;
             seq_rates.push(f);
             sum += f;
         }
@@ -819,16 +821,31 @@ pub fn tcp_udp_icmp_t(ipv4_response: &Vec<u8>, u1rr: &U1RR) -> Result<u16> {
 
 fn udp_hops(u1rr: &U1RR) -> Result<u8> {
     let request = get_ipv4_packet(&u1rr.u1.request)?.unwrap(); // must have request
-    let response = get_ipv4_packet(&u1rr.u1.response)?;
-    match response {
-        Some(response) => {
-            let request_ttl = request.get_ttl();
-            let response_ttl = response.get_ttl();
-            let hops = request_ttl - response_ttl;
-            Ok(hops)
+    let ipv4_packet = get_ipv4_packet(&u1rr.u1.response)?;
+    match ipv4_packet {
+        Some(ipv4_packet) => {
+            let icmp_packet = get_icmp_packet(ipv4_packet.payload())?;
+            match icmp_packet {
+                Some(icmp_packet) => {
+                    let r_ipv4_buff = icmp_packet.payload()[4..].to_vec();
+                    let r_ipv4_packet = get_ipv4_packet(&r_ipv4_buff)?;
+                    match r_ipv4_packet {
+                        Some(r_ipv4_packet) => {
+                            let ttl_1 = request.get_ttl();
+                            let ttl_2 = r_ipv4_packet.get_ttl();
+                            let hops = ttl_1 - ttl_2;
+                            return Ok(hops);
+                        }
+                        None => (),
+                    }
+                }
+                None => (),
+            }
         }
-        None => Ok(0), // It is not uncommon for Nmap to receive no response to the U1 probe.
+        None => (),
     }
+    // It is not uncommon for Nmap to receive no response to the U1 probe.
+    Ok(0)
 }
 
 /// IP initial time-to-live guess (TG)

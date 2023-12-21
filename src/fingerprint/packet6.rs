@@ -14,18 +14,14 @@ use pnet::packet::tcp;
 use pnet::packet::tcp::{MutableTcpPacket, TcpFlags, TcpOption};
 use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
-use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
-use subnetwork::Ipv6;
 
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
-use crate::layers::{
-    ICMPV6_ER_HEADER_SIZE, ICMPV6_NI_HEADER_SIZE, ICMPV6_NS_HEADER_SIZE, IPV6_HEADER_SIZE,
-    TCP_HEADER_SIZE, UDP_HEADER_SIZE,
-};
-use crate::layers::{find_interface_by_ipv6, multicast_mac};
+use crate::layers::find_interface_by_ipv6;
+use crate::layers::{ICMPV6_ER_HEADER_SIZE, ICMPV6_NI_HEADER_SIZE, ICMPV6_NS_HEADER_SIZE};
+use crate::layers::{IPV6_HEADER_SIZE, TCP_HEADER_SIZE, UDP_HEADER_SIZE};
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.
@@ -730,8 +726,8 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     // The hop limit is always set to 255.
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    let dst_multicast = Ipv6::new(dst_ipv6).link_multicast();
-    ipv6_header.set_destination(dst_multicast);
+    // let dst_multicast = Ipv6::new(dst_ipv6).link_multicast();
+    ipv6_header.set_destination(dst_ipv6);
 
     // icmpv6
     let mut icmpv6_header =
@@ -749,7 +745,7 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     icmpv6_header.set_options(&vec![ndp_option]);
 
     let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
-    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_multicast);
+    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
 
     Ok(ipv6_buff.to_vec())

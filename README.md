@@ -2,7 +2,7 @@
 
 The library must be run as root (Linux) or administrator (Windows).
 
-Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet. But you can add this library through git.
+Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
 
 ```toml
 [dependencies]
@@ -52,19 +52,21 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ## Remote OS Detection
 
-| Methods            | Detailed Documentation                                              | Notes           |
-| :----------------- | :------------------------------------------------------------------ | :-------------- |
-| [x] IPv4 OS detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                 |
-| [ ] IPv6 OS detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Not implemented |
+| Methods            | Detailed Documentation                                              | Notes                                |
+| :----------------- | :------------------------------------------------------------------ | :----------------------------------- |
+| [x] IPv4 OS detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                                      |
+| [x] IPv6 OS detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Viewing fingerprint is not supported |
 
 
-### Why not IPv6?
+### Why not support the nmap IPv6 fingerprints?
 
-First, it is also the most important reason, the `libpnet` doesn't have good support for IPv6, which mean I can't send and recv any IPv6 packets in internet layer. Although the transport layer `libpnet` are well supported, but only using the transport layer protocol cannot realize nmap's system detection in the [IPv6 environment](https://nmap.org/book/osdetect-ipv6-methods.html). For example, the `IE1` probe, it requires modifying the IPv6 header and padding a extension header, I tried to bypass the limitations of `libpnet` and send data directly using the datalink layer, but I found that this method is too cumbersome and complicated in engineering practice.
+Viewing fingerprints is not supported because in ipv6 the fingerprints are unreadable and meaningless to humans (nmap uses logistic regression to match target OS, and the matching algorithm is quite outdated with confusing design logic).
 
-Second, at the same time, according to nmap's [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), nmap abandoned the `nmap-os-db` file and related matching technology originally used in IPv4, and instead used machine learning methods for fingerprint matching in IPv6. However, nmap does not provide any OS data files that other programs can parse, and instead writes all fingerprint information into `FPModel.cc` file, which makes it extremely complicated for me to obtain and process these fingerprints.
+The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, and I don't know why nmap would keep them in the final fingerprint.
 
-To sum up, unless there is substantial progress in the above two conditions, OS detection in the IPv6 environment will be suspended indefinitely.
+The second is `NI` probes. In the relevant document (https://nmap.org/book/osdetect-ipv6-methods.html#osdetect-features-ipv6) of nmap, it describes the specific structure of `NI` probe, but I don't see anything about it in the code, and it seems to completely ignore this package when do predict use logistic regression.
+
+For the current mainstream operating systems, ipv6 support is not as rich as ipv4, so please try the ipv4 first.
 
 ## Service and Application Version Detection
 
@@ -128,7 +130,6 @@ fn main() {
 
 ```rust
 use pistol::{os_detect, Host, Target};
-use std::time::Duration;
 use std::net::Ipv4Addr;
 
 fn main() {
@@ -165,7 +166,6 @@ fn main() {
     );
     let target = Target::new(vec![host1, host2]);
     let max_loop = 8;
-    let nmap_os_db_file_path = "./nmap-os-db".to_string();
     let top_k = 3;
     let threads_num = 8;
 
@@ -175,7 +175,6 @@ fn main() {
         target,
         src_ipv4,
         src_port,
-        nmap_os_db_file_path,
         top_k,
         threads_num,
         read_timeout,
@@ -236,28 +235,7 @@ Linux | Linux | 5.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:4 auto
 cpe:/o:linux:linux_kernel:5 auto
-
->>> Score: 81/101
->>> Info:
-Linux 5.0.0-23-generic #24-Ubuntu SMP Mon Jul 29 15:36:44 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
-Linux 5.3.0-24-generic x86_64 Ubuntu 19.10
-Linux 5.3.9-sunxi (root@builder) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02
->>> Fingerprint:
-Linux 5.0 - 5.3
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5 auto
-
->>> Score: 80/101
->>> Info:
-Linux 5.4.0-1008-raspi #8-Ubuntu SMP Wed Apr 8 11:13:06 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux
->>> Fingerprint:
-Linux 5.4
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5.4 auto
+...
 ```
 
 #### CentOS 7
@@ -307,188 +285,104 @@ Linux | Linux | 4.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:3 auto
 cpe:/o:linux:linux_kernel:4 auto
+...
+```
 
->>> Score: 54/101
->>> Info:
-Linux 3.10.0-514.26.2.el7.x86_64 #1 SMP Tue Jul 4 15:04:05 UTC 2017 x86_64 x86_64 x86_64 GNU/Linux (CI=RI)
-Linux 3.11.4-1-ARCH #1 SMP PREEMPT Sat Oct 5 21:22:51 CEST 2013 x86_64 GNU/Linux / Archlinux
-Linux 3.11.0-12-generic #19-Ubuntu SMP Wed Oct 9 16:12:00 UTC 2013 i686 i686 i686 GNU/Linux
-3.11.0-12-generic #19-Ubuntu SMP Wed Oct 9 16:20:46 UTC 2013 x86_64 x86_64 x86_64 GNU/Linux
-Redhat Fedora 19 Linux kernel 3.11.6-200.fc19.x86_64
-Linux 3.13.5-1-ARCH #1 SMP PREEMPT Sun Feb 23 00:25:24 CET 2014 x86_64 GNU/Linux
-Linux 3.12.0-031200-generic #201311071835 SMP Thu Nov 7 23:36:07 UTC 2013 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.12.3-1-ARCH #1 SMP PREEMPT Wed Dec 4 21:45:42 CET 2013 x86_64 GNU/Linux
-Linux 3.12.6-1-ARCH #1 SMP PREEMPT Fri Dec 20 19:54:53 CET 2013 i686 GNU/Linux
-Linux 3.12.6-1-ARCH #1 SMP PREEMPT Fri Jan 10 10:58:37 EST 2014 x86_64 GNU/Linux
-Linux 3.11-1-amd64 #1 SMP Debian 3.11.6-1 (2013-10-27) x86_64 GNU/Linux
-Linux 3.12.0-5.20131106git839f349.rpfr18.bcm2708/pidora
-Linux 3.14.1-1-ARCH #1 SMP PREEMPT Mon Apr 14 20:40:47 CEST 2014 x86_64 GNU/Linux
-Linux 3.12-kali1-686-pae #1 SMP Debian 3.12.6-2kali1 (2014-01-06) i686 GNU/Linux
-Ubuntu 14.04 LTS (GNU/Linux 3.13.0-24-generic x86_64)
-Ubuntu 14.04.2 LTS (GNU/Linux 3.19.1-x86_64 x86_64)
-Linux 3.17.1-gentoo-r1 #1 SMP PREEMPT Mon Oct 20 17:04:15 PDT 2014 x86_64 Intel(R) Xeon(R) CPU E3-1245 v3 @ 3.40GHz GenuineIntel GNU/Linux
-Linux 3.6.11+ #538 PREEMPT Fri Aug 30 20:42:08 BST 2013 armv6l GNU/Linux
-Linux 3.17.4-1-ARCH #1 PREEMPT Fri Nov 21 22:27:00 MST 2014 armv5tel GNU/Linux
-Linux 3.18.7+ #755 PREEMPT Thu Feb 12 17:14:31 GMT 2015 armv6l GNU/Linux
-Linux 3.2.0-64-generic #97-Ubuntu SMP Wed Jun 4 22:04:21 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux (Ubuntu 12.04)
-Linux 4.0.7-200.fc21.x86_64 #1 SMP Mon Jun 29 22:11:52 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.16.0-33-generic #44~14.04.1-Ubuntu
-Linux 3.13.0-54-generic #91-Ubuntu SMP Tue May 26 19:15:08 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux
-Linux 4.1.7+ #817 PREEMPT Sat Sep 19 15:25:36 BST 2015 armv6l
-Linux 4.2.0-2-ARCH #1 PREEMPT Mon Sep 7 03:47:39 MDT 2015 armv5tel GNU/Linux
-Linux 4.4.0-12-generic #28-Ubuntu SMP Wed Mar 9 00:33:55 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
-Linux 4.6.0-0.bpo.1-686-pae #1 SMP Debian 4.6.4-1~bpo8+1 (2016-08-11) i686 GNU/Linux
-Linux 4.8.3-x86_64-linode76 #1 SMP
-Linux 4.9
+### Remote OS Detect Example on IPv6
+
+* fe80::6445:b9f8:cc82:3015 - CentOS 7
+* fe80::20c:29ff:feb6:8d99 - Ubuntu 22.04
+
+```rust
+use pistol::{os_detect6, Host, Target};
+use std::net::Ipv4Addr;
+
+fn main() {
+    let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+    let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
+    let dst_open_tcp_port_1 = 22;
+    let dst_closed_tcp_port_1 = 8765;
+    let dst_closed_udp_port_1 = 9876;
+    let host1 = Host6::new(
+        dst_ipv6,
+        Some(vec![
+            dst_open_tcp_port_1,
+            dst_closed_tcp_port_1,
+            dst_closed_udp_port_1,
+        ]),
+    );
+
+    let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
+    let dst_open_tcp_port_2 = 22;
+    let dst_closed_tcp_port_2 = 8765;
+    let dst_closed_udp_port_2 = 9876;
+    let host2 = Host6::new(
+        dst_ipv6,
+        Some(vec![
+            dst_open_tcp_port_2,
+            dst_closed_tcp_port_2,
+            dst_closed_udp_port_2,
+        ]),
+    );
+
+    let target = Target::new6(vec![host1, host2]);
+
+    // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
+    let src_port = None;
+    let max_loop = 8;
+    let top_k = 3;
+    let threads_num = 8;
+
+    let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, max_loop).unwrap();
+    for (i, p) in ret {
+        println!(">>> IP:\n{}", i);
+        println!(">>> Novelty:\n{}", p.novelty);
+        for pred in p.predict {
+            println!("{}", pred);
+        }
+        println!("\n");
+    }
+}
+```
+
+
+### Output
+
+#### CentOS 7
+
+```
+>>> IP:
+fe80::6445:b9f8:cc82:3015
+>>> Novelty:
+18.900423183803554
+```
+
+According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
+
+#### Ubuntu 22.04
+
+```
+>>> IP:
+fe80::20c:29ff:feb6:8d99
+>>> Novelty:
+8.516669989525697
 >>> Fingerprint:
-Linux 3.2 - 4.9
+Linux 4.19
+>>> Class:
+Linux | Linux | 4.X | general purpose
+>>> CPE:
+cpe:/o:linux:linux_kernel:4.19
+>>> Fingerprint:
+Linux 3.13 - 4.6
 >>> Class:
 Linux | Linux | 3.X | general purpose
 Linux | Linux | 4.X | general purpose
 >>> CPE:
-cpe:/o:linux:linux_kernel:3 auto
-cpe:/o:linux:linux_kernel:4 auto
-
->>> Score: 54/101
->>> Info:
-Linux 4.10.0-041000-lowlatency #201702191831 SMP PREEMPT Sun Feb 19 23:36:31 UTC 2017 x86_64 x86_64 x86_64 GNU/Linux
-Linux 4.10.1-1-ARCH #1 SMP PREEMPT Sun Feb 26 21:08:53 UTC 2017 x86_64 GNU/Linux
-Linux 4.10.12-sunxi #7 SMP Wed Apr 26 02:44:12 CEST 2017 armv7l GNU/Linux
+cpe:/o:linux:linux_kernel:3
+cpe:/o:linux:linux_kernel:4
 >>> Fingerprint:
-Linux 4.10
+Android 7.1 (Linux 3.18)
 >>> Class:
-Linux | Linux | 4.X | general purpose
+Google | Android | 7.X | phone
 >>> CPE:
-cpe:/o:linux:linux_kernel:4.10 auto
-
->>> Score: 54/101
->>> Info:
-Linux 4.4.5-1-ARCH #1 SMP PREEMPT Thu Mar 10 07:38:19 CET 2016 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 4.4
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.4 auto
-
->>> Score: 54/101
->>> Info:
-Linux 5.1.9-arch1-1-ARCH #1 SMP PREEMPT Tue Jun 11 16:18:09 UTC 2019 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 5.1
->>> Class:
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:5.1 auto
-
->>> Score: 53/101
->>> Info:
-Linux 3.13.0-1-smp #2 SMP Fri Oct 17 14:29:25 BST 2014 x86_64 GNU/Linux
-Linux 3.16.0-4-amd64 #1 SMP Debian 3.16.7-ckt9-3~deb8u1 (2015-04-24) x86_64 GNU/Linux
-Linux linux.netzwerk 3.16.6-2-desktop #1 SMP PREEMPT Mon Oct 20 13:47:22  UTC 2014 (feb42ea) i686 athlon i386 GNU/Linux openSUSE 13.2
->>> Fingerprint:
-Linux 3.13 - 3.16
->>> Class:
-Linux | Linux | 3.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3 auto
-
->>> Score: 53/101
->>> Info:
-Linux 3.16.0-4-686-pae #1 SMP Debian 3.16.7-ckt25-1 (2016-03-06) i686 GNU/Linux
->>> Fingerprint:
-Linux 3.16
->>> Class:
-Linux | Linux | 3.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3.16 auto
-
->>> Score: 53/101
->>> Info:
-Linux 3.18.13-2-ARCH #1 SMP PREEMPT Mon May 18 20:19:37 MDT 2015 armv7l GNU/Linux
-Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:45 UTC 2015 i686 i686 i686 GNU/Linux
-Linux 3.16.0-navtech-epu #4 SMP PREEMPT Wed Dec 2 13:16:34 GMT 2015 armv7l armv7l armv7l GNU/Linux
-Linux 4.6.4-1-ARCH #1 SMP PREEMPT Mon Jul 11 19:12:32 CEST 2016 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 3.16 - 4.6
->>> Class:
-Linux | Linux | 3.X | general purpose
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3 auto
-cpe:/o:linux:linux_kernel:4 auto
-
->>> Score: 53/101
->>> Info:
-OpenWRT CHAOS CALMER (Bleeding Edge, r45264) kernel 3.18.10-1-db18831523892bc50953de74ea42b8ac
-Linksys wrt1900ac running OpenWrt Chaos Calmer r44455
-Linux OpenWrt 3.18.8 #1 Thu Mar 12 19:12:22 UTC 2015 mips GNU/Linux
-Linux OpenWrt 3.18.17 #1 Fri Jul 3 18:06:43 CEST 2015 mips GNU/Linux
-Linux 3.18.20 #1 Fri Sep 4 21:55:57 CEST 2015 mips GNU/Linux
-Linux 3.18.20 (buildbot@builder1) (gcc version 4.8.3 (OpenWrt/Linaro GCC 4.8-2014.04 r46450) ) #1 Fri Sep 4 21:55:57 CEST 2015
-Linux 4.1.13 #1 Sun Dec 27 17:57:31 CET 2015 mips GNU/Linux
-OpenWRT CHAOS CALMER (15.05.1, r48532)
-OpenWrt Chaos Calmer 15.05.1 / LuCI 15.05-188-g87e9837 Release (git-16.018.33482-3201903), Linux 3.18.23
-OpenWrt omnia 15.05 r47055 / LuCI 5ca9e5d2391f6ca149db4e53cda7c8f5d3ef6644 branch (git-16.335.29518-5ca9e5d), Linux 4.4.38
->>> Fingerprint:
-OpenWrt Chaos Calmer 15.05 (Linux 3.18) or Designated Driver (Linux 4.1 or 4.4)
->>> Class:
-Linux | Linux | 3.X | WAP
-Linux | Linux | 4.X | WAP
->>> CPE:
-cpe:/o:linux:linux_kernel:3.18
-cpe:/o:linux:linux_kernel:4.1 auto
-
->>> Score: 53/101
->>> Info:
-Linux 4.10
->>> Fingerprint:
-Linux 4.10
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.10 auto
-
->>> Score: 53/101
->>> Info:
-Linux 4.10.13-1-ARCH #1 SMP PREEMPT Thu Apr 27 12:15:09 CEST 2017 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 4.10
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.10 auto
-
->>> Score: 53/101
->>> Info:
-Linux 4.4.13-v7+ #894 SMP Mon Jun 13 13:13:27 BST 2016 armv7l GNU/Linux
-Linux 4.4.21-v7+ #911 SMP Thu Sep 15 14:22:38 BST 2016 armv7l GNU/Linux
->>> Fingerprint:
-Linux 4.4
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.4 auto
-
->>> Score: 53/101
->>> Info:
-Linux 4.4.13-v7+ #894 SMP Mon Jun 13 13:13:27 BST 2016 armv7l GNU/Linux
->>> Fingerprint:
-Linux 4.4
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.4 auto
-
->>> Score: 53/101
->>> Info:
-Linksys EA3500
->>> Fingerprint:
-Linksys EA3500 WAP
->>> Class:
-Linux | Linux || WAP
-Linksys | embedded || WAP
->>> CPE:
-cpe:/o:linux:linux_kernel auto
-cpe:/h:linksys:ea3500 auto
 ```

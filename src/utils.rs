@@ -95,23 +95,6 @@ pub fn get_ips_from_host6(hosts: &[Host6]) -> Vec<Ipv6Addr> {
     target_ips
 }
 
-pub fn find_mac_by_src_ipv4(find_ip: &Ipv4Addr) -> Option<MacAddr> {
-    let interfaces = get_host_interfaces();
-    for interface in &interfaces {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(ipv4) => {
-                    if ipv4 == *find_ip {
-                        return interface.mac;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
-
 /// Returns an interface that matches the name.
 pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
     let interfaces = get_host_interfaces();

@@ -36,7 +36,7 @@ pub const ICMP_HEADER_SIZE: usize = 8;
 pub const ETHERNET_BUFF_SIZE: usize = 1024;
 
 pub const ICMPV6_NS_HEADER_SIZE: usize = 32;
-pub const ICMPV6_NA_HEADER_SIZE: usize = 32;
+// pub const ICMPV6_NA_HEADER_SIZE: usize = 32;
 pub const ICMPV6_ER_HEADER_SIZE: usize = 8;
 pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
 
@@ -55,7 +55,7 @@ pub enum Layers {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MatchResp {
+pub struct RespMatch {
     // (src, dst)
     pub layer2: Option<(MacAddr, MacAddr)>,
     pub layer3_ipv4: Option<(Ipv4Addr, Ipv4Addr)>,
@@ -69,9 +69,10 @@ pub struct MatchResp {
     pub jump_layer2: bool,
 }
 
-impl MatchResp {
-    pub fn new_layer2(src_mac: MacAddr, dst_mac: MacAddr) -> MatchResp {
-        MatchResp {
+#[allow(dead_code)]
+impl RespMatch {
+    pub fn new_layer2(src_mac: MacAddr, dst_mac: MacAddr) -> RespMatch {
+        RespMatch {
             layer2: Some((src_mac, dst_mac)),
             layer3_ipv4: None,
             layer3_ipv6: None,
@@ -84,8 +85,8 @@ impl MatchResp {
             jump_layer2: false,
         }
     }
-    pub fn new_layer3_ipv4(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, jump_layer2: bool) -> MatchResp {
-        MatchResp {
+    pub fn new_layer3_ipv4(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, jump_layer2: bool) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: Some((src_ipv4, dst_ipv4)),
             layer3_ipv6: None,
@@ -98,8 +99,8 @@ impl MatchResp {
             jump_layer2,
         }
     }
-    pub fn new_layer3_ipv6(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, jump_layer2: bool) -> MatchResp {
-        MatchResp {
+    pub fn new_layer3_ipv6(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, jump_layer2: bool) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: None,
             layer3_ipv6: Some((src_ipv6, dst_ipv6)),
@@ -112,8 +113,8 @@ impl MatchResp {
             jump_layer2,
         }
     }
-    pub fn new_layer4_tcp_udp(src_port: u16, dst_port: u16, jump_layer2: bool) -> MatchResp {
-        MatchResp {
+    pub fn new_layer4_tcp_udp(src_port: u16, dst_port: u16, jump_layer2: bool) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: None,
             layer3_ipv6: None,
@@ -130,8 +131,8 @@ impl MatchResp {
         icmp_type: IcmpType,
         icmp_code: IcmpCode,
         jump_layer2: bool,
-    ) -> MatchResp {
-        MatchResp {
+    ) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: None,
             layer3_ipv6: None,
@@ -148,8 +149,8 @@ impl MatchResp {
         icmpv6_type: Icmpv6Type,
         icmpv6_code: Icmpv6Code,
         jump_layer2: bool,
-    ) -> MatchResp {
-        MatchResp {
+    ) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: None,
             layer3_ipv6: None,
@@ -162,8 +163,8 @@ impl MatchResp {
             jump_layer2,
         }
     }
-    pub fn new_layer4_icmp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, jump_layer2: bool) -> MatchResp {
-        MatchResp {
+    pub fn new_layer4_icmp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, jump_layer2: bool) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: None,
             layer3_ipv6: None,
@@ -180,8 +181,8 @@ impl MatchResp {
         src_ipv6: Ipv6Addr,
         dst_ipv6: Ipv6Addr,
         jump_layer2: bool,
-    ) -> MatchResp {
-        MatchResp {
+    ) -> RespMatch {
+        RespMatch {
             layer2: None,
             layer3_ipv4: None,
             layer3_ipv6: None,
@@ -314,14 +315,14 @@ impl MatchResp {
                 EtherTypes::Ipv4 => match Ipv4Packet::new(ethernet_packet.payload()) {
                     Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
                         IpNextHeaderProtocols::Tcp => {
-                            return MatchResp::_match_tcp(
+                            return RespMatch::_match_tcp(
                                 src_port,
                                 dst_port,
                                 ipv4_packet.payload(),
                             );
                         }
                         IpNextHeaderProtocols::Udp => {
-                            return MatchResp::_match_udp(
+                            return RespMatch::_match_udp(
                                 src_port,
                                 dst_port,
                                 ipv4_packet.payload(),
@@ -334,14 +335,14 @@ impl MatchResp {
                 EtherTypes::Ipv6 => match Ipv6Packet::new(ethernet_packet.payload()) {
                     Some(ipv6_packet) => match ipv6_packet.get_next_header() {
                         IpNextHeaderProtocols::Tcp => {
-                            return MatchResp::_match_tcp(
+                            return RespMatch::_match_tcp(
                                 src_port,
                                 dst_port,
                                 ipv6_packet.payload(),
                             );
                         }
                         IpNextHeaderProtocols::Udp => {
-                            return MatchResp::_match_udp(
+                            return RespMatch::_match_udp(
                                 src_port,
                                 dst_port,
                                 ipv6_packet.payload(),
@@ -468,7 +469,7 @@ impl MatchResp {
                 EtherTypes::Ipv4 => match Ipv4Packet::new(ethernet_packet.payload()) {
                     Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
                         IpNextHeaderProtocols::Icmp => {
-                            return MatchResp::_match_icmp(
+                            return RespMatch::_match_icmp(
                                 icmp_type,
                                 icmp_code,
                                 ipv4_packet.payload(),
@@ -501,7 +502,7 @@ impl MatchResp {
                 EtherTypes::Ipv6 => match Ipv6Packet::new(ethernet_packet.payload()) {
                     Some(ipv6_packet) => match ipv6_packet.get_next_header() {
                         IpNextHeaderProtocols::Icmpv6 => {
-                            return MatchResp::_match_icmpv6(
+                            return RespMatch::_match_icmpv6(
                                 icmpv6_type,
                                 icmpv6_code,
                                 ipv6_packet.payload(),
@@ -526,7 +527,6 @@ impl MatchResp {
             Layers::Layer4Icmpv6Specific => self.match_layer4_icmpv6_specific(ethernet_buff),
             Layers::Layer4Icmp => self.match_layer4_icmp(ethernet_buff),
             Layers::Layer4Icmpv6 => self.match_layer4_icmpv6(ethernet_buff),
-            _ => false,
         }
     }
 }
@@ -573,9 +573,9 @@ fn datalink_channel(
     }
 }
 
-fn print_packet_as_wireshark(ethernet_buff: &[u8]) {
+pub fn _print_packet_as_wireshark_format(buff: &[u8]) {
     let mut i = 0;
-    for b in ethernet_buff {
+    for b in buff {
         if i % 16 == 0 {
             print!("\n");
         }
@@ -596,7 +596,7 @@ fn layer_2_ipv4_send(
     dst_mac: MacAddr,
     interface: NetworkInterface,
     send_buff: &[u8],
-    mut match_objects: Vec<MatchResp>,
+    mut match_objects: Vec<RespMatch>,
     max_loop: usize,
 ) -> Result<Option<Vec<u8>>> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
@@ -644,7 +644,7 @@ fn layer2_ipv6_send(
     dst_mac: MacAddr,
     interface: NetworkInterface,
     send_buff: &[u8],
-    mut match_objects: Vec<MatchResp>,
+    mut match_objects: Vec<RespMatch>,
     max_loop: usize,
 ) -> Result<Option<Vec<u8>>> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
@@ -816,7 +816,7 @@ pub fn layer3_ipv4_send(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     payload: &[u8],
-    match_objects: Vec<MatchResp>,
+    match_objects: Vec<RespMatch>,
     max_loop: usize,
 ) -> Result<Option<Vec<u8>>> {
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
@@ -915,7 +915,7 @@ fn ndp(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     icmpv6_header.set_checksum(checksum);
 
     // let match_ipv6 = MatchResp::new_layer3_ipv6(src_ipv6, dst_ipv6);
-    let match_icmpv6 = MatchResp::new_layer4_icmpv6(src_ipv6, dst_ipv6, true);
+    let match_icmpv6 = RespMatch::new_layer4_icmpv6(src_ipv6, dst_ipv6, true);
     let max_loop = 32;
 
     let r = layer2_ipv6_send(
@@ -947,7 +947,7 @@ pub fn layer3_ipv6_send(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     payload: &[u8],
-    match_objects: Vec<MatchResp>,
+    match_objects: Vec<RespMatch>,
     max_loop: usize,
 ) -> Result<Option<Vec<u8>>> {
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
@@ -999,6 +999,7 @@ mod tests {
     fn test_send_ndp_packet() {
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
+        // let dst_ipv6 = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
         match ndp(src_ipv6, dst_ipv6).unwrap() {
             Some(mac) => println!("{}", mac),
             _ => println!("None"),

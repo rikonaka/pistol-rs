@@ -14,7 +14,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::MatchResp;
+use crate::layers::RespMatch;
 use crate::layers::{ICMP_HEADER_SIZE, IPV4_HEADER_SIZE, TCP_HEADER_SIZE, UDP_HEADER_SIZE};
 use crate::TargetScanStatus;
 
@@ -162,8 +162,8 @@ pub fn send_ip_procotol_scan_packet(
         }
     };
 
-    let match_object_1 = MatchResp::new_layer3_ipv4(src_ipv4, dst_ipv4, false);
-    let match_object_2 = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let match_object_1 = RespMatch::new_layer3_ipv4(src_ipv4, dst_ipv4, false);
+    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,

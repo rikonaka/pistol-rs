@@ -14,6 +14,7 @@ pub struct SEQRR {
     pub seq4: RequestAndResponse,
     pub seq5: RequestAndResponse,
     pub seq6: RequestAndResponse,
+    pub elapsed: f64,
 }
 
 #[derive(Debug, Clone)]

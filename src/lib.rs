@@ -521,6 +521,9 @@ pub use fingerprint::dbparser::nmap_os_db_parser;
 /// Detect target machine OS.
 pub use fingerprint::os_detect;
 
+/// Detect target machine OS on IPv6.
+pub use fingerprint::os_detect6;
+
 #[cfg(test)]
 mod tests {
     use super::*;

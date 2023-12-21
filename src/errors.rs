@@ -104,6 +104,34 @@ impl GetIpv4PacketFailed {
 impl Error for GetIpv4PacketFailed {}
 
 #[derive(Debug, Clone)]
+pub struct GetIpv6PacketFailed {}
+impl fmt::Display for GetIpv6PacketFailed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "get ipv6 packet failed")
+    }
+}
+impl GetIpv6PacketFailed {
+    pub fn new() -> GetIpv6PacketFailed {
+        GetIpv6PacketFailed {}
+    }
+}
+impl Error for GetIpv6PacketFailed {}
+
+#[derive(Debug, Clone)]
+pub struct GetIcmpv6PacketFailed {}
+impl fmt::Display for GetIcmpv6PacketFailed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "get icmpv6 packet failed")
+    }
+}
+impl GetIcmpv6PacketFailed {
+    pub fn new() -> GetIcmpv6PacketFailed {
+        GetIcmpv6PacketFailed {}
+    }
+}
+impl Error for GetIcmpv6PacketFailed {}
+
+#[derive(Debug, Clone)]
 pub struct GetTcpPacketFailed {}
 impl fmt::Display for GetTcpPacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -207,7 +235,10 @@ impl Error for CreateDatalinkChannelFailed {}
 pub struct CanNotFoundMacAddress {}
 impl fmt::Display for CanNotFoundMacAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the mac address")
+        write!(
+            f,
+            "can not found the mac address, please check the target is alive"
+        )
     }
 }
 impl CanNotFoundMacAddress {

@@ -15,7 +15,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::MatchResp;
+use crate::layers::RespMatch;
 use crate::layers::{ICMP_HEADER_SIZE, IPV4_HEADER_SIZE};
 use crate::ping::PingStatus;
 
@@ -62,7 +62,7 @@ pub fn send_icmp_ping_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let match_icmp = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let match_icmp = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
     let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![match_icmp], max_loop)?;
     match ret {
         Some(r) => {

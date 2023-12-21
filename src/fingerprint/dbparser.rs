@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::read_to_string;
 
 use crate::utils::Hex;
 
@@ -1237,12 +1236,12 @@ fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
 
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
-pub fn nmap_os_db_parser(filename: String) -> Result<Vec<NmapOsDb>> {
-    let lines: Vec<String> = read_to_string(filename)
-        .unwrap()
-        .lines()
-        .map(String::from)
-        .collect();
+pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>> {
+    // let lines: Vec<String> = read_to_string(filename)
+    //     .unwrap()
+    //     .lines()
+    //     .map(String::from)
+    //     .collect();
 
     let option_string = |x: Option<String>| -> String {
         match x {
@@ -1364,29 +1363,4 @@ pub fn nmap_os_db_parser(filename: String) -> Result<Vec<NmapOsDb>> {
         }
     }
     Ok(result)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    // use std::fs::{read_to_string, File};
-    // use std::io::prelude::*;
-    use std::time::SystemTime;
-    #[test]
-    fn test_parser() {
-        let start = SystemTime::now();
-        let filename = "nmap-os-db".to_string();
-
-        let _ret = nmap_os_db_parser(filename).unwrap();
-        // for i in 0..5 {
-        //     let r = &ret[i];
-        //     println!("{:?}", r.seq.gcd);
-        // }
-
-        // in my homelab server: parse time: 1.285817538s
-        println!("parse time: {:?}", start.elapsed().unwrap());
-        // let serialized = serde_json::to_string(&ret).unwrap();
-        // let mut file_write = File::create("nmap-os-db.pistol").unwrap();
-        // file_write.write_all(serialized.as_bytes()).unwrap();
-    }
 }

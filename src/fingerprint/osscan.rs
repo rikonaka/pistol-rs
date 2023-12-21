@@ -7,10 +7,12 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
+use std::time::SystemTime;
 
+use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress};
+use crate::layers::find_interface_by_ipv4;
 use crate::layers::layer3_ipv4_send;
-use crate::layers::MatchResp;
-use crate::utils::find_mac_by_src_ipv4;
+use crate::layers::RespMatch;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -101,10 +103,23 @@ pub fn get_scan_line(
     let p = "RUST";
 
     // SCAN(V=5.05BETA1%D=8/23%OT=22%CT=1%CU=42341%PV=N%DS=0%DC=L%G=Y%TM=4A91CB90%P=i686-pc-linux-gnu)
-    let info_str = if m.len() > 0 {
-        format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
-    } else {
-        format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+    let info_str = match dst_addr {
+        IpAddr::V4(_) => {
+            let info_str = if m.len() > 0 {
+                format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
+            } else {
+                format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+            };
+            info_str
+        }
+        IpAddr::V6(_) => {
+            let info_str = if m.len() > 0 {
+                format!("SCAN(V={v}E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
+            } else {
+                format!("SCAN(V={v}E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+            };
+            info_str
+        }
     };
     info_str
 }
@@ -134,10 +149,11 @@ fn send_seq_probes(
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
     // let buffs = vec![buff_4];
 
+    let start = SystemTime::now();
     let mut i = 0;
     for buff in buffs {
         let src_port = src_ports[i];
-        let match_tcp = MatchResp::new_layer4_tcp_udp(src_port, dst_open_port, false);
+        let match_tcp = RespMatch::new_layer4_tcp_udp(src_port, dst_open_port, false);
         i += 1;
         let tx = tx.clone();
         pool.execute(move || {
@@ -179,6 +195,7 @@ fn send_seq_probes(
             _ => (),
         }
     }
+    let elapsed = start.elapsed()?.as_secs_f64();
 
     let seqrr = SEQRR {
         seq1: seq1.unwrap(),
@@ -187,12 +204,13 @@ fn send_seq_probes(
         seq4: seq4.unwrap(),
         seq5: seq5.unwrap(),
         seq6: seq6.unwrap(),
+        elapsed,
     };
 
     Ok(seqrr)
 }
 
-fn send_ie_probe(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Result<IERR> {
+fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Result<IERR> {
     let (tx, rx) = channel();
 
     let mut rng = rand::thread_rng();
@@ -202,7 +220,7 @@ fn send_ie_probe(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Res
     let buff_1 = packet::ie_packet_1_layer3(src_ipv4, dst_ipv4, id_1)?;
     let buff_2 = packet::ie_packet_2_layer3(src_ipv4, dst_ipv4, id_2)?;
     let buffs = vec![buff_1, buff_2];
-    let match_icmp = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let match_icmp = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
     let mut i = 0;
     for buff in buffs {
@@ -263,7 +281,7 @@ fn send_ecn_probe(
     };
 
     let buff = packet::ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
-    let match_tcp = MatchResp::new_layer4_tcp_udp(src_port, dst_open_port, false);
+    let match_tcp = RespMatch::new_layer4_tcp_udp(src_port, dst_open_port, false);
 
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
@@ -315,12 +333,12 @@ fn send_tx_probes(
     let buff_7 = packet::t7_packet_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_closed_port)?;
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
     // let buffs = vec![buff_5];
-    let m1 = MatchResp::new_layer4_tcp_udp(src_ports[0], dst_open_port, false);
-    let m2 = MatchResp::new_layer4_tcp_udp(src_ports[1], dst_open_port, false);
-    let m3 = MatchResp::new_layer4_tcp_udp(src_ports[2], dst_open_port, false);
-    let m4 = MatchResp::new_layer4_tcp_udp(src_ports[3], dst_closed_port, false);
-    let m5 = MatchResp::new_layer4_tcp_udp(src_ports[4], dst_closed_port, false);
-    let m6 = MatchResp::new_layer4_tcp_udp(src_ports[5], dst_closed_port, false);
+    let m1 = RespMatch::new_layer4_tcp_udp(src_ports[0], dst_open_port, false);
+    let m2 = RespMatch::new_layer4_tcp_udp(src_ports[1], dst_open_port, false);
+    let m3 = RespMatch::new_layer4_tcp_udp(src_ports[2], dst_open_port, false);
+    let m4 = RespMatch::new_layer4_tcp_udp(src_ports[3], dst_closed_port, false);
+    let m5 = RespMatch::new_layer4_tcp_udp(src_ports[4], dst_closed_port, false);
+    let m6 = RespMatch::new_layer4_tcp_udp(src_ports[5], dst_closed_port, false);
     let ms = vec![m1, m2, m3, m4, m5, m6];
 
     let mut i = 0;
@@ -391,7 +409,7 @@ fn send_u1_probe(
     };
 
     let buff = packet::udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
-    let match_icmp = MatchResp::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let match_icmp = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
 
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
@@ -423,9 +441,9 @@ fn send_all_probes(
     max_loop: usize,
 ) -> Result<AllPacketRR> {
     let seq = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, max_loop)?;
-    let ie = send_ie_probe(src_ipv4, dst_ipv4, max_loop)?;
+    let ie = send_ie_probes(src_ipv4, dst_ipv4, max_loop)?;
     let ecn = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, max_loop)?;
-    let t2_t7 = send_tx_probes(
+    let tx = send_tx_probes(
         src_ipv4,
         src_port,
         dst_ipv4,
@@ -439,7 +457,7 @@ fn send_all_probes(
         seq,
         ie,
         ecn,
-        tx: t2_t7,
+        tx,
         u1,
     };
 
@@ -520,7 +538,8 @@ pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX> {
     // At least four responses should be returned.
     let (r, sp, gcd, isr, ti, ci, ii, ss, ts) = if num >= 4 {
         let (gcd, diff) = tcp_gcd(&ap.seq)?; // None mean error
-        let (isr, seq_rates) = tcp_isr(diff)?;
+        let elapsed = ap.seq.elapsed / 6.0;
+        let (isr, seq_rates) = tcp_isr(diff, elapsed as f32)?;
         let sp = tcp_sp(seq_rates, gcd)?;
         let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.tx, &ap.ie)?;
         let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii)?;
@@ -1444,11 +1463,17 @@ pub fn os_probe(
         max_loop,
     )?;
 
-    let dst_mac = find_mac_by_src_ipv4(&src_ipv4);
+    let dst_mac = match find_interface_by_ipv4(src_ipv4) {
+        Some(interface) => match interface.mac {
+            Some(m) => m,
+            None => return Err(CanNotFoundMacAddress::new().into()),
+        },
+        None => return Err(CanNotFoundInterface::new().into()),
+    };
     let hops = None;
     let good_results = true;
     let scan = get_scan_line(
-        dst_mac,
+        Some(dst_mac),
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
@@ -1559,7 +1584,7 @@ mod tests {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
         let max_loop = 32;
-        let ierr = send_ie_probe(src_ipv4, dst_ipv4, max_loop).unwrap();
+        let ierr = send_ie_probes(src_ipv4, dst_ipv4, max_loop).unwrap();
         println!("{}", ierr.ie1.response.len());
         println!("{}", ierr.ie2.response.len());
     }
