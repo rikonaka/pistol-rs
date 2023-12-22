@@ -25,6 +25,7 @@ use std::process::Command;
 use subnetwork::Ipv6;
 
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress, CreateDatalinkChannelFailed};
+use crate::utils::{find_interface_by_ipv4, find_interface_by_ipv6};
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -529,38 +530,6 @@ impl RespMatch {
             Layers::Layer4Icmpv6 => self.match_layer4_icmpv6(ethernet_buff),
         }
     }
-}
-
-pub fn find_interface_by_ipv4(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(ipv4) => {
-                    if ipv4 == src_ipv4 {
-                        return Some(interface);
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
-
-pub fn find_interface_by_ipv6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V6(ipv6) => {
-                    if ipv6 == src_ipv6 {
-                        return Some(interface);
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
 }
 
 fn datalink_channel(

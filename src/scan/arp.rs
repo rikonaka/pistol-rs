@@ -58,21 +58,3 @@ pub fn send_arp_scan_packet(
     }
     None
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_send_arp_scan_packet() {
-        use crate::utils;
-        let interface: NetworkInterface = utils::find_interface_by_name("ens33").unwrap();
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 1);
-        let dst_mac: MacAddr = MacAddr::broadcast();
-        let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 128);
-        let src_mac: MacAddr = interface.mac.unwrap();
-        let max_loop = 32;
-        let ret = send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, max_loop)
-            .unwrap();
-        println!("{:?}", ret);
-    }
-}

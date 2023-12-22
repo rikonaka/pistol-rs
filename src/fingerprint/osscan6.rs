@@ -8,7 +8,8 @@ use std::time::SystemTime;
 
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress};
 use crate::fingerprint::osscan::get_scan_line;
-use crate::layers::{find_interface_by_ipv6, layer3_ipv6_send, RespMatch};
+use crate::layers::{layer3_ipv6_send, RespMatch};
+use crate::utils::find_interface_by_ipv6;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;

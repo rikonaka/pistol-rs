@@ -1,58 +1,8 @@
 use std::error::Error;
 use std::fmt;
+use std::net::IpAddr;
 
 use crate::TargetType;
-
-#[derive(Debug, Clone)]
-pub struct FindInterfaceError {
-    interface: String,
-}
-impl fmt::Display for FindInterfaceError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found interface {}", self.interface)
-    }
-}
-impl FindInterfaceError {
-    pub fn new(interface: &str) -> FindInterfaceError {
-        let interface = interface.to_string();
-        FindInterfaceError { interface }
-    }
-}
-impl Error for FindInterfaceError {}
-
-#[derive(Debug, Clone)]
-pub struct GetInterfaceIPError {
-    interface: String,
-}
-impl fmt::Display for GetInterfaceIPError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not get ip from interface {}", self.interface)
-    }
-}
-impl GetInterfaceIPError {
-    pub fn new(interface: &str) -> GetInterfaceIPError {
-        let interface = interface.to_string();
-        GetInterfaceIPError { interface }
-    }
-}
-impl Error for GetInterfaceIPError {}
-
-#[derive(Debug, Clone)]
-pub struct GetInterfaceMACError {
-    interface: String,
-}
-impl fmt::Display for GetInterfaceMACError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not get mac from interface {}", self.interface)
-    }
-}
-impl GetInterfaceMACError {
-    pub fn new(interface: &str) -> GetInterfaceMACError {
-        let interface = interface.to_string();
-        GetInterfaceMACError { interface }
-    }
-}
-impl Error for GetInterfaceMACError {}
 
 #[derive(Debug, Clone)]
 pub struct NotSupportIpTypeForArpScan {
@@ -261,3 +211,38 @@ impl CanNotFoundInterface {
     }
 }
 impl Error for CanNotFoundInterface {}
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundSourceAddress {}
+impl fmt::Display for CanNotFoundSourceAddress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the source address")
+    }
+}
+impl CanNotFoundSourceAddress {
+    pub fn new() -> CanNotFoundSourceAddress {
+        CanNotFoundSourceAddress {}
+    }
+}
+impl Error for CanNotFoundSourceAddress {}
+
+/* SCAN */
+#[derive(Debug, Clone)]
+pub struct IpCanNotBindToInterface {
+    ip: IpAddr,
+}
+impl fmt::Display for IpCanNotBindToInterface {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "ip {} cannot obtain the corresponding interface",
+            self.ip
+        )
+    }
+}
+impl IpCanNotBindToInterface {
+    pub fn new(ip: IpAddr) -> IpCanNotBindToInterface {
+        IpCanNotBindToInterface { ip }
+    }
+}
+impl Error for IpCanNotBindToInterface {}

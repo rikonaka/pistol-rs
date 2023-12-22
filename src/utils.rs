@@ -1,14 +1,13 @@
 use anyhow::Result;
 use num_cpus;
 use pnet::datalink;
-use pnet::datalink::{MacAddr, NetworkInterface};
+use pnet::datalink::NetworkInterface;
 use rand::Rng;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use subnetwork;
 use subnetwork::{Ipv4Pool, Ipv6Pool};
 use threadpool::ThreadPool;
 
-use super::errors::{FindInterfaceError, GetInterfaceIPError, GetInterfaceMACError};
 use super::Host;
 use super::Host6;
 use super::{BindIp2Interface, BindIp2Interface6};
@@ -21,20 +20,26 @@ pub fn get_host_interfaces() -> Vec<NetworkInterface> {
     datalink::interfaces()
 }
 
-pub fn bind_interface(target_ips: &[Ipv4Addr]) -> Vec<BindIp2Interface> {
+pub fn bind_interface(target_ips: &Vec<Ipv4Addr>) -> Vec<BindIp2Interface> {
     let interfaces = get_host_interfaces();
     let mut ret: Vec<BindIp2Interface> = Vec::new();
-    for tip in target_ips {
+    for dst_ipv4 in target_ips {
         let mut found_interface = false;
         for interface in &interfaces {
             for ip in &interface.ips {
                 match ip.ip() {
-                    IpAddr::V4(ipv4) => {
+                    IpAddr::V4(src_ipv4) => {
                         let prefix = ip.prefix();
-                        let subnet = Ipv4Pool::new(ipv4, prefix).unwrap();
-                        if subnet.contain(*tip) {
+                        let subnet = Ipv4Pool::new(src_ipv4, prefix).unwrap();
+                        if subnet.contain(*dst_ipv4) {
                             found_interface = true;
-                            let bi = BindIp2Interface::new(*tip, Some(interface.clone()));
+                            let src_mac = interface.mac;
+                            let bi = BindIp2Interface::new(
+                                *dst_ipv4,
+                                Some(src_ipv4),
+                                src_mac,
+                                Some(interface.clone()),
+                            );
                             ret.push(bi);
                         }
                     }
@@ -43,7 +48,7 @@ pub fn bind_interface(target_ips: &[Ipv4Addr]) -> Vec<BindIp2Interface> {
             }
         }
         if !found_interface {
-            let bi = BindIp2Interface::new(*tip, None);
+            let bi = BindIp2Interface::new(*dst_ipv4, None, None, None);
             ret.push(bi);
         }
     }
@@ -58,12 +63,18 @@ pub fn bind_interface6(target_ips: &[Ipv6Addr]) -> Vec<BindIp2Interface6> {
         for interface in &interfaces {
             for ip in &interface.ips {
                 match ip.ip() {
-                    IpAddr::V6(ipv6) => {
+                    IpAddr::V6(src_ipv6) => {
                         let prefix = ip.prefix();
-                        let subnet = Ipv6Pool::new(ipv6, prefix).unwrap();
+                        let subnet = Ipv6Pool::new(src_ipv6, prefix).unwrap();
                         if subnet.contain(*tip) {
                             found_interface = true;
-                            let bi = BindIp2Interface6::new(*tip, Some(interface.clone()));
+                            let src_mac = interface.mac;
+                            let bi = BindIp2Interface6::new(
+                                *tip,
+                                Some(src_ipv6),
+                                src_mac,
+                                Some(interface.clone()),
+                            );
                             ret.push(bi);
                         }
                     }
@@ -72,7 +83,7 @@ pub fn bind_interface6(target_ips: &[Ipv6Addr]) -> Vec<BindIp2Interface6> {
             }
         }
         if !found_interface {
-            let bi = BindIp2Interface6::new(*tip, None);
+            let bi = BindIp2Interface6::new(*tip, None, None, None);
             ret.push(bi);
         }
     }
@@ -95,24 +106,15 @@ pub fn get_ips_from_host6(hosts: &[Host6]) -> Vec<Ipv6Addr> {
     target_ips
 }
 
-/// Returns an interface that matches the name.
-pub fn find_interface_by_name(interface_name: &str) -> Option<NetworkInterface> {
-    let interfaces = get_host_interfaces();
-    for interface in interfaces {
-        // println!("{}", interface)
-        if interface.name == interface_name {
-            return Some(interface);
-        }
-    }
-    None
-}
-
-/// Returns source ip of host machine interfaces.
-pub fn get_interface_ip(interface: &NetworkInterface) -> Option<Ipv4Addr> {
-    for i in &interface.ips {
-        if i.is_ipv4() {
-            match i.ip() {
-                IpAddr::V4(ip) => return Some(ip),
+pub fn find_interface_by_ipv4(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
+    for interface in datalink::interfaces() {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V4(ipv4) => {
+                    if ipv4 == src_ipv4 {
+                        return Some(interface);
+                    }
+                }
                 _ => (),
             }
         }
@@ -120,82 +122,20 @@ pub fn get_interface_ip(interface: &NetworkInterface) -> Option<Ipv4Addr> {
     None
 }
 
-/// Returns source ip(v6) of host machine interfaces.
-pub fn get_interface_ip6(interface: &NetworkInterface) -> Option<Ipv6Addr> {
-    for i in &interface.ips {
-        if i.is_ipv4() {
-            match i.ip() {
-                IpAddr::V6(ip) => return Some(ip),
+pub fn find_interface_by_ipv6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
+    for interface in datalink::interfaces() {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V6(ipv6) => {
+                    if ipv6 == src_ipv6 {
+                        return Some(interface);
+                    }
+                }
                 _ => (),
             }
         }
     }
     None
-}
-
-pub fn parse_interface(interface: &NetworkInterface) -> Result<(Ipv4Addr, MacAddr)> {
-    let ipv4 = match get_interface_ip(&interface) {
-        Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(&interface.to_string()).into()),
-    };
-    let mac = match interface.mac {
-        Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(&interface.to_string()).into()),
-    };
-
-    Ok((ipv4, mac))
-}
-
-pub fn parse_interface6(interface: &NetworkInterface) -> Result<(Ipv6Addr, MacAddr)> {
-    let ipv6 = match get_interface_ip6(&interface) {
-        Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(&interface.to_string()).into()),
-    };
-    let mac = match interface.mac {
-        Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(&interface.to_string()).into()),
-    };
-
-    Ok((ipv6, mac))
-}
-
-/// Convert user input interface and return (NetworkInterface, Ipv4Addr, MacAddr).
-pub fn parse_interface_from_str(
-    interface_name: &str,
-) -> Result<(NetworkInterface, Ipv4Addr, MacAddr)> {
-    let i = match find_interface_by_name(interface_name) {
-        Some(i) => i,
-        _ => return Err(FindInterfaceError::new(interface_name).into()),
-    };
-    let ipv4 = match get_interface_ip(&i) {
-        Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(&i.to_string()).into()),
-    };
-    let mac = match i.mac {
-        Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(&i.to_string()).into()),
-    };
-
-    Ok((i, ipv4, mac))
-}
-
-pub fn parse_interface_from_str6(
-    interface_name: &str,
-) -> Result<(NetworkInterface, Ipv6Addr, MacAddr)> {
-    let i = match find_interface_by_name(interface_name) {
-        Some(i) => i,
-        _ => return Err(FindInterfaceError::new(interface_name).into()),
-    };
-    let ipv6 = match get_interface_ip6(&i) {
-        Some(ip) => ip,
-        _ => return Err(GetInterfaceIPError::new(&i.to_string()).into()),
-    };
-    let mac = match i.mac {
-        Some(m) => m,
-        _ => return Err(GetInterfaceMACError::new(&i.to_string()).into()),
-    };
-
-    Ok((i, ipv6, mac))
 }
 
 /// Returns the random port.

@@ -19,9 +19,9 @@ use std::net::Ipv6Addr;
 
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
-use crate::layers::find_interface_by_ipv6;
 use crate::layers::{ICMPV6_ER_HEADER_SIZE, ICMPV6_NI_HEADER_SIZE, ICMPV6_NS_HEADER_SIZE};
 use crate::layers::{IPV6_HEADER_SIZE, TCP_HEADER_SIZE, UDP_HEADER_SIZE};
+use crate::utils::find_interface_by_ipv6;
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.

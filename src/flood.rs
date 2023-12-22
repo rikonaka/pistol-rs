@@ -9,6 +9,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
+use crate::errors::CanNotFoundSourceAddress;
 use crate::{utils, Target};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,7 +27,6 @@ fn run_flood(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) {
@@ -39,23 +39,11 @@ fn run_flood(
     };
 
     if max_flood_packet > 0 {
-        for loop_num in 0..max_flood_packet {
-            if print_result {
-                if loop_num % 10000 == 0 {
-                    println!("send {loop_num} packet");
-                }
-            }
+        for _loop_num in 0..max_flood_packet {
             let _ = func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet);
         }
     } else {
-        let mut loop_num = 0;
         loop {
-            loop_num += 1;
-            if print_result {
-                if loop_num % 10000 == 0 {
-                    println!("send {loop_num} packet");
-                }
-            }
             let _ = func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet);
         }
     }
@@ -67,7 +55,6 @@ fn run_flood6(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) {
@@ -80,23 +67,11 @@ fn run_flood6(
     };
 
     if max_flood_packet > 0 {
-        for loop_num in 0..max_flood_packet {
-            if print_result {
-                if loop_num % 10000 == 0 {
-                    println!("send {loop_num} packet");
-                }
-            }
+        for _loop_num in 0..max_flood_packet {
             let _ = func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet);
         }
     } else {
-        let mut loop_num = 0;
         loop {
-            loop_num += 1;
-            if print_result {
-                if loop_num % 10000 == 0 {
-                    println!("send {loop_num} packet");
-                }
-            }
             let _ = func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet);
         }
     }
@@ -107,116 +82,55 @@ pub fn flood(
     method: FloodMethods,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
-    match interface {
-        Some(interface) => {
-            let src_ipv4 = match src_ipv4 {
+    let src_port = match src_port {
+        Some(p) => p,
+        None => utils::random_port(),
+    };
+    let target_ips = utils::get_ips_from_host(&target.hosts);
+    let bi_vec = utils::bind_interface(&target_ips);
+
+    let pool = utils::get_threads_pool(threads_num);
+
+    for (bi, host) in zip(bi_vec, target.hosts) {
+        let src_ipv4 = match src_ipv4 {
+            Some(s) => s,
+            None => match bi.src_ipv4 {
                 Some(s) => s,
-                None => {
-                    let (_, src_ipv4, _) = utils::parse_interface_from_str(interface)?;
-                    src_ipv4
-                }
-            };
-            let src_port = match src_port {
-                Some(p) => p,
-                None => utils::random_port(),
-            };
-            let pool = utils::get_threads_pool(threads_num);
-
-            for h in &target.hosts {
-                let dst_ipv4 = h.addr;
-                if h.ports.len() > 0 && method != FloodMethods::Icmp {
-                    for dst_port in &h.ports {
-                        let dst_port = dst_port.clone();
-                        pool.execute(move || {
-                            run_flood(
-                                method,
-                                src_ipv4,
-                                src_port,
-                                dst_ipv4,
-                                dst_port,
-                                print_result,
-                                max_same_packet,
-                                max_flood_packet,
-                            );
-                        });
-                    }
-                } else if method == FloodMethods::Icmp {
-                    pool.execute(move || {
-                        run_flood(
-                            method,
-                            src_ipv4,
-                            src_port,
-                            dst_ipv4,
-                            0,
-                            print_result,
-                            max_same_packet,
-                            max_flood_packet,
-                        );
-                    });
-                }
+                None => return Err(CanNotFoundSourceAddress::new().into()),
+            },
+        };
+        let dst_ipv4 = bi.dst_ipv4;
+        if host.ports.len() > 0 && method != FloodMethods::Icmp {
+            for dst_port in host.ports {
+                let dst_port = dst_port.clone();
+                pool.execute(move || {
+                    run_flood(
+                        method,
+                        src_ipv4,
+                        src_port,
+                        dst_ipv4,
+                        dst_port,
+                        max_same_packet,
+                        max_flood_packet,
+                    );
+                });
             }
-        }
-        None => {
-            let src_port = match src_port {
-                Some(p) => p,
-                None => utils::random_port(),
-            };
-            let target_ips = utils::get_ips_from_host(&target.hosts);
-            let bi_vec = utils::bind_interface(&target_ips);
-
-            let pool = utils::get_threads_pool(threads_num);
-
-            for (bi, host) in zip(bi_vec, target.hosts) {
-                match bi.interface {
-                    Some(interface) => {
-                        let src_ipv4 = match src_ipv4 {
-                            Some(s) => s,
-                            None => {
-                                let (src_ipv4, _) = utils::parse_interface(&interface).unwrap();
-                                src_ipv4
-                            }
-                        };
-                        let dst_ipv4 = bi.ipv4;
-                        if host.ports.len() > 0 && method != FloodMethods::Icmp {
-                            for dst_port in host.ports {
-                                let dst_port = dst_port.clone();
-                                pool.execute(move || {
-                                    run_flood(
-                                        method,
-                                        src_ipv4,
-                                        src_port,
-                                        dst_ipv4,
-                                        dst_port,
-                                        print_result,
-                                        max_same_packet,
-                                        max_flood_packet,
-                                    );
-                                });
-                            }
-                        } else if method == FloodMethods::Icmp {
-                            pool.execute(move || {
-                                run_flood(
-                                    method,
-                                    src_ipv4,
-                                    src_port,
-                                    dst_ipv4,
-                                    0,
-                                    print_result,
-                                    max_same_packet,
-                                    max_flood_packet,
-                                );
-                            });
-                        }
-                    }
-                    None => (),
-                }
-            }
+        } else if method == FloodMethods::Icmp {
+            pool.execute(move || {
+                run_flood(
+                    method,
+                    src_ipv4,
+                    src_port,
+                    dst_ipv4,
+                    0,
+                    max_same_packet,
+                    max_flood_packet,
+                );
+            });
         }
     }
     Ok(())
@@ -226,116 +140,55 @@ pub fn flood6(
     method: FloodMethods,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
-    match interface {
-        Some(interface) => {
-            let src_ipv6 = match src_ipv6 {
+    let src_port = match src_port {
+        Some(p) => p,
+        None => utils::random_port(),
+    };
+    let target_ips = utils::get_ips_from_host6(&target.hosts6);
+    let bi_vec = utils::bind_interface6(&target_ips);
+
+    let pool = utils::get_threads_pool(threads_num);
+
+    for (bi, host) in zip(bi_vec, target.hosts6) {
+        let src_ipv6 = match src_ipv6 {
+            Some(s) => s,
+            None => match bi.src_ipv6 {
                 Some(s) => s,
-                None => {
-                    let (_, src_ipv6, _) = utils::parse_interface_from_str6(interface)?;
-                    src_ipv6
-                }
-            };
-            let src_port = match src_port {
-                Some(p) => p,
-                None => utils::random_port(),
-            };
-            let pool = utils::get_threads_pool(threads_num);
-
-            for h in &target.hosts6 {
-                let dst_ipv6 = h.addr;
-                if h.ports.len() > 0 && method != FloodMethods::Icmp {
-                    for dst_port in &h.ports {
-                        let dst_port = dst_port.clone();
-                        pool.execute(move || {
-                            run_flood6(
-                                method,
-                                src_ipv6,
-                                src_port,
-                                dst_ipv6,
-                                dst_port,
-                                print_result,
-                                max_same_packet,
-                                max_flood_packet,
-                            );
-                        });
-                    }
-                } else if method == FloodMethods::Icmp {
-                    pool.execute(move || {
-                        run_flood6(
-                            method,
-                            src_ipv6,
-                            src_port,
-                            dst_ipv6,
-                            0,
-                            print_result,
-                            max_same_packet,
-                            max_flood_packet,
-                        );
-                    });
-                }
+                None => return Err(CanNotFoundSourceAddress::new().into()),
+            },
+        };
+        let dst_ipv6 = bi.dst_ipv6;
+        if host.ports.len() > 0 && method != FloodMethods::Icmp {
+            for dst_port in host.ports {
+                let dst_port = dst_port.clone();
+                pool.execute(move || {
+                    run_flood6(
+                        method,
+                        src_ipv6,
+                        src_port,
+                        dst_ipv6,
+                        dst_port,
+                        max_same_packet,
+                        max_flood_packet,
+                    );
+                });
             }
-        }
-        None => {
-            let src_port = match src_port {
-                Some(p) => p,
-                None => utils::random_port(),
-            };
-            let target_ips = utils::get_ips_from_host6(&target.hosts6);
-            let bi_vec = utils::bind_interface6(&target_ips);
-
-            let pool = utils::get_threads_pool(threads_num);
-
-            for (bi, host) in zip(bi_vec, target.hosts6) {
-                match bi.interface {
-                    Some(interface) => {
-                        let src_ipv6 = match src_ipv6 {
-                            Some(s) => s,
-                            None => {
-                                let (src_ipv6, _) = utils::parse_interface6(&interface).unwrap();
-                                src_ipv6
-                            }
-                        };
-                        let dst_ipv6 = bi.ipv6;
-                        if host.ports.len() > 0 && method != FloodMethods::Icmp {
-                            for dst_port in host.ports {
-                                let dst_port = dst_port.clone();
-                                pool.execute(move || {
-                                    run_flood6(
-                                        method,
-                                        src_ipv6,
-                                        src_port,
-                                        dst_ipv6,
-                                        dst_port,
-                                        print_result,
-                                        max_same_packet,
-                                        max_flood_packet,
-                                    );
-                                });
-                            }
-                        } else if method == FloodMethods::Icmp {
-                            pool.execute(move || {
-                                run_flood6(
-                                    method,
-                                    src_ipv6,
-                                    src_port,
-                                    dst_ipv6,
-                                    0,
-                                    print_result,
-                                    max_same_packet,
-                                    max_flood_packet,
-                                );
-                            });
-                        }
-                    }
-                    None => (),
-                }
-            }
+        } else if method == FloodMethods::Icmp {
+            pool.execute(move || {
+                run_flood6(
+                    method,
+                    src_ipv6,
+                    src_port,
+                    dst_ipv6,
+                    0,
+                    max_same_packet,
+                    max_flood_packet,
+                );
+            });
         }
     }
     Ok(())
@@ -344,9 +197,7 @@ pub fn flood6(
 pub fn icmp_flood(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -355,9 +206,7 @@ pub fn icmp_flood(
         FloodMethods::Icmp,
         src_ipv4,
         Some(0),
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -366,9 +215,7 @@ pub fn icmp_flood(
 pub fn icmp_flood6(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -377,9 +224,7 @@ pub fn icmp_flood6(
         FloodMethods::Icmp,
         src_ipv6,
         Some(0),
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -389,9 +234,7 @@ pub fn tcp_syn_flood(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -400,9 +243,7 @@ pub fn tcp_syn_flood(
         FloodMethods::Syn,
         src_ipv4,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -412,9 +253,7 @@ pub fn tcp_syn_flood6(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -423,9 +262,7 @@ pub fn tcp_syn_flood6(
         FloodMethods::Syn,
         src_ipv6,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -435,9 +272,7 @@ pub fn tcp_ack_flood(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -446,9 +281,7 @@ pub fn tcp_ack_flood(
         FloodMethods::Ack,
         src_ipv4,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -458,9 +291,7 @@ pub fn tcp_ack_flood6(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -469,9 +300,7 @@ pub fn tcp_ack_flood6(
         FloodMethods::Ack,
         src_ipv6,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -481,9 +310,7 @@ pub fn tcp_ack_psh_flood(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -492,9 +319,7 @@ pub fn tcp_ack_psh_flood(
         FloodMethods::AckPsh,
         src_ipv4,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -504,9 +329,7 @@ pub fn tcp_ack_psh_flood6(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -515,9 +338,7 @@ pub fn tcp_ack_psh_flood6(
         FloodMethods::AckPsh,
         src_ipv6,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -527,9 +348,7 @@ pub fn udp_flood(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -538,9 +357,7 @@ pub fn udp_flood(
         FloodMethods::Udp,
         src_ipv4,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
@@ -550,9 +367,7 @@ pub fn udp_flood6(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
-    interface: Option<&str>,
     threads_num: usize,
-    print_result: bool,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<()> {
@@ -561,9 +376,7 @@ pub fn udp_flood6(
         FloodMethods::Udp,
         src_ipv6,
         src_port,
-        interface,
         threads_num,
-        print_result,
         max_same_packet,
         max_flood_packet,
     )
