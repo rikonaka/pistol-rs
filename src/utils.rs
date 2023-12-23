@@ -64,7 +64,7 @@ pub fn bind_interface6(target_ips: &[Ipv6Addr]) -> Vec<BindIp2Interface6> {
                     IpAddr::V6(src_ipv6) => {
                         let prefix = ip.prefix();
                         let subnet = Ipv6Pool::new(src_ipv6, prefix).unwrap();
-                        if subnet.contain(*tip) {
+                        if subnet.contain(*tip) || src_ipv6.is_unicast_global() {
                             found_interface = true;
                             let src_mac = interface.mac;
                             let bi = BindIp2Interface6::new(
@@ -218,7 +218,7 @@ impl Hex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pnet::datalink::interfaces;
+    use pnet::datalink;
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
@@ -242,12 +242,12 @@ mod tests {
     }
     #[test]
     fn test_list_interfaces() {
-        for interface in interfaces() {
+        for interface in datalink::interfaces() {
             // println!("{}", interface)
             let ips = interface.ips;
             for ip in ips {
                 match ip.ip() {
-                    IpAddr::V4(i) => {
+                    IpAddr::V6(i) => {
                         println!("{}", i);
                     }
                     _ => (),

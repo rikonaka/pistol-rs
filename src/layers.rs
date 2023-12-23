@@ -10,6 +10,7 @@ use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::{IcmpCode, IcmpType};
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
+use pnet::packet::icmpv6::ndp::MutableRouterSolicitPacket;
 use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::icmpv6::ndp::{NdpOption, NdpOptionTypes};
 use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type};
@@ -39,6 +40,7 @@ pub const ICMP_HEADER_SIZE: usize = 8;
 pub const ETHERNET_BUFF_SIZE: usize = 1024;
 
 pub const ICMPV6_NS_HEADER_SIZE: usize = 32;
+pub const ICMPV6_RS_HEADER_SIZE: usize = 16;
 // pub const ICMPV6_NA_HEADER_SIZE: usize = 32;
 pub const ICMPV6_ER_HEADER_SIZE: usize = 8;
 pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
@@ -55,6 +57,7 @@ pub enum Layers {
     Layer4Icmpv6Specific,
     Layer4Icmp,
     Layer4Icmpv6,
+    Layer4Icmpv6AllNode,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,6 +71,7 @@ pub struct RespMatch {
     pub layer4_icmpv6: Option<(Ipv6Addr, Ipv6Addr)>,
     pub layer4_icmp_specific: Option<(IcmpType, IcmpCode)>,
     pub layer4_icmpv6_specific: Option<(Icmpv6Type, Icmpv6Code)>,
+    pub layer4_icmpv6_all_node: bool,
     pub layer: Layers,
     pub jump_layer2: bool,
 }
@@ -84,6 +88,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer2,
             jump_layer2: false,
         }
@@ -98,6 +103,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer3Ipv4,
             jump_layer2,
         }
@@ -112,6 +118,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer3Ipv6,
             jump_layer2,
         }
@@ -126,6 +133,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer4TcpUdp,
             jump_layer2,
         }
@@ -144,6 +152,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: Some((icmp_type, icmp_code)),
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer4IcmpSpecific,
             jump_layer2,
         }
@@ -162,6 +171,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: Some((icmpv6_type, icmpv6_code)),
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer4Icmpv6Specific,
             jump_layer2,
         }
@@ -176,6 +186,7 @@ impl RespMatch {
             layer4_icmpv6: None,
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer4Icmp,
             jump_layer2,
         }
@@ -194,11 +205,26 @@ impl RespMatch {
             layer4_icmpv6: Some((src_ipv6, dst_ipv6)),
             layer4_icmp_specific: None,
             layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: false,
             layer: Layers::Layer4Icmpv6,
             jump_layer2,
         }
     }
-
+    pub fn new_layer4_icmpv6_all_node(jump_layer2: bool) -> RespMatch {
+        RespMatch {
+            layer2: None,
+            layer3_ipv4: None,
+            layer3_ipv6: None,
+            layer4_tcp_udp: None,
+            layer4_icmp: None,
+            layer4_icmpv6: None,
+            layer4_icmp_specific: None,
+            layer4_icmpv6_specific: None,
+            layer4_icmpv6_all_node: true,
+            layer: Layers::Layer4Icmpv6AllNode,
+            jump_layer2,
+        }
+    }
     fn match_layer2(&self, ethernet_buff: &[u8]) -> bool {
         let (src_mac, dst_mac) = match self.layer2 {
             Some((src_mac, dst_mac)) => (src_mac, dst_mac),
@@ -454,6 +480,33 @@ impl RespMatch {
         }
         false
     }
+    fn match_layer4_icmpv6_all_node(&self, ethernet_buff: &[u8]) -> bool {
+        if self.match_layer2(ethernet_buff) || self.jump_layer2 {
+            let all_node_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 1);
+            // println!("{} - {}", src_ipv6, dst_ipv6);
+            let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
+                Some(ethernet_packet) => ethernet_packet,
+                None => {
+                    return false;
+                }
+            };
+            match ethernet_packet.get_ethertype() {
+                EtherTypes::Ipv6 => match Ipv6Packet::new(ethernet_packet.payload()) {
+                    Some(ipv6_packet) => match ipv6_packet.get_next_header() {
+                        IpNextHeaderProtocols::Icmpv6 => {
+                            if ipv6_packet.get_destination() == all_node_ipv6 {
+                                return true;
+                            }
+                        }
+                        _ => (),
+                    },
+                    None => (),
+                },
+                _ => (),
+            }
+        }
+        false
+    }
     fn match_layer4_icmp_specific(&self, ethernet_buff: &[u8]) -> bool {
         if self.match_layer2(ethernet_buff) || self.jump_layer2 {
             let (icmp_type, icmp_code) = match self.layer4_icmp_specific {
@@ -530,6 +583,7 @@ impl RespMatch {
             Layers::Layer4Icmpv6Specific => self.match_layer4_icmpv6_specific(ethernet_buff),
             Layers::Layer4Icmp => self.match_layer4_icmp(ethernet_buff),
             Layers::Layer4Icmpv6 => self.match_layer4_icmpv6(ethernet_buff),
+            Layers::Layer4Icmpv6AllNode => self.match_layer4_icmpv6_all_node(ethernet_buff),
         }
     }
 }
@@ -676,15 +730,51 @@ fn system_route() -> Result<Ipv4Addr> {
             }
         }
     } else if cfg!(target_os = "windows") {
-        // Get-NetNeighbor
+        // route print
         let c = Command::new("route").arg("print").output()?;
         // 0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.30    281
         let output = String::from_utf8_lossy(&c.stdout);
         let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
         for line in lines {
-            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
-            let route_ipv4: Ipv4Addr = l_split[2].parse()?;
-            return Ok(route_ipv4);
+            if line.contains("0.0.0.0") {
+                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let route_ipv4: Ipv4Addr = l_split[2].parse()?;
+                return Ok(route_ipv4);
+            }
+        }
+    }
+    Err(CanNotFoundRouterAddress::new().into())
+}
+
+fn system_route6() -> Result<Ipv6Addr> {
+    if cfg!(target_os = "linux") {
+        // ip route (default)
+        let c = Command::new("ip").args(["-6", "route"]).output()?;
+        // 240e:34c:85:e4d0::/64 dev ens36 proto kernel metric 256 expires 86372sec pref medium
+        // fe80::/64 dev ens33 proto kernel metric 256 pref medium
+        // fe80::/64 dev ens36 proto kernel metric 256 pref medium
+        // default via fe80::4a5f:8ff:fee0:1394 dev ens36 proto ra metric 1024 expires 1772sec hoplimit 64 pref medium
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        for line in lines {
+            if line.contains("default") {
+                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let route_ipv6: Ipv6Addr = l_split[2].parse()?;
+                return Ok(route_ipv6);
+            }
+        }
+    } else if cfg!(target_os = "windows") {
+        // route print
+        let c = Command::new("route").arg("print").output()?;
+        // 16    281 ::/0                     fe80::4a5f:8ff:fee0:1394
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        for line in lines {
+            if line.contains("::/0") {
+                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let route_ipv6: Ipv6Addr = l_split[3].parse()?;
+                return Ok(route_ipv6);
+            }
         }
     }
     Err(CanNotFoundRouterAddress::new().into())
@@ -697,7 +787,52 @@ fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
         // 192.168.72.254 dev ens33 lladdr 00:50:56:fa:d4:85 STALE
         // 192.168.72.2 dev ens33 lladdr 00:50:56:ff:8c:06 STALE
-        // fe80::47c:7f4a:10a8:7f4a dev ens33 lladdr 00:50:56:c0:00:08 STALE
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
+        for line in lines {
+            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            if l_split.len() >= 6 {
+                let ip_str = l_split[0];
+                // let device = l_split[2];
+                let mac_str = l_split[4];
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = mac_str.parse()?;
+                ret.insert(ip, mac);
+            }
+        }
+        return Ok(Some(ret));
+    } else if cfg!(target_os = "windows") {
+        // Get-NetNeighbor
+        let c = Command::new("Get-NetNeighbor").output()?;
+        // ifIndex IPAddress                                          LinkLayerAddress      State       PolicyStore
+        // ------- ---------                                          ----------------      -----       -----------
+        // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
+        // 17      ff02::1:ffd0:8c47                                  33-33-FF-D0-8C-47     Permanent   ActiveStore
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
+        for line in lines[2..].to_vec() {
+            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            if l_split.len() >= 5 {
+                let ip_str = l_split[1];
+                let mac_str = l_split[2];
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = mac_str.parse()?;
+                ret.insert(ip, mac);
+            }
+        }
+        return Ok(Some(ret));
+    }
+    Ok(None)
+}
+
+fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
+    if cfg!(target_os = "linux") {
+        // ip neighbour
+        let c = Command::new("ip").args(["-6", "neighbour"]).output()?;
+        // fe80::4a5f:8ff:fee0:1394 dev ens33 FAILED
+        // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
         let output = String::from_utf8_lossy(&c.stdout);
         let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
@@ -740,6 +875,21 @@ fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
 
 fn search_system_neighbour_cache(ip: IpAddr) -> Result<Option<MacAddr>> {
     let ret = system_neighbour_cache()?;
+    match ret {
+        Some(r) => {
+            for (i, m) in r {
+                if i == ip {
+                    return Ok(Some(m));
+                }
+            }
+            Ok(None)
+        }
+        None => Ok(None),
+    }
+}
+
+fn search_system_neighbour_cache6(ip: IpAddr) -> Result<Option<MacAddr>> {
+    let ret = system_neighbour_cache6()?;
     match ret {
         Some(r) => {
             for (i, m) in r {
@@ -823,6 +973,7 @@ pub fn layer3_ipv4_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
         Some(m) => m,
         None => {
+            // Try local net first.
             let mut mac: Option<MacAddr> = None;
             for _ in 0..NEIGNBOUR_MAX_TRY {
                 match arp(src_ipv4, dst_ipv4)? {
@@ -836,6 +987,7 @@ pub fn layer3_ipv4_send(
             match mac {
                 Some(m) => m,
                 None => {
+                    // Not local net, then try to send this packet to router.
                     let route_ip = system_route()?;
                     match search_system_neighbour_cache(route_ip.into())? {
                         Some(m) => m,
@@ -878,7 +1030,7 @@ pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])
 }
 
-fn get_mac_from_ndp_options(buff: &[u8]) -> Option<MacAddr> {
+fn get_mac_from_ndp_ns(buff: &[u8]) -> Option<MacAddr> {
     // return mac address from ndp
     let ethernet_packet = EthernetPacket::new(buff).unwrap();
     let ipv6_packet = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
@@ -949,7 +1101,88 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     )?;
     let mac = match r {
         Some(r) => match match_icmpv6.match_packet(&r) {
-            true => get_mac_from_ndp_options(&r),
+            true => get_mac_from_ndp_ns(&r),
+            false => None,
+        },
+        None => None,
+    };
+    match mac {
+        Some(mac) => Ok(Some(mac)),
+        None => Ok(None),
+    }
+}
+
+fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
+    // return mac address from ndp
+    match EthernetPacket::new(buff) {
+        Some(ethernet_packet) => {
+            let mac = ethernet_packet.get_source();
+            Some(mac)
+        }
+        None => None,
+    }
+}
+
+fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
+    // let dst_ipv6: Ipv6Addr = "ff02::2".parse()?;
+    let dst_ipv6_all_router = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 2);
+    let interface = match find_interface_by_ipv6(src_ipv6) {
+        Some(i) => i,
+        None => return Err(CanNotFoundInterface::new().into()),
+    };
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(CanNotFoundMacAddress::new().into()),
+    };
+
+    // ipv6
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE];
+    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    ipv6_header.set_version(6);
+    ipv6_header.set_traffic_class(0);
+    ipv6_header.set_flow_label(0);
+    ipv6_header.set_payload_length(ICMPV6_RS_HEADER_SIZE as u16);
+    ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
+    ipv6_header.set_hop_limit(255);
+    ipv6_header.set_source(src_ipv6);
+    ipv6_header.set_destination(dst_ipv6_all_router);
+
+    // icmpv6
+    let mut icmpv6_header =
+        MutableRouterSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    // Neighbor Solicitation
+    icmpv6_header.set_icmpv6_type(Icmpv6Types::RouterSolicit);
+    icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
+    icmpv6_header.set_reserved(0);
+    let ndp_option = NdpOption {
+        option_type: NdpOptionTypes::SourceLLAddr,
+        length: 1,
+        data: src_mac.octets().to_vec(),
+    };
+    icmpv6_header.set_options(&vec![ndp_option]);
+
+    let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let checksum = icmpv6::checksum(
+        &icmpv6_header.to_immutable(),
+        &src_ipv6,
+        &dst_ipv6_all_router,
+    );
+    icmpv6_header.set_checksum(checksum);
+
+    let match_icmpv6 = RespMatch::new_layer4_icmpv6_all_node(true);
+    let max_loop = 32;
+    let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
+
+    let r = layer2_ipv6_send(
+        dst_mac,
+        interface.clone(),
+        &ipv6_buff,
+        vec![match_icmpv6],
+        max_loop,
+    )?;
+    let mac = match r {
+        Some(r) => match match_icmpv6.match_packet(&r) {
+            true => get_mac_from_ndp_rs(&r),
             false => None,
         },
         None => None,
@@ -975,6 +1208,7 @@ pub fn layer3_ipv6_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
         Some(m) => m,
         None => {
+            // Try local net first.
             let mut mac: Option<MacAddr> = None;
             for _ in 0..NEIGNBOUR_MAX_TRY {
                 match ndp_ns(src_ipv6, dst_ipv6)? {
@@ -987,7 +1221,29 @@ pub fn layer3_ipv6_send(
             }
             match mac {
                 Some(m) => m,
-                None => return Err(CanNotFoundMacAddress::new().into()),
+                None => {
+                    // Not local net, then try to send this packet to router.
+                    let route_ip = system_route6()?;
+                    match search_system_neighbour_cache6(route_ip.into())? {
+                        Some(m) => m,
+                        None => {
+                            let mut mac: Option<MacAddr> = None;
+                            for _ in 0..NEIGNBOUR_MAX_TRY {
+                                match ndp_rs(src_ipv6)? {
+                                    Some(m) => {
+                                        mac = Some(m);
+                                        break;
+                                    }
+                                    None => (),
+                                }
+                            }
+                            match mac {
+                                Some(m) => m,
+                                None => return Err(CanNotFoundMacAddress::new().into()),
+                            }
+                        }
+                    }
+                }
             }
         }
     };
@@ -1018,11 +1274,19 @@ mod tests {
         }
     }
     #[test]
-    fn test_send_ndp_packet() {
+    fn test_send_ndp_ns_packet() {
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         // let dst_ipv6 = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
         match ndp_ns(src_ipv6, dst_ipv6).unwrap() {
+            Some(mac) => println!("{}", mac),
+            _ => println!("None"),
+        }
+    }
+    #[test]
+    fn test_send_ndp_rs_packet() {
+        let src_ipv6: Ipv6Addr = "240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap();
+        match ndp_rs(src_ipv6).unwrap() {
             Some(mac) => println!("{}", mac),
             _ => println!("None"),
         }

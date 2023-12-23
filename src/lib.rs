@@ -1,5 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
+#![feature(ip)] // to use is_unicast_global in Ipv6Addr
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::ip::IpNextHeaderProtocol;
@@ -706,10 +707,13 @@ mod tests {
     #[test]
     fn test_icmpv6_ping() {
         let src_port: Option<u16> = None;
-        let src_ipv6: Option<Ipv6Addr> = Some("fe80::20c:29ff:fe43:9c82".parse().unwrap());
+        // let src_ipv6: Option<Ipv6Addr> = Some("fe80::20c:29ff:fe43:9c82".parse().unwrap());
         // let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         // let dst_ipv6: Ipv6Addr = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
+        // let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
+        // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
+        let src_ipv6 = None;
+        let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
         let threads_num: usize = 8;
         let max_loop: Option<usize> = Some(8);
         let host = Host6::new(dst_ipv6, Some(vec![]));
@@ -718,5 +722,19 @@ mod tests {
         for (_ip, r) in ret {
             println!("{}", r);
         }
+    }
+    #[test]
+    fn test_ipv6_address() {
+        let ipv6_addr: Ipv6Addr = "240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap();
+        println!("{}", ipv6_addr.is_unspecified()); // false
+        println!("{}", ipv6_addr.is_multicast()); // false
+        println!("{}", ipv6_addr.is_loopback()); // false
+        println!("{}", ipv6_addr.is_unicast_global()); // true
+
+        let ipv6_addr: Ipv6Addr = "fe80::20c:29ff:fe43:9c8c".parse().unwrap();
+        println!("{}", ipv6_addr.is_unspecified()); // false
+        println!("{}", ipv6_addr.is_multicast()); // false
+        println!("{}", ipv6_addr.is_loopback()); // false
+        println!("{}", ipv6_addr.is_unicast_global()); // false
     }
 }
