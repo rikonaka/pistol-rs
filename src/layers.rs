@@ -1124,7 +1124,7 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
 }
 
 fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
-    // let dst_ipv6: Ipv6Addr = "ff02::2".parse()?;
+    // router solicitation
     let dst_ipv6_all_router = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 2);
     let interface = match find_interface_by_ipv6(src_ipv6) {
         Some(i) => i,
