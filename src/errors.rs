@@ -20,6 +20,20 @@ impl NotSupportIpTypeForArpScan {
 }
 impl Error for NotSupportIpTypeForArpScan {}
 
+#[derive(Debug, Clone)]
+pub struct CanNotFoundRouterAddress {}
+impl fmt::Display for CanNotFoundRouterAddress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found router address")
+    }
+}
+impl CanNotFoundRouterAddress {
+    pub fn new() -> CanNotFoundRouterAddress {
+        CanNotFoundRouterAddress {}
+    }
+}
+impl Error for CanNotFoundRouterAddress {}
+
 /* OS DETECT ERRORS */
 
 #[derive(Debug, Clone)]

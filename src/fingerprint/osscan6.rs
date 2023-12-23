@@ -470,12 +470,12 @@ fn qsort(input: &Vec<NmapOsDetectRet6>) -> Vec<NmapOsDetectRet6> {
     let find_max_prob = |x: &Vec<NmapOsDetectRet6>| -> usize {
         let mut max_value = 0.0;
         for a in x {
-            if a.prob > max_value {
-                max_value = a.prob;
+            if a.score > max_value {
+                max_value = a.score;
             }
         }
         for (i, a) in x.iter().enumerate() {
-            if a.prob == max_value {
+            if a.score == max_value {
                 return i;
             }
         }
@@ -544,12 +544,12 @@ pub fn os_probe6(
     // println!("{:?}", predict);
 
     let mut detect_rets: Vec<NmapOsDetectRet6> = Vec::new();
-    for (i, (name, prob)) in zip(&linear.namelist, &predict).into_iter().enumerate() {
+    for (i, (name, score)) in zip(&linear.namelist, &predict).into_iter().enumerate() {
         let dr = NmapOsDetectRet6 {
             name: name.to_string(),
             osclass: linear.cpe[i].osclass.to_vec(),
             cpe: linear.cpe[i].cpe.to_vec(),
-            prob: *prob,
+            score: *score,
             label: i,
         };
         detect_rets.push(dr);
@@ -558,7 +558,7 @@ pub fn os_probe6(
     let detect_rets_sort = qsort(&detect_rets);
     let mut perfect_match = 1;
     for i in 1..36 {
-        if detect_rets_sort[i].prob >= 0.9 * detect_rets_sort[0].prob {
+        if detect_rets_sort[i].score >= 0.9 * detect_rets_sort[0].score {
             perfect_match += 1;
         }
     }

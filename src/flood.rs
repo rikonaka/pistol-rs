@@ -10,7 +10,10 @@ pub mod udp;
 pub mod udp6;
 
 use crate::errors::CanNotFoundSourceAddress;
-use crate::{utils, Target};
+use crate::utils::bind_interface6;
+use crate::utils::{bind_interface, get_ips_from_host6};
+use crate::utils::{get_ips_from_host, get_threads_pool, random_port};
+use crate::Target;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FloodMethods {
@@ -88,12 +91,11 @@ pub fn flood(
 ) -> Result<()> {
     let src_port = match src_port {
         Some(p) => p,
-        None => utils::random_port(),
+        None => random_port(),
     };
-    let target_ips = utils::get_ips_from_host(&target.hosts);
-    let bi_vec = utils::bind_interface(&target_ips);
-
-    let pool = utils::get_threads_pool(threads_num);
+    let target_ips = get_ips_from_host(&target.hosts);
+    let bi_vec = bind_interface(&target_ips);
+    let pool = get_threads_pool(threads_num);
 
     for (bi, host) in zip(bi_vec, target.hosts) {
         let src_ipv4 = match src_ipv4 {
@@ -146,12 +148,11 @@ pub fn flood6(
 ) -> Result<()> {
     let src_port = match src_port {
         Some(p) => p,
-        None => utils::random_port(),
+        None => random_port(),
     };
-    let target_ips = utils::get_ips_from_host6(&target.hosts6);
-    let bi_vec = utils::bind_interface6(&target_ips);
-
-    let pool = utils::get_threads_pool(threads_num);
+    let target_ips = get_ips_from_host6(&target.hosts6);
+    let bi_vec = bind_interface6(&target_ips);
+    let pool = get_threads_pool(threads_num);
 
     for (bi, host) in zip(bi_vec, target.hosts6) {
         let src_ipv6 = match src_ipv6 {

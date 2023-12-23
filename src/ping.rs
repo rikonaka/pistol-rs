@@ -5,11 +5,13 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
 
 pub mod icmp;
-pub mod icmp6;
+pub mod icmpv6;
 
 use crate::errors::CanNotFoundSourceAddress;
 use crate::scan::{tcp, tcp6, udp, udp6};
-use crate::utils;
+use crate::utils::bind_interface6;
+use crate::utils::{bind_interface, get_ips_from_host6, get_max_loop};
+use crate::utils::{get_ips_from_host, get_threads_pool, random_port};
 use crate::PingResults;
 use crate::PingStatus;
 use crate::Target;
@@ -127,7 +129,7 @@ fn run_ping6(
                 _ => PingStatus::Down,
             }
         }
-        PingMethods::Icmp => icmp6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, max_loop)?,
+        PingMethods::Icmp => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, max_loop)?,
     };
     Ok(PingResults {
         addr: dst_ipv6.into(),
@@ -145,15 +147,15 @@ pub fn ping(
 ) -> Result<HashMap<u16, PingResults>> {
     let src_port = match src_port {
         Some(p) => p,
-        None => utils::random_port(),
+        None => random_port(),
     };
-    let target_ips = utils::get_ips_from_host(&target.hosts);
-    let bi_vec = utils::bind_interface(&target_ips);
+    let target_ips = get_ips_from_host(&target.hosts);
+    let bi_vec = bind_interface(&target_ips);
 
-    let pool = utils::get_threads_pool(threads_num);
+    let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
-    let max_loop = utils::get_max_loop(max_loop);
+    let max_loop = get_max_loop(max_loop);
 
     for (bi, host) in zip(bi_vec, target.hosts) {
         let src_ipv4 = match src_ipv4 {
@@ -228,15 +230,15 @@ pub fn ping6(
 ) -> Result<HashMap<u16, PingResults>> {
     let src_port = match src_port {
         Some(p) => p,
-        None => utils::random_port(),
+        None => random_port(),
     };
-    let target_ips = utils::get_ips_from_host6(&target.hosts6);
-    let bi_vec = utils::bind_interface6(&target_ips);
+    let target_ips = get_ips_from_host6(&target.hosts6);
+    let bi_vec = bind_interface6(&target_ips);
 
-    let pool = utils::get_threads_pool(threads_num);
+    let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
-    let max_loop = utils::get_max_loop(max_loop);
+    let max_loop = get_max_loop(max_loop);
 
     for (bi, host) in zip(bi_vec, target.hosts6) {
         let src_ipv6 = match src_ipv6 {
@@ -420,7 +422,7 @@ pub fn icmp_ping(
     )
 }
 
-pub fn icmp_ping6(
+pub fn icmpv6_ping(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,

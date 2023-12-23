@@ -14,8 +14,6 @@ use super::{BindIp2Interface, BindIp2Interface6};
 
 const DEFAILT_MAX_LOOP: usize = 32;
 
-/* CODE */
-
 pub fn get_host_interfaces() -> Vec<NetworkInterface> {
     datalink::interfaces()
 }

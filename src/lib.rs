@@ -486,8 +486,8 @@ pub use ping::udp_ping6;
 /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
 /// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 pub use ping::icmp_ping;
-/// Ipv6 version.
-pub use ping::icmp_ping6;
+/// Sends an ICMPv6 type 128 (echo request) packet .
+pub use ping::icmpv6_ping;
 
 /* Flood */
 
@@ -693,13 +693,28 @@ mod tests {
     fn test_icmp_ping() {
         let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        // let interface: Option<&str> = Some("eno1");
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         let threads_num: usize = 8;
         let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
+        let host = Host::new(dst_ipv4, Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+    }
+    #[test]
+    fn test_icmpv6_ping() {
+        let src_port: Option<u16> = None;
+        let src_ipv6: Option<Ipv6Addr> = Some("fe80::20c:29ff:fe43:9c82".parse().unwrap());
+        // let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
+        // let dst_ipv6: Ipv6Addr = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host6::new(dst_ipv6, Some(vec![]));
+        let target: Target = Target::new6(vec![host]);
+        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, max_loop).unwrap();
         for (_ip, r) in ret {
             println!("{}", r);
         }

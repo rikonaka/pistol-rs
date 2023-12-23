@@ -9,7 +9,8 @@ use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::{IcmpCode, IcmpType};
 use pnet::packet::icmpv6;
-use pnet::packet::icmpv6::ndp::{MutableNeighborSolicitPacket, NeighborAdvertPacket};
+use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
+use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::icmpv6::ndp::{NdpOption, NdpOptionTypes};
 use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type};
 use pnet::packet::icmpv6::{Icmpv6Packet, Icmpv6Types, MutableIcmpv6Packet};
@@ -24,6 +25,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::process::Command;
 use subnetwork::Ipv6;
 
+use crate::errors::CanNotFoundRouterAddress;
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress, CreateDatalinkChannelFailed};
 use crate::utils::{find_interface_by_ipv4, find_interface_by_ipv6};
 
@@ -590,8 +592,8 @@ fn layer_2_ipv4_send(
     ethernet_packet.set_ethertype(EtherTypes::Ipv4);
     ethernet_packet.set_payload(send_buff);
 
-    let final_buff = ethernet_buff[..ETHERNET_HEADER_SIZE + send_buff.len()].to_vec();
-    // print_packet_as_wireshark(&final_buff);
+    let final_buff = ethernet_buff[..(ETHERNET_HEADER_SIZE + send_buff.len())].to_vec();
+    // _print_packet_as_wireshark_format(&final_buff);
 
     match sender.send_to(&final_buff, Some(interface)) {
         _ => (),
@@ -639,7 +641,7 @@ fn layer2_ipv6_send(
     ethernet_packet.set_ethertype(EtherTypes::Ipv6);
     ethernet_packet.set_payload(send_buff);
 
-    let final_buff = ethernet_buff[..ETHERNET_HEADER_SIZE + send_buff.len()].to_vec();
+    let final_buff = ethernet_buff[..(ETHERNET_HEADER_SIZE + send_buff.len())].to_vec();
     // print_packet_as_wireshark(&final_buff);
 
     match sender.send_to(&final_buff, Some(interface)) {
@@ -656,6 +658,36 @@ fn layer2_ipv6_send(
         }
     }
     Ok(None)
+}
+
+fn system_route() -> Result<Ipv4Addr> {
+    if cfg!(target_os = "linux") {
+        // ip route (default)
+        let c = Command::new("ip").arg("route").output()?;
+        // default via 192.168.72.2 dev ens33
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        for line in lines {
+            if line.contains("default") {
+                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let route_ipv4: Ipv4Addr = l_split[2].parse()?;
+                return Ok(route_ipv4);
+            }
+        }
+    } else if cfg!(target_os = "windows") {
+        // Get-NetNeighbor
+        let c = Command::new("route").arg("print").output()?;
+        // 0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.30    281
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        for line in lines {
+            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            let route_ipv4: Ipv4Addr = l_split[2].parse()?;
+            return Ok(route_ipv4);
+        }
+    }
+    Err(CanNotFoundRouterAddress::new().into())
 }
 
 fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
@@ -675,8 +707,8 @@ fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
                 let ip_str = l_split[0];
                 // let device = l_split[2];
                 let mac_str = l_split[4];
-                let ip: IpAddr = ip_str.parse().unwrap();
-                let mac: MacAddr = mac_str.parse().unwrap();
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = mac_str.parse()?;
                 ret.insert(ip, mac);
             }
         }
@@ -696,8 +728,8 @@ fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
             if l_split.len() >= 5 {
                 let ip_str = l_split[1];
                 let mac_str = l_split[2];
-                let ip: IpAddr = ip_str.parse().unwrap();
-                let mac: MacAddr = mac_str.parse().unwrap();
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = mac_str.parse()?;
                 ret.insert(ip, mac);
             }
         }
@@ -803,7 +835,28 @@ pub fn layer3_ipv4_send(
             }
             match mac {
                 Some(m) => m,
-                None => return Err(CanNotFoundMacAddress::new().into()),
+                None => {
+                    let route_ip = system_route()?;
+                    match search_system_neighbour_cache(route_ip.into())? {
+                        Some(m) => m,
+                        None => {
+                            let mut mac: Option<MacAddr> = None;
+                            for _ in 0..NEIGNBOUR_MAX_TRY {
+                                match arp(src_ipv4, route_ip)? {
+                                    Some(m) => {
+                                        mac = Some(m);
+                                        break;
+                                    }
+                                    None => (),
+                                }
+                            }
+                            match mac {
+                                Some(m) => m,
+                                None => return Err(CanNotFoundMacAddress::new().into()),
+                            }
+                        }
+                    }
+                }
             }
         }
     };
@@ -840,7 +893,7 @@ fn get_mac_from_ndp_options(buff: &[u8]) -> Option<MacAddr> {
     None
 }
 
-fn ndp(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
+fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     // same as arp in ipv4
     let interface = match find_interface_by_ipv6(src_ipv6) {
         Some(i) => i,
@@ -924,7 +977,7 @@ pub fn layer3_ipv6_send(
         None => {
             let mut mac: Option<MacAddr> = None;
             for _ in 0..NEIGNBOUR_MAX_TRY {
-                match ndp(src_ipv6, dst_ipv6)? {
+                match ndp_ns(src_ipv6, dst_ipv6)? {
                     Some(m) => {
                         mac = Some(m);
                         break;
@@ -969,7 +1022,7 @@ mod tests {
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         // let dst_ipv6 = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
-        match ndp(src_ipv6, dst_ipv6).unwrap() {
+        match ndp_ns(src_ipv6, dst_ipv6).unwrap() {
             Some(mac) => println!("{}", mac),
             _ => println!("None"),
         }

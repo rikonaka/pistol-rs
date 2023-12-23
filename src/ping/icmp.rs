@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use pnet::packet::icmp;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpPacket;
@@ -26,15 +27,16 @@ pub fn send_icmp_ping_packet(
     dst_ipv4: Ipv4Addr,
     max_loop: usize,
 ) -> Result<PingStatus> {
+    const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE];
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     let id = rng.gen();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
@@ -47,7 +49,16 @@ pub fn send_icmp_ping_packet(
     icmp_header.set_icmp_type(IcmpType(8));
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_sequence_number(1);
-    icmp_header.set_identifier(2);
+    icmp_header.set_identifier(rng.gen());
+    let mut tv_sec = Utc::now().timestamp().to_be_bytes();
+    tv_sec.reverse(); // Big-Endian
+    let mut tv_usec = Utc::now().timestamp_subsec_millis().to_be_bytes();
+    tv_usec.reverse(); // Big-Endian
+    let mut timestamp = Vec::new();
+    timestamp.extend(tv_sec);
+    timestamp.extend(tv_usec);
+    // println!("{:?}", timestamp);
+    icmp_header.set_payload(&timestamp);
 
     let mut icmp_header = MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     let checksum = icmp::checksum(&icmp_header.to_immutable());
@@ -110,7 +121,7 @@ mod tests {
     #[test]
     fn test_icmp_ping_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 133);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 2);
         let max_loop = 32;
         let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, max_loop).unwrap();
         println!("{:?}", ret);

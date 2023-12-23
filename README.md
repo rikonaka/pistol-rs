@@ -60,7 +60,7 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ### Why not support the nmap IPv6 fingerprints?
 
-Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints of nmap are unreadable and meaningless to humans (nmap uses logistic regression to match target OS on ipv6, and the matching algorithm is quite outdated with confusing design logic).
+Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints of nmap are unreadable and meaningless to humans, and nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
 
 Here are my arguments. The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, and I don't know why nmap would keep them in the final fingerprint.
 
@@ -72,9 +72,9 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 
 TODO.
 
-## Example
+## Examples
 
-### SYN Port Scan Example
+### 1. SYN Port Scan Example
 
 ```rust
 use pistol::{tcp_syn_scan, Host, Target};
@@ -118,7 +118,7 @@ fn main() {
 192.168.72.136 22 open
 ```
 
-### Remote OS Detect Example
+### 2. Remote OS Detect Example
 
 * 192.168.72.129 - CentOS 7
 * 192.168.72.136 - Ubuntu 22.04
@@ -283,7 +283,7 @@ cpe:/o:linux:linux_kernel:4 auto
 ...
 ```
 
-### Remote OS Detect Example on IPv6
+### 3. Remote OS Detect Example on IPv6
 
 * fe80::6445:b9f8:cc82:3015 - CentOS 7
 * fe80::20c:29ff:feb6:8d99 - Ubuntu 22.04
@@ -335,7 +335,6 @@ fn main() {
         for pred in p.predict {
             println!("{}", pred);
         }
-        println!("\n");
     }
 }
 ```
@@ -360,13 +359,15 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 >>> IP:
 fe80::20c:29ff:feb6:8d99
 >>> Novelty:
-8.516669989525697
+8.970839832634503
+>>> Score: 92.00%
 >>> Fingerprint:
 Linux 4.19
 >>> Class:
 Linux | Linux | 4.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:4.19
+>>> Score: 71.04%
 >>> Fingerprint:
 Linux 3.13 - 4.6
 >>> Class:
@@ -375,6 +376,7 @@ Linux | Linux | 4.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:3
 cpe:/o:linux:linux_kernel:4
+>>> Score: 1.93%
 >>> Fingerprint:
 Android 7.1 (Linux 3.18)
 >>> Class:

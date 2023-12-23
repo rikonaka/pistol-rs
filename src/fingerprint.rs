@@ -83,13 +83,14 @@ pub struct NmapOsDetectRet6 {
     pub name: String,
     pub osclass: Vec<Vec<String>>,
     pub cpe: Vec<String>,
-    pub prob: f64,
+    pub score: f64,
     pub label: usize,
 }
 
 impl fmt::Display for NmapOsDetectRet6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!(">>> Fingerprint:\n{}\n", self.name);
+        let mut output = format!(">>> Score: {:.2}%\n", self.score * 100.0);
+        output += &format!(">>> Fingerprint:\n{}\n", self.name);
         output += ">>> Class:\n";
         for o in &self.osclass {
             let mut o_str = String::new();
@@ -350,7 +351,6 @@ pub fn os_detect6(
     max_loop: usize,
 ) -> Result<HashMap<Ipv6Addr, PistolFingerprint6>> {
     let linear = gen_linear()?;
-
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -450,7 +450,6 @@ mod tests {
             for pred in p.predict {
                 println!("{}", pred);
             }
-            println!("\n");
         }
     }
     #[test]
