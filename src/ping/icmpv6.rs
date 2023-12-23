@@ -70,7 +70,6 @@ pub fn send_icmpv6_ping_packet(
 
     let match_icmp = RespMatch::new_layer4_icmpv6(src_ipv6, dst_ipv6, false);
     let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![match_icmp], max_loop)?;
-
     match ret {
         Some(r) => {
             match Ipv6Packet::new(&r) {

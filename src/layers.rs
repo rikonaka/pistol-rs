@@ -973,41 +973,43 @@ pub fn layer3_ipv4_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
         Some(m) => m,
         None => {
-            // Try local net first.
-            let mut mac: Option<MacAddr> = None;
-            for _ in 0..NEIGNBOUR_MAX_TRY {
-                match arp(src_ipv4, dst_ipv4)? {
-                    Some(m) => {
-                        mac = Some(m);
-                        break;
-                    }
-                    None => (),
-                }
-            }
-            match mac {
-                Some(m) => m,
-                None => {
-                    // Not local net, then try to send this packet to router.
-                    let route_ip = system_route()?;
-                    match search_system_neighbour_cache(route_ip.into())? {
-                        Some(m) => m,
-                        None => {
-                            let mut mac: Option<MacAddr> = None;
-                            for _ in 0..NEIGNBOUR_MAX_TRY {
-                                match arp(src_ipv4, route_ip)? {
-                                    Some(m) => {
-                                        mac = Some(m);
-                                        break;
-                                    }
-                                    None => (),
+            if dst_ipv4.is_global() {
+                // Not local net, then try to send this packet to router.
+                let route_ip = system_route()?;
+                match search_system_neighbour_cache(route_ip.into())? {
+                    Some(m) => m,
+                    None => {
+                        let mut mac: Option<MacAddr> = None;
+                        for _ in 0..NEIGNBOUR_MAX_TRY {
+                            match arp(src_ipv4, route_ip)? {
+                                Some(m) => {
+                                    mac = Some(m);
+                                    break;
                                 }
-                            }
-                            match mac {
-                                Some(m) => m,
-                                None => return Err(CanNotFoundMacAddress::new().into()),
+                                None => (),
                             }
                         }
+                        match mac {
+                            Some(m) => m,
+                            None => return Err(CanNotFoundMacAddress::new().into()),
+                        }
                     }
+                }
+            } else {
+                // Try local net first.
+                let mut mac: Option<MacAddr> = None;
+                for _ in 0..NEIGNBOUR_MAX_TRY {
+                    match arp(src_ipv4, dst_ipv4)? {
+                        Some(m) => {
+                            mac = Some(m);
+                            break;
+                        }
+                        None => (),
+                    }
+                }
+                match mac {
+                    Some(m) => m,
+                    None => return Err(CanNotFoundMacAddress::new().into()),
                 }
             }
         }
@@ -1208,41 +1210,43 @@ pub fn layer3_ipv6_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
         Some(m) => m,
         None => {
-            // Try local net first.
-            let mut mac: Option<MacAddr> = None;
-            for _ in 0..NEIGNBOUR_MAX_TRY {
-                match ndp_ns(src_ipv6, dst_ipv6)? {
-                    Some(m) => {
-                        mac = Some(m);
-                        break;
-                    }
-                    None => (),
-                }
-            }
-            match mac {
-                Some(m) => m,
-                None => {
-                    // Not local net, then try to send this packet to router.
-                    let route_ip = system_route6()?;
-                    match search_system_neighbour_cache6(route_ip.into())? {
-                        Some(m) => m,
-                        None => {
-                            let mut mac: Option<MacAddr> = None;
-                            for _ in 0..NEIGNBOUR_MAX_TRY {
-                                match ndp_rs(src_ipv6)? {
-                                    Some(m) => {
-                                        mac = Some(m);
-                                        break;
-                                    }
-                                    None => (),
+            if dst_ipv6.is_global() {
+                // Not local net, then try to send this packet to router.
+                let route_ip = system_route6()?;
+                match search_system_neighbour_cache6(route_ip.into())? {
+                    Some(m) => m,
+                    None => {
+                        let mut mac: Option<MacAddr> = None;
+                        for _ in 0..NEIGNBOUR_MAX_TRY {
+                            match ndp_rs(src_ipv6)? {
+                                Some(m) => {
+                                    mac = Some(m);
+                                    break;
                                 }
-                            }
-                            match mac {
-                                Some(m) => m,
-                                None => return Err(CanNotFoundMacAddress::new().into()),
+                                None => (),
                             }
                         }
+                        match mac {
+                            Some(m) => m,
+                            None => return Err(CanNotFoundMacAddress::new().into()),
+                        }
                     }
+                }
+            } else {
+                // Try local net.
+                let mut mac: Option<MacAddr> = None;
+                for _ in 0..NEIGNBOUR_MAX_TRY {
+                    match ndp_ns(src_ipv6, dst_ipv6)? {
+                        Some(m) => {
+                            mac = Some(m);
+                            break;
+                        }
+                        None => (),
+                    }
+                }
+                match mac {
+                    Some(m) => m,
+                    None => return Err(CanNotFoundMacAddress::new().into()),
                 }
             }
         }

@@ -37,7 +37,6 @@ impl fmt::Display for PingResults {
             PingStatus::Down => format!("{ip} down"),
         };
         result_str += &str;
-        result_str += "\n";
         write!(f, "{}", result_str)
     }
 }
@@ -713,11 +712,13 @@ mod tests {
         // let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
         // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
         let src_ipv6 = None;
+        let dst_ipv6: Ipv6Addr = "240e:34c:85:e4d0:23b1:9c2c:35f8:810c".parse().unwrap();
+        let host1 = Host6::new(dst_ipv6, Some(vec![]));
         let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
+        let host2 = Host6::new(dst_ipv6, Some(vec![]));
+        let target: Target = Target::new6(vec![host1, host2]);
         let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host6::new(dst_ipv6, Some(vec![]));
-        let target: Target = Target::new6(vec![host]);
+        let max_loop: Option<usize> = Some(32);
         let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, max_loop).unwrap();
         for (_ip, r) in ret {
             println!("{}", r);
@@ -730,11 +731,19 @@ mod tests {
         println!("{}", ipv6_addr.is_multicast()); // false
         println!("{}", ipv6_addr.is_loopback()); // false
         println!("{}", ipv6_addr.is_unicast_global()); // true
+        println!("{}", ipv6_addr.is_global()); // true
 
         let ipv6_addr: Ipv6Addr = "fe80::20c:29ff:fe43:9c8c".parse().unwrap();
         println!("{}", ipv6_addr.is_unspecified()); // false
         println!("{}", ipv6_addr.is_multicast()); // false
         println!("{}", ipv6_addr.is_loopback()); // false
         println!("{}", ipv6_addr.is_unicast_global()); // false
+
+        let ipv6_addr: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
+        println!("{}", ipv6_addr.is_unspecified()); // false
+        println!("{}", ipv6_addr.is_multicast()); // false
+        println!("{}", ipv6_addr.is_loopback()); // false
+        println!("{}", ipv6_addr.is_unicast_global()); // true
+        println!("{}", ipv6_addr.is_global()); // true
     }
 }

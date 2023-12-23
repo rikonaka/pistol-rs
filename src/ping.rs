@@ -144,7 +144,7 @@ pub fn ping(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -179,14 +179,9 @@ pub fn ping(
                         Some(dst_port),
                         max_loop,
                     );
-                    match ret {
-                        Ok(status) => match tx.send(Ok((dst_port, status))) {
-                            _ => (),
-                        },
-                        Err(e) => match tx.send(Err(e)) {
-                            _ => (),
-                        },
-                    };
+                    match tx.send((dst_ipv4, ret)) {
+                        _ => (),
+                    }
                 });
             }
         } else {
@@ -194,25 +189,20 @@ pub fn ping(
             recv_size += 1;
             pool.execute(move || {
                 let ret = run_ping(method, src_ipv4, src_port, dst_ipv4, None, max_loop);
-                match ret {
-                    Ok(status) => match tx.send(Ok((0, status))) {
-                        _ => (),
-                    },
-                    Err(e) => match tx.send(Err(e)) {
-                        _ => (),
-                    },
-                };
+                match tx.send((dst_ipv4, ret)) {
+                    _ => (),
+                }
             });
         }
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut hm: HashMap<u16, PingResults> = HashMap::new();
+    let mut hm: HashMap<Ipv4Addr, PingResults> = HashMap::new();
 
-    for v in iter {
-        match v {
-            Ok((dst_port, pr)) => {
-                hm.insert(dst_port, pr);
+    for (dst_ipv4, pr) in iter {
+        match pr {
+            Ok(p) => {
+                hm.insert(dst_ipv4, p);
             }
             _ => (),
         }
@@ -227,7 +217,7 @@ pub fn ping6(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv6Addr, PingResults>> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -262,14 +252,9 @@ pub fn ping6(
                         Some(dst_port),
                         max_loop,
                     );
-                    match ret {
-                        Ok(status) => match tx.send(Ok((dst_port, status))) {
-                            _ => (),
-                        },
-                        Err(e) => match tx.send(Err(e)) {
-                            _ => (),
-                        },
-                    };
+                    match tx.send((dst_ipv6, ret)) {
+                        _ => (),
+                    }
                 });
             }
         } else {
@@ -277,25 +262,20 @@ pub fn ping6(
             recv_size += 1;
             pool.execute(move || {
                 let ret = run_ping6(method, src_ipv6, src_port, dst_ipv6, None, max_loop);
-                match ret {
-                    Ok(status) => match tx.send(Ok((0, status))) {
-                        _ => (),
-                    },
-                    Err(e) => match tx.send(Err(e)) {
-                        _ => (),
-                    },
-                };
+                match tx.send((dst_ipv6, ret)) {
+                    _ => (),
+                }
             });
         }
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut hm: HashMap<u16, PingResults> = HashMap::new();
+    let mut hm: HashMap<Ipv6Addr, PingResults> = HashMap::new();
 
-    for v in iter {
-        match v {
-            Ok((dst_port, pr)) => {
-                hm.insert(dst_port, pr);
+    for (dst_ipv6, pr) in iter {
+        match pr {
+            Ok(p) => {
+                hm.insert(dst_ipv6, p);
             }
             _ => (),
         }
@@ -309,7 +289,7 @@ pub fn tcp_syn_ping(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
     ping(
         target,
         PingMethods::Syn,
@@ -326,7 +306,7 @@ pub fn tcp_syn_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv6Addr, PingResults>> {
     ping6(
         target,
         PingMethods::Syn,
@@ -343,7 +323,7 @@ pub fn tcp_ack_ping(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
     ping(
         target,
         PingMethods::Ack,
@@ -360,7 +340,7 @@ pub fn tcp_ack_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv6Addr, PingResults>> {
     ping6(
         target,
         PingMethods::Ack,
@@ -377,7 +357,7 @@ pub fn udp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
     ping(
         target,
         PingMethods::Udp,
@@ -394,7 +374,7 @@ pub fn udp_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv6Addr, PingResults>> {
     ping6(
         target,
         PingMethods::Udp,
@@ -411,7 +391,7 @@ pub fn icmp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv4Addr, PingResults>> {
     ping(
         target,
         PingMethods::Icmp,
@@ -428,7 +408,7 @@ pub fn icmpv6_ping(
     src_port: Option<u16>,
     threads_num: usize,
     max_loop: Option<usize>,
-) -> Result<HashMap<u16, PingResults>> {
+) -> Result<HashMap<Ipv6Addr, PingResults>> {
     ping6(
         target,
         PingMethods::Icmp,
