@@ -1237,12 +1237,6 @@ fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
 pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>> {
-    // let lines: Vec<String> = read_to_string(filename)
-    //     .unwrap()
-    //     .lines()
-    //     .map(String::from)
-    //     .collect();
-
     let option_string = |x: Option<String>| -> String {
         match x {
             Some(x) => x,

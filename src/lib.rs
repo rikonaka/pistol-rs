@@ -533,7 +533,7 @@ pub use flood::udp_flood6;
 
 /* Finger Printing */
 
-/// Process standard nmap-os-db files and return a structure that can be processed by the program.
+/// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
 pub use fingerprint::dbparser::nmap_os_db_parser;
 
 /// Detect target machine OS.
@@ -541,6 +541,10 @@ pub use fingerprint::os_detect;
 
 /// Detect target machine OS on IPv6.
 pub use fingerprint::os_detect6;
+
+/* Work with domain */
+/// Queries the IP address of a domain name and returns.
+pub use layers::dns_query;
 
 #[cfg(test)]
 mod tests {

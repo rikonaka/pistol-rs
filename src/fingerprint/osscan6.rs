@@ -466,7 +466,7 @@ fn novelty_of(features: &Vec<f64>, mean: &Vec<f64>, variance: &Vec<f64>) -> f64 
     sum.sqrt()
 }
 
-fn qsort(input: &Vec<NmapOsDetectRet6>) -> Vec<NmapOsDetectRet6> {
+fn isort(input: &Vec<NmapOsDetectRet6>) -> Vec<NmapOsDetectRet6> {
     let find_max_prob = |x: &Vec<NmapOsDetectRet6>| -> usize {
         let mut max_value = 0.0;
         for a in x {
@@ -555,7 +555,7 @@ pub fn os_probe6(
         detect_rets.push(dr);
     }
 
-    let detect_rets_sort = qsort(&detect_rets);
+    let detect_rets_sort = isort(&detect_rets);
     let mut perfect_match = 1;
     for i in 1..36 {
         if detect_rets_sort[i].score >= 0.9 * detect_rets_sort[0].score {

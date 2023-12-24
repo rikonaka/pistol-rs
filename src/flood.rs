@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub mod icmp;
-pub mod icmp6;
+pub mod icmpv6;
 pub mod tcp;
 pub mod tcp6;
 pub mod udp;
@@ -62,7 +62,7 @@ fn run_flood6(
     max_flood_packet: usize,
 ) {
     let func = match method {
-        FloodMethods::Icmp => icmp6::send_icmpv6_flood_packet,
+        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet,
         FloodMethods::Syn => tcp6::send_syn_flood_packet,
         FloodMethods::Ack => tcp6::send_ack_flood_packet,
         FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet,

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use dns_lookup::lookup_host;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::{DataLinkReceiver, DataLinkSender, MacAddr, NetworkInterface};
@@ -47,17 +48,17 @@ pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
 
 const NEIGNBOUR_MAX_TRY: usize = 3;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum Layers {
     Layer2,
     Layer3Ipv4,
     Layer3Ipv6,
     Layer4TcpUdp,
-    Layer4IcmpSpecific,
-    Layer4Icmpv6Specific,
     Layer4Icmp,
     Layer4Icmpv6,
     Layer4Icmpv6AllNode,
+    Layer4Icmpv6AllRoute,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,9 +70,8 @@ pub struct RespMatch {
     pub layer4_tcp_udp: Option<(u16, u16)>,
     pub layer4_icmp: Option<(Ipv4Addr, Ipv4Addr)>,
     pub layer4_icmpv6: Option<(Ipv6Addr, Ipv6Addr)>,
-    pub layer4_icmp_specific: Option<(IcmpType, IcmpCode)>,
-    pub layer4_icmpv6_specific: Option<(Icmpv6Type, Icmpv6Code)>,
     pub layer4_icmpv6_all_node: bool,
+    pub layer4_icmpv6_all_route: bool,
     pub layer: Layers,
     pub jump_layer2: bool,
 }
@@ -86,9 +86,8 @@ impl RespMatch {
             layer4_tcp_udp: None,
             layer4_icmp: None,
             layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: false,
             layer: Layers::Layer2,
             jump_layer2: false,
         }
@@ -101,9 +100,8 @@ impl RespMatch {
             layer4_tcp_udp: None,
             layer4_icmp: None,
             layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: false,
             layer: Layers::Layer3Ipv4,
             jump_layer2,
         }
@@ -116,9 +114,8 @@ impl RespMatch {
             layer4_tcp_udp: None,
             layer4_icmp: None,
             layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: false,
             layer: Layers::Layer3Ipv6,
             jump_layer2,
         }
@@ -131,48 +128,9 @@ impl RespMatch {
             layer4_tcp_udp: Some((src_port, dst_port)),
             layer4_icmp: None,
             layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: false,
             layer: Layers::Layer4TcpUdp,
-            jump_layer2,
-        }
-    }
-    pub fn new_layer4_icmp_specific(
-        icmp_type: IcmpType,
-        icmp_code: IcmpCode,
-        jump_layer2: bool,
-    ) -> RespMatch {
-        RespMatch {
-            layer2: None,
-            layer3_ipv4: None,
-            layer3_ipv6: None,
-            layer4_tcp_udp: None,
-            layer4_icmp: None,
-            layer4_icmpv6: None,
-            layer4_icmp_specific: Some((icmp_type, icmp_code)),
-            layer4_icmpv6_specific: None,
-            layer4_icmpv6_all_node: false,
-            layer: Layers::Layer4IcmpSpecific,
-            jump_layer2,
-        }
-    }
-    pub fn new_layer4_icmpv6_specific(
-        icmpv6_type: Icmpv6Type,
-        icmpv6_code: Icmpv6Code,
-        jump_layer2: bool,
-    ) -> RespMatch {
-        RespMatch {
-            layer2: None,
-            layer3_ipv4: None,
-            layer3_ipv6: None,
-            layer4_tcp_udp: None,
-            layer4_icmp: None,
-            layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: Some((icmpv6_type, icmpv6_code)),
-            layer4_icmpv6_all_node: false,
-            layer: Layers::Layer4Icmpv6Specific,
             jump_layer2,
         }
     }
@@ -184,9 +142,8 @@ impl RespMatch {
             layer4_tcp_udp: None,
             layer4_icmp: Some((src_ipv4, dst_ipv4)),
             layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: false,
             layer: Layers::Layer4Icmp,
             jump_layer2,
         }
@@ -203,9 +160,8 @@ impl RespMatch {
             layer4_tcp_udp: None,
             layer4_icmp: None,
             layer4_icmpv6: Some((src_ipv6, dst_ipv6)),
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: false,
             layer: Layers::Layer4Icmpv6,
             jump_layer2,
         }
@@ -218,9 +174,22 @@ impl RespMatch {
             layer4_tcp_udp: None,
             layer4_icmp: None,
             layer4_icmpv6: None,
-            layer4_icmp_specific: None,
-            layer4_icmpv6_specific: None,
             layer4_icmpv6_all_node: true,
+            layer4_icmpv6_all_route: false,
+            layer: Layers::Layer4Icmpv6AllNode,
+            jump_layer2,
+        }
+    }
+    pub fn new_layer4_icmpv6_all_route(jump_layer2: bool) -> RespMatch {
+        RespMatch {
+            layer2: None,
+            layer3_ipv4: None,
+            layer3_ipv6: None,
+            layer4_tcp_udp: None,
+            layer4_icmp: None,
+            layer4_icmpv6: None,
+            layer4_icmpv6_all_node: false,
+            layer4_icmpv6_all_route: true,
             layer: Layers::Layer4Icmpv6AllNode,
             jump_layer2,
         }
@@ -482,7 +451,7 @@ impl RespMatch {
     }
     fn match_layer4_icmpv6_all_node(&self, ethernet_buff: &[u8]) -> bool {
         if self.match_layer2(ethernet_buff) || self.jump_layer2 {
-            let all_node_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 1);
+            let all_node_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
             // println!("{} - {}", src_ipv6, dst_ipv6);
             let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
                 Some(ethernet_packet) => ethernet_packet,
@@ -507,47 +476,10 @@ impl RespMatch {
         }
         false
     }
-    fn match_layer4_icmp_specific(&self, ethernet_buff: &[u8]) -> bool {
+    fn match_layer4_icmpv6_all_route(&self, ethernet_buff: &[u8]) -> bool {
         if self.match_layer2(ethernet_buff) || self.jump_layer2 {
-            let (icmp_type, icmp_code) = match self.layer4_icmp_specific {
-                Some((icmp_type, icmp_code)) => (icmp_type, icmp_code),
-                None => {
-                    return false;
-                }
-            };
-            let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
-                Some(ethernet_packet) => ethernet_packet,
-                None => {
-                    return false;
-                }
-            };
-            match ethernet_packet.get_ethertype() {
-                EtherTypes::Ipv4 => match Ipv4Packet::new(ethernet_packet.payload()) {
-                    Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
-                        IpNextHeaderProtocols::Icmp => {
-                            return RespMatch::_match_icmp(
-                                icmp_type,
-                                icmp_code,
-                                ipv4_packet.payload(),
-                            );
-                        }
-                        _ => (),
-                    },
-                    None => (),
-                },
-                _ => (),
-            }
-        }
-        false
-    }
-    fn match_layer4_icmpv6_specific(&self, ethernet_buff: &[u8]) -> bool {
-        if self.match_layer2(ethernet_buff) || self.jump_layer2 {
-            let (icmpv6_type, icmpv6_code) = match self.layer4_icmpv6_specific {
-                Some((icmpv6_type, icmpv6_code)) => (icmpv6_type, icmpv6_code),
-                None => {
-                    return false;
-                }
-            };
+            let all_route_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
+            // println!("{} - {}", src_ipv6, dst_ipv6);
             let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
                 Some(ethernet_packet) => ethernet_packet,
                 None => {
@@ -558,11 +490,9 @@ impl RespMatch {
                 EtherTypes::Ipv6 => match Ipv6Packet::new(ethernet_packet.payload()) {
                     Some(ipv6_packet) => match ipv6_packet.get_next_header() {
                         IpNextHeaderProtocols::Icmpv6 => {
-                            return RespMatch::_match_icmpv6(
-                                icmpv6_type,
-                                icmpv6_code,
-                                ipv6_packet.payload(),
-                            );
+                            if ipv6_packet.get_destination() == all_route_ipv6 {
+                                return true;
+                            }
                         }
                         _ => (),
                     },
@@ -579,11 +509,10 @@ impl RespMatch {
             Layers::Layer3Ipv4 => self.match_layer3_ipv4(ethernet_buff),
             Layers::Layer3Ipv6 => self.match_layer3_ipv6(ethernet_buff),
             Layers::Layer4TcpUdp => self.match_layer4_tcp_udp(ethernet_buff),
-            Layers::Layer4IcmpSpecific => self.match_layer4_icmp_specific(ethernet_buff),
-            Layers::Layer4Icmpv6Specific => self.match_layer4_icmpv6_specific(ethernet_buff),
             Layers::Layer4Icmp => self.match_layer4_icmp(ethernet_buff),
             Layers::Layer4Icmpv6 => self.match_layer4_icmpv6(ethernet_buff),
             Layers::Layer4Icmpv6AllNode => self.match_layer4_icmpv6_all_node(ethernet_buff),
+            Layers::Layer4Icmpv6AllRoute => self.match_layer4_icmpv6_all_route(ethernet_buff),
         }
     }
 }
@@ -1263,9 +1192,20 @@ pub fn layer3_ipv6_send(
     }
 }
 
+pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>> {
+    let ips: Vec<IpAddr> = lookup_host(hostname)?;
+    Ok(ips)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_dns_query() {
+        let hostname = "ipv6.sjtu.edu.cn";
+        let ret = dns_query(hostname).unwrap();
+        println!("{:?}", ret);
+    }
     #[test]
     fn test_send_arp_packet() {
         let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 128);
