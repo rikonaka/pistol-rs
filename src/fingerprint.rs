@@ -236,7 +236,7 @@ pub fn os_detect(
     threads_num: usize,
     max_loop: usize,
 ) -> Result<HashMap<Ipv4Addr, (PistolFingerprint, Vec<NmapOsDetectRet>)>> {
-    let nmap_os_file = include_str!("./osdb/nmap-os-db");
+    let nmap_os_file = include_str!("./db/nmap-os-db");
     let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
     let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
     let (tx, rx) = channel();
@@ -285,7 +285,7 @@ pub fn os_detect(
 }
 
 fn gen_linear() -> Result<Linear> {
-    let variance_json_data = include_str!("./osdb/variance.json");
+    let variance_json_data = include_str!("./db/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
 
     let mut namelist = Vec::new();
@@ -297,7 +297,7 @@ fn gen_linear() -> Result<Linear> {
     assert_eq!(namelist.len(), 92);
     assert_eq!(variance.len(), 92);
 
-    let mean_json_data = include_str!("./osdb/mean.json");
+    let mean_json_data = include_str!("./db/mean.json");
     let mean_json: Vec<NmapJsonParameters> = serde_json::from_str(mean_json_data)?;
     let mut mean = Vec::new();
     for m in mean_json {
@@ -305,7 +305,7 @@ fn gen_linear() -> Result<Linear> {
     }
     assert_eq!(mean.len(), 92);
 
-    let scale_json_data = include_str!("./osdb/scale.json"); // static
+    let scale_json_data = include_str!("./db/scale.json"); // static
     let scale_json: Vec<NmapJsonParameters> = serde_json::from_str(scale_json_data)?;
     let mut scale: Vec<Vec<f64>> = Vec::new();
     for s in scale_json {
@@ -313,7 +313,7 @@ fn gen_linear() -> Result<Linear> {
     }
     assert_eq!(scale.len(), 695);
 
-    let w_json_data = include_str!("./osdb/w.json"); // static
+    let w_json_data = include_str!("./db/w.json"); // static
     let w_json: Vec<NmapJsonParameters> = serde_json::from_str(w_json_data)?;
     assert_eq!(w_json.len(), 695);
 
@@ -327,7 +327,7 @@ fn gen_linear() -> Result<Linear> {
         w.push(tmp);
     }
 
-    let cpe_json_data = include_str!("./osdb/cpe.json"); // static
+    let cpe_json_data = include_str!("./db/cpe.json"); // static
     let cpe: Vec<CPE> = serde_json::from_str(cpe_json_data)?;
     assert_eq!(cpe.len(), 92);
 
@@ -527,7 +527,7 @@ mod tests {
     fn test_parser() {
         let start = SystemTime::now();
 
-        let nmap_os_file = include_str!("./osdb/nmap-os-db");
+        let nmap_os_file = include_str!("./db/nmap-os-db");
         let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
         let _ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         // for i in 0..5 {
