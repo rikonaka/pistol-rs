@@ -17,26 +17,14 @@ pub fn find_source_ipv4(
     match src_ipv4 {
         Some(s) => return Ok(Some(s)),
         None => {
+            let route_ipv4 = system_route()?;
             for interface in datalink::interfaces() {
                 for ipnetwork in interface.ips {
                     match ipnetwork.ip() {
                         IpAddr::V4(ipv4) => {
                             if ipnetwork.contains(dst_ipv4.into()) {
                                 return Ok(Some(ipv4));
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            // Can not found the source ip same subnet with interfaces ip.
-            // Now try to find it through default route address.
-            let route_ipv4 = system_route()?;
-            for interface in datalink::interfaces() {
-                for ipnetwork in interface.ips {
-                    match ipnetwork.ip() {
-                        IpAddr::V4(ipv4) => {
-                            if ipnetwork.contains(route_ipv4.into()) {
+                            } else if ipnetwork.contains(route_ipv4.into()) {
                                 return Ok(Some(ipv4));
                             }
                         }
@@ -60,22 +48,15 @@ pub fn find_source_ipv6(
                 for ipnetwork in interface.ips {
                     match ipnetwork.ip() {
                         IpAddr::V6(ipv6) => {
-                            if dst_ipv6.is_global() && ipv6.is_unicast_global() {
+                            if ipnetwork.contains(dst_ipv6.into()) {
+                                return Ok(Some(ipv6));
+                            } else if dst_ipv6.is_global() && ipv6.is_unicast_global() {
                                 return Ok(Some(ipv6));
                             } else if dst_ipv6.is_unicast_global() && ipv6.is_unicast_global() {
                                 return Ok(Some(ipv6));
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            // Now try to find it through same subnet.
-            for interface in datalink::interfaces() {
-                for ipnetwork in interface.ips {
-                    match ipnetwork.ip() {
-                        IpAddr::V6(ipv6) => {
-                            if ipnetwork.contains(dst_ipv6.into()) {
+                            } else if dst_ipv6.is_unicast_link_local()
+                                && ipv6.is_unicast_link_local()
+                            {
                                 return Ok(Some(ipv6));
                             }
                         }

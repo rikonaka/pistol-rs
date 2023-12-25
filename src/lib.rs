@@ -666,7 +666,7 @@ mod tests {
         // let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
         // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
         let src_ipv6 = None;
-        let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
         let host1 = Host6::new(dst_ipv6, Some(vec![]));
         let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
         let host2 = Host6::new(dst_ipv6, Some(vec![]));
