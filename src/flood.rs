@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::iter::zip;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub mod icmp;
@@ -10,9 +9,8 @@ pub mod udp;
 pub mod udp6;
 
 use crate::errors::CanNotFoundSourceAddress;
-use crate::utils::bind_interface6;
-use crate::utils::{bind_interface, get_ips_from_host6};
-use crate::utils::{get_ips_from_host, get_threads_pool, random_port};
+use crate::utils::{find_source_ipv4, find_source_ipv6};
+use crate::utils::{get_threads_pool, random_port};
 use crate::Target;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,19 +91,13 @@ pub fn flood(
         Some(p) => p,
         None => random_port(),
     };
-    let target_ips = get_ips_from_host(&target.hosts);
-    let bi_vec = bind_interface(&target_ips);
     let pool = get_threads_pool(threads_num);
-
-    for (bi, host) in zip(bi_vec, target.hosts) {
-        let src_ipv4 = match src_ipv4 {
+    for host in target.hosts {
+        let dst_ipv4 = host.addr;
+        let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
             Some(s) => s,
-            None => match bi.src_ipv4 {
-                Some(s) => s,
-                None => return Err(CanNotFoundSourceAddress::new().into()),
-            },
+            None => return Err(CanNotFoundSourceAddress::new().into()),
         };
-        let dst_ipv4 = bi.dst_ipv4;
         if host.ports.len() > 0 && method != FloodMethods::Icmp {
             for dst_port in host.ports {
                 let dst_port = dst_port.clone();
@@ -150,19 +142,13 @@ pub fn flood6(
         Some(p) => p,
         None => random_port(),
     };
-    let target_ips = get_ips_from_host6(&target.hosts6);
-    let bi_vec = bind_interface6(&target_ips);
     let pool = get_threads_pool(threads_num);
-
-    for (bi, host) in zip(bi_vec, target.hosts6) {
-        let src_ipv6 = match src_ipv6 {
+    for host in target.hosts6 {
+        let dst_ipv6 = host.addr;
+        let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
             Some(s) => s,
-            None => match bi.src_ipv6 {
-                Some(s) => s,
-                None => return Err(CanNotFoundSourceAddress::new().into()),
-            },
+            None => return Err(CanNotFoundSourceAddress::new().into()),
         };
-        let dst_ipv6 = bi.dst_ipv6;
         if host.ports.len() > 0 && method != FloodMethods::Icmp {
             for dst_port in host.ports {
                 let dst_port = dst_port.clone();

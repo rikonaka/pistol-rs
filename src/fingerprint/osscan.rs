@@ -10,9 +10,9 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress};
-use crate::utils::find_interface_by_ipv4;
 use crate::layers::layer3_ipv4_send;
-use crate::layers::RespMatch;
+use crate::layers::{Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
+use crate::utils::find_interface_by_ipv4;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -153,17 +153,28 @@ fn send_seq_probes(
     let mut i = 0;
     for buff in buffs {
         let src_port = src_ports[i];
-        let match_tcp = RespMatch::new_layer4_tcp_udp(src_port, dst_open_port, false);
-        i += 1;
+        let layer3 = Layer3Match {
+            layer2: None,
+            src_addr: Some(dst_ipv4.into()),
+            dst_addr: Some(src_ipv4.into()),
+        };
+        let layer4_tcp_udp = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_open_port),
+            dst_port: Some(src_port),
+        };
+        let layers_match = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+
         let tx = tx.clone();
         pool.execute(move || {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![match_tcp], max_loop);
+            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop);
             match tx.send((i, buff.to_vec(), ret)) {
                 _ => (),
             }
         });
         // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
         sleep(Duration::from_millis(100));
+        i += 1;
     }
 
     let mut seq1 = None;
@@ -186,12 +197,12 @@ fn send_seq_probes(
             response,
         });
         match i {
-            1 => seq1 = rr,
-            2 => seq2 = rr,
-            3 => seq3 = rr,
-            4 => seq4 = rr,
-            5 => seq5 = rr,
-            6 => seq6 = rr,
+            0 => seq1 = rr,
+            1 => seq2 = rr,
+            2 => seq3 = rr,
+            3 => seq4 = rr,
+            4 => seq5 = rr,
+            5 => seq6 = rr,
             _ => (),
         }
     }
@@ -220,7 +231,18 @@ fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Re
     let buff_1 = packet::ie_packet_1_layer3(src_ipv4, dst_ipv4, id_1)?;
     let buff_2 = packet::ie_packet_2_layer3(src_ipv4, dst_ipv4, id_2)?;
     let buffs = vec![buff_1, buff_2];
-    let match_icmp = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let mut i = 0;
     for buff in buffs {
@@ -229,7 +251,7 @@ fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Re
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![match_icmp], max_loop);
+        let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop);
         match tx.send((i, buff.to_vec(), ret)) {
             _ => (),
         }
@@ -280,13 +302,23 @@ fn send_ecn_probe(
         None => random_port(),
     };
 
-    let buff = packet::ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
-    let match_tcp = RespMatch::new_layer4_tcp_udp(src_port, dst_open_port, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_open_port),
+        dst_port: Some(src_port),
+    };
+    let layers_match = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
+    let buff = packet::ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![match_tcp], max_loop);
+    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop);
 
     let name = String::from("ecn");
     let response = match ret? {
@@ -319,6 +351,56 @@ fn send_tx_probes(
         None => random_port_multi(6),
     };
 
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_open_port),
+        dst_port: Some(src_ports[0]),
+    };
+    let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_open_port),
+        dst_port: Some(src_ports[1]),
+    };
+    let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_open_port),
+        dst_port: Some(src_ports[2]),
+    };
+    let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_closed_port),
+        dst_port: Some(src_ports[3]),
+    };
+    let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_closed_port),
+        dst_port: Some(src_ports[4]),
+    };
+    let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_closed_port),
+        dst_port: Some(src_ports[5]),
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_1);
+    let layers_match_2 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+    let layers_match_3 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+    let layers_match_4 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+    let layers_match_5 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+    let layers_match_6 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+    let ms = vec![
+        layers_match_1,
+        layers_match_2,
+        layers_match_3,
+        layers_match_4,
+        layers_match_5,
+        layers_match_6,
+    ];
+
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     let buff_2 = packet::t2_packet_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
     // T3 sends a TCP packet with the SYN, FIN, URG, and PSH flags set and a window field of 256 to an open port. The IP DF bit is not set.
@@ -333,25 +415,18 @@ fn send_tx_probes(
     let buff_7 = packet::t7_packet_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_closed_port)?;
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
     // let buffs = vec![buff_5];
-    let m1 = RespMatch::new_layer4_tcp_udp(src_ports[0], dst_open_port, false);
-    let m2 = RespMatch::new_layer4_tcp_udp(src_ports[1], dst_open_port, false);
-    let m3 = RespMatch::new_layer4_tcp_udp(src_ports[2], dst_open_port, false);
-    let m4 = RespMatch::new_layer4_tcp_udp(src_ports[3], dst_closed_port, false);
-    let m5 = RespMatch::new_layer4_tcp_udp(src_ports[4], dst_closed_port, false);
-    let m6 = RespMatch::new_layer4_tcp_udp(src_ports[5], dst_closed_port, false);
-    let ms = vec![m1, m2, m3, m4, m5, m6];
 
     let mut i = 0;
     for buff in buffs {
-        let match_resp = ms[i];
-        i += 1;
         let tx = tx.clone();
+        let m = ms[i];
         pool.execute(move || {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![match_resp], max_loop);
+            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], max_loop);
             match tx.send((i, buff.to_vec(), ret)) {
                 _ => (),
             }
         });
+        i += 1;
     }
 
     let mut t2 = None;
@@ -374,12 +449,12 @@ fn send_tx_probes(
             response,
         });
         match i {
-            1 => t2 = rr,
-            2 => t3 = rr,
-            3 => t4 = rr,
-            4 => t5 = rr,
-            5 => t6 = rr,
-            6 => t7 = rr,
+            0 => t2 = rr,
+            1 => t3 = rr,
+            2 => t4 = rr,
+            3 => t5 = rr,
+            4 => t6 = rr,
+            5 => t7 = rr,
             _ => (),
         }
     }
@@ -408,13 +483,23 @@ fn send_u1_probe(
         None => random_port(),
     };
 
-    let buff = packet::udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
-    let match_icmp = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
+    let buff = packet::udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![match_icmp], max_loop)?;
+    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop)?;
 
     let name = String::from("u1");
     let response = match ret {

@@ -12,7 +12,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::RespMatch;
+use crate::layers::{Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
 use crate::layers::{IPV4_HEADER_SIZE, UDP_HEADER_SIZE};
 use crate::TargetScanStatus;
 
@@ -63,14 +63,29 @@ pub fn send_udp_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {

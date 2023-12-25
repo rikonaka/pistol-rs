@@ -14,7 +14,9 @@ use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
 
-use crate::layers::{layer3_ipv4_send, RespMatch};
+use crate::layers::{
+    layer3_ipv4_send, Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch,
+};
 use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
 use crate::IdleScanResults;
 use crate::TargetScanStatus;
@@ -93,14 +95,29 @@ pub fn send_syn_scan_packet(
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -196,14 +213,29 @@ pub fn send_fin_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -299,14 +331,29 @@ pub fn send_ack_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -399,14 +446,29 @@ pub fn send_null_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -500,14 +562,29 @@ pub fn send_xmas_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -600,14 +677,29 @@ pub fn send_window_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -705,14 +797,29 @@ pub fn send_maimon_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {
@@ -817,14 +924,30 @@ pub fn send_idle_scan_packet(
     }
 
     // 1. probe the zombie's ip id
-    let match_tcp_zombie = RespMatch::new_layer4_tcp_udp(src_port, zombie_port, false);
-    let match_icmp_zombie = RespMatch::new_layer4_icmp(src_ipv4, zombie_ipv4, false);
+    let layer3_zombie = Layer3Match {
+        layer2: None,
+        src_addr: Some(zombie_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp_zombie = Layer4MatchTcpUdp {
+        layer3: Some(layer3_zombie),
+        src_port: Some(zombie_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp_zombie = Layer4MatchIcmp {
+        layer3: Some(layer3_zombie),
+        types: None,
+        codes: None,
+    };
+    let layers_match_zombie_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
+    let layers_match_zombie_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp_zombie);
+
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let ret = layer3_ipv4_send(
         src_ipv4,
         zombie_ipv4,
         &ip_buff,
-        vec![match_tcp_zombie, match_icmp_zombie],
+        vec![layers_match_zombie_1, layers_match_zombie_2],
         max_loop,
     )?;
 
@@ -887,13 +1010,29 @@ pub fn send_idle_scan_packet(
 
     // 4. probe the zombie's ip id again
     let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
-    let match_tcp = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_icmp = RespMatch::new_layer4_icmp(src_ipv4, dst_ipv4, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmp = Layer4MatchIcmp {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+
     let ret = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff_3,
-        vec![match_tcp, match_icmp],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
 

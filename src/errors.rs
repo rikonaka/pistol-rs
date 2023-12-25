@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt;
-use std::net::IpAddr;
 
 use crate::TargetType;
 
@@ -241,22 +240,3 @@ impl CanNotFoundSourceAddress {
 impl Error for CanNotFoundSourceAddress {}
 
 /* SCAN */
-#[derive(Debug, Clone)]
-pub struct IpCanNotBindToInterface {
-    ip: IpAddr,
-}
-impl fmt::Display for IpCanNotBindToInterface {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "ip {} cannot obtain the corresponding interface",
-            self.ip
-        )
-    }
-}
-impl IpCanNotBindToInterface {
-    pub fn new(ip: IpAddr) -> IpCanNotBindToInterface {
-        IpCanNotBindToInterface { ip }
-    }
-}
-impl Error for IpCanNotBindToInterface {}

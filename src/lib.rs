@@ -2,7 +2,6 @@
 #![doc = include_str!("lib.md")]
 #![feature(ip)] // to use is_unicast_global in Ipv6Addr
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
 use std::fmt;
@@ -263,56 +262,6 @@ impl Target {
     }
 }
 
-/// Bind IP address to interface.
-#[derive(Debug, Clone)]
-pub struct BindIp2Interface {
-    pub dst_ipv4: Ipv4Addr,
-    pub src_ipv4: Option<Ipv4Addr>,
-    pub src_mac: Option<MacAddr>,
-    pub interface: Option<NetworkInterface>,
-}
-
-impl BindIp2Interface {
-    pub fn new(
-        dst_ipv4: Ipv4Addr,
-        src_ipv4: Option<Ipv4Addr>,
-        src_mac: Option<MacAddr>,
-        interface: Option<NetworkInterface>,
-    ) -> BindIp2Interface {
-        BindIp2Interface {
-            src_ipv4,
-            dst_ipv4,
-            src_mac,
-            interface,
-        }
-    }
-}
-
-/// Bind IP address to interface.
-#[derive(Debug, Clone)]
-pub struct BindIp2Interface6 {
-    pub dst_ipv6: Ipv6Addr,
-    pub src_ipv6: Option<Ipv6Addr>,
-    pub src_mac: Option<MacAddr>,
-    pub interface: Option<NetworkInterface>,
-}
-
-impl BindIp2Interface6 {
-    pub fn new(
-        dst_ipv6: Ipv6Addr,
-        src_ipv6: Option<Ipv6Addr>,
-        src_mac: Option<MacAddr>,
-        interface: Option<NetworkInterface>,
-    ) -> BindIp2Interface6 {
-        BindIp2Interface6 {
-            src_ipv6,
-            dst_ipv6,
-            src_mac,
-            interface,
-        }
-    }
-}
-
 /* Scan */
 
 /// ARP Scan.
@@ -569,14 +518,15 @@ mod tests {
         let threads_num = 16;
         let max_loop = Some(8);
         // let print_result = false;
-        let ret: ArpScanResults = arp_scan(target, threads_num, max_loop).unwrap();
+        let src_ipv4 = None;
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, max_loop).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_connect_scan() {
         let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
         let threads_num: usize = 8;
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
@@ -716,7 +666,7 @@ mod tests {
         // let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
         // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
         let src_ipv6 = None;
-        let dst_ipv6: Ipv6Addr = "240e:34c:85:e4d0:23b1:9c2c:35f8:810c".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
         let host1 = Host6::new(dst_ipv6, Some(vec![]));
         let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
         let host2 = Host6::new(dst_ipv6, Some(vec![]));
@@ -736,12 +686,19 @@ mod tests {
         println!("{}", ipv6_addr.is_loopback()); // false
         println!("{}", ipv6_addr.is_unicast_global()); // true
         println!("{}", ipv6_addr.is_global()); // true
+        println!("{}", ipv6_addr.is_unicast_link_local()); // false
+
+        println!(">>>>>>>>>>>>>>>>>>>>>>>");
 
         let ipv6_addr: Ipv6Addr = "fe80::20c:29ff:fe43:9c8c".parse().unwrap();
         println!("{}", ipv6_addr.is_unspecified()); // false
         println!("{}", ipv6_addr.is_multicast()); // false
         println!("{}", ipv6_addr.is_loopback()); // false
         println!("{}", ipv6_addr.is_unicast_global()); // false
+        println!("{}", ipv6_addr.is_global()); // false
+        println!("{}", ipv6_addr.is_unicast_link_local()); // true
+
+        println!(">>>>>>>>>>>>>>>>>>>>>>>");
 
         let ipv6_addr: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
         println!("{}", ipv6_addr.is_unspecified()); // false

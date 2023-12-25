@@ -1,10 +1,10 @@
-use pnet::datalink::{channel, Channel, MacAddr, NetworkInterface};
-use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
+use anyhow::Result;
+use pnet::datalink::{MacAddr, NetworkInterface};
+use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, MutableArpPacket};
 use pnet::packet::ethernet::EtherTypes;
-use pnet::packet::ethernet::EthernetPacket;
-use pnet::packet::ethernet::MutableEthernetPacket;
-use pnet::packet::{MutablePacket, Packet};
 use std::net::Ipv4Addr;
+
+use crate::layers::{get_mac_from_arp, layer2_send, Layer2Match, Layer3Match, LayersMatch};
 
 pub fn send_arp_scan_packet(
     dst_ipv4: Ipv4Addr,
@@ -13,20 +13,7 @@ pub fn send_arp_scan_packet(
     src_mac: MacAddr,
     interface: NetworkInterface,
     max_loop: usize,
-) -> Option<MacAddr> {
-    let (mut sender, mut receiver) = match channel(&interface, Default::default()) {
-        Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
-        Ok(_) => panic!("unknown channel type"),
-        Err(e) => panic!("error happened {}", e),
-    };
-    let mut ethernet_buff = [0u8; 42];
-    let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buff).unwrap();
-
-    ethernet_packet.set_destination(dst_mac);
-    // ethernet_packet.set_destination(MacAddr::broadcast());
-    ethernet_packet.set_source(src_mac);
-    ethernet_packet.set_ethertype(EtherTypes::Arp);
-
+) -> Result<Option<MacAddr>> {
     let mut arp_buffer = [0u8; 28];
     let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
 
@@ -40,21 +27,27 @@ pub fn send_arp_scan_packet(
     arp_packet.set_target_hw_addr(MacAddr::zero());
     arp_packet.set_target_proto_addr(dst_ipv4);
 
-    ethernet_packet.set_payload(arp_packet.packet_mut());
-
-    // ignore the send unexpect error
-    match sender.send_to(ethernet_packet.packet(), None) {
-        _ => (),
+    let ethernet_type = EtherTypes::Arp;
+    let layer2 = Layer2Match {
+        src_mac: None,
+        dst_mac: Some(src_mac),
+        ethernet_type: Some(ethernet_type),
+    };
+    let layer3 = Layer3Match {
+        layer2: Some(layer2),
+        src_addr: Some(dst_ipv4.into()),
+        dst_addr: Some(src_ipv4.into()),
+    };
+    let layers_match = LayersMatch::Layer3Match(layer3);
+    match layer2_send(
+        dst_mac,
+        interface,
+        &arp_buffer,
+        ethernet_type,
+        vec![layers_match],
+        max_loop,
+    )? {
+        Some(r) => Ok(get_mac_from_arp(&r)),
+        None => Ok(None),
     }
-
-    for _ in 0..max_loop {
-        let buff = receiver.next().unwrap();
-        let re = EthernetPacket::new(buff).unwrap();
-        // let arp = ArpPacket::new(&buf[MutableEthernetPacket::minimum_packet_size()..]).unwrap();
-        let arp = ArpPacket::new(re.payload()).unwrap();
-        if arp.get_sender_proto_addr() == dst_ipv4 && arp.get_target_hw_addr() == src_mac {
-            return Some(arp.get_sender_hw_addr());
-        }
-    }
-    None
 }

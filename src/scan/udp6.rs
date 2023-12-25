@@ -8,7 +8,7 @@ use pnet::packet::Packet;
 use std::net::Ipv6Addr;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::RespMatch;
+use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
 use crate::layers::{IPV6_HEADER_SIZE, UDP_HEADER_SIZE};
 use crate::TargetScanStatus;
 
@@ -52,14 +52,29 @@ pub fn send_udp_scan_packet(
         Icmpv6Code(3), // address unreachable
     ];
 
-    let match_object_1 = RespMatch::new_layer4_tcp_udp(src_port, dst_port, false);
-    let match_object_2 = RespMatch::new_layer4_icmpv6(src_ipv6, dst_ipv6, false);
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv6.into()),
+        dst_addr: Some(src_ipv6.into()),
+    };
+    let layer4_tcp_udp = Layer4MatchTcpUdp {
+        layer3: Some(layer3),
+        src_port: Some(dst_port),
+        dst_port: Some(src_port),
+    };
+    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let ret = layer3_ipv6_send(
         src_ipv6,
         dst_ipv6,
         &ipv6_buff,
-        vec![match_object_1, match_object_2],
+        vec![layers_match_1, layers_match_2],
         max_loop,
     )?;
     match ret {

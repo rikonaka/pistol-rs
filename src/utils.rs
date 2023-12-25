@@ -4,104 +4,88 @@ use pnet::datalink;
 use pnet::datalink::NetworkInterface;
 use rand::Rng;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use subnetwork;
-use subnetwork::{Ipv4Pool, Ipv6Pool};
 use threadpool::ThreadPool;
 
-use super::Host;
-use super::Host6;
-use super::{BindIp2Interface, BindIp2Interface6};
+use crate::layers::system_route;
 
 const DEFAILT_MAX_LOOP: usize = 32;
 
-pub fn get_host_interfaces() -> Vec<NetworkInterface> {
-    datalink::interfaces()
-}
-
-pub fn bind_interface(target_ips: &Vec<Ipv4Addr>) -> Vec<BindIp2Interface> {
-    let interfaces = get_host_interfaces();
-    let mut ret: Vec<BindIp2Interface> = Vec::new();
-    for dst_ipv4 in target_ips {
-        let mut found_interface = false;
-        for interface in &interfaces {
-            for ip in &interface.ips {
-                match ip.ip() {
-                    IpAddr::V4(src_ipv4) => {
-                        let prefix = ip.prefix();
-                        let subnet = Ipv4Pool::new(src_ipv4, prefix).unwrap();
-                        if subnet.contain(*dst_ipv4) {
-                            found_interface = true;
-                            let src_mac = interface.mac;
-                            let bi = BindIp2Interface::new(
-                                *dst_ipv4,
-                                Some(src_ipv4),
-                                src_mac,
-                                Some(interface.clone()),
-                            );
-                            ret.push(bi);
+pub fn find_source_ipv4(
+    src_ipv4: Option<Ipv4Addr>,
+    dst_ipv4: Ipv4Addr,
+) -> Result<Option<Ipv4Addr>> {
+    match src_ipv4 {
+        Some(s) => return Ok(Some(s)),
+        None => {
+            for interface in datalink::interfaces() {
+                for ipnetwork in interface.ips {
+                    match ipnetwork.ip() {
+                        IpAddr::V4(ipv4) => {
+                            if ipnetwork.contains(dst_ipv4.into()) {
+                                return Ok(Some(ipv4));
+                            }
                         }
+                        _ => (),
                     }
-                    _ => (),
+                }
+            }
+            // Can not found the source ip same subnet with interfaces ip.
+            // Now try to find it through default route address.
+            let route_ipv4 = system_route()?;
+            for interface in datalink::interfaces() {
+                for ipnetwork in interface.ips {
+                    match ipnetwork.ip() {
+                        IpAddr::V4(ipv4) => {
+                            if ipnetwork.contains(route_ipv4.into()) {
+                                return Ok(Some(ipv4));
+                            }
+                        }
+                        _ => (),
+                    }
                 }
             }
         }
-        if !found_interface {
-            let bi = BindIp2Interface::new(*dst_ipv4, None, None, None);
-            ret.push(bi);
-        }
     }
-    ret
+    Ok(None)
 }
 
-pub fn bind_interface6(target_ips: &[Ipv6Addr]) -> Vec<BindIp2Interface6> {
-    let interfaces = get_host_interfaces();
-    let mut ret: Vec<BindIp2Interface6> = Vec::new();
-    for tip in target_ips {
-        let mut found_interface = false;
-        for interface in &interfaces {
-            for ip in &interface.ips {
-                match ip.ip() {
-                    IpAddr::V6(src_ipv6) => {
-                        let prefix = ip.prefix();
-                        let subnet = Ipv6Pool::new(src_ipv6, prefix).unwrap();
-                        if subnet.contain(*tip) || src_ipv6.is_unicast_global() {
-                            found_interface = true;
-                            let src_mac = interface.mac;
-                            let bi = BindIp2Interface6::new(
-                                *tip,
-                                Some(src_ipv6),
-                                src_mac,
-                                Some(interface.clone()),
-                            );
-                            ret.push(bi);
+pub fn find_source_ipv6(
+    src_ipv6: Option<Ipv6Addr>,
+    dst_ipv6: Ipv6Addr,
+) -> Result<Option<Ipv6Addr>> {
+    match src_ipv6 {
+        Some(s) => return Ok(Some(s)),
+        None => {
+            for interface in datalink::interfaces() {
+                for ipnetwork in interface.ips {
+                    match ipnetwork.ip() {
+                        IpAddr::V6(ipv6) => {
+                            if dst_ipv6.is_global() && ipv6.is_unicast_global() {
+                                return Ok(Some(ipv6));
+                            } else if dst_ipv6.is_unicast_global() && ipv6.is_unicast_global() {
+                                return Ok(Some(ipv6));
+                            }
                         }
+                        _ => (),
                     }
-                    _ => (),
+                }
+            }
+            // Now try to find it through same subnet.
+            for interface in datalink::interfaces() {
+                for ipnetwork in interface.ips {
+                    match ipnetwork.ip() {
+                        IpAddr::V6(ipv6) => {
+                            if ipnetwork.contains(dst_ipv6.into()) {
+                                return Ok(Some(ipv6));
+                            }
+                        }
+                        _ => (),
+                    }
                 }
             }
         }
-        if !found_interface {
-            let bi = BindIp2Interface6::new(*tip, None, None, None);
-            ret.push(bi);
-        }
     }
-    ret
-}
-
-pub fn get_ips_from_host(hosts: &[Host]) -> Vec<Ipv4Addr> {
-    let mut target_ips = Vec::new();
-    for h in hosts {
-        target_ips.push(h.addr);
-    }
-    target_ips
-}
-
-pub fn get_ips_from_host6(hosts: &[Host6]) -> Vec<Ipv6Addr> {
-    let mut target_ips = Vec::new();
-    for h in hosts {
-        target_ips.push(h.addr);
-    }
-    target_ips
+    Ok(None)
 }
 
 pub fn find_interface_by_ipv4(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
@@ -261,14 +245,13 @@ mod tests {
         println!("{}", cpus);
     }
     #[test]
-    fn test_i() {
-        let interfaces = get_host_interfaces();
-        for interface in &interfaces {
-            for ip in &interface.ips {
-                if ip.is_ipv4() {
-                    println!("{}", ip.prefix());
-                }
-            }
-        }
+    fn test_find_source_ipv6() {
+        let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
+        let find = find_source_ipv6(None, dst_ipv6).unwrap().unwrap();
+        println!("{}", find);
+
+        let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
+        let find = find_source_ipv6(None, dst_ipv6).unwrap().unwrap();
+        println!("{}", find);
     }
 }

@@ -494,7 +494,7 @@ mod tests {
                 dst_closed_udp_port_1,
             ]),
         );
-        let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 137);
         let dst_open_tcp_port_2 = 22;
         let dst_closed_tcp_port_2 = 54532;
         let dst_closed_udp_port_2 = 34098;

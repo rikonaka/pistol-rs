@@ -2,7 +2,6 @@ use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
-use std::iter::zip;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
 
@@ -13,9 +12,8 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::errors::{CanNotFoundMacAddress, CanNotFoundSourceAddress, IpCanNotBindToInterface};
-use crate::utils::{bind_interface, get_ips_from_host};
-use crate::utils::{bind_interface6, get_ips_from_host6};
+use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress, CanNotFoundSourceAddress};
+use crate::utils::{find_interface_by_ipv4, find_source_ipv4, find_source_ipv6};
 use crate::utils::{get_max_loop, get_threads_pool, random_port};
 use crate::TargetType;
 
@@ -56,6 +54,7 @@ pub enum ScanMethod6 {
 
 pub fn arp_scan(
     target: Target,
+    src_ipv4: Option<Ipv4Addr>,
     threads_num: usize,
     max_loop: Option<usize>,
 ) -> Result<ArpScanResults> {
@@ -66,8 +65,6 @@ pub fn arp_scan(
                 alive_hosts: HashMap::new(),
             };
 
-            let target_ips = get_ips_from_host(&target.hosts);
-            let bi_vec = bind_interface(&target_ips);
             // println!("{:?}", bi_vec);
             let pool = get_threads_pool(threads_num);
             let max_loop = get_max_loop(max_loop);
@@ -75,50 +72,42 @@ pub fn arp_scan(
             let dst_mac = MacAddr::broadcast();
             let (tx, rx) = channel();
             let mut recv_size = 0;
-            for bi in bi_vec {
-                let tx = tx.clone();
+            for host in target.hosts {
                 recv_size += 1;
-                match bi.interface {
-                    Some(interface) => {
-                        let src_ipv4 = match bi.src_ipv4 {
-                            Some(s) => s,
-                            None => return Err(CanNotFoundSourceAddress::new().into()),
-                        };
-                        let src_mac = match bi.src_mac {
-                            Some(s) => s,
-                            None => return Err(CanNotFoundMacAddress::new().into()),
-                        };
-                        let dst_ipv4 = bi.dst_ipv4;
-                        let tx = tx.clone();
-                        let i = interface.clone();
-                        pool.execute(move || {
-                            let scan_ret = arp::send_arp_scan_packet(
-                                dst_ipv4, dst_mac, src_ipv4, src_mac, i, max_loop,
-                            );
-                            match tx.send(Ok((dst_ipv4, scan_ret))) {
-                                _ => (),
-                            }
-                        });
+                let dst_ipv4 = host.addr;
+                let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
+                    Some(s) => s,
+                    None => return Err(CanNotFoundSourceAddress::new().into()),
+                };
+                let interface = match find_interface_by_ipv4(src_ipv4) {
+                    Some(i) => i,
+                    None => return Err(CanNotFoundInterface::new().into()),
+                };
+                let src_mac = match interface.mac {
+                    Some(m) => m,
+                    None => return Err(CanNotFoundMacAddress::new().into()),
+                };
+                let tx = tx.clone();
+                pool.execute(move || {
+                    let scan_ret = arp::send_arp_scan_packet(
+                        dst_ipv4, dst_mac, src_ipv4, src_mac, interface, max_loop,
+                    );
+                    match tx.send(Ok((dst_ipv4, scan_ret))) {
+                        _ => (),
                     }
-                    None => {
-                        let error = IpCanNotBindToInterface::new(bi.dst_ipv4.into());
-                        match tx.send(Err(error)) {
-                            _ => (),
-                        }
-                    }
-                }
+                });
             }
             let iter = rx.into_iter().take(recv_size);
             for v in iter {
                 match v {
-                    Ok((target_ipv4, target_mac)) => match target_mac {
+                    Ok((target_ipv4, target_mac)) => match target_mac? {
                         Some(m) => {
                             ret.alive_hosts_num += 1;
                             ret.alive_hosts.insert(target_ipv4, m);
                         }
                         None => (),
                     },
-                    Err(e) => return Err(e.into()),
+                    Err(e) => return Err(e),
                 }
             }
             Ok(ret)
@@ -250,27 +239,21 @@ pub fn scan(
     HashMap<IpAddr, TcpUdpScanResults>,
     HashMap<IpAddr, IpScanResults>,
 )> {
-    let target_ips = get_ips_from_host(&target.hosts);
-    let bi_vec = bind_interface(&target_ips);
-
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
     let max_loop = get_max_loop(max_loop);
 
-    for (bi, host) in zip(bi_vec, target.hosts) {
-        let src_ipv4 = match src_ipv4 {
+    for host in target.hosts {
+        let dst_ipv4 = host.addr;
+        let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
             Some(s) => s,
-            None => match bi.src_ipv4 {
-                Some(s) => s,
-                None => return Err(CanNotFoundSourceAddress::new().into()),
-            },
+            None => return Err(CanNotFoundSourceAddress::new().into()),
         };
         let src_port = match src_port {
             Some(s) => s,
             None => random_port(),
         };
-        let dst_ipv4 = bi.dst_ipv4;
         for dst_port in host.ports {
             let tx = tx.clone();
             recv_size += 1;
@@ -340,27 +323,21 @@ pub fn scan6(
     threads_num: usize,
     max_loop: Option<usize>,
 ) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
-    let target_ips = get_ips_from_host6(&target.hosts6);
-    let bi_vec = bind_interface6(&target_ips);
-
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
     let max_loop = get_max_loop(max_loop);
 
-    for (bi, host) in zip(bi_vec, target.hosts) {
-        let src_ipv6 = match src_ipv6 {
+    for host in target.hosts6 {
+        let dst_ipv6 = host.addr;
+        let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
             Some(s) => s,
-            None => match bi.src_ipv6 {
-                Some(s) => s,
-                None => return Err(CanNotFoundSourceAddress::new().into()),
-            },
+            None => return Err(CanNotFoundSourceAddress::new().into()),
         };
         let src_port = match src_port {
             Some(s) => s,
             None => random_port(),
         };
-        let dst_ipv6 = bi.dst_ipv6;
         for dst_port in host.ports {
             let tx = tx.clone();
             recv_size += 1;

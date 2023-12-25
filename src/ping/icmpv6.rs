@@ -12,7 +12,7 @@ use rand::Rng;
 use std::net::Ipv6Addr;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::RespMatch;
+use crate::layers::{Layer3Match, Layer4MatchIcmpv6, LayersMatch};
 use crate::layers::{ICMPV6_ER_HEADER_SIZE, IPV6_HEADER_SIZE};
 use crate::ping::PingStatus;
 
@@ -68,8 +68,19 @@ pub fn send_icmpv6_ping_packet(
         echo_reply::Icmpv6Codes::NoCode, // 0
     ];
 
-    let match_icmp = RespMatch::new_layer4_icmpv6(src_ipv6, dst_ipv6, false);
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![match_icmp], max_loop)?;
+    let layer3 = Layer3Match {
+        layer2: None,
+        src_addr: Some(dst_ipv6.into()),
+        dst_addr: Some(src_ipv6.into()),
+    };
+    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        layer3: Some(layer3),
+        types: None,
+        codes: None,
+    };
+    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], max_loop)?;
     match ret {
         Some(r) => {
             match Ipv6Packet::new(&r) {
