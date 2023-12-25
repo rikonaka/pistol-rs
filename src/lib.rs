@@ -58,9 +58,15 @@ pub struct IdleScanResults {
 }
 
 #[derive(Debug, Clone)]
+pub struct ArpAliveHosts {
+    pub mac_addr: MacAddr,
+    pub ouis: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ArpScanResults {
     pub alive_hosts_num: usize,
-    pub alive_hosts: HashMap<Ipv4Addr, MacAddr>,
+    pub alive_hosts: HashMap<Ipv4Addr, ArpAliveHosts>,
 }
 
 impl fmt::Display for ArpScanResults {
@@ -69,8 +75,8 @@ impl fmt::Display for ArpScanResults {
         let s = format!("Alive hosts: {}", self.alive_hosts_num);
         result_str += &s;
         result_str += "\n";
-        for (ip, mac) in &self.alive_hosts {
-            let s = format!("{}: {}", ip, mac);
+        for (ip, aah) in &self.alive_hosts {
+            let s = format!("{}: {} ({})", ip, aah.mac_addr, aah.ouis);
             result_str += &s;
             result_str += "\n";
         }

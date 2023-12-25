@@ -15,7 +15,7 @@ pub mod udp6;
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress, CanNotFoundSourceAddress};
 use crate::utils::{find_interface_by_ipv4, find_source_ipv4, find_source_ipv6};
 use crate::utils::{get_max_loop, get_threads_pool, random_port};
-use crate::TargetType;
+use crate::{ArpAliveHosts, TargetType};
 
 use super::errors::NotSupportIpTypeForArpScan;
 use super::ArpScanResults;
@@ -23,6 +23,12 @@ use super::IpScanResults;
 use super::Target;
 use super::TargetScanStatus;
 use super::TcpUdpScanResults;
+
+#[derive(Debug, Clone)]
+pub struct NmapMacPrefix {
+    pub prefix: String,
+    pub ouis: String,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ScanMethod {
@@ -52,6 +58,30 @@ pub enum ScanMethod6 {
     Udp,
 }
 
+fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
+    let nmap_mac_prefixes_file = include_str!("./db/nmap-mac-prefixes");
+    let nmap_mac_prefixes: Vec<String> = nmap_mac_prefixes_file
+        .split("\n")
+        .map(|s| s.to_string())
+        .collect();
+
+    let mut ret = Vec::new();
+    for p in nmap_mac_prefixes {
+        if !p.contains("#") {
+            let p_split: Vec<String> = p.split(" ").map(|s| s.to_string()).collect();
+            if p_split.len() >= 2 {
+                let ouis_slice = p_split[1..].to_vec();
+                let n = NmapMacPrefix {
+                    prefix: p_split[0].to_string(),
+                    ouis: ouis_slice.join(" "),
+                };
+                ret.push(n);
+            }
+        }
+    }
+    ret
+}
+
 pub fn arp_scan(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -60,6 +90,7 @@ pub fn arp_scan(
 ) -> Result<ArpScanResults> {
     match target.target_type {
         TargetType::Ipv4 => {
+            let nmap_mac_prefixes = get_nmap_mac_prefixes();
             let mut ret = ArpScanResults {
                 alive_hosts_num: 0,
                 alive_hosts: HashMap::new(),
@@ -103,7 +134,43 @@ pub fn arp_scan(
                     Ok((target_ipv4, target_mac)) => match target_mac? {
                         Some(m) => {
                             ret.alive_hosts_num += 1;
-                            ret.alive_hosts.insert(target_ipv4, m);
+                            let mut ouis = String::new();
+                            let mut mac_prefix = String::new();
+                            let m0 = format!("{:X}", m.0);
+                            let m1 = format!("{:X}", m.1);
+                            let m2 = format!("{:X}", m.2);
+                            // m0
+                            let i = if m0.len() < 2 { 2 - m0.len() } else { 0 };
+                            if i > 0 {
+                                for _ in 0..i {
+                                    mac_prefix += "0";
+                                }
+                            }
+                            mac_prefix += &m0;
+                            // m1
+                            let i = if m1.len() < 2 { 2 - m1.len() } else { 0 };
+                            if i > 0 {
+                                for _ in 0..i {
+                                    mac_prefix += "0";
+                                }
+                            }
+                            mac_prefix += &m1;
+                            // m2
+                            let i = if m2.len() < 2 { 2 - m2.len() } else { 0 };
+                            if i > 0 {
+                                for _ in 0..i {
+                                    mac_prefix += "0";
+                                }
+                            }
+                            mac_prefix += &m2;
+                            // println!("{}", mac_prefix);
+                            for p in &nmap_mac_prefixes {
+                                if mac_prefix == p.prefix {
+                                    ouis = p.ouis.to_string();
+                                }
+                            }
+                            let aah = ArpAliveHosts { mac_addr: m, ouis };
+                            ret.alive_hosts.insert(target_ipv4, aah);
                         }
                         None => (),
                     },

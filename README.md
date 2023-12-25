@@ -60,7 +60,7 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ### Why not support the nmap IPv6 fingerprints?
 
-Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints of nmap are unreadable and meaningless to humans, and nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
+Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints are unreadable and meaningless to humans, nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
 
 Here are my arguments. The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, and I don't know why nmap would keep them in the final fingerprint.
 
