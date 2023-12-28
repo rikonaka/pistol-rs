@@ -1,3 +1,4 @@
+/* Remote OS Detection */
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -6,9 +7,9 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
 
 use crate::errors::OsDetectPortError;
-use crate::fingerprint::dbparser::NmapOsDb;
-use crate::fingerprint::osscan::PistolFingerprint;
-use crate::fingerprint::osscan6::PistolFingerprint6;
+use crate::rod::dbparser::NmapOsDb;
+use crate::rod::osscan::PistolFingerprint;
+use crate::rod::osscan6::PistolFingerprint6;
 use crate::utils::get_threads_pool;
 use crate::Target;
 
@@ -285,7 +286,7 @@ pub fn os_detect(
 }
 
 fn gen_linear() -> Result<Linear> {
-    let variance_json_data = include_str!("./db/variance.json");
+    let variance_json_data = include_str!("./db/nmap-os-db-ipv6/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
 
     let mut namelist = Vec::new();
@@ -297,7 +298,7 @@ fn gen_linear() -> Result<Linear> {
     assert_eq!(namelist.len(), 92);
     assert_eq!(variance.len(), 92);
 
-    let mean_json_data = include_str!("./db/mean.json");
+    let mean_json_data = include_str!("./db/nmap-os-db-ipv6/mean.json");
     let mean_json: Vec<NmapJsonParameters> = serde_json::from_str(mean_json_data)?;
     let mut mean = Vec::new();
     for m in mean_json {
@@ -305,7 +306,7 @@ fn gen_linear() -> Result<Linear> {
     }
     assert_eq!(mean.len(), 92);
 
-    let scale_json_data = include_str!("./db/scale.json"); // static
+    let scale_json_data = include_str!("./db/nmap-os-db-ipv6/scale.json"); // static
     let scale_json: Vec<NmapJsonParameters> = serde_json::from_str(scale_json_data)?;
     let mut scale: Vec<Vec<f64>> = Vec::new();
     for s in scale_json {
@@ -313,7 +314,7 @@ fn gen_linear() -> Result<Linear> {
     }
     assert_eq!(scale.len(), 695);
 
-    let w_json_data = include_str!("./db/w.json"); // static
+    let w_json_data = include_str!("./db/nmap-os-db-ipv6/w.json"); // static
     let w_json: Vec<NmapJsonParameters> = serde_json::from_str(w_json_data)?;
     assert_eq!(w_json.len(), 695);
 
@@ -327,7 +328,7 @@ fn gen_linear() -> Result<Linear> {
         w.push(tmp);
     }
 
-    let cpe_json_data = include_str!("./db/cpe.json"); // static
+    let cpe_json_data = include_str!("./db/nmap-os-db-ipv6/cpe.json"); // static
     let cpe: Vec<CPE> = serde_json::from_str(cpe_json_data)?;
     assert_eq!(cpe.len(), 92);
 

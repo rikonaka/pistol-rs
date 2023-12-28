@@ -26,3 +26,4 @@ serde = { version="^1", features = ["derive"] }
 serde_json = "^1"
 pnet = { version="^0", path = "./libpnet" }
 dns-lookup = "^2"
+regex = "^1"

@@ -6,7 +6,7 @@ use pnet::packet::Packet;
 use std::iter::zip;
 
 use crate::errors::{GetIcmpv6PacketFailed, GetIpv6PacketFailed, GetTcpPacketFailed};
-use crate::fingerprint::rr::AllPacketRR6;
+use crate::rod::rr::AllPacketRR6;
 use crate::utils::Hex;
 
 const CWR_MASK: u8 = 0b10000000;

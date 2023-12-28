@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress};
-use crate::fingerprint::osscan::get_scan_line;
+use crate::rod::osscan::get_scan_line;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
 

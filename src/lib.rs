@@ -8,10 +8,11 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 mod errors;
-mod fingerprint;
 mod flood;
 mod layers;
 mod ping;
+mod rod;
+mod savd;
 mod scan;
 mod utils;
 
@@ -489,13 +490,13 @@ pub use flood::udp_flood6;
 /* Finger Printing */
 
 /// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
-pub use fingerprint::dbparser::nmap_os_db_parser;
+pub use rod::dbparser::nmap_os_db_parser;
 
 /// Detect target machine OS.
-pub use fingerprint::os_detect;
+pub use rod::os_detect;
 
 /// Detect target machine OS on IPv6.
-pub use fingerprint::os_detect6;
+pub use rod::os_detect6;
 
 /* Work with domain */
 /// Queries the IP address of a domain name and returns.
