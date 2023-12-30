@@ -128,9 +128,9 @@ use pistol::{os_detect, Host, Target};
 use std::net::Ipv4Addr;
 
 fn main() {
-    // The source and destination address is required.
-    let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-    // If the value of `source port` is `None`, the program will generate the source port randomly.
+    // If the value of `src_ipv4` is `None`, the program will find it auto.
+    let src_ipv4 = None;
+    // If the value of `src_port` is `None`, the program will generate it randomly.
     let src_port = None;
     let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 129);
     // `dst_open_tcp_port` must be a certain open tcp port.
@@ -293,7 +293,7 @@ use pistol::{os_detect6, Host, Target};
 use std::net::Ipv4Addr;
 
 fn main() {
-    let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+    let src_ipv6 = None;
     let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
     let dst_open_tcp_port_1 = 22;
     let dst_closed_tcp_port_1 = 8765;

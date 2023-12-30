@@ -1,0 +1,86 @@
+# Nmap service detection probe list -*- mode: fundamental; -*-
+# $Id: nmap-service-probes 38618 2023-02-09 17:57:15Z dmiller $
+#
+# This is a database of custom probes and expected responses that the
+# Nmap Security Scanner ( https://nmap.org ) uses to
+# identify what services (eg http, smtp, dns, etc.) are listening on
+# open ports.  Contributions to this database are welcome.
+# Instructions for obtaining and submitting service detection fingerprints can
+# be found in the Nmap Network Scanning book and online at
+# https://nmap.org/book/vscan-community.html
+#
+# This collection of probe data is (C) 1998-2020 by Insecure.Com
+# LLC.  It is distributed under the Nmap Public Source license as
+# provided in the LICENSE file of the source distribution or at
+# https://nmap.org/data/LICENSE .  Note that this license
+# requires you to license your own work under a compatible open source
+# license.  If you wish to embed Nmap technology into proprietary
+# software, we sell alternative licenses (contact sales@insecure.com).
+# Dozens of software vendors already license Nmap technology such as
+# host discovery, port scanning, OS detection, and version detection.
+# For more details, see https://nmap.org/book/man-legal.html
+#
+# For details on how Nmap version detection works, why it was added,
+# the grammar of this file, and how to detect and contribute new
+# services, see https://nmap.org/book/vscan.html.
+
+# The Exclude directive takes a comma separated list of ports.
+# The format is exactly the same as the -p switch.
+Exclude T:9100-9107
+
+# This is the NULL probe that just compares any banners given to us
+##############################NEXT PROBE##############################
+Probe TCP NULL q||
+# Wait for at least 6 seconds for data.  It used to be 5, but some
+# smtp services have lately been instituting an artificial pause (see
+# FEATURE('greet_pause') in Sendmail, for example)
+totalwaitms 6000
+# If the service closes the connection before 3 seconds, it's probably
+# tcpwrapped. Adjust up or down depending on your false-positive rate.
+tcpwrappedms 3000
+
+# OpenSSH
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) Debian-(\S*maemo\S*)\r?\n| p/OpenSSH/ v/$2 Debian $3/ i/Nokia Maemo tablet; protocol $1/ o/Linux/ cpe:/a:openbsd:openssh:$2/ cpe:/o:debian:debian_linux/ cpe:/o:linux:linux_kernel/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Debian[ -_](.*ubuntu.*)\r\n| p/OpenSSH/ v/$2 Debian $3/ i/Ubuntu Linux; protocol $1/ o/Linux/ cpe:/a:openbsd:openssh:$2/ cpe:/o:canonical:ubuntu_linux/ cpe:/o:linux:linux_kernel/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n| p/OpenSSH/ v/$2 Ubuntu $3/ i/Ubuntu Linux; protocol $1/ o/Linux/ cpe:/a:openbsd:openssh:$2/ cpe:/o:canonical:ubuntu_linux/ cpe:/o:linux:linux_kernel/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Debian[ -_]([^\r\n]+)\r?\n| p/OpenSSH/ v/$2 Debian $3/ i/protocol $1/ o/Linux/ cpe:/a:openbsd:openssh:$2/ cpe:/o:debian:debian_linux/ cpe:/o:linux:linux_kernel/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_[\w.]+-FC-([\w.-]+)\.fc(\d+)\r\n| p/OpenSSH/ v/$2 Fedora/ i/Fedora Core $3; protocol $1/ o/Linux/ cpe:/a:openbsd:openssh:$2/ cpe:/o:fedoraproject:fedora_core:$3/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) FreeBSD-([\d]+)\r?\n| p/OpenSSH/ v/$2/ i/FreeBSD $3; protocol $1/ o/FreeBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:freebsd:freebsd/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) FreeBSD localisations (\d+)\r?\n| p/OpenSSH/ v/$2/ i/FreeBSD $3; protocol $1/ o/FreeBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:freebsd:freebsd/a
+match ssh m=^SSH-([\d.]+)-OpenSSH_([\w._-]+) FreeBSD-openssh-portable-(?:base-|amd64-)?[\w.,]+\r?\n= p/OpenSSH/ v/$2/ i/protocol $1/ o/FreeBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:freebsd:freebsd/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) FreeBSD-openssh-portable-overwrite-base| p/OpenSSH/ v/$2/ i/protocol $1; overwrite base SSH/ o/FreeBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:freebsd:freebsd/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) FreeBSD-openssh-gssapi-| p/OpenSSH/ v/$2/ i/gssapi; protocol $1/ o/FreeBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:freebsd:freebsd/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) FreeBSD\n| p/OpenSSH/ v/$2/ i/protocol $1/ o/FreeBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:freebsd:freebsd/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) miniBSD-([\d]+)\r?\n| p/OpenSSH/ v/$2/ i/MiniBSD $3; protocol $1/ o/MiniBSD/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) NetBSD_Secure_Shell-([\w._+-]+)\r?\n| p/OpenSSH/ v/$2/ i/NetBSD $3; protocol $1/ o/NetBSD/ cpe:/a:openbsd:openssh:$2/ cpe:/o:netbsd:netbsd/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)_Mikrotik_v([\d.]+)\r?\n| p/OpenSSH/ v/$2 mikrotik $3/ i/protocol $1/ d/router/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) in RemotelyAnywhere ([\d.]+)\r?\n| p/OpenSSH/ v/$2/ i/RemotelyAnywhere $3; protocol $1/ o/Windows/ cpe:/a:openbsd:openssh:$2/ cpe:/o:microsoft:windows/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)\+CAN-2004-0175\r?\n| p/OpenSSH/ v/$2+CAN-2004-0175/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) NCSA_GSSAPI_20040818 KRB5\r?\n| p/OpenSSH/ v/$2 NCSA_GSSAPI_20040818 KRB5/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+# http://www.psc.edu/index.php/hpn-ssh
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)[-_]hpn(\w+) *(?:\"\")?\r?\n| p/OpenSSH/ v/$2/ i/protocol $1; HPN-SSH patch $3/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+\+sftpfilecontrol-v[\d.]+-hpn\w+)\r?\n| p/OpenSSH/ v/$2/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+-hpn) NCSA_GSSAPI_\d+ KRB5\r?\n| p/OpenSSH/ v/$2/ i/protocol $1; kerberos support/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_3\.4\+p1\+gssapi\+OpenSSH_3\.7\.1buf_fix\+2006100301\r?\n| p/OpenSSH/ v/3.4p1 with CMU Andrew patches/ i/protocol $1/ cpe:/a:openbsd:openssh:3.4p1/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+\.RL)\r?\n| p/OpenSSH/ v/$2 Allied Telesis/ i/protocol $1/ d/switch/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+-CERN\d+)\r?\n| p/OpenSSH/ v/$2/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+\.cern-hpn)| p/OpenSSH/ v/$2/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+-hpn)\r?\n| p/OpenSSH/ v/$2/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+-pwexp\d+)\r?\n| p/OpenSSH/ v/$2/ i/protocol $1/ o/AIX/ cpe:/a:openbsd:openssh:$2/ cpe:/o:ibm:aix/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)-chrootssh\n| p/OpenSSH/ v/$2/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-Nortel\r?\n| p/Nortel SSH/ i/protocol $1/ d/switch/ cpe:/a:openbsd:openssh/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w.]+)[-_]hpn(\w+) DragonFly-| p/OpenSSH/ v/$2/ i/protocol $1; HPN-SSH patch $3/ o/DragonFlyBSD/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w.]+) DragonFly-| p/OpenSSH/ v/$2/ i/protocol $1/ o/DragonFlyBSD/ cpe:/a:openbsd:openssh:$2/
+# Not sure about the next 2 being these specific devices:
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w_.-]+) FIPS\n| p/OpenSSH/ v/$2/ i/protocol $1; Imperva SecureSphere firewall/ d/firewall/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w_.-]+) FIPS\r\n| p/OpenSSH/ v/$2/ i/protocol $1; Cisco NX-OS/ d/switch/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w_.-]+) NCSA_GSSAPI_GPT_([-\w_.]+) GSI\n| p/OpenSSH/ v/$2/ i/protocol $1; NCSA GSSAPI authentication patch $3/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) \.\n| p/OpenSSH/ v/$2/ i/protocol $1/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) PKIX\r\n| p/OpenSSH/ v/$2/ i/protocol $1; X.509 v3 certificate support/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)-FIPS\(capable\)\r\n| p/OpenSSH/ v/$2/ i/protocol $1; FIPS capable/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+)-sshjail\n| p/OpenSSH/ v/$2/ i/protocol $1; sshjail patch/ cpe:/a:openbsd:openssh:$2/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) Raspbian-([^\r\n]+)\r?\n| p/OpenSSH/ v/$2 Raspbian $3/ i/protocol $1/ o/Linux/ cpe:/a:openbsd:openssh:$2/ cpe:/o:linux:linux_kernel/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) OVH-rescue\r\n| p/OpenSSH/ v/$2/ i/protocol $1; OVH hosting rescue/ cpe:/a:openbsd:openssh:$2/a
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) Trisquel_GNU/linux_([\d.]+)(?:-\d+)?\r\n| p/OpenSSH/ v/$2/ i/protocol $1; Trisquel $3/ o/Linux/ cpe:/a:openbsd:openssh:$2/a cpe:/o:linux:linux_kernel/a cpe:/o:trisquel_project:trisquel_gnu%2flinux:$3/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) \+ILOM\.2015-5600\r\n| p/OpenSSH/ v/$2/ i/protocol $1; ILOM patched CVE-2015-5600/ cpe:/a:openbsd:openssh:$2/a cpe:/h:oracle:integrated_lights-out/
+match ssh m|^SSH-([\d.]+)-OpenSSH_([\w._-]+) SolidFire Element \r\n| p/OpenSSH/ v/$2/ i/protocol $1; NetApp SolidFire storage node/ cpe:/a:openbsd:openssh:$2/a cpe:/o:netapp:element_software/
