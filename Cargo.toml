@@ -22,8 +22,8 @@ chrono = "^0"
 gcdx = "^0"
 crc32fast = "^1"
 hex = "^0"
-serde = { version="^1", features = ["derive"] }
+serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
-pnet = { version="^0", path = "./libpnet" }
+pnet = { version = "^0", path = "./libpnet" }
 dns-lookup = "^2"
 regex = "^1"

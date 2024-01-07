@@ -14,3 +14,4 @@ Cargo.lock
 *.pdb
 
 nmap-os-db.pistol
+example

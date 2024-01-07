@@ -1,6 +1,6 @@
 # pistol-rs
 
-The library must be run as root (Linux) or administrator (Windows).
+The library must be run as root (Linux) or administrator (Windows), other systems are not supported.
 
 Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
 
@@ -71,6 +71,10 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 ## Service and Application Version Detection
 
 The nmap `nmap-service-probes` file regex format is not standard, there are a lot of syntax incompatible with rust, based on the nmap source file to do a lot of regex syntax correction. If you intend to update this file, it is best to add the new fingerprint information line by line rather than replacing the entire file.
+
+## TODO
+
+- [ ] Currently `pistol` uses command line commands to query the system routing table and the system ARP cache and then resolves, I tried to use native methods such as `netlink` or `libmnl` to do these things, but I found that this hit a blind spot in my knowledge, I'll write this up here for later.
 
 ## Examples
 
