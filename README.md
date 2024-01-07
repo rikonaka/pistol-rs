@@ -70,7 +70,7 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 
 ## Service and Application Version Detection
 
-TODO.
+The nmap `nmap-service-probes` file regex format is not standard, there are a lot of syntax incompatible with rust, based on the nmap source file to do a lot of regex syntax correction. If you intend to update this file, it is best to add the new fingerprint information line by line rather than replacing the entire file.
 
 ## Examples
 

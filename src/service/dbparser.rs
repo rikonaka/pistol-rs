@@ -15,6 +15,8 @@ pub struct Match {
     pub pattern: String,
     // The <versioninfo> section actually contains several optional fields.
     pub versioninfo: String,
+    // rust Regex struct
+    pub re: Regex,
 }
 
 #[derive(Debug, Clone)]
@@ -53,12 +55,7 @@ impl ServiceProbes {
         let mut matchs_vec = Vec::new();
         for m in &self.matchs {
             // println!(">>> {} <<<", m.pattern);
-            // let pattern = format!(r"{}", m.pattern);
-            if m.pattern.contains("Ubuntu") {
-                println!(">>> {} <<<", m.pattern);
-            }
-            let re = Regex::new(&m.pattern)?;
-            if re.is_match(&recv_str) {
+            if m.re.is_match(&recv_str) {
                 matchs_vec.push(m.clone());
             }
         }
@@ -175,10 +172,12 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
             let pattern = pattern.replace("\\0", "\\x{0}");
 
             let versioninfo = matchlast_split[2..].to_vec().join("|");
+            let re = Regex::new(&pattern)?;
             let m = Match {
                 service,
                 pattern,
                 versioninfo,
+                re,
             };
             matchs_global.push(m);
         } else if line.starts_with("softmatch") {
@@ -198,11 +197,15 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
             } else if matchlast.contains("|s") {
                 pattern += "/s";
             }
+            let pattern = pattern.replace("\\0", "\\x{0}");
+
             let versioninfo = matchlast_split[2..].to_vec().join("|");
+            let re = Regex::new(&pattern)?;
             let m = Match {
                 service,
                 pattern,
                 versioninfo,
+                re,
             };
             softmatchs_global.push(m);
         } else if line.starts_with("ports") {
@@ -308,6 +311,7 @@ pub fn nsp_exclued_parser(lines: &[String]) -> Result<ExcludePorts> {
                     ports.push(p);
                 }
             }
+            break;
         }
     }
     let ep = ExcludePorts {
@@ -336,6 +340,16 @@ mod tests {
     }
     #[test]
     fn test_build_regex() {
+        /*
+        Note:
+            { => \{
+            [] => [.*?]
+            \1 => .*?
+            [ => \[
+            ?= => .*?
+            ?! => .*?
+            ?<= => .*?
+         */
         let nsp_str = include_str!("../db/nmap-service-probes");
         let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
         let service_probes = nsp_parser(&nsp_lines).unwrap();

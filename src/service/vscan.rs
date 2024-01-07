@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::time::Duration;
+use std::time::Instant;
 
 use super::dbparser::{nsp_exclued_parser, nsp_parser, ProbesProtocol};
 use crate::TargetScanStatus;
@@ -17,10 +18,13 @@ pub struct ServiceScanTarget {
 }
 
 pub fn vs_probe(targets: &[ServiceScanTarget]) -> Result<()> {
+    let start = Instant::now();
     let nsp_str = include_str!("../db/nmap-service-probes");
     let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
     let exclude_ports = nsp_exclued_parser(&nsp_lines)?;
     let service_probes = nsp_parser(&nsp_lines)?;
+    let duration = start.elapsed();
+    println!("Time elapsed is: {:?}", duration);
 
     // Nmap checks to see if the port is one of the ports to be excluded.
     let mut new_target = Vec::new();
@@ -65,28 +69,30 @@ pub fn vs_probe(targets: &[ServiceScanTarget]) -> Result<()> {
                                 // ASCII printable characters 32-127
                                 if b >= 32 && b < 127 {
                                     recv_str += &format!("{}", b as char);
-                                } else if b == 0 {
-                                    recv_str += "\0";
-                                } else if b == 10 {
-                                    recv_str += "\\n";
-                                } else if b == 13 {
-                                    recv_str += "\\r";
                                 } else {
-                                    let mut tmp = format!("{:x}", b);
-                                    if tmp.len() < 2 {
-                                        for _ in 0..(2 - tmp.len()) {
-                                            tmp = format!("0{}", tmp);
+                                    match b {
+                                        0 => recv_str += "\0",
+                                        9 => recv_str += "\t",
+                                        10 => recv_str += "\n",
+                                        13 => recv_str += "\r",
+                                        _ => {
+                                            let mut tmp = format!("{:x}", b);
+                                            if tmp.len() < 2 {
+                                                for _ in 0..(2 - tmp.len()) {
+                                                    tmp = format!("0{}", tmp);
+                                                }
+                                            }
+                                            tmp = format!("\\x{}", tmp);
+                                            recv_str += &tmp;
                                         }
                                     }
-                                    tmp = format!("\\x{}", tmp);
-                                    recv_str += &tmp;
                                 }
                             }
-                            println!("[{}]", recv_str);
+                            // println!("{}", recv_str.len());
                             for sp in &service_probes {
                                 if sp.probe.probename == "NULL" {
                                     let ret = sp.check(&recv_str)?;
-                                    println!("{}", ret.len());
+                                    // println!("{}", ret.len());
                                     for r in ret {
                                         println!("{}", r.service);
                                     }
@@ -137,32 +143,11 @@ mod tests {
             ?<= => .*?
          */
 
-        let t = r###"^220 FTP Server\[^[.*?]* \[([\w.-]+)\]\r\n214-The following commands are recognized \(\* =>'s unimplemented\)\.\r\n USER    PASS    ACCT\*   CWD     XCWD    CDUP    XCUP    SMNT\*   \r\n QUIT    REIN\*   PORT    PASV    TYPE    STRU\*   MODE\*   RETR    \r\n STOR    STOU\*   APPE    ALLO\*   REST    RNFR    RNTO    ABOR    \r\n DELE    MDTM    RMD     XRMD    MKD     XMKD    PWD     XPWD    \r\n SIZE    LIST    NLST    SITE    SYST    STAT    HELP    NOOP    \r\n214 Direct comments to "###;
+        let t = r###"^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n"###;
         let _re = Regex::new(&t).unwrap();
-    }
-    #[test]
-    fn test_regex_run() {
-        let nsp_str = include_str!("../db/nmap-service-probes-test");
-        let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
-        let service_probes = nsp_parser(&nsp_lines).unwrap();
 
-        // let recv_str = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.5\r\n";
         let recv_str = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.5\r\n";
-        // let t = r"^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]\{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n";
-        let t = r"^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n";
         let re = Regex::new(t).unwrap();
         println!(">>>> {}", re.is_match(recv_str));
-
-        for sp in &service_probes {
-            if sp.probe.probename == "NULL" {
-                for m in &sp.matchs {
-                    // println!("{}", m.pattern);
-                    let re = Regex::new(&m.pattern).unwrap();
-                    if re.is_match(&recv_str) {
-                        println!("match");
-                    }
-                }
-            }
-        }
     }
 }
