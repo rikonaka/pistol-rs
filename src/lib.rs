@@ -14,7 +14,7 @@ mod os;
 mod ping;
 mod scan;
 mod utils;
-mod sv;
+mod vs;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PingStatus {

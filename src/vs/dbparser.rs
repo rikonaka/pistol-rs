@@ -1,25 +1,28 @@
 use anyhow::Result;
-use regex::{Captures, Regex};
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use std::sync::mpsc::channel;
 
-#[derive(Debug, Clone, Copy)]
+use crate::utils::{get_cpu_num, get_threads_pool};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ProbesProtocol {
     Tcp,
     Udp,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Match {
+    pub class: String, // match or softmatch
     // This is simply the service name that the pattern matches.
     pub service: String,
     // This pattern is used to determine whether the response received matches the service given in the previous parameter.
     pub pattern: String,
     // The <versioninfo> section actually contains several optional fields.
     pub versioninfo: String,
-    // rust Regex struct
-    pub re: Regex,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Probe {
     // This must be either TCP or UDP. Nmap only uses probes that match the protocol of the service it is trying to scan.
     pub protocol: ProbesProtocol,
@@ -31,7 +34,7 @@ pub struct Probe {
     pub no_payload: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceProbes {
     pub probe: Probe,
     pub matchs: Vec<Match>,
@@ -51,15 +54,76 @@ pub struct ServiceProbes {
 }
 
 impl ServiceProbes {
-    pub fn check<'a>(&self, recv_str: &'a str) -> Result<Vec<Match>> {
-        let mut matchs_vec = Vec::new();
-        for m in &self.matchs {
+    fn split_matchs(&self) -> Vec<Vec<Match>> {
+        let cpu_num = get_cpu_num();
+        let mut ret = Vec::new();
+        if self.matchs.len() > cpu_num {
+            let d = (self.matchs.len() as f32 / cpu_num as f32) as usize;
+            // println!("d: {}", d);
+            for c in 0..cpu_num {
+                // println!("c[{}] {} - {}", c, (c * d), ((c + 1) * d));
+                if c != d - 1 {
+                    ret.push(self.matchs[(c * d)..((c + 1) * d)].to_vec());
+                } else {
+                    ret.push(self.matchs[(c * d)..].to_vec());
+                }
+            }
+        } else {
+            ret.push(self.matchs.clone());
+        }
+        ret
+    }
+    fn check_thread(matchs: Vec<Match>, recv_str: &str) -> Result<Option<Match>> {
+        for m in matchs {
             // println!(">>> {} <<<", m.pattern);
-            if m.re.is_match(&recv_str) {
-                matchs_vec.push(m.clone());
+            let re = Regex::new(&m.pattern)?;
+            if re.is_match(&recv_str) {
+                return Ok(Some(m.clone()));
             }
         }
-        Ok(matchs_vec)
+
+        Ok(None)
+    }
+    pub fn check(&self, recv_str: &str) -> Result<Vec<Match>> {
+        let pool = get_threads_pool(0); // auto
+        let (tx, rx) = channel();
+        let split_matchs = self.split_matchs();
+        let mut recv_size = 0;
+        for matchs in split_matchs {
+            let tx = tx.clone();
+            let recv_str = recv_str.to_string();
+            pool.execute(move || {
+                let ret = ServiceProbes::check_thread(matchs, &recv_str);
+                match tx.send(ret) {
+                    _ => (),
+                }
+            });
+            recv_size += 1;
+        }
+
+        let iter = rx.into_iter().take(recv_size);
+        let mut ret = Vec::new();
+        for i in iter {
+            match i {
+                Ok(rr) => match rr {
+                    Some(r) => {
+                        ret.push(r);
+                    }
+                    None => (),
+                },
+                Err(e) => return Err(e),
+            }
+        }
+
+        if ret.len() == 0 {
+            for m in &self.softmatchs {
+                let re = Regex::new(&m.pattern)?;
+                if re.is_match(&recv_str) {
+                    ret.push(m.clone());
+                }
+            }
+        }
+        Ok(ret)
     }
 }
 
@@ -172,12 +236,11 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
             let pattern = pattern.replace("\\0", "\\x{0}");
 
             let versioninfo = matchlast_split[2..].to_vec().join("|");
-            let re = Regex::new(&pattern)?;
             let m = Match {
+                class: String::from("match"),
                 service,
                 pattern,
                 versioninfo,
-                re,
             };
             matchs_global.push(m);
         } else if line.starts_with("softmatch") {
@@ -200,12 +263,11 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
             let pattern = pattern.replace("\\0", "\\x{0}");
 
             let versioninfo = matchlast_split[2..].to_vec().join("|");
-            let re = Regex::new(&pattern)?;
             let m = Match {
+                class: String::from("softmatch"),
                 service,
                 pattern,
                 versioninfo,
-                re,
             };
             softmatchs_global.push(m);
         } else if line.starts_with("ports") {
@@ -325,18 +387,24 @@ pub fn nsp_exclued_parser(lines: &[String]) -> Result<ExcludePorts> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
     #[test]
     fn test_spp() {
+        let start = Instant::now();
         let nsp_str = include_str!("../db/nmap-service-probes");
         let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
+        let duration = start.elapsed();
+        println!("Read time elapsed is: {:?}", duration);
 
-        let ret = nsp_parser(&nsp_lines).unwrap();
-        println!("{}", ret.len());
-        println!("{}", ret[0].matchs.len());
+        let start = Instant::now();
+        let _ret = nsp_parser(&nsp_lines).unwrap();
+        let duration = start.elapsed();
+        println!("Parse file time elapsed is: {:?}", duration);
+        // println!("{}", ret.len());
+        // println!("{}", ret[0].matchs.len());
         // println!("{:?}", ret[0]);
-
-        let ret = nsp_exclued_parser(&nsp_lines).unwrap();
-        println!("{:?}", ret);
+        let _ret = nsp_exclued_parser(&nsp_lines).unwrap();
+        // println!("{:?}", ret);
     }
     #[test]
     fn test_build_regex() {

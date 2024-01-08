@@ -60,10 +60,8 @@ pub fn vs_probe(targets: &[ServiceScanTarget]) -> Result<()> {
                         let dur = Duration::from_secs(5);
                         stream.set_read_timeout(Some(dur))?;
                         let mut buff = [0u8; TCP_BUFF_SIZE];
-                        // stream.write(&[1]);
                         let n = stream.read(&mut buff)?;
                         if n > 0 {
-                            // let recv_str = String::from_utf8_lossy(&buff);
                             let mut recv_str = String::new();
                             for b in buff {
                                 // ASCII printable characters 32-127
@@ -88,11 +86,9 @@ pub fn vs_probe(targets: &[ServiceScanTarget]) -> Result<()> {
                                     }
                                 }
                             }
-                            // println!("{}", recv_str.len());
                             for sp in &service_probes {
                                 if sp.probe.probename == "NULL" {
                                     let ret = sp.check(&recv_str)?;
-                                    // println!("{}", ret.len());
                                     for r in ret {
                                         println!("{}", r.service);
                                     }
@@ -113,7 +109,6 @@ pub fn vs_probe(targets: &[ServiceScanTarget]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use regex::Regex;
     use std::net::Ipv4Addr;
     #[test]
     fn test_vscan() {
@@ -129,25 +124,5 @@ mod tests {
         };
         let targets = vec![target];
         vs_probe(&targets).unwrap();
-    }
-    #[test]
-    fn test_regex() {
-        /*
-        Note:
-            { => \{
-            [] => [.*?]
-            \1 => .*?
-            [ => \[
-            ?= => .*?
-            ?! => .*?
-            ?<= => .*?
-         */
-
-        let t = r###"^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n"###;
-        let _re = Regex::new(&t).unwrap();
-
-        let recv_str = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.5\r\n";
-        let re = Regex::new(t).unwrap();
-        println!(">>>> {}", re.is_match(recv_str));
     }
 }
