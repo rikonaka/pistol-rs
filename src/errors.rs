@@ -240,3 +240,45 @@ impl CanNotFoundSourceAddress {
 impl Error for CanNotFoundSourceAddress {}
 
 /* SCAN */
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundNullProbe {}
+impl fmt::Display for CanNotFoundNullProbe {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the null probe from service probes file")
+    }
+}
+impl CanNotFoundNullProbe {
+    pub fn new() -> CanNotFoundNullProbe {
+        CanNotFoundNullProbe {}
+    }
+}
+impl Error for CanNotFoundNullProbe {}
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundOtherProbes {}
+impl fmt::Display for CanNotFoundOtherProbes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the other probes from service probes file")
+    }
+}
+impl CanNotFoundOtherProbes {
+    pub fn new() -> CanNotFoundOtherProbes {
+        CanNotFoundOtherProbes {}
+    }
+}
+impl Error for CanNotFoundOtherProbes {}
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundUdpProbes {}
+impl fmt::Display for CanNotFoundUdpProbes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the udp probes from service probes file")
+    }
+}
+impl CanNotFoundUdpProbes {
+    pub fn new() -> CanNotFoundUdpProbes {
+        CanNotFoundUdpProbes {}
+    }
+}
+impl Error for CanNotFoundUdpProbes {}

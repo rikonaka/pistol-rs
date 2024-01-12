@@ -30,7 +30,7 @@ pub struct NmapMacPrefix {
     pub ouis: String,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScanMethod {
     Connect,
     Syn,
@@ -45,7 +45,7 @@ pub enum ScanMethod {
     IpProcotol,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScanMethod6 {
     Connect,
     Syn,

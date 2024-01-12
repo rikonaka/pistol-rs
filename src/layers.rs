@@ -803,6 +803,7 @@ pub fn layer3_ipv4_send(
             if dst_ipv4.is_global() {
                 // Not local net, then try to send this packet to router.
                 let route_ip = system_route()?;
+                // let route_ip = Ipv4Addr::new(0, 0, 0, 0); // default route address
                 match search_system_neighbour_cache(route_ip.into())? {
                     Some(m) => m,
                     None => {
@@ -1067,7 +1068,8 @@ pub fn layer3_ipv6_send(
         None => {
             if dst_ipv6.is_global() {
                 // Not local net, then try to send this packet to router.
-                let route_ip = system_route6()?;
+                // let route_ip = system_route6()?;
+                let route_ip = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0); // default route address
                 match search_system_neighbour_cache6(route_ip.into())? {
                     Some(m) => m,
                     None => {

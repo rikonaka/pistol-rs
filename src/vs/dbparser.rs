@@ -5,7 +5,7 @@ use std::sync::mpsc::channel;
 
 use crate::utils::{get_cpu_num, get_threads_pool};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbesProtocol {
     Tcp,
     Udp,
@@ -35,7 +35,7 @@ pub struct Probe {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceProbes {
+pub struct ServiceProbe {
     pub probe: Probe,
     pub matchs: Vec<Match>,
     pub softmatchs: Vec<Match>,
@@ -53,7 +53,7 @@ pub struct ServiceProbes {
     pub fallback: Option<Vec<String>>,
 }
 
-impl ServiceProbes {
+impl ServiceProbe {
     fn split_matchs(&self) -> Vec<Vec<Match>> {
         let cpu_num = get_cpu_num();
         let mut ret = Vec::new();
@@ -93,7 +93,7 @@ impl ServiceProbes {
             let tx = tx.clone();
             let recv_str = recv_str.to_string();
             pool.execute(move || {
-                let ret = ServiceProbes::check_thread(matchs, &recv_str);
+                let ret = ServiceProbe::check_thread(matchs, &recv_str);
                 match tx.send(ret) {
                     _ => (),
                 }
@@ -148,8 +148,8 @@ fn ports_parser(ports: &str) -> Result<Vec<u16>> {
 
 /// Instead of getting the `Exclude` port based on the `nmap-service-probes` file,
 /// we expect the user to provide a parameter to specify this value themselves.
-pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
-    let mut ret: Vec<ServiceProbes> = Vec::new();
+pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
+    let mut ret: Vec<ServiceProbe> = Vec::new();
     let mut probe_global: Option<Probe> = None;
     let mut matchs_global: Vec<Match> = Vec::new();
     let mut softmatchs_global: Vec<Match> = Vec::new();
@@ -169,7 +169,7 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
         if line.starts_with("Probe") {
             match probe_global {
                 Some(p) => {
-                    let sp = ServiceProbes {
+                    let sp = ServiceProbe {
                         probe: p,
                         matchs: matchs_global,
                         softmatchs: softmatchs_global,
@@ -300,7 +300,7 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbes>> {
     }
     match probe_global {
         Some(p) => {
-            let sp = ServiceProbes {
+            let sp = ServiceProbe {
                 probe: p,
                 matchs: matchs_global,
                 softmatchs: softmatchs_global,

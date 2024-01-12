@@ -6,7 +6,7 @@ use crate::utils::Hex;
 
 use super::osscan::{PistolFingerprint, ECNX, IEX, OPSX, SEQX, TXX, U1X, WINX};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum DbRangeValueTypes {
     Left,  // 10 <= x
     Right, // x <= 20
