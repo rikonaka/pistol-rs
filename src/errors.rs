@@ -242,32 +242,32 @@ impl Error for CanNotFoundSourceAddress {}
 /* SCAN */
 
 #[derive(Debug, Clone)]
-pub struct CanNotFoundNullProbe {}
-impl fmt::Display for CanNotFoundNullProbe {
+pub struct CanNotFoundNullTcpProbe {}
+impl fmt::Display for CanNotFoundNullTcpProbe {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "can not found the null probe from service probes file")
     }
 }
-impl CanNotFoundNullProbe {
-    pub fn new() -> CanNotFoundNullProbe {
-        CanNotFoundNullProbe {}
+impl CanNotFoundNullTcpProbe {
+    pub fn new() -> CanNotFoundNullTcpProbe {
+        CanNotFoundNullTcpProbe {}
     }
 }
-impl Error for CanNotFoundNullProbe {}
+impl Error for CanNotFoundNullTcpProbe {}
 
 #[derive(Debug, Clone)]
-pub struct CanNotFoundOtherProbes {}
-impl fmt::Display for CanNotFoundOtherProbes {
+pub struct CanNotFoundOtherTcpProbes {}
+impl fmt::Display for CanNotFoundOtherTcpProbes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "can not found the other probes from service probes file")
     }
 }
-impl CanNotFoundOtherProbes {
-    pub fn new() -> CanNotFoundOtherProbes {
-        CanNotFoundOtherProbes {}
+impl CanNotFoundOtherTcpProbes {
+    pub fn new() -> CanNotFoundOtherTcpProbes {
+        CanNotFoundOtherTcpProbes {}
     }
 }
-impl Error for CanNotFoundOtherProbes {}
+impl Error for CanNotFoundOtherTcpProbes {}
 
 #[derive(Debug, Clone)]
 pub struct CanNotFoundUdpProbes {}
