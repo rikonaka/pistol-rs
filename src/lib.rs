@@ -498,6 +498,9 @@ pub use os::os_detect;
 /// Detect target machine OS on IPv6.
 pub use os::os_detect6;
 
+/// Detect target port service
+pub use vs::vs_detect;
+
 /* Work with domain */
 /// Queries the IP address of a domain name and returns.
 pub use layers::dns_query;
