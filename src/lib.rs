@@ -643,7 +643,7 @@ mod tests {
     fn test_tcp_syn_ping() {
         let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
         let threads_num: usize = 8;
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
