@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 #![feature(ip)] // to use is_unicast_global in Ipv6Addr
+use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
@@ -160,14 +161,22 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(addr: Ipv4Addr, ports: Option<Vec<u16>>) -> Host {
-        match ports {
+    pub fn new(addr: Ipv4Addr, ports: Option<Vec<u16>>) -> Result<Host> {
+        // Check the dst addr when init the Host.
+        if !addr.is_global() {
+            match utils::find_source_ipv4(None, addr)? {
+                Some(_) => (),
+                None => return Err(errors::IllegalTarget::new(IpAddr::V4(addr)).into()),
+            }
+        }
+        let h = match ports {
             Some(p) => Host { addr, ports: p },
             None => Host {
                 addr,
                 ports: vec![],
             },
-        }
+        };
+        Ok(h)
     }
 }
 
@@ -185,14 +194,22 @@ pub struct Host6 {
 }
 
 impl Host6 {
-    pub fn new(addr: Ipv6Addr, ports: Option<Vec<u16>>) -> Host6 {
-        match ports {
+    pub fn new(addr: Ipv6Addr, ports: Option<Vec<u16>>) -> Result<Host6> {
+        // Check the dst addr when init the Host.
+        if !addr.is_global() {
+            match utils::find_source_ipv6(None, addr)? {
+                Some(_) => (),
+                None => return Err(errors::IllegalTarget::new(IpAddr::V6(addr)).into()),
+            }
+        }
+        let h = match ports {
             Some(p) => Host6 { addr, ports: p },
             None => Host6 {
                 addr,
                 ports: vec![],
             },
-        }
+        };
+        Ok(h)
     }
 }
 
@@ -508,187 +525,13 @@ pub use layers::dns_query;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use subnetwork::Ipv4Pool;
     #[test]
-    fn test_target_print() {
-        let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 135), Some(vec![22, 23]));
-        let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]));
+    fn test_target_print() -> Result<()> {
+        let host1 = Host::new(Ipv4Addr::new(192, 168, 1, 135), Some(vec![22, 23]))?;
+        let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]))?;
         let target = Target::new(vec![host1, host2]);
         println!("{}", target);
-    }
-    #[test]
-    fn test_arp_scan_subnet() {
-        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.72.0/24").unwrap();
-        let mut hosts = vec![];
-        for ip in subnet {
-            let host = Host::new(ip, None);
-            hosts.push(host);
-        }
-        let target: Target = Target::new(hosts);
-        let threads_num = 16;
-        let max_loop = Some(8);
-        // let print_result = false;
-        let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, max_loop).unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_tcp_connect_scan() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_connect_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_tcp_syn_scan() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_syn_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_tcp_fin_scan() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_fin_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_tcp_ack_scan() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_ack_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_tcp_null_scan() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_null_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_udp_scan() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            udp_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_ip_scan() {
-        use pnet::packet::ip::IpNextHeaderProtocols;
-        let protocol = Some(IpNextHeaderProtocols::Udp);
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, IpScanResults> =
-            ip_procotol_scan(target, src_ipv4, src_port, protocol, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_tcp_syn_ping() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-        let target: Target = Target::new(vec![host]);
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_icmp_ping() {
-        // let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_ipv4 = None;
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
-        // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(114, 114, 114, 114);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(8);
-        let host = Host::new(dst_ipv4, Some(vec![]));
-        let target: Target = Target::new(vec![host]);
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
-    }
-    #[test]
-    fn test_icmpv6_ping() {
-        let src_port: Option<u16> = None;
-        // let src_ipv6: Option<Ipv6Addr> = Some("fe80::20c:29ff:fe43:9c82".parse().unwrap());
-        // let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        // let dst_ipv6: Ipv6Addr = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
-        // let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
-        // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
-        let src_ipv6 = None;
-        let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
-        let host1 = Host6::new(dst_ipv6, Some(vec![]));
-        let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
-        let host2 = Host6::new(dst_ipv6, Some(vec![]));
-        let target: Target = Target::new6(vec![host1, host2]);
-        let threads_num: usize = 8;
-        let max_loop: Option<usize> = Some(32);
-        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, max_loop).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        Ok(())
     }
     #[test]
     fn test_ipv6_address() {

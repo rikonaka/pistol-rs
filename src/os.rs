@@ -416,7 +416,7 @@ mod tests {
     use std::net::Ipv6Addr;
     use std::time::SystemTime;
     #[test]
-    fn test_os_detect6() {
+    fn test_os_detect6() -> Result<()> {
         // let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let src_ipv6 = None;
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
@@ -430,7 +430,7 @@ mod tests {
                 dst_closed_tcp_port_1,
                 dst_closed_udp_port_1,
             ]),
-        );
+        )?;
 
         let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
         let dst_open_tcp_port_2 = 22;
@@ -443,7 +443,7 @@ mod tests {
                 dst_closed_tcp_port_2,
                 dst_closed_udp_port_2,
             ]),
-        );
+        )?;
 
         let target = Target::new6(vec![host1, host2]);
 
@@ -461,9 +461,10 @@ mod tests {
                 println!("{}", pred);
             }
         }
+        Ok(())
     }
     #[test]
-    fn test_os_probe() {
+    fn test_os_probe6() {
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
@@ -489,7 +490,7 @@ mod tests {
         .unwrap();
     }
     #[test]
-    fn test_os_detect() {
+    fn test_os_detect() -> Result<()> {
         // let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let src_ipv4 = None;
         let src_port = None;
@@ -504,7 +505,7 @@ mod tests {
                 dst_closed_tcp_port_1,
                 dst_closed_udp_port_1,
             ]),
-        );
+        )?;
         // let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 137);
         // let dst_open_tcp_port_2 = 22;
         // let dst_closed_tcp_port_2 = 54532;
@@ -533,6 +534,7 @@ mod tests {
                 println!("{}", d);
             }
         }
+        Ok(())
     }
     #[test]
     fn test_parser() {

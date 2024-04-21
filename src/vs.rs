@@ -85,14 +85,15 @@ mod tests {
     use crate::Host;
     use std::net::Ipv4Addr;
     #[test]
-    fn test_vs_detect() {
+    fn test_vs_detect() -> Result<()> {
         let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-        let h1 = Host::new(dst_addr, Some(vec![22, 80]));
+        let h1 = Host::new(dst_addr, Some(vec![22, 80]))?;
         let target = Target::new(vec![h1]);
         let threads_num = 8;
         let ret = vs_detect(target, threads_num).unwrap();
         for r in ret {
             println!("{}", r);
         }
+        Ok(())
     }
 }

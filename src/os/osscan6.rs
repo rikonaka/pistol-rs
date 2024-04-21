@@ -98,10 +98,7 @@ fn send_seq_probes(
             Some(r) => r,
             None => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             0 => seq1 = rr,
             1 => seq2 = rr,
@@ -168,10 +165,7 @@ fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
             Some(r) => r,
             None => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             1 => {
                 ie1 = rr;
@@ -232,10 +226,7 @@ fn send_nx_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
             Some(r) => r,
             None => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             1 => {
                 ni = rr;
@@ -441,10 +432,7 @@ fn send_tx_probes(
             Some(r) => r,
             None => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             0 => t2 = rr,
             1 => t3 = rr,
@@ -586,7 +574,7 @@ pub fn os_probe6(
     max_loop: usize,
     linear: Linear,
 ) -> Result<PistolFingerprint6> {
-    // check target
+    // Check target.
     let dst_mac = match find_interface_by_ipv6(src_ipv6) {
         Some(interface) => match interface.mac {
             Some(m) => m,
