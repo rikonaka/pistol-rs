@@ -826,3 +826,141 @@ pub fn ip_procotol_scan(
     )?;
     Ok(ret)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Host, Target};
+    use subnetwork::Ipv4Pool;
+    #[test]
+    fn test_arp_scan_subnet() -> Result<()> {
+        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.72.0/24").unwrap();
+        let mut hosts: Vec<Host> = vec![];
+        for ip in subnet {
+            let host = Host::new(ip, None)?;
+            hosts.push(host);
+        }
+        let target: Target = Target::new(hosts);
+        let threads_num = 16;
+        let max_loop = Some(8);
+        // let print_result = false;
+        let src_ipv4 = None;
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, max_loop).unwrap();
+        println!("{}", ret);
+        Ok(())
+    }
+    #[test]
+    fn test_tcp_connect_scan() -> Result<()> {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> =
+            tcp_connect_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_tcp_syn_scan() -> Result<()> {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> =
+            tcp_syn_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_tcp_fin_scan() -> Result<()> {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> =
+            tcp_fin_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_tcp_ack_scan() -> Result<()> {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> =
+            tcp_ack_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_tcp_null_scan() -> Result<()> {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> =
+            tcp_null_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_udp_scan() -> Result<()> {
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, TcpUdpScanResults> =
+            udp_scan(target, src_ipv4, src_port, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_ip_scan() -> Result<()> {
+        use pnet::packet::ip::IpNextHeaderProtocols;
+        let protocol = Some(IpNextHeaderProtocols::Udp);
+        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_port: Option<u16> = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let threads_num: usize = 8;
+        let max_loop: Option<usize> = Some(8);
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let target: Target = Target::new(vec![host]);
+        let ret: HashMap<IpAddr, IpScanResults> =
+            ip_procotol_scan(target, src_ipv4, src_port, protocol, threads_num, max_loop).unwrap();
+        for (_ip, r) in ret {
+            println!("{}", r);
+        }
+        Ok(())
+    }
+}

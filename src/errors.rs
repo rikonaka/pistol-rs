@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::net::IpAddr;
 
 use crate::TargetType;
 
@@ -282,3 +283,19 @@ impl CanNotFoundUdpProbes {
     }
 }
 impl Error for CanNotFoundUdpProbes {}
+
+#[derive(Debug, Clone)]
+pub struct IllegalTarget {
+    addr: IpAddr,
+}
+impl fmt::Display for IllegalTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "illegal target addr: {}", self.addr)
+    }
+}
+impl IllegalTarget {
+    pub fn new(addr: IpAddr) -> IllegalTarget {
+        IllegalTarget {addr}
+    }
+}
+impl Error for IllegalTarget {}

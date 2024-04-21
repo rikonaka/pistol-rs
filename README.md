@@ -83,8 +83,9 @@ The nmap `nmap-service-probes` file regex format is not standard, there are a lo
 ```rust
 use pistol::{tcp_syn_scan, Host, Target};
 use std::net::Ipv4Addr;
+use anyhow::Result;
 
-fn main() {
+fn main() -> Result<()> {
     // When using scanning, please use a real local address to get the return packet.
     // And for flood attacks, please consider using a fake address.
     // If the value here is None, the programme will automatically look up the available addresses from the existing interfaces on the device.
@@ -99,7 +100,7 @@ fn main() {
     // The smaller the value, the less reliable the scan results will be.
     let max_loop: Option<usize> = Some(32);
     // Test with an open port `22` and a closed port `99`.
-    let host = Host::new(dst_ipv4, Some(vec![22, 99]));
+    let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
     /// Users should build the `target` themselves.
     let target: Target = Target::new(vec![host]);
     let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_syn_scan(
@@ -112,6 +113,7 @@ fn main() {
     for (_ip, r) in ret {
         println!("{}", r);
     }
+    Ok(())
 }
 ```
 
@@ -130,8 +132,9 @@ fn main() {
 ```rust
 use pistol::{os_detect, Host, Target};
 use std::net::Ipv4Addr;
+use anyhow::Result;
 
-fn main() {
+fn main() -> Result<()> {
     // If the value of `src_ipv4` is `None`, the program will find it auto.
     let src_ipv4 = None;
     // If the value of `src_port` is `None`, the program will generate it randomly.
@@ -150,7 +153,7 @@ fn main() {
             dst_closed_tcp_port_1,
             dst_closed_udp_port_1,
         ]),
-    );
+    )?;
     let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 136);
     let dst_open_tcp_port_2 = 22;
     let dst_closed_tcp_port_2 = 8765;
@@ -162,7 +165,7 @@ fn main() {
             dst_closed_tcp_port_2,
             dst_closed_udp_port_2,
         ]),
-    );
+    )?;
     let target = Target::new(vec![host1, host2]);
     let max_loop = 8;
     let top_k = 3;
@@ -188,6 +191,7 @@ fn main() {
             println!("{}", d);
         }
     }
+    Ok(())
 }
 ```
 
@@ -295,8 +299,9 @@ cpe:/o:linux:linux_kernel:4 auto
 ```rust
 use pistol::{os_detect6, Host, Target};
 use std::net::Ipv4Addr;
+use anyhow::Result;
 
-fn main() {
+fn main() -> Result<()> {
     let src_ipv6 = None;
     let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
     let dst_open_tcp_port_1 = 22;
@@ -309,7 +314,7 @@ fn main() {
             dst_closed_tcp_port_1,
             dst_closed_udp_port_1,
         ]),
-    );
+    )?;
 
     let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
     let dst_open_tcp_port_2 = 22;
@@ -322,7 +327,7 @@ fn main() {
             dst_closed_tcp_port_2,
             dst_closed_udp_port_2,
         ]),
-    );
+    )?;
 
     let target = Target::new6(vec![host1, host2]);
 
@@ -340,6 +345,7 @@ fn main() {
             println!("{}", pred);
         }
     }
+    Ok(())
 }
 ```
 

@@ -1528,7 +1528,7 @@ pub fn os_probe(
     dst_closed_udp_port: u16,
     max_loop: usize,
 ) -> Result<PistolFingerprint> {
-    // check target
+    // Check target.
     let dst_mac = match find_interface_by_ipv4(src_ipv4) {
         Some(interface) => match interface.mac {
             Some(m) => m,
