@@ -94,13 +94,11 @@ fn send_seq_probes(
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
-        let name = format!("seq{}", i);
         let response = match ret? {
             Some(r) => r,
             None => vec![],
         };
         let rr = Some(RequestAndResponse {
-            name: name.clone(),
             request,
             response,
         });
@@ -166,13 +164,11 @@ fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
-        let name = format!("ie{}", i);
         let response = match ret? {
             Some(r) => r,
             None => vec![],
         };
         let rr = Some(RequestAndResponse {
-            name,
             request,
             response,
         });
@@ -232,17 +228,11 @@ fn send_nx_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
-        let name = if i == 1 {
-            String::from("ni")
-        } else {
-            String::from("ns")
-        };
         let response = match ret? {
             Some(r) => r,
             None => vec![],
         };
         let rr = Some(RequestAndResponse {
-            name,
             request,
             response,
         });
@@ -294,13 +284,11 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop)?;
 
-    let name = String::from("u1");
     let response = match ret {
         Some(r) => r,
         None => vec![],
     };
     let rr = RequestAndResponse {
-        name,
         request: buff,
         response,
     };
@@ -339,13 +327,11 @@ fn send_tecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop)?;
 
-    let name = String::from("tecn");
     let response = match ret {
         Some(r) => r,
         None => vec![],
     };
     let rr = RequestAndResponse {
-        name,
         request: buff,
         response,
     };
@@ -451,13 +437,11 @@ fn send_tx_probes(
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
-        let name = format!("t{}", i);
         let response = match ret? {
             Some(r) => r,
             None => vec![],
         };
         let rr = Some(RequestAndResponse {
-            name: name.clone(),
             request,
             response,
         });
