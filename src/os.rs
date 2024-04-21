@@ -1,3 +1,4 @@
+/* Remote OS Detection */
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -5,11 +6,11 @@ use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
 
-use crate::errors::OsDetectPortError;
-use crate::fingerprint::dbparser::NmapOsDb;
-use crate::fingerprint::osscan::PistolFingerprint;
-use crate::fingerprint::osscan6::PistolFingerprint6;
-use crate::utils::get_threads_pool;
+use crate::errors::{CanNotFoundSourceAddress, OsDetectPortError};
+use crate::os::dbparser::NmapOsDb;
+use crate::os::osscan::PistolFingerprint;
+use crate::os::osscan6::PistolFingerprint6;
+use crate::utils::{find_source_ipv4, find_source_ipv6, get_threads_pool};
 use crate::Target;
 
 pub mod dbparser;
@@ -135,7 +136,7 @@ pub struct Linear {
     pub cpe: Vec<CPE>,
 }
 
-fn find_position_multi(score_vec: &Vec<usize>, value: usize) -> Vec<usize> {
+fn find_position_multi(score_vec: &[usize], value: usize) -> Vec<usize> {
     let mut position = Vec::new();
     for (i, s) in score_vec.iter().enumerate() {
         if *s == value {
@@ -145,7 +146,7 @@ fn find_position_multi(score_vec: &Vec<usize>, value: usize) -> Vec<usize> {
     position
 }
 
-fn find_position_one(score_vec: &Vec<usize>, value: usize) -> Option<usize> {
+fn find_position_one(score_vec: &[usize], value: usize) -> Option<usize> {
     for (i, s) in score_vec.iter().enumerate() {
         if *s == value {
             return Some(i);
@@ -154,8 +155,8 @@ fn find_position_one(score_vec: &Vec<usize>, value: usize) -> Option<usize> {
     None
 }
 
-fn top_k_score(score_vec: &Vec<usize>, k: usize) -> Vec<usize> {
-    let mut score_vec = score_vec.clone();
+fn top_k_score(score_vec: &[usize], k: usize) -> Vec<usize> {
+    let mut score_vec = score_vec.to_vec();
     let mut top_k_vec = Vec::new();
     for _ in 0..k {
         let mut max_score = 0;
@@ -230,7 +231,7 @@ fn os_detect_thread(
 
 pub fn os_detect(
     target: Target,
-    src_ipv4: Ipv4Addr,
+    src_ipv4: Option<Ipv4Addr>,
     src_port: Option<u16>,
     top_k: usize,
     threads_num: usize,
@@ -244,6 +245,10 @@ pub fn os_detect(
     let mut recv_size = 0;
     for t in target.hosts {
         let dst_ipv4 = t.addr;
+        let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
+            Some(s) => s,
+            None => return Err(CanNotFoundSourceAddress::new().into()),
+        };
         if t.ports.len() >= 3 {
             recv_size += 1;
             let dst_open_tcp_port = t.ports[0];
@@ -285,7 +290,7 @@ pub fn os_detect(
 }
 
 fn gen_linear() -> Result<Linear> {
-    let variance_json_data = include_str!("./db/variance.json");
+    let variance_json_data = include_str!("./db/nmap-os-db-ipv6/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
 
     let mut namelist = Vec::new();
@@ -297,7 +302,7 @@ fn gen_linear() -> Result<Linear> {
     assert_eq!(namelist.len(), 92);
     assert_eq!(variance.len(), 92);
 
-    let mean_json_data = include_str!("./db/mean.json");
+    let mean_json_data = include_str!("./db/nmap-os-db-ipv6/mean.json");
     let mean_json: Vec<NmapJsonParameters> = serde_json::from_str(mean_json_data)?;
     let mut mean = Vec::new();
     for m in mean_json {
@@ -305,7 +310,7 @@ fn gen_linear() -> Result<Linear> {
     }
     assert_eq!(mean.len(), 92);
 
-    let scale_json_data = include_str!("./db/scale.json"); // static
+    let scale_json_data = include_str!("./db/nmap-os-db-ipv6/scale.json"); // static
     let scale_json: Vec<NmapJsonParameters> = serde_json::from_str(scale_json_data)?;
     let mut scale: Vec<Vec<f64>> = Vec::new();
     for s in scale_json {
@@ -313,7 +318,7 @@ fn gen_linear() -> Result<Linear> {
     }
     assert_eq!(scale.len(), 695);
 
-    let w_json_data = include_str!("./db/w.json"); // static
+    let w_json_data = include_str!("./db/nmap-os-db-ipv6/w.json"); // static
     let w_json: Vec<NmapJsonParameters> = serde_json::from_str(w_json_data)?;
     assert_eq!(w_json.len(), 695);
 
@@ -327,7 +332,7 @@ fn gen_linear() -> Result<Linear> {
         w.push(tmp);
     }
 
-    let cpe_json_data = include_str!("./db/cpe.json"); // static
+    let cpe_json_data = include_str!("./db/nmap-os-db-ipv6/cpe.json"); // static
     let cpe: Vec<CPE> = serde_json::from_str(cpe_json_data)?;
     assert_eq!(cpe.len(), 92);
 
@@ -344,7 +349,7 @@ fn gen_linear() -> Result<Linear> {
 
 pub fn os_detect6(
     target: Target,
-    src_ipv6: Ipv6Addr,
+    src_ipv6: Option<Ipv6Addr>,
     src_port: Option<u16>,
     top_k: usize,
     threads_num: usize,
@@ -356,6 +361,10 @@ pub fn os_detect6(
     let mut recv_size = 0;
     for t in target.hosts6 {
         let dst_ipv6 = t.addr;
+        let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
+            Some(s) => s,
+            None => return Err(CanNotFoundSourceAddress::new().into()),
+        };
         if t.ports.len() >= 3 {
             recv_size += 1;
             let dst_open_tcp_port = t.ports[0];
@@ -408,7 +417,8 @@ mod tests {
     use std::time::SystemTime;
     #[test]
     fn test_os_detect6() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+        // let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+        let src_ipv6 = None;
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
         let dst_open_tcp_port_1 = 22;
         let dst_closed_tcp_port_1 = 8765;
@@ -480,7 +490,8 @@ mod tests {
     }
     #[test]
     fn test_os_detect() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        // let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
+        let src_ipv4 = None;
         let src_port = None;
         let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 134);
         let dst_open_tcp_port_1 = 22;

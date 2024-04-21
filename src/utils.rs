@@ -158,7 +158,7 @@ impl Hex {
             hex_str.to_string()
         }
     }
-    pub fn vec_4u8_to_u32(input: &Vec<u8>) -> u32 {
+    pub fn vec_4u8_to_u32(input: &[u8]) -> u32 {
         let mut ret = 0;
         let mut i = input.len();
         for v in input {

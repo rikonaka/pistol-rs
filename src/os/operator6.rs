@@ -5,8 +5,8 @@ use pnet::packet::tcp::{TcpOptionNumbers, TcpPacket};
 use pnet::packet::Packet;
 use std::iter::zip;
 
+use super::rr::AllPacketRR6;
 use crate::errors::{GetIcmpv6PacketFailed, GetIpv6PacketFailed, GetTcpPacketFailed};
-use crate::fingerprint::rr::AllPacketRR6;
 use crate::utils::Hex;
 
 const CWR_MASK: u8 = 0b10000000;
@@ -490,7 +490,7 @@ pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>> {
     Ok(features)
 }
 
-pub fn apply_scale(features: &Vec<f64>, scale: &Vec<Vec<f64>>) -> Vec<f64> {
+pub fn apply_scale(features: &[f64], scale: &[Vec<f64>]) -> Vec<f64> {
     let mut new_features = Vec::new();
     for (f, ab) in zip(features, scale) {
         if *f < 0.0 {

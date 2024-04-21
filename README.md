@@ -1,6 +1,6 @@
 # pistol-rs
 
-The library must be run as root (Linux) or administrator (Windows).
+The library must be run as root (Linux) or administrator (Windows), other systems are not supported, and the `nightly` version of rust is recommended.
 
 Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
 
@@ -70,7 +70,11 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 
 ## Service and Application Version Detection
 
-TODO.
+The nmap `nmap-service-probes` file regex format is not standard, there are a lot of syntax incompatible with rust, based on the nmap source file to do a lot of regex syntax correction. If you intend to update this file, it is best to add the new fingerprint information line by line rather than replacing the entire file.
+
+## TODO
+
+- [ ] Currently `pistol` uses command line commands to query the system routing table and the system ARP cache and then resolves, I tried to use native methods such as `netlink` or `libmnl` to do these things, but I found that this hit a blind spot in my knowledge, I'll write this up here for later.
 
 ## Examples
 
@@ -128,9 +132,9 @@ use pistol::{os_detect, Host, Target};
 use std::net::Ipv4Addr;
 
 fn main() {
-    // The source and destination address is required.
-    let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-    // If the value of `source port` is `None`, the program will generate the source port randomly.
+    // If the value of `src_ipv4` is `None`, the program will find it auto.
+    let src_ipv4 = None;
+    // If the value of `src_port` is `None`, the program will generate it randomly.
     let src_port = None;
     let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 129);
     // `dst_open_tcp_port` must be a certain open tcp port.
@@ -293,7 +297,7 @@ use pistol::{os_detect6, Host, Target};
 use std::net::Ipv4Addr;
 
 fn main() {
-    let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
+    let src_ipv6 = None;
     let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
     let dst_open_tcp_port_1 = 22;
     let dst_closed_tcp_port_1 = 8765;

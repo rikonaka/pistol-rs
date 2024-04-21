@@ -7,7 +7,6 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress};
-use crate::fingerprint::osscan::get_scan_line;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
 
@@ -17,6 +16,7 @@ use crate::utils::random_port;
 use crate::utils::random_port_multi;
 
 use super::operator6::{apply_scale, vectorize};
+use super::osscan::get_scan_line;
 use super::packet6;
 use super::rr::NXRR;
 use super::rr::TECNRR;
@@ -519,13 +519,13 @@ fn send_all_probes(
     Ok(ap)
 }
 
-fn predict_value(features: &Vec<f64>, wvec: &Vec<Vec<f64>>) -> Vec<f64> {
+fn predict_value(features: &[f64], wvec: &[Vec<f64>]) -> Vec<f64> {
     /*
        features [695]
        wvec [92, 695]
 
     */
-    let vec_time = |x: &Vec<f64>, y: &Vec<f64>| -> f64 {
+    let vec_time = |x: &[f64], y: &[f64]| -> f64 {
         assert_eq!(x.len(), y.len());
         let mut sum = 0.0;
         for (a, b) in zip(x, y) {
@@ -543,7 +543,7 @@ fn predict_value(features: &Vec<f64>, wvec: &Vec<Vec<f64>>) -> Vec<f64> {
     dec_value.to_vec()
 }
 
-fn novelty_of(features: &Vec<f64>, mean: &Vec<f64>, variance: &Vec<f64>) -> f64 {
+fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
     assert_eq!(features.len(), 695);
     assert_eq!(mean.len(), 695);
     assert_eq!(variance.len(), 695);
@@ -562,8 +562,8 @@ fn novelty_of(features: &Vec<f64>, mean: &Vec<f64>, variance: &Vec<f64>) -> f64 
     sum.sqrt()
 }
 
-fn isort(input: &Vec<NmapOsDetectRet6>) -> Vec<NmapOsDetectRet6> {
-    let find_max_prob = |x: &Vec<NmapOsDetectRet6>| -> usize {
+fn isort(input: &[NmapOsDetectRet6]) -> Vec<NmapOsDetectRet6> {
+    let find_max_prob = |x: &[NmapOsDetectRet6]| -> usize {
         let mut max_value = 0.0;
         for a in x {
             if a.score > max_value {
@@ -579,7 +579,7 @@ fn isort(input: &Vec<NmapOsDetectRet6>) -> Vec<NmapOsDetectRet6> {
     };
 
     let mut input_sort = Vec::new();
-    let mut input_clone = input.clone();
+    let mut input_clone = input.to_vec();
     loop {
         if input_clone.len() <= 0 {
             break;

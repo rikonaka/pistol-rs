@@ -20,7 +20,7 @@ impl NotSupportIpTypeForArpScan {
 impl Error for NotSupportIpTypeForArpScan {}
 
 #[derive(Debug, Clone)]
-pub struct CanNotFoundRouterAddress {}
+pub struct CanNotFoundRouterAddress;
 impl fmt::Display for CanNotFoundRouterAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "can not found router address")
@@ -36,7 +36,7 @@ impl Error for CanNotFoundRouterAddress {}
 /* OS DETECT ERRORS */
 
 #[derive(Debug, Clone)]
-pub struct CalcDiffFailed {}
+pub struct CalcDiffFailed;
 impl fmt::Display for CalcDiffFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -53,7 +53,7 @@ impl CalcDiffFailed {
 impl Error for CalcDiffFailed {}
 
 #[derive(Debug, Clone)]
-pub struct GetIpv4PacketFailed {}
+pub struct GetIpv4PacketFailed;
 impl fmt::Display for GetIpv4PacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "get ipv4 packet failed")
@@ -67,7 +67,7 @@ impl GetIpv4PacketFailed {
 impl Error for GetIpv4PacketFailed {}
 
 #[derive(Debug, Clone)]
-pub struct GetIpv6PacketFailed {}
+pub struct GetIpv6PacketFailed;
 impl fmt::Display for GetIpv6PacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "get ipv6 packet failed")
@@ -81,7 +81,7 @@ impl GetIpv6PacketFailed {
 impl Error for GetIpv6PacketFailed {}
 
 #[derive(Debug, Clone)]
-pub struct GetIcmpv6PacketFailed {}
+pub struct GetIcmpv6PacketFailed;
 impl fmt::Display for GetIcmpv6PacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "get icmpv6 packet failed")
@@ -95,7 +95,7 @@ impl GetIcmpv6PacketFailed {
 impl Error for GetIcmpv6PacketFailed {}
 
 #[derive(Debug, Clone)]
-pub struct GetTcpPacketFailed {}
+pub struct GetTcpPacketFailed;
 impl fmt::Display for GetTcpPacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "get tcp packet failed")
@@ -109,7 +109,7 @@ impl GetTcpPacketFailed {
 impl Error for GetTcpPacketFailed {}
 
 #[derive(Debug, Clone)]
-pub struct GetIcmpPacketFailed {}
+pub struct GetIcmpPacketFailed;
 impl fmt::Display for GetIcmpPacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "get icmp packet failed")
@@ -123,7 +123,7 @@ impl GetIcmpPacketFailed {
 impl Error for GetIcmpPacketFailed {}
 
 #[derive(Debug, Clone)]
-pub struct GetUdpPacketFailed {}
+pub struct GetUdpPacketFailed;
 impl fmt::Display for GetUdpPacketFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "get udp packet failed")
@@ -137,7 +137,7 @@ impl GetUdpPacketFailed {
 impl Error for GetUdpPacketFailed {}
 
 #[derive(Debug, Clone)]
-pub struct CalcISRFailed {}
+pub struct CalcISRFailed;
 impl fmt::Display for CalcISRFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "calculation of ISR failed")
@@ -151,7 +151,7 @@ impl CalcISRFailed {
 impl Error for CalcISRFailed {}
 
 #[derive(Debug, Clone)]
-pub struct CalcSSFailed {}
+pub struct CalcSSFailed;
 impl fmt::Display for CalcSSFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "calculation of SS failed")
@@ -165,7 +165,7 @@ impl CalcSSFailed {
 impl Error for CalcSSFailed {}
 
 #[derive(Debug, Clone)]
-pub struct OsDetectPortError {}
+pub struct OsDetectPortError;
 impl fmt::Display for OsDetectPortError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "not enough port value for os detect")
@@ -181,7 +181,7 @@ impl Error for OsDetectPortError {}
 /* layer */
 
 #[derive(Debug, Clone)]
-pub struct CreateDatalinkChannelFailed {}
+pub struct CreateDatalinkChannelFailed;
 impl fmt::Display for CreateDatalinkChannelFailed {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "create datalink channel failed")
@@ -195,7 +195,7 @@ impl CreateDatalinkChannelFailed {
 impl Error for CreateDatalinkChannelFailed {}
 
 #[derive(Debug, Clone)]
-pub struct CanNotFoundMacAddress {}
+pub struct CanNotFoundMacAddress;
 impl fmt::Display for CanNotFoundMacAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -212,7 +212,7 @@ impl CanNotFoundMacAddress {
 impl Error for CanNotFoundMacAddress {}
 
 #[derive(Debug, Clone)]
-pub struct CanNotFoundInterface {}
+pub struct CanNotFoundInterface;
 impl fmt::Display for CanNotFoundInterface {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "can not found the interface")
@@ -226,10 +226,10 @@ impl CanNotFoundInterface {
 impl Error for CanNotFoundInterface {}
 
 #[derive(Debug, Clone)]
-pub struct CanNotFoundSourceAddress {}
+pub struct CanNotFoundSourceAddress;
 impl fmt::Display for CanNotFoundSourceAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the source address")
+        write!(f, "can not found the source address, please set it maunal")
     }
 }
 impl CanNotFoundSourceAddress {
@@ -240,3 +240,45 @@ impl CanNotFoundSourceAddress {
 impl Error for CanNotFoundSourceAddress {}
 
 /* SCAN */
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundNullTcpProbe;
+impl fmt::Display for CanNotFoundNullTcpProbe {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the null probe from service probes file")
+    }
+}
+impl CanNotFoundNullTcpProbe {
+    pub fn new() -> CanNotFoundNullTcpProbe {
+        CanNotFoundNullTcpProbe {}
+    }
+}
+impl Error for CanNotFoundNullTcpProbe {}
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundOtherTcpProbes;
+impl fmt::Display for CanNotFoundOtherTcpProbes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the other probes from service probes file")
+    }
+}
+impl CanNotFoundOtherTcpProbes {
+    pub fn new() -> CanNotFoundOtherTcpProbes {
+        CanNotFoundOtherTcpProbes {}
+    }
+}
+impl Error for CanNotFoundOtherTcpProbes {}
+
+#[derive(Debug, Clone)]
+pub struct CanNotFoundUdpProbes;
+impl fmt::Display for CanNotFoundUdpProbes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the udp probes from service probes file")
+    }
+}
+impl CanNotFoundUdpProbes {
+    pub fn new() -> CanNotFoundUdpProbes {
+        CanNotFoundUdpProbes {}
+    }
+}
+impl Error for CanNotFoundUdpProbes {}

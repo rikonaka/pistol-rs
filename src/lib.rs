@@ -8,14 +8,15 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 mod errors;
-mod fingerprint;
 mod flood;
 mod layers;
+mod os;
 mod ping;
 mod scan;
 mod utils;
+mod vs;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingStatus {
     Up,
     Down,
@@ -40,7 +41,7 @@ impl fmt::Display for PingResults {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TargetScanStatus {
     Open,
     Closed,
@@ -202,7 +203,7 @@ impl fmt::Display for Host6 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TargetType {
     Ipv4,
     Ipv6,
@@ -489,13 +490,16 @@ pub use flood::udp_flood6;
 /* Finger Printing */
 
 /// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
-pub use fingerprint::dbparser::nmap_os_db_parser;
+pub use os::dbparser::nmap_os_db_parser;
 
 /// Detect target machine OS.
-pub use fingerprint::os_detect;
+pub use os::os_detect;
 
 /// Detect target machine OS on IPv6.
-pub use fingerprint::os_detect6;
+pub use os::os_detect6;
+
+/// Detect target port service
+pub use vs::vs_detect;
 
 /* Work with domain */
 /// Queries the IP address of a domain name and returns.
@@ -639,7 +643,7 @@ mod tests {
     fn test_tcp_syn_ping() {
         let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
         let threads_num: usize = 8;
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
@@ -651,9 +655,11 @@ mod tests {
     }
     #[test]
     fn test_icmp_ping() {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        // let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_ipv4 = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
+        // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(114, 114, 114, 114);
         let threads_num: usize = 8;
         let max_loop: Option<usize> = Some(8);
         let host = Host::new(dst_ipv4, Some(vec![]));

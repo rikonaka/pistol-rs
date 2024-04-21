@@ -76,7 +76,7 @@ fn get_udp_packet(udp_buff: &[u8]) -> Result<Option<UdpPacket>> {
     }
 }
 
-fn get_tcp_seq(ipv4_buff: &Vec<u8>) -> Result<Option<u32>> {
+fn get_tcp_seq(ipv4_buff: &[u8]) -> Result<Option<u32>> {
     let ipv4_packet = get_ipv4_packet(ipv4_buff)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -90,7 +90,7 @@ fn get_tcp_seq(ipv4_buff: &Vec<u8>) -> Result<Option<u32>> {
     }
 }
 
-fn get_diff_u32(input: &Vec<u32>) -> Vec<u32> {
+fn get_diff_u32(input: &[u32]) -> Vec<u32> {
     if input.len() >= 2 {
         let input_slice = input[0..(input.len() - 1)].to_vec();
         let mut diff = Vec::new();
@@ -106,7 +106,7 @@ fn get_diff_u32(input: &Vec<u32>) -> Vec<u32> {
     }
 }
 
-fn get_diff_u16(input: &Vec<u16>) -> Vec<u16> {
+fn get_diff_u16(input: &[u16]) -> Vec<u16> {
     if input.len() >= 2 {
         let input_slice = input[0..(input.len() - 1)].to_vec();
         let mut diff = Vec::new();
@@ -186,7 +186,7 @@ pub fn tcp_isr(diff: Vec<u32>, elapsed: f32) -> Result<(u32, Vec<f32>)> {
 }
 
 /// Calculate standard deviation
-fn vec_std(values: &Vec<f32>) -> f32 {
+fn vec_std(values: &[f32]) -> f32 {
     let mut sum = 0.0;
     for v in values {
         sum += *v;
@@ -222,7 +222,7 @@ pub fn tcp_sp(seq_rates: Vec<f32>, gcd: u32) -> Result<u32> {
     }
 }
 
-fn get_ip_id(ipv4_buff: &Vec<u8>) -> Result<Option<u16>> {
+fn get_ip_id(ipv4_buff: &[u8]) -> Result<Option<u16>> {
     let ipv4_packet = get_ipv4_packet(ipv4_buff)?;
     match ipv4_packet {
         Some(ipv4_packet) => Ok(Some(ipv4_packet.get_identification())),
@@ -232,7 +232,7 @@ fn get_ip_id(ipv4_buff: &Vec<u8>) -> Result<Option<u16>> {
 
 /// IP ID sequence generation algorithm (TI, CI, II)
 pub fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> Result<(String, String, String)> {
-    let z_judgement = |x: &Vec<u16>| -> bool {
+    let z_judgement = |x: &[u16]| -> bool {
         let mut conditon = true; // all of the ID numbers are zero
         for v in x {
             if *v != 0 {
@@ -241,7 +241,7 @@ pub fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> Result<(String
         }
         conditon
     };
-    let rd_judgement = |diff: &Vec<u16>| -> bool {
+    let rd_judgement = |diff: &[u16]| -> bool {
         let mut condition = true; // IP ID sequence ever increases by at least 20,000
         for d in diff {
             if *d < 20000 {
@@ -250,7 +250,7 @@ pub fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> Result<(String
         }
         condition
     };
-    let hex_judgement = |ip_id_vec: &Vec<u16>| -> Result<bool> {
+    let hex_judgement = |ip_id_vec: &[u16]| -> Result<bool> {
         let v3 = get_diff_u16(ip_id_vec);
         let mut sum = 0;
         for v in v3 {
@@ -263,7 +263,7 @@ pub fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> Result<(String
             Ok(false)
         }
     };
-    let ri_judgement = |diff: &Vec<u16>| -> bool {
+    let ri_judgement = |diff: &[u16]| -> bool {
         let mut condition_1 = true; // any of the differences exceeds 1000
         let mut condition_2 = true; // any of the differences not evenly divisiable by 256
         for d in diff {
@@ -498,7 +498,7 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
         ip_id_vec.push(seq5_ip_id);
         ip_id_vec.push(seq6_ip_id);
 
-        let first_ip_id = |ip_id_vec: &Vec<Option<u16>>| -> Option<(u16, usize)> {
+        let first_ip_id = |ip_id_vec: &[Option<u16>]| -> Option<(u16, usize)> {
             for (i, ip_id) in ip_id_vec.iter().enumerate() {
                 match ip_id {
                     Some(ip_id) => return Some((*ip_id, i)),
@@ -507,7 +507,7 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
             }
             None
         };
-        let last_ip_id = |ip_id_vec: &Vec<Option<u16>>| -> Option<(u16, usize)> {
+        let last_ip_id = |ip_id_vec: &[Option<u16>]| -> Option<(u16, usize)> {
             for (i, ip_id) in ip_id_vec.iter().rev().enumerate() {
                 match ip_id {
                     Some(ip_id) => return Some((*ip_id, ip_id_vec.len() - i)),
@@ -559,7 +559,7 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String> 
     }
 }
 
-fn get_tsval(ipv4_response: &Vec<u8>) -> Result<Option<u32>> {
+fn get_tsval(ipv4_response: &[u8]) -> Result<Option<u32>> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -675,7 +675,7 @@ pub fn tcp_ts(seqrr: &SEQRR) -> Result<String> {
 }
 
 /// TCP options (O, O1–O6)
-pub fn tcp_o(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_o(ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -755,7 +755,7 @@ pub fn tcp_ox(seqrr: &SEQRR) -> Result<(String, String, String, String, String, 
 }
 
 /// TCP initial window size (W, W1–W6)
-pub fn tcp_w(ipv4_response: &Vec<u8>) -> Result<u16> {
+pub fn tcp_w(ipv4_response: &[u8]) -> Result<u16> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -785,7 +785,7 @@ pub fn tcp_wx(seqrr: &SEQRR) -> Result<(u16, u16, u16, u16, u16, u16)> {
 }
 
 /// Responsiveness (R)
-pub fn tcp_udp_icmp_r(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_udp_icmp_r(ipv4_response: &[u8]) -> Result<String> {
     match ipv4_response.len() {
         0 => Ok(String::from("N")),
         _ => Ok(String::from("Y")),
@@ -793,7 +793,7 @@ pub fn tcp_udp_icmp_r(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// IP don't fragment bit (DF)
-pub fn tcp_udp_df(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_udp_df(ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -811,7 +811,7 @@ pub fn tcp_udp_df(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// IP initial time-to-live (T)
-pub fn tcp_udp_icmp_t(ipv4_response: &Vec<u8>, u1rr: &U1RR) -> Result<u16> {
+pub fn tcp_udp_icmp_t(ipv4_response: &[u8], u1rr: &U1RR) -> Result<u16> {
     let hops = udp_hops(u1rr)?;
     let response = Ipv4Packet::new(ipv4_response).unwrap();
     let response_ttl = response.get_ttl();
@@ -849,7 +849,7 @@ fn udp_hops(u1rr: &U1RR) -> Result<u8> {
 }
 
 /// IP initial time-to-live guess (TG)
-pub fn tcp_udp_icmp_tg(ipv4_response: &Vec<u8>) -> Result<u8> {
+pub fn tcp_udp_icmp_tg(ipv4_response: &[u8]) -> Result<u8> {
     let response = get_ipv4_packet(ipv4_response)?;
     match response {
         Some(response) => {
@@ -871,7 +871,7 @@ pub fn tcp_udp_icmp_tg(ipv4_response: &Vec<u8>) -> Result<u8> {
 }
 
 /// Explicit congestion notification (CC)
-pub fn tcp_cc(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_cc(ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -902,7 +902,7 @@ pub fn tcp_cc(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// TCP miscellaneous quirks (Q)
-pub fn tcp_q(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_q(ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -933,7 +933,7 @@ pub fn tcp_q(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// TCP sequence number (S)
-pub fn tcp_s(ipv4_request: &Vec<u8>, ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_s(ipv4_request: &[u8], ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet_request = get_ipv4_packet(ipv4_request)?.unwrap(); // must have
     let tcp_packet_request = get_tcp_packet(ipv4_packet_request.payload())?.unwrap(); // must have
 
@@ -968,7 +968,7 @@ pub fn tcp_s(ipv4_request: &Vec<u8>, ipv4_response: &Vec<u8>) -> Result<String> 
 }
 
 /// TCP acknowledgment number (A)
-pub fn tcp_a(ipv4_request: &Vec<u8>, ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_a(ipv4_request: &[u8], ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet_request = get_ipv4_packet(ipv4_request)?.unwrap(); // must have
     let tcp_packet_request = get_tcp_packet(ipv4_packet_request.payload())?.unwrap(); // must have
 
@@ -1003,7 +1003,7 @@ pub fn tcp_a(ipv4_request: &Vec<u8>, ipv4_response: &Vec<u8>) -> Result<String> 
 }
 
 /// TCP flags (F)
-pub fn tcp_f(ipv4_response: &Vec<u8>) -> Result<String> {
+pub fn tcp_f(ipv4_response: &[u8]) -> Result<String> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
@@ -1050,7 +1050,7 @@ pub fn tcp_f(ipv4_response: &Vec<u8>) -> Result<String> {
 }
 
 /// TCP RST data checksum (RD)
-pub fn tcp_rd(ipv4_response: &Vec<u8>) -> Result<u32> {
+pub fn tcp_rd(ipv4_response: &[u8]) -> Result<u32> {
     let ipv4_packet = get_ipv4_packet(ipv4_response)?;
     match ipv4_packet {
         Some(ipv4_packet) => {
