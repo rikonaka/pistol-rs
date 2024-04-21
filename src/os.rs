@@ -493,7 +493,7 @@ mod tests {
         // let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 134);
+        let dst_ipv4_1 = Ipv4Addr::new(192, 168, 1, 51);
         let dst_open_tcp_port_1 = 22;
         let dst_closed_tcp_port_1 = 8765;
         let dst_closed_udp_port_1 = 9876;
@@ -505,20 +505,20 @@ mod tests {
                 dst_closed_udp_port_1,
             ]),
         );
-        let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 137);
-        let dst_open_tcp_port_2 = 22;
-        let dst_closed_tcp_port_2 = 54532;
-        let dst_closed_udp_port_2 = 34098;
-        let host2 = Host::new(
-            dst_ipv4_2,
-            Some(vec![
-                dst_open_tcp_port_2,
-                dst_closed_tcp_port_2,
-                dst_closed_udp_port_2,
-            ]),
-        );
-        let target = Target::new(vec![host1, host2]);
-        // let target = Target::new(vec![host1]);
+        // let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 137);
+        // let dst_open_tcp_port_2 = 22;
+        // let dst_closed_tcp_port_2 = 54532;
+        // let dst_closed_udp_port_2 = 34098;
+        // let host2 = Host::new(
+        //     dst_ipv4_2,
+        //     Some(vec![
+        //         dst_open_tcp_port_2,
+        //         dst_closed_tcp_port_2,
+        //         dst_closed_udp_port_2,
+        //     ]),
+        // );
+        // let target = Target::new(vec![host1, host2]);
+        let target = Target::new(vec![host1]);
         let max_loop = 8;
         let top_k = 1;
         let threads_num = 8;

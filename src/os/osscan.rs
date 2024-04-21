@@ -1528,6 +1528,15 @@ pub fn os_probe(
     dst_closed_udp_port: u16,
     max_loop: usize,
 ) -> Result<PistolFingerprint> {
+    // check target
+    let dst_mac = match find_interface_by_ipv4(src_ipv4) {
+        Some(interface) => match interface.mac {
+            Some(m) => m,
+            None => return Err(CanNotFoundMacAddress::new().into()),
+        },
+        None => return Err(CanNotFoundInterface::new().into()),
+    };
+
     let ap = send_all_probes(
         src_ipv4,
         src_port,
@@ -1537,14 +1546,7 @@ pub fn os_probe(
         dst_closed_udp_port,
         max_loop,
     )?;
-
-    let dst_mac = match find_interface_by_ipv4(src_ipv4) {
-        Some(interface) => match interface.mac {
-            Some(m) => m,
-            None => return Err(CanNotFoundMacAddress::new().into()),
-        },
-        None => return Err(CanNotFoundInterface::new().into()),
-    };
+    
     let hops = None;
     let good_results = true;
     let scan = get_scan_line(

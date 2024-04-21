@@ -586,6 +586,15 @@ pub fn os_probe6(
     max_loop: usize,
     linear: Linear,
 ) -> Result<PistolFingerprint6> {
+    // check target
+    let dst_mac = match find_interface_by_ipv6(src_ipv6) {
+        Some(interface) => match interface.mac {
+            Some(m) => m,
+            None => return Err(CanNotFoundMacAddress::new().into()),
+        },
+        None => return Err(CanNotFoundInterface::new().into()),
+    };
+
     let ap = send_all_probes(
         src_ipv6,
         src_port,
@@ -596,13 +605,6 @@ pub fn os_probe6(
         max_loop,
     )?;
 
-    let dst_mac = match find_interface_by_ipv6(src_ipv6) {
-        Some(interface) => match interface.mac {
-            Some(m) => m,
-            None => return Err(CanNotFoundMacAddress::new().into()),
-        },
-        None => return Err(CanNotFoundInterface::new().into()),
-    };
     let hops = None;
     let good_results = true;
     let scan = get_scan_line(
