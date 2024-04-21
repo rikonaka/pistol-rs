@@ -1,7 +1,7 @@
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone)]
 pub struct RequestAndResponse {
-    pub name: String,
+    // pub name: String,
     pub request: Vec<u8>,  // layer3
     pub response: Vec<u8>, // layer3, if no response: response.len() == 0
 }
