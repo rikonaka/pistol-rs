@@ -61,10 +61,10 @@ pub enum ScanMethod6 {
 
 fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
     let nmap_mac_prefixes_file = include_str!("./db/nmap-mac-prefixes");
-    let nmap_mac_prefixes: Vec<String> = nmap_mac_prefixes_file
-        .split("\n")
-        .map(|s| s.to_string())
-        .collect();
+    let mut nmap_mac_prefixes = Vec::new();
+    for l in nmap_mac_prefixes_file.lines() {
+        nmap_mac_prefixes.push(l.to_string());
+    }
 
     let mut ret = Vec::new();
     for p in nmap_mac_prefixes {

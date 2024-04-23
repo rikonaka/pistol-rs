@@ -47,7 +47,7 @@ fn tcp_null_probe(stream: &mut TcpStream, null_probe: &ServiceProbe) -> Result<V
         Err(e) => {
             println!("null error: {}", e);
             0
-        }, // Resource temporarily unavailable (os error 11)
+        } // Resource temporarily unavailable (os error 11)
     };
     if n > 0 {
         let recv_str = format_recv(&recv_buff);
@@ -86,7 +86,7 @@ fn tcp_continue_probe(
                         Err(e) => {
                             println!("{}", e);
                             0
-                        },
+                        }
                     };
                     if sp.probe.probename == "GetRequest" {
                         println!("n: {}", n);
@@ -235,7 +235,10 @@ fn start_probe(
 pub fn vs_probe(dst_addr: IpAddr, dst_port: u16) -> Result<Vec<Match>> {
     let start = Instant::now();
     let nsp_str = include_str!("../db/nmap-service-probes");
-    let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
+    let mut nsp_lines = Vec::new();
+    for l in nsp_str.lines() {
+        nsp_lines.push(l.to_string());
+    }
     let exclude_ports = nsp_exclued_parser(&nsp_lines)?;
     let service_probes = nsp_parser(&nsp_lines)?;
     let duration = start.elapsed();

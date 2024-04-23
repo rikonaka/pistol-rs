@@ -1,8 +1,6 @@
 # pistol-rs
 
-The library must be run as root (Linux) or administrator (Windows), other systems are not supported, and the `nightly` version of rust is recommended.
-
-I had no Apple products to debug, so MacOS is not supported, if someone could do this job on their Mac.
+The library must be run as root (Linux), other systems are not supported, and the `nightly` version of rust is recommended.
 
 Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
 
@@ -14,6 +12,8 @@ pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
 ## Windows
 
 Download the `npcap` and `npcap-sdk` from [here](https://npcap.com/) and install `npcap` (to install with the "Install Npcap in WinPcap API-compatible Mode"), then place `Packet.lib` from the `npcap-sdk` pack x64 folder in your root of code.
+
+In windows testing I used wireshark to monitor and found that windows was unable to send packets and didn't know why.
 
 ## Host Discovery (Ping Scanning)
 

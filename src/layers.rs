@@ -525,9 +525,14 @@ pub fn layer2_send(
     ethernet_packet.set_payload(send_buff);
 
     let final_buff = ethernet_buff[..(ETHERNET_HEADER_SIZE + send_buff.len())].to_vec();
-    // print_packet_as_wireshark(&final_buff);
+    // _print_packet_as_wireshark_format(&final_buff);
+    // println!("SEND +++++++++++++++++++++++++++++++++++++++++++++++");
     match sender.send_to(&final_buff, Some(interface)) {
-        _ => (),
+        Some(r) => match r {
+            Err(e) => return Err(e.into()),
+            _ => (),
+        },
+        None => (),
     }
 
     if timeout != Duration::new(0, 0) {

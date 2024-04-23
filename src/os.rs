@@ -243,7 +243,10 @@ pub fn os_detect(
         None => get_default_timeout(),
     };
     let nmap_os_file = include_str!("./db/nmap-os-db");
-    let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
+    let mut nmap_os_file_lines = Vec::new();
+    for l in nmap_os_file.lines() {
+        nmap_os_file_lines.push(l.to_string());
+    }
     let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
@@ -551,7 +554,10 @@ mod tests {
         let start = SystemTime::now();
 
         let nmap_os_file = include_str!("./db/nmap-os-db");
-        let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
+        let mut nmap_os_file_lines = Vec::new();
+        for l in nmap_os_file.lines() {
+            nmap_os_file_lines.push(l.to_string());
+        }
         let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         for i in 0..5 {
             let r = &ret[i];

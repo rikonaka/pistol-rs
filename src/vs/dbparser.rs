@@ -392,7 +392,10 @@ mod tests {
     fn test_spp() {
         let start = Instant::now();
         let nsp_str = include_str!("../db/nmap-service-probes");
-        let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
+        let mut nsp_lines = Vec::new();
+        for l in nsp_str.lines() {
+            nsp_lines.push(l.to_string());
+        }
         let duration = start.elapsed();
         println!("Read time elapsed is: {:?}", duration);
 
@@ -419,7 +422,10 @@ mod tests {
             ?<= => .*?
          */
         let nsp_str = include_str!("../db/nmap-service-probes");
-        let nsp_lines: Vec<String> = nsp_str.split("\n").map(|s| s.to_string()).collect();
+        let mut nsp_lines = Vec::new();
+        for l in nsp_str.lines() {
+            nsp_lines.push(l.to_string());
+        }
         let service_probes = nsp_parser(&nsp_lines).unwrap();
         for sp in service_probes {
             for m in sp.matchs {
