@@ -567,14 +567,12 @@ pub fn layer2_send(
         // not recv any response for flood attack enffience
         Ok(None)
     }
-
-    
 }
 
 pub fn system_route() -> Result<Ipv4Addr> {
     if cfg!(target_os = "linux") {
         // ip route (default)
-        let c = Command::new("ip").arg("route").output()?;
+        let c = Command::new("bash").args(["ip", "route"]).output()?;
         // default via 192.168.72.2 dev ens33
         // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
         let output = String::from_utf8_lossy(&c.stdout);
@@ -588,7 +586,9 @@ pub fn system_route() -> Result<Ipv4Addr> {
         }
     } else if cfg!(target_os = "windows") {
         // route print
-        let c = Command::new("route").arg("print").output()?;
+        let c = Command::new("powershell")
+            .args(["route", "print"])
+            .output()?;
         // 0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.30    281
         let output = String::from_utf8_lossy(&c.stdout);
         let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
@@ -606,7 +606,7 @@ pub fn system_route() -> Result<Ipv4Addr> {
 pub fn system_route6() -> Result<Ipv6Addr> {
     if cfg!(target_os = "linux") {
         // ip route (default)
-        let c = Command::new("ip").args(["-6", "route"]).output()?;
+        let c = Command::new("bash").args(["ip", "-6", "route"]).output()?;
         // 240e:34c:85:e4d0::/64 dev ens36 proto kernel metric 256 expires 86372sec pref medium
         // fe80::/64 dev ens33 proto kernel metric 256 pref medium
         // fe80::/64 dev ens36 proto kernel metric 256 pref medium
@@ -622,10 +622,12 @@ pub fn system_route6() -> Result<Ipv6Addr> {
         }
     } else if cfg!(target_os = "windows") {
         // route print
-        let c = Command::new("route").arg("print").output()?;
+        let c = Command::new("powershell")
+            .args(["route", "print"])
+            .output()?;
         // 16    281 ::/0                     fe80::4a5f:8ff:fee0:1394
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output.split("\r\n").filter(|v| v.len() > 0).collect();
         for line in lines {
             if line.contains("::/0") {
                 let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
@@ -640,7 +642,7 @@ pub fn system_route6() -> Result<Ipv6Addr> {
 pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
     if cfg!(target_os = "linux") {
         // ip neighbour
-        let c = Command::new("ip").arg("neighbour").output()?;
+        let c = Command::new("bash").args(["ip", "neighbour"]).output()?;
         // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
         // 192.168.72.254 dev ens33 lladdr 00:50:56:fa:d4:85 STALE
         // 192.168.72.2 dev ens33 lladdr 00:50:56:ff:8c:06 STALE
@@ -661,19 +663,21 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         return Ok(Some(ret));
     } else if cfg!(target_os = "windows") {
         // Get-NetNeighbor
-        let c = Command::new("Get-NetNeighbor").output()?;
+        let c = Command::new("powershell")
+            .args(["Get-NetNeighbor"])
+            .output()?;
         // ifIndex IPAddress                                          LinkLayerAddress      State       PolicyStore
         // ------- ---------                                          ----------------      -----       -----------
         // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
         // 17      ff02::1:ffd0:8c47                                  33-33-FF-D0-8C-47     Permanent   ActiveStore
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output.split("\r\n").filter(|v| v.len() > 0).collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
         for line in lines[2..].to_vec() {
             let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
             if l_split.len() >= 5 {
                 let ip_str = l_split[1];
-                let mac_str = l_split[2];
+                let mac_str = l_split[2].replace("-", ":");
                 let ip: IpAddr = ip_str.parse()?;
                 let mac: MacAddr = mac_str.parse()?;
                 ret.insert(ip, mac);
@@ -687,7 +691,9 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
 pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
     if cfg!(target_os = "linux") {
         // ip neighbour
-        let c = Command::new("ip").args(["-6", "neighbour"]).output()?;
+        let c = Command::new("bash")
+            .args(["ip", "-6", "neighbour"])
+            .output()?;
         // fe80::4a5f:8ff:fee0:1394 dev ens33 FAILED
         // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
         let output = String::from_utf8_lossy(&c.stdout);
@@ -707,7 +713,9 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         return Ok(Some(ret));
     } else if cfg!(target_os = "windows") {
         // Get-NetNeighbor
-        let c = Command::new("Get-NetNeighbor").output()?;
+        let c = Command::new("powershell")
+            .args(["Get-NetNeighbor"])
+            .output()?;
         // ifIndex IPAddress                                          LinkLayerAddress      State       PolicyStore
         // ------- ---------                                          ----------------      -----       -----------
         // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
@@ -719,7 +727,7 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
             let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
             if l_split.len() >= 5 {
                 let ip_str = l_split[1];
-                let mac_str = l_split[2];
+                let mac_str = l_split[2].replace("-", ":");
                 let ip: IpAddr = ip_str.parse()?;
                 let mac: MacAddr = mac_str.parse()?;
                 ret.insert(ip, mac);
@@ -732,6 +740,7 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
 
 pub fn search_system_neighbour_cache(ip: IpAddr) -> Result<Option<MacAddr>> {
     let ret = system_neighbour_cache()?;
+    // println!("{:?}", ret);
     match ret {
         Some(r) => {
             for (i, m) in r {
@@ -1222,5 +1231,21 @@ mod tests {
         if b == Duration::new(0, 0) {
             println!("b == 0")
         }
+    }
+    #[test]
+    fn test_windows_command() {
+        let c = Command::new("powershell")
+            .args(["Get-NetNeighbor"])
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&c.stdout);
+        println!("{}", output);
+    }
+    #[test]
+    fn test_windows_mac() -> Result<()> {
+        let s = "33-33-EF-C0-98-8F";
+        let s = s.replace("-", ":");
+        let _: MacAddr = s.parse()?;
+        Ok(())
     }
 }

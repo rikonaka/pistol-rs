@@ -11,6 +11,10 @@ Cause the pull request to fix a bug I submitted to the upstream `libpnet` has no
 pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
 ```
 
+## Windows
+
+Download the `npcap` and `npcap-sdk` from [here](https://npcap.com/) and install `npcap` (to install with the "Install Npcap in WinPcap API-compatible Mode"), then place `Packet.lib` from the `npcap-sdk` pack x64 folder in your root of code.
+
 ## Host Discovery (Ping Scanning)
 
 I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).

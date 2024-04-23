@@ -529,11 +529,12 @@ mod tests {
         // );
         // let target = Target::new(vec![host1, host2]);
         let target = Target::new(vec![host1]);
-        let timeout = Some(Duration::new(3, 0));
+        let timeout = Some(Duration::new(1, 0));
         let top_k = 1;
         let threads_num = 8;
 
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
+        println!("{}", ret.len());
 
         for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
@@ -541,6 +542,7 @@ mod tests {
             println!(">>> Details:");
             for d in detect_ret {
                 println!("{}", d);
+                break;
             }
         }
         Ok(())
