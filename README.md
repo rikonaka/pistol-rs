@@ -2,6 +2,8 @@
 
 The library must be run as root (Linux) or administrator (Windows), other systems are not supported, and the `nightly` version of rust is recommended.
 
+I had no Apple products to debug, so MacOS is not supported, if someone could do this job on their Mac.
+
 Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
 
 ```toml
