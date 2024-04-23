@@ -6,6 +6,7 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::udp::{ipv6_checksum, MutableUdpPacket};
 use pnet::packet::Packet;
 use std::net::Ipv6Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
@@ -20,7 +21,7 @@ pub fn send_udp_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -75,7 +76,7 @@ pub fn send_udp_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -123,8 +124,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout).unwrap();
         println!("{:?}", ret);
     }
 }

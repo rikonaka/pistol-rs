@@ -10,6 +10,7 @@ use pnet::packet::ipv6::{Ipv6Packet, MutableIpv6Packet};
 use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmpv6, LayersMatch};
@@ -21,7 +22,7 @@ const TTL: u8 = 255;
 pub fn send_icmpv6_ping_packet(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<PingStatus> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
@@ -80,7 +81,7 @@ pub fn send_icmpv6_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], max_loop)?;
+    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], timeout)?;
     match ret {
         Some(r) => {
             match Ipv6Packet::new(&r) {
@@ -125,8 +126,8 @@ mod tests {
     fn test_icmp_ping_packet() {
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let max_loop = 8;
-        let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout).unwrap();
         println!("{:?}", ret);
     }
 }

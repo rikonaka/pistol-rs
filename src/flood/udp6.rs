@@ -3,6 +3,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::udp::{ipv6_checksum, MutableUdpPacket};
 use std::net::Ipv6Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{IPV6_HEADER_SIZE, UDP_HEADER_SIZE};
@@ -38,9 +39,10 @@ pub fn send_udp_flood_packet(
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
     let checksum = ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], 0)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
     }
     Ok(())
 }

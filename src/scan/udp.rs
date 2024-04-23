@@ -10,6 +10,7 @@ use pnet::packet::udp::{ipv4_checksum, MutableUdpPacket};
 use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
@@ -24,7 +25,7 @@ pub fn send_udp_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -86,7 +87,7 @@ pub fn send_udp_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -135,8 +136,8 @@ mod tests {
         let src_port = 54338;
         // let dst_port = 53;
         let dst_port = 2233;
-        let max_loop = 32;
-        let ret = send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout).unwrap();
         println!("{:?}", ret);
     }
 }

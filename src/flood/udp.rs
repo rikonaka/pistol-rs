@@ -6,6 +6,7 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::udp::{ipv4_checksum, MutableUdpPacket};
 use rand::Rng;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::{IPV4_HEADER_SIZE, UDP_HEADER_SIZE};
@@ -45,9 +46,10 @@ pub fn send_udp_flood_packet(
     // udp_header.set_payload(&vec![b'a'; 10]); // test
     let checksum = ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
     }
 
     Ok(())

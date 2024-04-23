@@ -3,12 +3,10 @@ use num_cpus;
 use pnet::datalink;
 use pnet::datalink::NetworkInterface;
 use rand::Rng;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{net::{IpAddr, Ipv4Addr, Ipv6Addr}, time::Duration};
 use threadpool::ThreadPool;
 
-use crate::layers::system_route;
-
-const DEFAILT_MAX_LOOP: usize = 32;
+use crate::{layers::system_route, DEFAULT_TIMEOUT};
 
 pub fn find_source_ipv4(
     src_ipv4: Option<Ipv4Addr>,
@@ -133,11 +131,8 @@ pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
     pool
 }
 
-pub fn get_max_loop(max_loop: Option<usize>) -> usize {
-    match max_loop {
-        Some(m) => m,
-        _ => DEFAILT_MAX_LOOP,
-    }
+pub fn get_default_timeout() -> Duration {
+    Duration::new(DEFAULT_TIMEOUT, 0)
 }
 
 pub struct Hex {

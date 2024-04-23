@@ -5,6 +5,7 @@ use pnet::packet::ipv4::{Ipv4Flags, MutableIpv4Packet};
 use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
 use rand::Rng;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
@@ -49,9 +50,10 @@ pub fn send_syn_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
     }
     Ok(())
 }
@@ -93,9 +95,10 @@ pub fn send_ack_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
     }
     Ok(())
 }
@@ -137,9 +140,10 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
     }
     Ok(())
 }

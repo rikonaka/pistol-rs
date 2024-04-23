@@ -39,7 +39,7 @@ fn send_seq_probes(
     src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<SEQRR> {
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
@@ -75,7 +75,7 @@ fn send_seq_probes(
 
         let tx = tx.clone();
         pool.execute(move || {
-            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop);
+            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
             match tx.send((i, buff.to_vec(), ret)) {
                 _ => (),
             }
@@ -124,7 +124,7 @@ fn send_seq_probes(
     Ok(seqrr)
 }
 
-fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Result<IERR> {
+fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) -> Result<IERR> {
     let (tx, rx) = channel();
 
     let buff_1 = packet6::ie_packet_1_layer3(src_ipv6, dst_ipv6).unwrap();
@@ -150,7 +150,7 @@ fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop);
+        let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
         match tx.send((i, buff.to_vec(), ret)) {
             _ => (),
         }
@@ -184,7 +184,7 @@ fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
     Ok(ie)
 }
 
-fn send_nx_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Result<NXRR> {
+fn send_nx_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) -> Result<NXRR> {
     let (tx, rx) = channel();
 
     let buff_1 = packet6::ni_packet_layer3(src_ipv6, dst_ipv6).unwrap();
@@ -211,7 +211,7 @@ fn send_nx_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, max_loop: usize) -> Re
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop);
+        let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
         match tx.send((i, buff.to_vec(), ret)) {
             _ => (),
         }
@@ -250,7 +250,7 @@ fn send_u1_probe(
     src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_closed_port: u16, //should be an closed udp port
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<U1RR> {
     let src_port = match src_port {
         Some(s) => s,
@@ -273,7 +273,7 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop)?;
+    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
 
     let response = match ret {
         Some(r) => r,
@@ -293,7 +293,7 @@ fn send_tecn_probe(
     src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TECNRR> {
     let src_port = match src_port {
         Some(s) => s,
@@ -316,7 +316,7 @@ fn send_tecn_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], max_loop)?;
+    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
 
     let response = match ret {
         Some(r) => r,
@@ -337,7 +337,7 @@ fn send_tx_probes(
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TXRR> {
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
@@ -410,7 +410,7 @@ fn send_tx_probes(
         let tx = tx.clone();
         let m = ms[i];
         pool.execute(move || {
-            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], max_loop);
+            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout);
             match tx.send((i, buff.to_vec(), ret)) {
                 _ => (),
             }
@@ -463,20 +463,20 @@ fn send_all_probes(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<AllPacketRR6> {
-    let seq = send_seq_probes(src_ipv6, src_port, dst_ipv6, dst_open_tcp_port, max_loop)?;
-    let ie = send_ie_probes(src_ipv6, dst_ipv6, max_loop)?;
-    let nx = send_nx_probes(src_ipv6, dst_ipv6, max_loop)?;
-    let u1 = send_u1_probe(src_ipv6, src_port, dst_ipv6, dst_closed_udp_port, max_loop)?;
-    let tecn = send_tecn_probe(src_ipv6, src_port, dst_ipv6, dst_open_tcp_port, max_loop)?;
+    let seq = send_seq_probes(src_ipv6, src_port, dst_ipv6, dst_open_tcp_port, timeout)?;
+    let ie = send_ie_probes(src_ipv6, dst_ipv6, timeout)?;
+    let nx = send_nx_probes(src_ipv6, dst_ipv6, timeout)?;
+    let u1 = send_u1_probe(src_ipv6, src_port, dst_ipv6, dst_closed_udp_port, timeout)?;
+    let tecn = send_tecn_probe(src_ipv6, src_port, dst_ipv6, dst_open_tcp_port, timeout)?;
     let tx = send_tx_probes(
         src_ipv6,
         src_port,
         dst_ipv6,
         dst_open_tcp_port,
         dst_closed_tcp_port,
-        max_loop,
+        timeout,
     )?;
 
     let ap = AllPacketRR6 {
@@ -571,7 +571,7 @@ pub fn os_probe6(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     top_k: usize,
-    max_loop: usize,
+    timeout: Duration,
     linear: Linear,
 ) -> Result<PistolFingerprint6> {
     // Check target.
@@ -590,7 +590,7 @@ pub fn os_probe6(
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
-        max_loop,
+        timeout,
     )?;
 
     let hops = None;
@@ -677,8 +677,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = None;
         let dst_open_port = 22;
-        let max_loop = 32;
-        let seqrr = send_seq_probes(src_ipv6, src_port, dst_ipv6, dst_open_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let seqrr = send_seq_probes(src_ipv6, src_port, dst_ipv6, dst_open_port, timeout).unwrap();
         println!("{}", seqrr.seq1.response.len());
         println!("{}", seqrr.seq2.response.len());
         println!("{}", seqrr.seq3.response.len());
@@ -690,8 +690,8 @@ mod tests {
     fn test_ie_probe() {
         let src_ipv6 = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let max_loop = 32;
-        let ret = send_ie_probes(src_ipv6, dst_ipv6, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_ie_probes(src_ipv6, dst_ipv6, timeout).unwrap();
         println!("{}", ret.ie1.response.len());
         println!("{}", ret.ie2.response.len());
     }
@@ -699,8 +699,8 @@ mod tests {
     fn test_nx_probe() {
         let src_ipv6 = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let max_loop = 32;
-        let ret = send_nx_probes(src_ipv6, dst_ipv6, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_nx_probes(src_ipv6, dst_ipv6, timeout).unwrap();
         // println!("{}", ret.ni.response.len());
         // println!("{}", ret.ns.response.len());
         let ipv6_packet = Ipv6Packet::new(&ret.ns.response).unwrap();
@@ -715,8 +715,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = None;
         let dst_closed_port = 12345;
-        let max_loop = 32;
-        let ret = send_u1_probe(src_ipv6, src_port, dst_ipv6, dst_closed_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_u1_probe(src_ipv6, src_port, dst_ipv6, dst_closed_port, timeout).unwrap();
         println!("{}", ret.u1.response.len());
     }
     #[test]
@@ -725,8 +725,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = None;
         let dst_closed_port = 22;
-        let max_loop = 32;
-        let ret = send_tecn_probe(src_ipv6, src_port, dst_ipv6, dst_closed_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_tecn_probe(src_ipv6, src_port, dst_ipv6, dst_closed_port, timeout).unwrap();
         println!("{}", ret.tecn.response.len());
     }
     #[test]
@@ -736,14 +736,14 @@ mod tests {
         let src_port = None;
         let dst_open_port = 22;
         let dst_closed_port = 9999;
-        let max_loop = 32;
+        let timeout = Duration::new(3, 0);
         let txrr = send_tx_probes(
             src_ipv6,
             src_port,
             dst_ipv6,
             dst_open_port,
             dst_closed_port,
-            max_loop,
+            timeout,
         )
         .unwrap();
         println!("{}", txrr.t2.response.len());

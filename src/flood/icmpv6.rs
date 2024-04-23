@@ -8,6 +8,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{ICMPV6_ER_HEADER_SIZE, IPV6_HEADER_SIZE};
@@ -56,9 +57,10 @@ pub fn send_icmpv6_flood_packet(
     let mut icmp_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], 0)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
     }
     Ok(())
 }

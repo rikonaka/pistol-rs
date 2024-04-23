@@ -13,6 +13,7 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
+use std::time::Duration;
 
 use crate::layers::{
     layer3_ipv4_send, Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch,
@@ -62,7 +63,7 @@ pub fn send_syn_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -118,7 +119,7 @@ pub fn send_syn_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -180,7 +181,7 @@ pub fn send_fin_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -236,7 +237,7 @@ pub fn send_fin_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -298,7 +299,7 @@ pub fn send_ack_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -354,7 +355,7 @@ pub fn send_ack_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -413,7 +414,7 @@ pub fn send_null_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -469,7 +470,7 @@ pub fn send_null_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -528,7 +529,7 @@ pub fn send_xmas_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -585,7 +586,7 @@ pub fn send_xmas_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -644,7 +645,7 @@ pub fn send_window_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -700,7 +701,7 @@ pub fn send_window_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -764,7 +765,7 @@ pub fn send_maimon_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ip header
@@ -820,7 +821,7 @@ pub fn send_maimon_scan_packet(
         dst_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => {
@@ -881,7 +882,7 @@ pub fn send_idle_scan_packet(
     dst_port: u16,
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<(TargetScanStatus, Option<IdleScanResults>)> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
@@ -948,7 +949,7 @@ pub fn send_idle_scan_packet(
         zombie_ipv4,
         &ip_buff,
         vec![layers_match_zombie_1, layers_match_zombie_2],
-        max_loop,
+        timeout,
     )?;
 
     let mut zombie_ip_id_1 = 0;
@@ -1006,7 +1007,7 @@ pub fn send_idle_scan_packet(
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = _forge_syn_packet(zombie_ipv4, dst_ipv4, zombie_port, dst_port)?;
     // ignore the response
-    let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff_2, vec![], max_loop)?;
+    let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff_2, vec![], timeout)?;
 
     // 4. probe the zombie's ip id again
     let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
@@ -1033,7 +1034,7 @@ pub fn send_idle_scan_packet(
         dst_ipv4,
         &ip_buff_3,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     let mut zombie_ip_id_2 = 0;
@@ -1113,10 +1114,10 @@ pub fn send_connect_scan_packet(
     _: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    _: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
-    match TcpStream::connect(&addr) {
+    match TcpStream::connect_timeout(&addr, timeout) {
         Ok(_) => Ok(TargetScanStatus::Open),
         Err(_) => Ok(TargetScanStatus::Closed),
     }
@@ -1135,8 +1136,8 @@ mod tests {
         let src_port = utils::random_port();
         let dst_port = 99;
         // let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout).unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -1148,8 +1149,8 @@ mod tests {
         let src_port = utils::random_port();
         // let dst_port = 99;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_fin_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_fin_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -1159,8 +1160,8 @@ mod tests {
         let src_port = utils::random_port();
         // let dst_port = 99;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -1170,8 +1171,8 @@ mod tests {
         let src_port = utils::random_port();
         // let dst_port = 99;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_null_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_null_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -1181,8 +1182,8 @@ mod tests {
         let src_port = utils::random_port();
         // let dst_port = 99;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_window_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_window_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -1195,7 +1196,7 @@ mod tests {
         let src_port = utils::random_port();
         let dst_port = 22;
         let zombie_port = utils::random_port();
-        let max_loop = 32;
+        let timeout = Duration::new(3, 0);
         let (ret, i) = send_idle_scan_packet(
             src_ipv4,
             src_port,
@@ -1203,7 +1204,7 @@ mod tests {
             dst_port,
             zombie_ipv4,
             zombie_port,
-            max_loop,
+            timeout,
         )
         .unwrap();
         println!("{:?}", ret);
@@ -1213,11 +1214,11 @@ mod tests {
     fn test_send_tcp_connect_scan_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let max_loop = 64;
+        let timeout = Duration::new(3, 0);
         let src_port = utils::random_port();
         let dst_port = 80;
         let ret =
-            send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, max_loop).unwrap();
+            send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout).unwrap();
         println!("{:?}", ret);
     }
 }

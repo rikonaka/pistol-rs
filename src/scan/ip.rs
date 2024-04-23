@@ -12,6 +12,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::{Layer3Match, LayersMatch};
@@ -69,7 +70,7 @@ pub fn send_ip_procotol_scan_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     protocol: IpNextHeaderProtocol,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     const TCP_DATA_SIZE: usize = 0;
     const UDP_DATA_SIZE: usize = 0;
@@ -173,7 +174,7 @@ pub fn send_ip_procotol_scan_packet(
         dst_ipv4,
         &buff_layer_2,
         vec![layers_match],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -223,11 +224,11 @@ mod tests {
     fn test_ip_scan_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
-        let max_loop = 8;
+        let timeout = Duration::new(3, 0);
         let protocol = IpNextHeaderProtocols::Tcp;
         // let protocol = IpNextHeaderProtocols::Udp;
         // let protocol = IpNextHeaderProtocols::Icmp;
-        let ret = send_ip_procotol_scan_packet(src_ipv4, dst_ipv4, protocol, max_loop);
+        let ret = send_ip_procotol_scan_packet(src_ipv4, dst_ipv4, protocol, timeout);
         println!("{:?}", ret);
     }
 }

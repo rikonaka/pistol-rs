@@ -17,6 +17,10 @@ mod scan;
 mod utils;
 mod vs;
 
+
+const DEFAULT_MAXLOOP: usize = 128;
+const DEFAULT_TIMEOUT: u64 = 3;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingStatus {
     Up,

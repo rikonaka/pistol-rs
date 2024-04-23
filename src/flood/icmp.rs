@@ -10,6 +10,7 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use rand::Rng;
 
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::{ICMP_HEADER_SIZE, IPV4_HEADER_SIZE};
@@ -59,9 +60,10 @@ pub fn send_icmp_flood_packet(
     let mut icmp_header = MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0); // not wait the result
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], 0)?;
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
     }
 
     Ok(())

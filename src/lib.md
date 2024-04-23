@@ -29,7 +29,7 @@ fn main() {
         src_ipv4,
         src_port,
         threads_num,
-        max_loop,
+        timeout,
     ).unwrap();
     for (_ip, r) in ret {
         println!("{}", r);

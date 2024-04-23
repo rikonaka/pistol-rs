@@ -4,6 +4,7 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::{ipv6_checksum, MutableTcpPacket, TcpFlags};
 use rand::Rng;
 use std::net::Ipv6Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{IPV6_HEADER_SIZE, TCP_HEADER_SIZE};
@@ -46,9 +47,10 @@ pub fn send_syn_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], 0)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
     }
     Ok(())
 }
@@ -88,9 +90,10 @@ pub fn send_ack_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], 0)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
     }
     Ok(())
 }
@@ -130,9 +133,10 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
+    let timeout = Duration::new(0, 0);
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], 0)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
     }
     Ok(())
 }

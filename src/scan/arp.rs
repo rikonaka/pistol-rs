@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::time::Duration;
 use pnet::datalink::{MacAddr, NetworkInterface};
 use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, MutableArpPacket};
 use pnet::packet::ethernet::EtherTypes;
@@ -12,7 +13,7 @@ pub fn send_arp_scan_packet(
     src_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     interface: NetworkInterface,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<Option<MacAddr>> {
     let mut arp_buffer = [0u8; 28];
     let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
@@ -45,7 +46,7 @@ pub fn send_arp_scan_packet(
         &arp_buffer,
         ethernet_type,
         vec![layers_match],
-        max_loop,
+        timeout,
     )? {
         Some(r) => Ok(get_mac_from_arp(&r)),
         None => Ok(None),

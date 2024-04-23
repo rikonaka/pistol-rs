@@ -14,6 +14,7 @@ use pnet::packet::Packet;
 use rand::Rng;
 
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmp, LayersMatch};
@@ -25,7 +26,7 @@ const TTL: u8 = 64;
 pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<PingStatus> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
@@ -85,7 +86,7 @@ pub fn send_icmp_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], max_loop)?;
+    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
     match ret {
         Some(r) => {
             match Ipv4Packet::new(&r) {
@@ -133,8 +134,8 @@ mod tests {
     fn test_icmp_ping_packet() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 2);
-        let max_loop = 32;
-        let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout).unwrap();
         println!("{:?}", ret);
     }
 }

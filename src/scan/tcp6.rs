@@ -9,6 +9,7 @@ use std::net::Ipv6Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV6;
 use std::net::TcpStream;
+use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
 use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
@@ -32,7 +33,7 @@ pub fn send_syn_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -86,7 +87,7 @@ pub fn send_syn_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -146,7 +147,7 @@ pub fn send_fin_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -200,7 +201,7 @@ pub fn send_fin_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -260,7 +261,7 @@ pub fn send_ack_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -314,7 +315,7 @@ pub fn send_ack_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -371,7 +372,7 @@ pub fn send_null_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -425,7 +426,7 @@ pub fn send_null_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -482,7 +483,7 @@ pub fn send_xmas_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -536,7 +537,7 @@ pub fn send_xmas_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -593,7 +594,7 @@ pub fn send_window_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -647,7 +648,7 @@ pub fn send_window_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -709,7 +710,7 @@ pub fn send_maimon_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -763,7 +764,7 @@ pub fn send_maimon_scan_packet(
         dst_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
-        max_loop,
+        timeout,
     )?;
 
     match ret {
@@ -820,10 +821,10 @@ pub fn send_connect_scan_packet(
     _: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    _: usize,
+    timeout: Duration,
 ) -> Result<TargetScanStatus> {
     let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
-    match TcpStream::connect(&addr) {
+    match TcpStream::connect_timeout(&addr, timeout) {
         Ok(_) => Ok(TargetScanStatus::Open),
         Err(_) => Ok(TargetScanStatus::Closed),
     }
@@ -838,8 +839,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ret = send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout).unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -848,8 +849,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_fin_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_fin_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -858,8 +859,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -868,8 +869,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_null_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_null_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -878,8 +879,8 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 80;
-        let max_loop = 32;
-        let ret = send_window_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop);
+        let timeout = Duration::new(3, 0);
+        let ret = send_window_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout);
         println!("{:?}", ret);
     }
     #[test]
@@ -888,9 +889,9 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         let src_port = 32109;
         let dst_port = 81;
-        let max_loop = 32;
+        let timeout = Duration::new(3, 0);
         let ret =
-            send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, max_loop).unwrap();
+            send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout).unwrap();
         println!("{:?}", ret);
     }
 }

@@ -129,7 +129,7 @@ fn send_seq_probes(
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<SEQRR> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
@@ -167,7 +167,7 @@ fn send_seq_probes(
 
         let tx = tx.clone();
         pool.execute(move || {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop);
+            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
             match tx.send((i, buff.to_vec(), ret)) {
                 _ => (),
             }
@@ -219,7 +219,7 @@ fn send_seq_probes(
     Ok(seqrr)
 }
 
-fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Result<IERR> {
+fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, timeout: Duration) -> Result<IERR> {
     let (tx, rx) = channel();
 
     let mut rng = rand::thread_rng();
@@ -249,7 +249,7 @@ fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, max_loop: usize) -> Re
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop);
+        let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
         match tx.send((i, buff.to_vec(), ret)) {
             _ => (),
         }
@@ -291,7 +291,7 @@ fn send_ecn_probe(
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<ECNRR> {
     let src_port = match src_port {
         Some(s) => s,
@@ -314,7 +314,7 @@ fn send_ecn_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop);
+    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
 
     let response = match ret? {
         Some(r) => r,
@@ -335,7 +335,7 @@ fn send_tx_probes(
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<TXRR> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
@@ -415,7 +415,7 @@ fn send_tx_probes(
         let tx = tx.clone();
         let m = ms[i];
         pool.execute(move || {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], max_loop);
+            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], timeout);
             match tx.send((i, buff.to_vec(), ret)) {
                 _ => (),
             }
@@ -468,7 +468,7 @@ fn send_u1_probe(
     src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<U1RR> {
     let src_port = match src_port {
         Some(s) => s,
@@ -491,7 +491,7 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], max_loop)?;
+    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
 
     let response = match ret {
         Some(r) => r,
@@ -513,20 +513,20 @@ fn send_all_probes(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<AllPacketRR> {
-    let seq = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, max_loop)?;
-    let ie = send_ie_probes(src_ipv4, dst_ipv4, max_loop)?;
-    let ecn = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, max_loop)?;
+    let seq = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, timeout)?;
+    let ie = send_ie_probes(src_ipv4, dst_ipv4, timeout)?;
+    let ecn = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, timeout)?;
     let tx = send_tx_probes(
         src_ipv4,
         src_port,
         dst_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
-        max_loop,
+        timeout,
     )?;
-    let u1 = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_udp_port, max_loop)?;
+    let u1 = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_udp_port, timeout)?;
 
     let ap = AllPacketRR {
         seq,
@@ -1526,7 +1526,7 @@ pub fn os_probe(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<PistolFingerprint> {
     // Check target.
     let dst_mac = match find_interface_by_ipv4(src_ipv4) {
@@ -1544,7 +1544,7 @@ pub fn os_probe(
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
-        max_loop,
+        timeout,
     )?;
     
     let hops = None;
@@ -1603,7 +1603,7 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 9999;
         let dst_closed_udp_port = 11111;
-        let max_loop = 8;
+        let timeout = Duration::new(3, 0);
 
         let _ = os_probe(
             src_ipv4,
@@ -1612,7 +1612,7 @@ mod tests {
             dst_open_tcp_port,
             dst_closed_tcp_port,
             dst_closed_udp_port,
-            max_loop,
+            timeout,
         )
         .unwrap();
     }
@@ -1647,8 +1647,8 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
         let src_port = None;
         let dst_open_port = 22;
-        let max_loop = 32;
-        let seqrr = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let seqrr = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_port, timeout).unwrap();
         println!("{}", seqrr.seq1.response.len());
         println!("{}", seqrr.seq2.response.len());
         println!("{}", seqrr.seq3.response.len());
@@ -1660,8 +1660,8 @@ mod tests {
     fn test_ie_probe() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
-        let max_loop = 32;
-        let ierr = send_ie_probes(src_ipv4, dst_ipv4, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ierr = send_ie_probes(src_ipv4, dst_ipv4, timeout).unwrap();
         println!("{}", ierr.ie1.response.len());
         println!("{}", ierr.ie2.response.len());
     }
@@ -1671,8 +1671,8 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
         let src_port = None;
         let dst_open_port = 22;
-        let max_loop = 32;
-        let ecnrr = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let ecnrr = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_port, timeout).unwrap();
         println!("{}", ecnrr.ecn.response.len());
     }
     #[test]
@@ -1682,14 +1682,14 @@ mod tests {
         let src_port = None;
         let dst_open_port = 22;
         let dst_closed_port = 9999;
-        let max_loop = 32;
+        let timeout = Duration::new(3, 0);
         let t2t7rr = send_tx_probes(
             src_ipv4,
             src_port,
             dst_ipv4,
             dst_open_port,
             dst_closed_port,
-            max_loop,
+            timeout,
         )
         .unwrap();
         println!("{}", t2t7rr.t2.response.len());
@@ -1705,8 +1705,8 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
         let src_port = None;
         let dst_closed_port = 9999;
-        let max_loop = 32;
-        let u1rr = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_port, max_loop).unwrap();
+        let timeout = Duration::new(3, 0);
+        let u1rr = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_port, timeout).unwrap();
         println!("{}", u1rr.u1.response.len());
     }
     #[test]

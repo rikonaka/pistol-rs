@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::mpsc::channel;
+use std::time::Duration;
 
 use crate::errors::{CanNotFoundSourceAddress, OsDetectPortError};
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::PistolFingerprint;
 use crate::os::osscan6::PistolFingerprint6;
-use crate::utils::{find_source_ipv4, find_source_ipv6, get_threads_pool};
+use crate::utils::{find_source_ipv4, find_source_ipv6, get_threads_pool, get_default_timeout};
 use crate::Target;
 
 pub mod dbparser;
@@ -189,7 +190,7 @@ fn os_detect_thread(
     dst_closed_udp_port: u16,
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
     let nmap_fingerprint = osscan::os_probe(
         src_ipv4,
@@ -198,7 +199,7 @@ fn os_detect_thread(
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
-        max_loop,
+        timeout,
     )?;
 
     let mut score_vec = Vec::new();
@@ -235,8 +236,12 @@ pub fn os_detect(
     src_port: Option<u16>,
     top_k: usize,
     threads_num: usize,
-    max_loop: usize,
+    timeout: Option<Duration>,
 ) -> Result<HashMap<Ipv4Addr, (PistolFingerprint, Vec<NmapOsDetectRet>)>> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
     let nmap_os_file = include_str!("./db/nmap-os-db");
     let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
     let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
@@ -266,7 +271,7 @@ pub fn os_detect(
                     dst_closed_udp_port,
                     nmap_os_db,
                     top_k,
-                    max_loop,
+                    timeout,
                 );
                 match tx.send((dst_ipv4, os_detect_ret)) {
                     _ => (),
@@ -353,8 +358,12 @@ pub fn os_detect6(
     src_port: Option<u16>,
     top_k: usize,
     threads_num: usize,
-    max_loop: usize,
+    timeout: Option<Duration>,
 ) -> Result<HashMap<Ipv6Addr, PistolFingerprint6>> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
     let linear = gen_linear()?;
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
@@ -381,7 +390,7 @@ pub fn os_detect6(
                     dst_closed_tcp_port,
                     dst_closed_udp_port,
                     top_k,
-                    max_loop,
+                    timeout,
                     linear,
                 );
                 match tx.send((dst_ipv6, os_detect_ret)) {
@@ -449,11 +458,11 @@ mod tests {
 
         // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
         let src_port = None;
-        let max_loop = 8;
+        let timeout = Some(Duration::new(3, 0));
         let top_k = 3;
         let threads_num = 8;
 
-        let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, max_loop).unwrap();
+        let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
         for (i, p) in ret {
             println!(">>> IP:\n{}", i);
             println!(">>> Novelty:\n{}", p.novelty);
@@ -472,7 +481,7 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 99;
         let dst_closed_udp_port = 7890;
-        let max_loop = 8;
+        let timeout = Duration::new(3, 0);
         let top_k = 3;
 
         let linear = gen_linear().unwrap();
@@ -484,7 +493,7 @@ mod tests {
             dst_closed_tcp_port,
             dst_closed_udp_port,
             top_k,
-            max_loop,
+            timeout,
             linear,
         )
         .unwrap();
@@ -520,11 +529,11 @@ mod tests {
         // );
         // let target = Target::new(vec![host1, host2]);
         let target = Target::new(vec![host1]);
-        let max_loop = 8;
+        let timeout = Some(Duration::new(3, 0));
         let top_k = 1;
         let threads_num = 8;
 
-        let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, max_loop).unwrap();
+        let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
 
         for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);

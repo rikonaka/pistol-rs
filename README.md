@@ -83,32 +83,30 @@ The nmap `nmap-service-probes` file regex format is not standard, there are a lo
 ```rust
 use pistol::{tcp_syn_scan, Host, Target};
 use std::net::Ipv4Addr;
+use std::time::Duration;
 use anyhow::Result;
 
 fn main() -> Result<()> {
     // When using scanning, please use a real local address to get the return packet.
     // And for flood attacks, please consider using a fake address.
     // If the value here is None, the programme will automatically look up the available addresses from the existing interfaces on the device.
-    let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+    let src_ipv4 = Some(Ipv4Addr::new(192, 168, 72, 128));
     // If the value of `source port` is `None`, the program will generate the source port randomly.
-    let src_port: Option<u16> = None;
+    let src_port = None;
     // The destination address is required.
-    let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 136);
-    let threads_num: usize = 8;
-    // `max_loop` indicates the maximum number of loops that the program will wait for the target packet.
-    // The larger the value, the longer the wait time for the program to scan.
-    // The smaller the value, the less reliable the scan results will be.
-    let max_loop: Option<usize> = Some(32);
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+    let threads_num = 8;
+    let timeout = Some(Duration::new(3, 0));
     // Test with an open port `22` and a closed port `99`.
     let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
     /// Users should build the `target` themselves.
-    let target: Target = Target::new(vec![host]);
+    let target = Target::new(vec![host]);
     let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_syn_scan(
         target,
         src_ipv4,
         src_port,
         threads_num,
-        max_loop,
+        timeout,
     ).unwrap();
     for (_ip, r) in ret {
         println!("{}", r);
@@ -132,6 +130,7 @@ fn main() -> Result<()> {
 ```rust
 use pistol::{os_detect, Host, Target};
 use std::net::Ipv4Addr;
+use std::time::Duration;
 use anyhow::Result;
 
 fn main() -> Result<()> {
@@ -167,7 +166,7 @@ fn main() -> Result<()> {
         ]),
     )?;
     let target = Target::new(vec![host1, host2]);
-    let max_loop = 8;
+    let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
     let threads_num = 8;
 
@@ -179,7 +178,7 @@ fn main() -> Result<()> {
         src_port,
         top_k,
         threads_num,
-        read_timeout,
+        timeout,
     )
     .unwrap();
 
@@ -299,6 +298,7 @@ cpe:/o:linux:linux_kernel:4 auto
 ```rust
 use pistol::{os_detect6, Host, Target};
 use std::net::Ipv4Addr;
+use std::time::Duration;
 use anyhow::Result;
 
 fn main() -> Result<()> {
@@ -333,11 +333,11 @@ fn main() -> Result<()> {
 
     // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
     let src_port = None;
-    let max_loop = 8;
+    let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
     let threads_num = 8;
 
-    let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, max_loop).unwrap();
+    let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
     for (i, p) in ret {
         println!(">>> IP:\n{}", i);
         println!(">>> Novelty:\n{}", p.novelty);

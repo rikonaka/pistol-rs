@@ -25,11 +25,14 @@ use pnet::packet::Packet;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::process::Command;
+use std::sync::mpsc::channel;
+use std::time::Duration;
 use subnetwork::Ipv6;
 
 use crate::errors::CanNotFoundRouterAddress;
 use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress, CreateDatalinkChannelFailed};
-use crate::utils::{find_interface_by_ipv4, find_interface_by_ipv6};
+use crate::utils::{find_interface_by_ipv4, find_interface_by_ipv6, get_threads_pool};
+use crate::DEFAULT_MAXLOOP;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -502,7 +505,7 @@ pub fn layer2_send(
     send_buff: &[u8],
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<Option<Vec<u8>>> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
         Some((s, r)) => (s, r),
@@ -526,16 +529,46 @@ pub fn layer2_send(
     match sender.send_to(&final_buff, Some(interface)) {
         _ => (),
     }
-    for _ in 0..max_loop {
-        let buff = receiver.next()?;
-        for m in &layers_match {
-            match m.do_match(buff) {
-                true => return Ok(Some(buff.to_vec())),
-                false => (),
+
+    if timeout != Duration::new(0, 0) {
+        let pool = get_threads_pool(1);
+        let (tx, rx) = channel();
+
+        pool.execute(move || {
+            for _ in 0..DEFAULT_MAXLOOP {
+                let buff = match receiver.next() {
+                    Ok(b) => b,
+                    Err(_) => &vec![],
+                };
+                for m in &layers_match {
+                    match m.do_match(buff) {
+                        true => {
+                            match tx.send(buff.to_vec()) {
+                                _ => (),
+                            }
+                            break;
+                        }
+                        false => (),
+                    }
+                }
             }
+        });
+
+        let buff = match rx.recv_timeout(timeout) {
+            Ok(b) => b,
+            Err(_) => vec![], // read timeout
+        };
+        if buff.len() > 0 {
+            Ok(Some(buff))
+        } else {
+            Ok(None)
         }
+    } else {
+        // not recv any response for flood attack enffience
+        Ok(None)
     }
-    Ok(None)
+
+    
 }
 
 pub fn system_route() -> Result<Ipv4Addr> {
@@ -775,14 +808,14 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<Option<MacAddr>> {
     };
     let layers_match = LayersMatch::Layer3Match(layer3);
 
-    let max_loop = 16;
+    let timeout = Duration::new(3, 0);
     let ret = layer2_send(
         MacAddr::broadcast(),
         interface,
         &arp_buff,
         ethernet_type,
         vec![layers_match],
-        max_loop,
+        timeout,
     )?;
     match ret {
         Some(r) => Ok(get_mac_from_arp(&r)),
@@ -795,7 +828,7 @@ pub fn layer3_ipv4_send(
     dst_ipv4: Ipv4Addr,
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<Option<Vec<u8>>> {
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
         Some(m) => m,
@@ -854,7 +887,7 @@ pub fn layer3_ipv4_send(
         payload,
         ethernet_type,
         layers_match,
-        max_loop,
+        timeout,
     )?;
     match layer2_buff {
         Some(layer2_packet) => Ok(Some(layer2_payload(&layer2_packet))),
@@ -939,14 +972,14 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let ethernet_type = EtherTypes::Ipv6;
-    let max_loop = 32;
+    let timeout = Duration::new(3, 0);
     let r = layer2_send(
         multicast_mac(dst_ipv6),
         interface.clone(),
         &ipv6_buff,
         ethernet_type,
         vec![layers_match],
-        max_loop,
+        timeout,
     )?;
     let mac = match r {
         Some(r) => match layer4_icmpv6.do_match(&r) {
@@ -1030,7 +1063,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let max_loop = 32;
+    let timeout = Duration::new(3, 0);
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ethernet_type = EtherTypes::Ipv6;
     let r = layer2_send(
@@ -1039,7 +1072,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
         &ipv6_buff,
         ethernet_type,
         vec![layers_match],
-        max_loop,
+        timeout,
     )?;
     let mac = match r {
         Some(r) => get_mac_from_ndp_rs(&r),
@@ -1061,7 +1094,7 @@ pub fn layer3_ipv6_send(
     dst_ipv6: Ipv6Addr,
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
-    max_loop: usize,
+    timeout: Duration,
 ) -> Result<Option<Vec<u8>>> {
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
         Some(m) => m,
@@ -1120,7 +1153,7 @@ pub fn layer3_ipv6_send(
         payload,
         ethernet_type,
         layers_match,
-        max_loop,
+        timeout,
     )?;
     match layer2_buff {
         Some(layer2_packet) => Ok(Some(layer2_payload(&layer2_packet))),
@@ -1176,6 +1209,18 @@ mod tests {
         let r = system_neighbour_cache().unwrap().unwrap();
         for (i, m) in r {
             println!("{} - {}", i, m);
+        }
+    }
+    #[test]
+    fn test_duration_ep() {
+        let a = Duration::new(1, 0);
+        let b = Duration::new(0, 0);
+
+        if a == Duration::new(0, 0) {
+            println!("a == 0")
+        }
+        if b == Duration::new(0, 0) {
+            println!("b == 0")
         }
     }
 }
