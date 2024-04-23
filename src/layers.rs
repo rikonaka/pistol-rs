@@ -572,7 +572,7 @@ pub fn layer2_send(
 pub fn system_route() -> Result<Ipv4Addr> {
     if cfg!(target_os = "linux") {
         // ip route (default)
-        let c = Command::new("bash").args(["ip", "route"]).output()?;
+        let c = Command::new("bash").args(["-c", "ip route"]).output()?;
         // default via 192.168.72.2 dev ens33
         // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
         let output = String::from_utf8_lossy(&c.stdout);
@@ -606,7 +606,7 @@ pub fn system_route() -> Result<Ipv4Addr> {
 pub fn system_route6() -> Result<Ipv6Addr> {
     if cfg!(target_os = "linux") {
         // ip route (default)
-        let c = Command::new("bash").args(["ip", "-6", "route"]).output()?;
+        let c = Command::new("bash").args(["-c", "ip -6 route"]).output()?;
         // 240e:34c:85:e4d0::/64 dev ens36 proto kernel metric 256 expires 86372sec pref medium
         // fe80::/64 dev ens33 proto kernel metric 256 pref medium
         // fe80::/64 dev ens36 proto kernel metric 256 pref medium
@@ -642,7 +642,7 @@ pub fn system_route6() -> Result<Ipv6Addr> {
 pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
     if cfg!(target_os = "linux") {
         // ip neighbour
-        let c = Command::new("bash").args(["ip", "neighbour"]).output()?;
+        let c = Command::new("bash").args(["-c", "ip neighbour"]).output()?;
         // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
         // 192.168.72.254 dev ens33 lladdr 00:50:56:fa:d4:85 STALE
         // 192.168.72.2 dev ens33 lladdr 00:50:56:ff:8c:06 STALE
@@ -692,7 +692,7 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
     if cfg!(target_os = "linux") {
         // ip neighbour
         let c = Command::new("bash")
-            .args(["ip", "-6", "neighbour"])
+            .args(["-c", "ip -6 neighbour"])
             .output()?;
         // fe80::4a5f:8ff:fee0:1394 dev ens33 FAILED
         // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
@@ -1236,6 +1236,15 @@ mod tests {
     fn test_windows_command() {
         let c = Command::new("powershell")
             .args(["Get-NetNeighbor"])
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&c.stdout);
+        println!("{}", output);
+    }
+    #[test]
+    fn test_linux_command() {
+        let c = Command::new("bash")
+            .args(["-c", "ip neighbour"])
             .output()
             .unwrap();
         let output = String::from_utf8_lossy(&c.stdout);

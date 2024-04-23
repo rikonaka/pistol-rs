@@ -534,7 +534,7 @@ mod tests {
         let threads_num = 8;
 
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
-        println!("{}", ret.len());
+        // println!("{}", ret.len());
 
         for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
@@ -542,7 +542,6 @@ mod tests {
             println!(">>> Details:");
             for d in detect_ret {
                 println!("{}", d);
-                break;
             }
         }
         Ok(())
@@ -553,11 +552,12 @@ mod tests {
 
         let nmap_os_file = include_str!("./db/nmap-os-db");
         let nmap_os_file_lines = nmap_os_file.split("\n").map(str::to_string).collect();
-        let _ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
-        // for i in 0..5 {
-        //     let r = &ret[i];
-        //     println!("{:?}", r.seq.gcd);
-        // }
+        let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        for i in 0..5 {
+            let r = &ret[i];
+            println!("{:?}", r.info);
+            println!("{:?}", r.seq.gcd);
+        }
 
         // in my homelab server: parse time: 1.285817538s
         println!("parse time: {:?}", start.elapsed().unwrap());
