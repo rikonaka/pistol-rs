@@ -95,8 +95,8 @@ fn send_seq_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let response = match ret? {
-            Some(r) => r,
-            None => vec![],
+            (Some(r), Some(_rtt)) => r,
+            (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
         match i {
@@ -162,8 +162,8 @@ fn send_ie_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) -> 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
         let response = match ret? {
-            Some(r) => r,
-            None => vec![],
+            (Some(r), Some(_rtt)) => r,
+            (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
         match i {
@@ -223,8 +223,8 @@ fn send_nx_probes(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) -> 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
         let response = match ret? {
-            Some(r) => r,
-            None => vec![],
+            (Some(r), Some(_rtt)) => r,
+            (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
         match i {
@@ -276,8 +276,8 @@ fn send_u1_probe(
     let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
 
     let response = match ret {
-        Some(r) => r,
-        None => vec![],
+        (Some(r), Some(_rtt)) => r,
+        (_, _) => vec![],
     };
     let rr = RequestAndResponse {
         request: buff,
@@ -319,8 +319,8 @@ fn send_tecn_probe(
     let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
 
     let response = match ret {
-        Some(r) => r,
-        None => vec![],
+        (Some(r), Some(_rtt)) => r,
+        (_, _) => vec![],
     };
     let rr = RequestAndResponse {
         request: buff,
@@ -429,8 +429,8 @@ fn send_tx_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let response = match ret? {
-            Some(r) => r,
-            None => vec![],
+            (Some(r), Some(_rtt)) => r,
+            (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
         match i {

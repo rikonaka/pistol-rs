@@ -27,7 +27,7 @@ pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
-) -> Result<PingStatus> {
+) -> Result<(PingStatus, Option<Duration>)> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ip header
@@ -86,7 +86,7 @@ pub fn send_icmp_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
+    let (ret, rtt) = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
     match ret {
         Some(r) => {
             match Ipv4Packet::new(&r) {
@@ -104,11 +104,11 @@ pub fn send_icmp_ping_packet(
                                     if icmp_type == IcmpTypes::DestinationUnreachable {
                                         if codes_1.contains(&icmp_code) {
                                             // icmp protocol unreachable error (type 3, code 2)
-                                            return Ok(PingStatus::Down);
+                                            return Ok((PingStatus::Down, rtt));
                                         }
                                     } else if icmp_type == IcmpTypes::EchoReply {
                                         if codes_2.contains(&icmp_code) {
-                                            return Ok(PingStatus::Up);
+                                            return Ok((PingStatus::Up, rtt));
                                         }
                                     }
                                 }
@@ -124,7 +124,7 @@ pub fn send_icmp_ping_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(PingStatus::Down)
+    Ok((PingStatus::Down, rtt))
 }
 
 #[cfg(test)]

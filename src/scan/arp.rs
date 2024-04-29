@@ -1,9 +1,9 @@
 use anyhow::Result;
-use std::time::Duration;
 use pnet::datalink::{MacAddr, NetworkInterface};
 use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, MutableArpPacket};
 use pnet::packet::ethernet::EtherTypes;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use crate::layers::{get_mac_from_arp, layer2_send, Layer2Match, Layer3Match, LayersMatch};
 
@@ -14,7 +14,7 @@ pub fn send_arp_scan_packet(
     src_mac: MacAddr,
     interface: NetworkInterface,
     timeout: Duration,
-) -> Result<Option<MacAddr>> {
+) -> Result<(Option<MacAddr>, Option<Duration>)> {
     let mut arp_buffer = [0u8; 28];
     let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
 
@@ -48,7 +48,7 @@ pub fn send_arp_scan_packet(
         vec![layers_match],
         timeout,
     )? {
-        Some(r) => Ok(get_mac_from_arp(&r)),
-        None => Ok(None),
+        (Some(r), Some(rtt)) => Ok((get_mac_from_arp(&r), Some(rtt))),
+        (_, _) => Ok((None, None)),
     }
 }

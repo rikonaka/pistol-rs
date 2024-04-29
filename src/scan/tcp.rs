@@ -13,11 +13,10 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::layers::{
-    layer3_ipv4_send, Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch,
-};
+use crate::layers::{layer3_ipv4_send, Layer3Match};
+use crate::layers::{Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
 use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
 use crate::IdleScanResults;
 use crate::TargetScanStatus;
@@ -64,7 +63,7 @@ pub fn send_syn_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -114,7 +113,7 @@ pub fn send_syn_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -132,10 +131,10 @@ pub fn send_syn_scan_packet(
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
                                         // tcp syn/ack response
-                                        return Ok(TargetScanStatus::Open);
+                                        return Ok((TargetScanStatus::Open, rtt));
                                     } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // tcp rst response
-                                        return Ok(TargetScanStatus::Closed);
+                                        return Ok((TargetScanStatus::Closed, rtt));
                                     }
                                 }
                                 None => (),
@@ -158,7 +157,7 @@ pub fn send_syn_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -173,7 +172,7 @@ pub fn send_syn_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::Filtered)
+    Ok((TargetScanStatus::Filtered, rtt))
 }
 
 pub fn send_fin_scan_packet(
@@ -182,7 +181,7 @@ pub fn send_fin_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -232,7 +231,7 @@ pub fn send_fin_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -250,10 +249,10 @@ pub fn send_fin_scan_packet(
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
                                         // tcp syn/ack response
-                                        return Ok(TargetScanStatus::Open);
+                                        return Ok((TargetScanStatus::Open, rtt));
                                     } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // tcp rst packet
-                                        return Ok(TargetScanStatus::Closed);
+                                        return Ok((TargetScanStatus::Closed, rtt));
                                     }
                                 }
                                 None => (),
@@ -276,7 +275,7 @@ pub fn send_fin_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -291,7 +290,7 @@ pub fn send_fin_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::OpenOrFiltered)
+    Ok((TargetScanStatus::OpenOrFiltered, rtt))
 }
 
 pub fn send_ack_scan_packet(
@@ -300,7 +299,7 @@ pub fn send_ack_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -350,7 +349,7 @@ pub fn send_ack_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -368,7 +367,7 @@ pub fn send_ack_scan_packet(
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // tcp rst response
-                                        return Ok(TargetScanStatus::Unfiltered);
+                                        return Ok((TargetScanStatus::Unfiltered, rtt));
                                     }
                                 }
                                 None => (),
@@ -391,7 +390,7 @@ pub fn send_ack_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -406,7 +405,7 @@ pub fn send_ack_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::Filtered)
+    Ok((TargetScanStatus::Filtered, rtt))
 }
 
 pub fn send_null_scan_packet(
@@ -415,7 +414,7 @@ pub fn send_null_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -465,7 +464,7 @@ pub fn send_null_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -483,7 +482,7 @@ pub fn send_null_scan_packet(
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // tcp rst response
-                                        return Ok(TargetScanStatus::Closed);
+                                        return Ok((TargetScanStatus::Closed, rtt));
                                     }
                                 }
                                 None => (),
@@ -506,7 +505,7 @@ pub fn send_null_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -521,7 +520,7 @@ pub fn send_null_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::OpenOrFiltered)
+    Ok((TargetScanStatus::OpenOrFiltered, rtt))
 }
 
 pub fn send_xmas_scan_packet(
@@ -530,7 +529,7 @@ pub fn send_xmas_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -581,7 +580,7 @@ pub fn send_xmas_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -599,7 +598,7 @@ pub fn send_xmas_scan_packet(
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // tcp rst response
-                                        return Ok(TargetScanStatus::Closed);
+                                        return Ok((TargetScanStatus::Closed, rtt));
                                     }
                                 }
                                 None => (),
@@ -622,7 +621,7 @@ pub fn send_xmas_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -637,7 +636,7 @@ pub fn send_xmas_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::OpenOrFiltered)
+    Ok((TargetScanStatus::OpenOrFiltered, rtt))
 }
 
 pub fn send_window_scan_packet(
@@ -646,7 +645,7 @@ pub fn send_window_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -696,7 +695,7 @@ pub fn send_window_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -715,10 +714,10 @@ pub fn send_window_scan_packet(
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         if tcp_packet.get_window() > 0 {
                                             // tcp rst response with non-zero window field
-                                            return Ok(TargetScanStatus::Open);
+                                            return Ok((TargetScanStatus::Open, rtt));
                                         } else {
                                             // tcp rst response with zero window field
-                                            return Ok(TargetScanStatus::Closed);
+                                            return Ok((TargetScanStatus::Closed, rtt));
                                         }
                                     }
                                 }
@@ -742,7 +741,7 @@ pub fn send_window_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -757,7 +756,7 @@ pub fn send_window_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::Filtered)
+    Ok((TargetScanStatus::Filtered, rtt))
 }
 
 pub fn send_maimon_scan_packet(
@@ -766,7 +765,7 @@ pub fn send_maimon_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -816,7 +815,7 @@ pub fn send_maimon_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff,
@@ -834,7 +833,7 @@ pub fn send_maimon_scan_packet(
                                     let tcp_flags = tcp_packet.get_flags();
                                     if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                         // tcp rst response
-                                        return Ok(TargetScanStatus::Closed);
+                                        return Ok((TargetScanStatus::Closed, rtt));
                                     }
                                 }
                                 None => (),
@@ -857,7 +856,7 @@ pub fn send_maimon_scan_packet(
                                         && codes.contains(&icmp_code)
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                        return Ok(TargetScanStatus::Filtered);
+                                        return Ok((TargetScanStatus::Filtered, rtt));
                                     }
                                 }
                                 None => (),
@@ -872,7 +871,7 @@ pub fn send_maimon_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::OpenOrFiltered)
+    Ok((TargetScanStatus::OpenOrFiltered, rtt))
 }
 
 pub fn send_idle_scan_packet(
@@ -883,7 +882,7 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Duration,
-) -> Result<(TargetScanStatus, Option<IdleScanResults>)> {
+) -> Result<(TargetScanStatus, Option<IdleScanResults>, Option<Duration>)> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
@@ -944,7 +943,7 @@ pub fn send_idle_scan_packet(
     let layers_match_zombie_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp_zombie);
 
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
-    let ret = layer3_ipv4_send(
+    let (ret, rtt_1) = layer3_ipv4_send(
         src_ipv4,
         zombie_ipv4,
         &ip_buff,
@@ -989,7 +988,7 @@ pub fn send_idle_scan_packet(
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                         // dst is unreachable ignore this port
-                                        return Ok((TargetScanStatus::Unreachable, None));
+                                        return Ok((TargetScanStatus::Unreachable, None, rtt_1));
                                     }
                                 }
                                 None => (),
@@ -1029,7 +1028,7 @@ pub fn send_idle_scan_packet(
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let ret = layer3_ipv4_send(
+    let (ret, rtt_2) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &ip_buff_3,
@@ -1038,6 +1037,7 @@ pub fn send_idle_scan_packet(
     )?;
 
     let mut zombie_ip_id_2 = 0;
+    let rtt = (rtt_1.unwrap() + rtt_2.unwrap()) / 2;
     match ret {
         Some(r) => {
             match Ipv4Packet::new(&r) {
@@ -1074,7 +1074,11 @@ pub fn send_idle_scan_packet(
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                         // dst is unreachable ignore this port
-                                        return Ok((TargetScanStatus::Unreachable, None));
+                                        return Ok((
+                                            TargetScanStatus::Unreachable,
+                                            None,
+                                            Some(rtt),
+                                        ));
                                     }
                                 }
                                 None => (),
@@ -1097,6 +1101,7 @@ pub fn send_idle_scan_packet(
                 zombie_ip_id_1,
                 zombie_ip_id_2,
             }),
+            Some(rtt),
         ))
     } else {
         Ok((
@@ -1105,6 +1110,7 @@ pub fn send_idle_scan_packet(
                 zombie_ip_id_1,
                 zombie_ip_id_2,
             }),
+            Some(rtt),
         ))
     }
 }
@@ -1115,11 +1121,12 @@ pub fn send_connect_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
+    let start_time = Instant::now();
     match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(_) => Ok(TargetScanStatus::Open),
-        Err(_) => Ok(TargetScanStatus::Closed),
+        Ok(_) => Ok((TargetScanStatus::Open, Some(start_time.elapsed()))),
+        Err(_) => Ok((TargetScanStatus::Closed, None)),
     }
 }
 
@@ -1197,7 +1204,7 @@ mod tests {
         let dst_port = 22;
         let zombie_port = utils::random_port();
         let timeout = Duration::new(3, 0);
-        let (ret, i) = send_idle_scan_packet(
+        let (ret, i, _rtt) = send_idle_scan_packet(
             src_ipv4,
             src_port,
             dst_ipv4,

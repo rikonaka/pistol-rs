@@ -23,7 +23,7 @@ pub fn send_icmpv6_ping_packet(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
-) -> Result<PingStatus> {
+) -> Result<(PingStatus, Option<Duration>)> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -81,7 +81,7 @@ pub fn send_icmpv6_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], timeout)?;
+    let (ret, rtt) = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], timeout)?;
     match ret {
         Some(r) => {
             match Ipv6Packet::new(&r) {
@@ -96,11 +96,11 @@ pub fn send_icmpv6_ping_packet(
                                     if icmpv6_type == Icmpv6Types::DestinationUnreachable {
                                         if codes_1.contains(&icmpv6_code) {
                                             // icmp protocol unreachable error (type 3, code 2)
-                                            return Ok(PingStatus::Down);
+                                            return Ok((PingStatus::Down, rtt));
                                         }
                                     } else if icmpv6_type == Icmpv6Types::EchoReply {
                                         if codes_2.contains(&icmpv6_code) {
-                                            return Ok(PingStatus::Up);
+                                            return Ok((PingStatus::Up, rtt));
                                         }
                                     }
                                 }
@@ -116,7 +116,7 @@ pub fn send_icmpv6_ping_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok(PingStatus::Down)
+    Ok((PingStatus::Down, rtt))
 }
 
 #[cfg(test)]

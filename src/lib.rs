@@ -7,6 +7,7 @@ use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::Duration;
 
 mod errors;
 mod flood;
@@ -14,11 +15,10 @@ mod layers;
 mod os;
 mod ping;
 mod scan;
-mod utils;
 mod vs;
+mod utils;
 
-
-const DEFAULT_MAXLOOP: usize = 128;
+const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -31,6 +31,7 @@ pub enum PingStatus {
 pub struct PingResults {
     pub addr: IpAddr,
     pub status: PingStatus,
+    pub rtt: Option<Duration>,
 }
 
 impl fmt::Display for PingResults {
@@ -94,12 +95,13 @@ impl fmt::Display for ArpScanResults {
 pub struct TcpUdpScanResults {
     pub addr: IpAddr,
     pub results: HashMap<u16, TargetScanStatus>,
+    pub rtt: Option<Duration>,
 }
 
 impl TcpUdpScanResults {
-    pub fn new(addr: IpAddr) -> TcpUdpScanResults {
+    pub fn new(addr: IpAddr, rtt: Option<Duration>) -> TcpUdpScanResults {
         let results = HashMap::new();
-        TcpUdpScanResults { addr, results }
+        TcpUdpScanResults { addr, results, rtt }
     }
 }
 
@@ -128,12 +130,13 @@ impl fmt::Display for TcpUdpScanResults {
 pub struct IpScanResults {
     pub addr: IpAddr,
     pub results: HashMap<IpNextHeaderProtocol, TargetScanStatus>,
+    pub rtt: Option<Duration>,
 }
 
 impl IpScanResults {
-    pub fn new(addr: IpAddr) -> IpScanResults {
+    pub fn new(addr: IpAddr, rtt: Option<Duration>) -> IpScanResults {
         let results = HashMap::new();
-        IpScanResults { addr, results }
+        IpScanResults { addr, results, rtt }
     }
 }
 
@@ -520,7 +523,7 @@ pub use os::os_detect;
 pub use os::os_detect6;
 
 /// Detect target port service
-pub use vs::vs_detect;
+pub use vs::vs_detect_tcp;
 
 /* Work with domain */
 /// Queries the IP address of a domain name and returns.

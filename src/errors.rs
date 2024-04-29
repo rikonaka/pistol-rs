@@ -240,50 +240,6 @@ impl CanNotFoundSourceAddress {
 }
 impl Error for CanNotFoundSourceAddress {}
 
-/* SCAN */
-
-#[derive(Debug, Clone)]
-pub struct CanNotFoundNullTcpProbe;
-impl fmt::Display for CanNotFoundNullTcpProbe {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the null probe from service probes file")
-    }
-}
-impl CanNotFoundNullTcpProbe {
-    pub fn new() -> CanNotFoundNullTcpProbe {
-        CanNotFoundNullTcpProbe {}
-    }
-}
-impl Error for CanNotFoundNullTcpProbe {}
-
-#[derive(Debug, Clone)]
-pub struct CanNotFoundOtherTcpProbes;
-impl fmt::Display for CanNotFoundOtherTcpProbes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the other probes from service probes file")
-    }
-}
-impl CanNotFoundOtherTcpProbes {
-    pub fn new() -> CanNotFoundOtherTcpProbes {
-        CanNotFoundOtherTcpProbes {}
-    }
-}
-impl Error for CanNotFoundOtherTcpProbes {}
-
-#[derive(Debug, Clone)]
-pub struct CanNotFoundUdpProbes;
-impl fmt::Display for CanNotFoundUdpProbes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the udp probes from service probes file")
-    }
-}
-impl CanNotFoundUdpProbes {
-    pub fn new() -> CanNotFoundUdpProbes {
-        CanNotFoundUdpProbes {}
-    }
-}
-impl Error for CanNotFoundUdpProbes {}
-
 #[derive(Debug, Clone)]
 pub struct IllegalTarget {
     addr: IpAddr,

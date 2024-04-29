@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::sync::mpsc::channel;
+use std::time::Duration;
 
 use anyhow::Result;
 
-use crate::utils::get_threads_pool;
-use crate::vs::dbparser::Match;
-use crate::vs::vscan::vs_probe;
+use crate::utils::{get_default_timeout, get_threads_pool};
+use crate::vs::dbparser::{nsp_exclued_parser, nsp_parser, Match};
+use crate::vs::vscan::vs_probe_tcp;
 use crate::{Target, TargetType};
 
 pub mod dbparser;
@@ -32,7 +33,21 @@ impl fmt::Display for NmapVsDetectRet {
     }
 }
 
-pub fn vs_detect(target: Target, threads_num: usize) -> Result<Vec<NmapVsDetectRet>> {
+pub fn vs_detect_tcp(
+    target: Target,
+    threads_num: usize,
+    timeout: Option<Duration>,
+) -> Result<Vec<NmapVsDetectRet>> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
+    let nsp_str = include_str!("./db/nmap-service-probes");
+    let mut nsp_lines = Vec::new();
+    for l in nsp_str.lines() {
+        nsp_lines.push(l.to_string());
+    }
+
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut vs_target = HashMap::new();
@@ -51,17 +66,27 @@ pub fn vs_detect(target: Target, threads_num: usize) -> Result<Vec<NmapVsDetectR
         }
     }
 
+    let exclude_ports = nsp_exclued_parser(&nsp_lines)?;
+    let service_probes = nsp_parser(&nsp_lines)?;
+
     let mut recv_size = 0;
     for (addr, ports) in vs_target {
         for port in ports {
-            let tx = tx.clone();
-            pool.execute(move || {
-                let r = vs_probe(addr, port);
-                match tx.send((port, r)) {
-                    _ => (),
-                }
-            });
-            recv_size += 1;
+            // Nmap checks to see if the port is one of the ports to be excluded.
+            if !exclude_ports.ports.contains(&port)
+                && !exclude_ports.tcp_ports.contains(&port)
+                && !exclude_ports.udp_ports.contains(&port)
+            {
+                let tx = tx.clone();
+                let service_probes = service_probes.clone();
+                pool.execute(move || {
+                    let r = vs_probe_tcp(addr, port, &service_probes, timeout);
+                    match tx.send((port, r)) {
+                        _ => (),
+                    }
+                });
+                recv_size += 1;
+            }
         }
     }
 
@@ -85,12 +110,14 @@ mod tests {
     use crate::Host;
     use std::net::Ipv4Addr;
     #[test]
-    fn test_vs_detect() -> Result<()> {
+    fn test_vs_detect_tcp() -> Result<()> {
         let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
+        // let h1 = Host::new(dst_addr, Some(vec![22]))?;
         let h1 = Host::new(dst_addr, Some(vec![22, 80]))?;
         let target = Target::new(vec![h1]);
         let threads_num = 8;
-        let ret = vs_detect(target, threads_num).unwrap();
+        let timeout = Some(Duration::new(1, 0));
+        let ret = vs_detect_tcp(target, threads_num, timeout).unwrap();
         for r in ret {
             println!("{}", r);
         }

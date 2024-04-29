@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::process::Command;
 use std::sync::mpsc::channel;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use subnetwork::Ipv6;
 
 use crate::errors::CanNotFoundRouterAddress;
@@ -506,7 +506,7 @@ pub fn layer2_send(
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
         Some((s, r)) => (s, r),
         None => return Err(CreateDatalinkChannelFailed::new().into()),
@@ -526,7 +526,7 @@ pub fn layer2_send(
 
     let final_buff = ethernet_buff[..(ETHERNET_HEADER_SIZE + send_buff.len())].to_vec();
     // _print_packet_as_wireshark_format(&final_buff);
-    // println!("SEND +++++++++++++++++++++++++++++++++++++++++++++++");
+    let send_time = Instant::now();
     match sender.send_to(&final_buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),
@@ -559,18 +559,23 @@ pub fn layer2_send(
             }
         });
 
-        let buff = match rx.recv_timeout(timeout) {
-            Ok(b) => b,
-            Err(_) => vec![], // read timeout
+        let (buff, rtt) = match rx.recv_timeout(timeout) {
+            Ok(b) => {
+                let rtt = send_time.elapsed();
+                (b, Some(rtt))
+            }
+            Err(_) => {
+                (vec![], None) // read timeout
+            }
         };
         if buff.len() > 0 {
-            Ok(Some(buff))
+            Ok((Some(buff), rtt))
         } else {
-            Ok(None)
+            Ok((None, rtt))
         }
     } else {
         // not recv any response for flood attack enffience
-        Ok(None)
+        Ok((None, None))
     }
 }
 
@@ -785,7 +790,7 @@ pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
     }
 }
 
-fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<Option<MacAddr>> {
+fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     let interface = match find_interface_by_ipv4(src_ipv4) {
         Some(i) => i,
         None => return Err(CanNotFoundInterface::new().into()),
@@ -823,7 +828,7 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<Option<MacAddr>> {
     let layers_match = LayersMatch::Layer3Match(layer3);
 
     let timeout = Duration::new(3, 0);
-    let ret = layer2_send(
+    let (ret, rtt) = layer2_send(
         MacAddr::broadcast(),
         interface,
         &arp_buff,
@@ -832,8 +837,8 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<Option<MacAddr>> {
         timeout,
     )?;
     match ret {
-        Some(r) => Ok(get_mac_from_arp(&r)),
-        None => Ok(None),
+        Some(r) => Ok((get_mac_from_arp(&r), rtt)),
+        None => Ok((None, None)),
     }
 }
 
@@ -843,7 +848,7 @@ pub fn layer3_ipv4_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
         Some(m) => m,
         None => {
@@ -857,11 +862,11 @@ pub fn layer3_ipv4_send(
                         let mut mac: Option<MacAddr> = None;
                         for _ in 0..NEIGNBOUR_MAX_TRY {
                             match arp(src_ipv4, route_ip)? {
-                                Some(m) => {
+                                (Some(m), Some(_rtt)) => {
                                     mac = Some(m);
                                     break;
                                 }
-                                None => (),
+                                (_, _) => (),
                             }
                         }
                         match mac {
@@ -875,11 +880,11 @@ pub fn layer3_ipv4_send(
                 let mut mac: Option<MacAddr> = None;
                 for _ in 0..NEIGNBOUR_MAX_TRY {
                     match arp(src_ipv4, dst_ipv4)? {
-                        Some(m) => {
+                        (Some(m), Some(_rtt)) => {
                             mac = Some(m);
                             break;
                         }
-                        None => (),
+                        (_, _) => (),
                     }
                 }
                 match mac {
@@ -895,7 +900,7 @@ pub fn layer3_ipv4_send(
     };
 
     let ethernet_type = EtherTypes::Ipv4;
-    let layer2_buff = layer2_send(
+    let (layer2_buff, rtt) = layer2_send(
         dst_mac,
         interface,
         payload,
@@ -904,8 +909,8 @@ pub fn layer3_ipv4_send(
         timeout,
     )?;
     match layer2_buff {
-        Some(layer2_packet) => Ok(Some(layer2_payload(&layer2_packet))),
-        None => Ok(None),
+        Some(layer2_packet) => Ok((Some(layer2_payload(&layer2_packet)), rtt)),
+        None => Ok((None, None)),
     }
 }
 
@@ -987,7 +992,7 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
 
     let ethernet_type = EtherTypes::Ipv6;
     let timeout = Duration::new(3, 0);
-    let r = layer2_send(
+    let (r, _rtt) = layer2_send(
         multicast_mac(dst_ipv6),
         interface.clone(),
         &ipv6_buff,
@@ -1080,7 +1085,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     let timeout = Duration::new(3, 0);
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ethernet_type = EtherTypes::Ipv6;
-    let r = layer2_send(
+    let (r, _rtt) = layer2_send(
         dst_mac,
         interface.clone(),
         &ipv6_buff,
@@ -1109,7 +1114,7 @@ pub fn layer3_ipv6_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
         Some(m) => m,
         None => {
@@ -1161,7 +1166,7 @@ pub fn layer3_ipv6_send(
     };
 
     let ethernet_type = EtherTypes::Ipv6;
-    let layer2_buff = layer2_send(
+    let (layer2_buff, rtt) = layer2_send(
         dst_mac,
         interface,
         payload,
@@ -1170,8 +1175,8 @@ pub fn layer3_ipv6_send(
         timeout,
     )?;
     match layer2_buff {
-        Some(layer2_packet) => Ok(Some(layer2_payload(&layer2_packet))),
-        None => Ok(None),
+        Some(layer2_packet) => Ok((Some(layer2_payload(&layer2_packet)), rtt)),
+        None => Ok((None, None)),
     }
 }
 
@@ -1191,13 +1196,13 @@ mod tests {
     }
     #[test]
     fn test_send_arp_packet() {
-        let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
+        let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 33);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         match arp(src_ipv4, dst_ipv4).unwrap() {
-            Some(m) => {
-                println!("{}", m);
+            (Some(m), rtt) => {
+                println!("{} => rtt: {}", m, rtt.unwrap().as_secs_f32());
             }
-            None => println!("None"),
+            (_, _) => println!("None"),
         }
     }
     #[test]

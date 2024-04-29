@@ -136,7 +136,7 @@ pub fn arp_scan(
             for v in iter {
                 match v {
                     Ok((target_ipv4, target_mac)) => match target_mac? {
-                        Some(m) => {
+                        (Some(m), Some(_rtt)) => {
                             ret.alive_hosts_num += 1;
                             let mut ouis = String::new();
                             let mut mac_prefix = String::new();
@@ -176,7 +176,7 @@ pub fn arp_scan(
                             let aah = ArpAliveHosts { mac_addr: m, ouis };
                             ret.alive_hosts.insert(target_ipv4, aah);
                         }
-                        None => (),
+                        (_, _) => (),
                     },
                     Err(e) => return Err(e),
                 }
@@ -202,8 +202,9 @@ fn run_scan(
     u16,
     Option<IpNextHeaderProtocol>,
     TargetScanStatus,
+    Option<Duration>,
 )> {
-    let scan_ret = match method {
+    let (scan_ret, rtt) = match method {
         ScanMethod::Connect => {
             tcp::send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
@@ -240,7 +241,7 @@ fn run_scan(
                 zombie_port,
                 timeout,
             ) {
-                Ok((status, _idel_rets)) => status,
+                Ok((status, _idel_rets, rtt)) => (status, rtt),
                 Err(e) => return Err(e.into()),
             }
         }
@@ -252,7 +253,7 @@ fn run_scan(
         }
     };
 
-    Ok((dst_ipv4, dst_port, protocol, scan_ret))
+    Ok((dst_ipv4, dst_port, protocol, scan_ret, rtt))
 }
 
 fn run_scan6(
@@ -262,8 +263,8 @@ fn run_scan6(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(Ipv6Addr, u16, TargetScanStatus)> {
-    let scan_ret = match method {
+) -> Result<(Ipv6Addr, u16, TargetScanStatus, Option<Duration>)> {
+    let (scan_ret, rtt) = match method {
         ScanMethod6::Connect => {
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
@@ -293,7 +294,7 @@ fn run_scan6(
         }
     };
 
-    Ok((dst_ipv6, dst_port, scan_ret))
+    Ok((dst_ipv6, dst_port, scan_ret, rtt))
 }
 
 pub fn scan(
@@ -356,7 +357,7 @@ pub fn scan(
 
     for v in iter {
         match v {
-            Ok((dst_ipv4, dst_port, procotol, scan_rets)) => match procotol {
+            Ok((dst_ipv4, dst_port, procotol, scan_rets, rtt)) => match procotol {
                 Some(p) => {
                     if ret_procotol.contains_key(&dst_ipv4.into()) {
                         ret_procotol
@@ -365,7 +366,7 @@ pub fn scan(
                             .results
                             .insert(p, scan_rets);
                     } else {
-                        let mut v = IpScanResults::new(dst_ipv4.into());
+                        let mut v = IpScanResults::new(dst_ipv4.into(), rtt);
                         v.results.insert(p, scan_rets);
                         ret_procotol.insert(dst_ipv4.into(), v);
                     }
@@ -377,7 +378,7 @@ pub fn scan(
                             .results
                             .insert(dst_port, scan_rets);
                     } else {
-                        let mut v = TcpUdpScanResults::new(dst_ipv4.into());
+                        let mut v = TcpUdpScanResults::new(dst_ipv4.into(), rtt);
                         v.results.insert(dst_port, scan_rets);
                         ret.insert(dst_ipv4.into(), v);
                     }
@@ -432,14 +433,14 @@ pub fn scan6(
 
     for v in iter {
         match v {
-            Ok((dst_ipv6, dst_port, scan_rets)) => {
+            Ok((dst_ipv6, dst_port, scan_rets, rtt)) => {
                 if ret.contains_key(&dst_ipv6.into()) {
                     ret.get_mut(&dst_ipv6.into())
                         .unwrap()
                         .results
                         .insert(dst_port, scan_rets);
                 } else {
-                    let mut v = TcpUdpScanResults::new(dst_ipv6.into());
+                    let mut v = TcpUdpScanResults::new(dst_ipv6.into(), rtt);
                     v.results.insert(dst_port, scan_rets);
                     ret.insert(dst_ipv6.into(), v);
                 }

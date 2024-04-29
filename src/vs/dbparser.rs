@@ -1,9 +1,6 @@
 use anyhow::Result;
-use regex::Regex;
+use fancy_regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc::channel;
-
-use crate::utils::{get_cpu_num, get_threads_pool};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbesProtocol {
@@ -24,13 +21,13 @@ pub struct Match {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Probe {
-    // This must be either TCP or UDP. Nmap only uses probes that match the protocol of the service it is trying to scan.
+    /// This must be either TCP or UDP. Nmap only uses probes that match the protocol of the service it is trying to scan.
     pub protocol: ProbesProtocol,
-    // This is a plain English name for the probe. It is used in service fingerprints to describe which probes elicited responses.
+    /// This is a plain English name for the probe. It is used in service fingerprints to describe which probes elicited responses.
     pub probename: String,
-    // Tells Nmap what to send.
+    /// Tells Nmap what to send.
     pub probestring: String,
-    // This keyword is used to instruct Nmap not to use the given probe as a protocol-specific payload during UDP port scanning.
+    /// This keyword is used to instruct Nmap not to use the given probe as a protocol-specific payload during UDP port scanning.
     pub no_payload: bool,
 }
 
@@ -39,91 +36,47 @@ pub struct ServiceProbe {
     pub probe: Probe,
     pub matchs: Vec<Match>,
     pub softmatchs: Vec<Match>,
-    // This line tells Nmap what ports the services identified by this probe are commonly found on.
+    /// This line tells Nmap what ports the services identified by this probe are commonly found on.
     pub ports: Option<Vec<u16>>,
-    // This is the same as 'ports' directive described above, except that these ports are often used to wrap a service in SSL.
+    /// This is the same as 'ports' directive described above, except that these ports are often used to wrap a service in SSL.
     pub sslports: Option<Vec<u16>>,
-    // This rarely necessary directive specifies the amount of time Nmap should wait before giving up on the most recently defined Probe against a particular service.
+    /// This rarely necessary directive specifies the amount of time Nmap should wait before giving up on the most recently defined Probe against a particular service.
     pub totalwaitms: Option<u64>,
-    // This directive is only used for the Null probe.
+    /// This directive is only used for the Null probe.
     pub tcpwrappedms: Option<u64>,
-    // The rarity directive roughly corresponds to how infrequently this probe can be expected to return useful results.
+    /// The rarity directive roughly corresponds to how infrequently this probe can be expected to return useful results.
     pub rarity: Option<u64>,
-    // This optional directive specifies which probes should be used as fallbacks for if there are no matches in the current Probe section.
+    /// This optional directive specifies which probes should be used as fallbacks for if there are no matches in the current Probe section.
     pub fallback: Option<Vec<String>>,
 }
 
 impl ServiceProbe {
-    fn split_matchs(&self) -> Vec<Vec<Match>> {
-        let cpu_num = get_cpu_num();
+    pub fn check(&self, recv_str: &str) -> Vec<Match> {
         let mut ret = Vec::new();
-        if self.matchs.len() > cpu_num {
-            let d = (self.matchs.len() as f32 / cpu_num as f32) as usize;
-            // println!("d: {}", d);
-            for c in 0..cpu_num {
-                // println!("c[{}] {} - {}", c, (c * d), ((c + 1) * d));
-                if c != d - 1 {
-                    ret.push(self.matchs[(c * d)..((c + 1) * d)].to_vec());
-                } else {
-                    ret.push(self.matchs[(c * d)..].to_vec());
-                }
-            }
-        } else {
-            ret.push(self.matchs.clone());
-        }
-        ret
-    }
-    fn check_thread(matchs: Vec<Match>, recv_str: &str) -> Result<Option<Match>> {
-        for m in matchs {
-            // println!(">>> {} <<<", m.pattern);
-            let re = Regex::new(&m.pattern)?;
-            if re.is_match(&recv_str) {
-                return Ok(Some(m.clone()));
-            }
-        }
-
-        Ok(None)
-    }
-    pub fn check(&self, recv_str: &str) -> Result<Vec<Match>> {
-        let pool = get_threads_pool(0); // auto
-        let (tx, rx) = channel();
-        let split_matchs = self.split_matchs();
-        let mut recv_size = 0;
-        for matchs in split_matchs {
-            let tx = tx.clone();
+        for m in self.matchs.clone() {
+            // println!("{}", m.pattern);
             let recv_str = recv_str.to_string();
-            pool.execute(move || {
-                let ret = ServiceProbe::check_thread(matchs, &recv_str);
-                match tx.send(ret) {
-                    _ => (),
-                }
-            });
-            recv_size += 1;
-        }
-
-        let iter = rx.into_iter().take(recv_size);
-        let mut ret = Vec::new();
-        for i in iter {
-            match i {
-                Ok(rr) => match rr {
-                    Some(r) => {
-                        ret.push(r);
-                    }
-                    None => (),
-                },
-                Err(e) => return Err(e),
+            let re = match Regex::new(&m.pattern) {
+                Ok(r) => r,
+                Err(_) => continue, // rust regex is not support some format, and it will return error here
+            };
+            if re.is_match(&recv_str).unwrap() {
+                ret.push(m);
             }
         }
 
         if ret.len() == 0 {
-            for m in &self.softmatchs {
-                let re = Regex::new(&m.pattern)?;
-                if re.is_match(&recv_str) {
-                    ret.push(m.clone());
+            for m in self.softmatchs.clone() {
+                let re = match Regex::new(&m.pattern) {
+                    Ok(r) => r,
+                    Err(_) => continue, // rust regex is not support some format, and it will return error here
+                };
+                if re.is_match(&recv_str).unwrap() {
+                    ret.push(m);
                 }
             }
         }
-        Ok(ret)
+        ret
     }
 }
 
@@ -144,6 +97,14 @@ fn ports_parser(ports: &str) -> Result<Vec<u16>> {
         }
     }
     Ok(ret)
+}
+
+fn pattern_parser(pattern: &str) -> String {
+    let pattern = pattern.replace("\\0", "\0");
+    let pattern = pattern.replace("\\r", "\r");
+    let pattern = pattern.replace("\\n", "\n");
+    let pattern = pattern.replace("\\t", "\t");
+    pattern
 }
 
 /// Instead of getting the `Exclude` port based on the `nmap-service-probes` file,
@@ -233,7 +194,7 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
             } else if matchlast.contains("|s") {
                 pattern += "/s";
             }
-            let pattern = pattern.replace("\\0", "\\x{0}");
+            let pattern = pattern_parser(&pattern);
 
             let versioninfo = matchlast_split[2..].to_vec().join("|");
             let m = Match {
@@ -260,7 +221,7 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
             } else if matchlast.contains("|s") {
                 pattern += "/s";
             }
-            let pattern = pattern.replace("\\0", "\\x{0}");
+            let pattern = pattern_parser(&pattern);
 
             let versioninfo = matchlast_split[2..].to_vec().join("|");
             let m = Match {
@@ -428,11 +389,41 @@ mod tests {
         }
         let service_probes = nsp_parser(&nsp_lines).unwrap();
         for sp in service_probes {
-            for m in sp.matchs {
-                // println!(">>> {} <<<", m.pattern);
-                // let pattern = format!(r"{}", m.pattern);
-                let _re = Regex::new(&m.pattern).unwrap();
+            // println!("{}", sp.probe.probename);
+            if sp.probe.probename == "NULL" {
+                for m in sp.matchs {
+                    // println!(">>> {} <<<", m.pattern);
+                    // let pattern = format!(r"{}", m.pattern);
+                    // match Regex::new(&m.pattern) {
+                    //     Ok(_) => (),
+                    //     Err(e) => {
+                    //         println!("{}", e);
+                    //         println!("{}", m.pattern);
+                    //     }
+                    // };
+                    if m.pattern.contains("Ubuntu") {
+                        println!(">>>>>>>>>>>>>>>> found: {}", m.pattern);
+                    }
+                }
             }
         }
+    }
+    #[test]
+    fn test_build_regex_one() {
+        let p = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.7\n";
+        let pattern = r"^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n";
+        let pattern = pattern_parser(pattern);
+        let re = Regex::new(&pattern).unwrap();
+        let result = re.is_match(p).unwrap();
+        println!("{}", result);
+
+        let p = "HTTP/1.1 200 OK\r\nDate: Sun, 28 Apr 2024 13:42:24 GMT\r\nServer: Apache/2.4.52 (Ubuntu)\r\n";
+        let pattern =
+            // r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[.\w-]+)\s*\r?\n";
+            r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)/s";
+        let pattern = pattern_parser(pattern);
+        let re = Regex::new(&pattern).unwrap();
+        let result = re.is_match(&p).unwrap();
+        println!("{}", result);
     }
 }

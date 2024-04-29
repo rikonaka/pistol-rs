@@ -71,7 +71,7 @@ pub fn send_ip_procotol_scan_packet(
     dst_ipv4: Ipv4Addr,
     protocol: IpNextHeaderProtocol,
     timeout: Duration,
-) -> Result<TargetScanStatus> {
+) -> Result<(TargetScanStatus, Option<Duration>)> {
     const TCP_DATA_SIZE: usize = 0;
     const UDP_DATA_SIZE: usize = 0;
     const ICMP_DATA_SIZE: usize = 0;
@@ -169,7 +169,7 @@ pub fn send_ip_procotol_scan_packet(
         dst_addr: Some(src_ipv4.into()),
     };
     let layers_match = LayersMatch::Layer3Match(layer3);
-    let ret = layer3_ipv4_send(
+    let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
         dst_ipv4,
         &buff_layer_2,
@@ -199,22 +199,22 @@ pub fn send_ip_procotol_scan_packet(
                     if icmp_type == IcmpTypes::DestinationUnreachable {
                         if codes_1.contains(&icmp_code) {
                             // icmp protocol unreachable error (type 3, code 2)
-                            return Ok(TargetScanStatus::Closed);
+                            return Ok((TargetScanStatus::Closed, rtt));
                         } else if codes_2.contains(&icmp_code) {
                             // other icmp unreachable errors (type 3, code 1, 3, 9, 10, or 13)
-                            return Ok(TargetScanStatus::Filtered);
+                            return Ok((TargetScanStatus::Filtered, rtt));
                         }
                     }
                 }
                 _ => {
-                    return Ok(TargetScanStatus::Open);
+                    return Ok((TargetScanStatus::Open, rtt));
                 }
             }
         }
         None => (),
     };
     // no response received (even after retransmissions)
-    Ok(TargetScanStatus::OpenOrFiltered)
+    Ok((TargetScanStatus::OpenOrFiltered, rtt))
 }
 
 #[cfg(test)]

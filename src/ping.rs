@@ -36,17 +36,18 @@ fn run_ping(
     dst_port: Option<u16>,
     timeout: Duration,
 ) -> Result<PingResults> {
-    let ping_status = match method {
+    let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+            let (ret, rtt) =
+                tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => PingStatus::Up,
-                _ => PingStatus::Down,
+                TargetScanStatus::Open => (PingStatus::Up, rtt),
+                _ => (PingStatus::Down, rtt),
             }
         }
         PingMethods::Ack => {
@@ -55,10 +56,11 @@ fn run_ping(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+            let (ret, rtt) =
+                tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Unfiltered => PingStatus::Up,
-                _ => PingStatus::Down,
+                TargetScanStatus::Unfiltered => (PingStatus::Up, rtt),
+                _ => (PingStatus::Down, rtt),
             }
         }
         PingMethods::Udp => {
@@ -67,11 +69,12 @@ fn run_ping(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let ret = udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+            let (ret, rtt) =
+                udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => PingStatus::Up,
-                TargetScanStatus::OpenOrFiltered => PingStatus::Up,
-                _ => PingStatus::Down,
+                TargetScanStatus::Open => (PingStatus::Up, rtt),
+                TargetScanStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                _ => (PingStatus::Down, rtt),
             }
         }
         PingMethods::Icmp => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?,
@@ -79,6 +82,7 @@ fn run_ping(
     Ok(PingResults {
         addr: dst_ipv4.into(),
         status: ping_status,
+        rtt,
     })
 }
 
@@ -90,17 +94,18 @@ fn run_ping6(
     dst_port: Option<u16>,
     timeout: Duration,
 ) -> Result<PingResults> {
-    let ping_status = match method {
+    let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
+            let (ret, rtt) =
+                tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => PingStatus::Up,
-                _ => PingStatus::Down,
+                TargetScanStatus::Open => (PingStatus::Up, rtt),
+                _ => (PingStatus::Down, rtt),
             }
         }
         PingMethods::Ack => {
@@ -109,10 +114,11 @@ fn run_ping6(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let ret = tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
+            let (ret, rtt) =
+                tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Unfiltered => PingStatus::Up,
-                _ => PingStatus::Down,
+                TargetScanStatus::Unfiltered => (PingStatus::Up, rtt),
+                _ => (PingStatus::Down, rtt),
             }
         }
         PingMethods::Udp => {
@@ -121,11 +127,12 @@ fn run_ping6(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let ret = udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
+            let (ret, rtt) =
+                udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => PingStatus::Up,
-                TargetScanStatus::OpenOrFiltered => PingStatus::Up,
-                _ => PingStatus::Down,
+                TargetScanStatus::Open => (PingStatus::Up, rtt),
+                TargetScanStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                _ => (PingStatus::Down, rtt),
             }
         }
         PingMethods::Icmp => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?,
@@ -133,6 +140,7 @@ fn run_ping6(
     Ok(PingResults {
         addr: dst_ipv6.into(),
         status: ping_status,
+        rtt,
     })
 }
 
@@ -446,7 +454,7 @@ mod tests {
         let target: Target = Target::new(vec![host]);
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         for (_ip, r) in ret {
-            println!("{}", r);
+            println!("{} - {}", r, r.rtt.unwrap().as_secs_f32());
         }
         Ok(())
     }

@@ -76,7 +76,7 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 
 ## Service and Application Version Detection
 
-The nmap `nmap-service-probes` file regex format is not standard, there are a lot of syntax incompatible with rust, based on the nmap source file to do a lot of regex syntax correction. If you intend to update this file, it is best to add the new fingerprint information line by line rather than replacing the entire file.
+The nmap `nmap-service-probes` file regex format is not standard as Rust regex (e.g. backreferences are not supported), there are a lot of syntax incompatible with rust, based on the nmap source file to do a lot of regex syntax correction. If you intend to update this file, it is best to add the new fingerprint information line by line rather than replacing the entire file.
 
 ## TODO
 
@@ -107,7 +107,7 @@ fn main() -> Result<()> {
     let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
     /// Users should build the `target` themselves.
     let target = Target::new(vec![host]);
-    let ret: HashMap<IpAddr, TcpUdpScanResults> = tcp_syn_scan(
+    let ret = tcp_syn_scan(
         target,
         src_ipv4,
         src_port,
