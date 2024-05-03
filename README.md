@@ -58,21 +58,21 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ## Remote OS Detection
 
-| Methods            | Detailed Documentation                                              | Notes                        |
-| :----------------- | :------------------------------------------------------------------ | :--------------------------- |
-| [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                              |
-| [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Fingerprint is not supported |
+| Methods            | Detailed Documentation                                              | Notes                              |
+| :----------------- | :------------------------------------------------------------------ | :--------------------------------- |
+| [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                                    |
+| [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Print fingerprint is not supported |
 
 
-### Why not support the nmap IPv6 fingerprints?
+### Why not support print the nmap fingerprints on IPv6?
 
-Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints are unreadable and meaningless to humans, nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
+Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints are unreadable and meaningless to humans, see [here](https://nmap.org/book/osdetect-fingerprint-format.html#osdetect-ex-typical-reference-fprint-ipv6) for details, and nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
 
-Here are my arguments. The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, and I don't know why nmap would keep them in the final fingerprint.
+The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, at the same time, there is no detailed description of how `ST` and `RT` are calculated, I don't know why nmap would keep them in the final fingerprint.
 
 The second is `NI` probes. In the relevant [document](https://nmap.org/book/osdetect-ipv6-methods.html#osdetect-features-ipv6) of nmap, it describes the specific structure of `NI` probe, but I don't see anything about it in the code, and it seems to completely ignore this probe when do predict use logistic regression.
 
-Above all, for the current mainstream operating systems, ipv6 support is not as rich as ipv4, so try the ipv4 first.
+Furthermore, for the current mainstream operating systems, ipv6 fingerprint support is not as rich as ipv4, so try the ipv4 first.
 
 ## Service and Application Version Detection
 
@@ -222,7 +222,8 @@ T7(R=Y%DF=Y%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
 U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 IE(R=Y%DFI=N%TG=40%CD=S)
 >>> Details:
->>> Score: 83/101
+>>> Score:
+83/101
 >>> Info:
 Linux 4.15.0-88-generic #88~16.04.1-Ubuntu SMP Wed Feb 12 04:19:15 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
 Linux 4.19.0-9-amd64 #1 SMP Debian 4.19.118-2 (2020-04-29) x86_64 GNU/Linux
@@ -266,7 +267,8 @@ T7(R=N)
 U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 IE(R=Y%DFI=N%TG=40%CD=S)
 >>> Details:
->>> Score: 55/101
+>>> Score:
+55/101
 >>> Info:
 Linux 3.10.0-327.13.1.el7.x86_64
 Linux 3.12.5-200.fc19.i686 #1 SMP Tue Dec 17 22:46:33 UTC 2013 i686 i686 i386 GNU/Linux

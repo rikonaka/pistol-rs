@@ -32,7 +32,7 @@ pub struct NmapOsDetectRet {
 impl fmt::Display for NmapOsDetectRet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
-        let s = format!(">>> Score: {}/{}\n", self.score, self.total);
+        let s = format!(">>> Score:\n{}/{}\n", self.score, self.total);
         output += &s;
 
         let info_split: Vec<&str> = self.db.info.split("\n").collect();
@@ -484,14 +484,14 @@ mod tests {
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
         // println!("{}", ret.len());
 
-        for (ip, (fingerprint, _detect_ret)) in ret {
+        for (ip, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
             println!(">>> Pistol fingerprint:\n{}", fingerprint);
-            println!(">>> Nmap fingerprint:\n{}", fingerprint.nmap_format())
-            // println!(">>> Details:");
-            // for d in detect_ret {
-            //     println!("{}", d);
-            // }
+            println!(">>> Nmap fingerprint:\n{}", fingerprint.nmap_format());
+            println!(">>> Details:");
+            for d in detect_ret {
+                println!("{}", d);
+            }
         }
         Ok(())
     }
