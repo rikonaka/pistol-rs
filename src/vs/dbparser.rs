@@ -10,7 +10,8 @@ pub enum ProbesProtocol {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Match {
-    pub class: String, // match or softmatch
+    // match or softmatch
+    pub class: String,
     // This is simply the service name that the pattern matches.
     pub service: String,
     // This pattern is used to determine whether the response received matches the service given in the previous parameter.
@@ -51,32 +52,76 @@ pub struct ServiceProbe {
 }
 
 impl ServiceProbe {
-    pub fn check(&self, recv_str: &str) -> Vec<Match> {
-        let mut ret = Vec::new();
-        for m in self.matchs.clone() {
+    pub fn check(&self, recv_str: &str) -> Option<Match> {
+        let match_function = |m: &Match, re: &Regex, recv_str: &str| -> Option<Match> {
+            match re.is_match(&recv_str) {
+                Ok(b) => {
+                    if b {
+                        let captures_group = match re.captures(&recv_str) {
+                            Ok(v) => v,
+                            Err(_) => None,
+                        };
+                        match captures_group {
+                            Some(v) => {
+                                let mut versioninfo = m.versioninfo.to_string();
+                                for i in 0..v.len() {
+                                    let value = v.get(i).unwrap();
+                                    versioninfo =
+                                        versioninfo.replace(&format!("${}", i), value.as_str());
+                                }
+                                let new_match = Match {
+                                    class: m.class.clone(),
+                                    service: m.service.clone(),
+                                    pattern: m.pattern.clone(),
+                                    versioninfo,
+                                };
+                                return Some(new_match);
+                            }
+                            None => {
+                                let new_match = Match {
+                                    class: m.class.clone(),
+                                    service: m.service.clone(),
+                                    pattern: m.pattern.clone(),
+                                    versioninfo: String::from(""),
+                                };
+                                return Some(new_match);
+                            }
+                        }
+                    }
+                }
+                Err(_) => (),
+            }
+            None
+        };
+
+        // match
+        for m in &self.matchs {
             // println!("{}", m.pattern);
             let recv_str = recv_str.to_string();
             let re = match Regex::new(&m.pattern) {
                 Ok(r) => r,
                 Err(_) => continue, // rust regex is not support some format, and it will return error here
             };
-            if re.is_match(&recv_str).unwrap() {
-                ret.push(m);
+            let r = match_function(m, &re, &recv_str);
+            match r {
+                Some(r) => return Some(r),
+                None => (),
             }
         }
 
-        if ret.len() == 0 {
-            for m in self.softmatchs.clone() {
-                let re = match Regex::new(&m.pattern) {
-                    Ok(r) => r,
-                    Err(_) => continue, // rust regex is not support some format, and it will return error here
-                };
-                if re.is_match(&recv_str).unwrap() {
-                    ret.push(m);
-                }
+        // softmatch
+        for m in &self.softmatchs {
+            let re = match Regex::new(&m.pattern) {
+                Ok(r) => r,
+                Err(_) => continue, // rust regex is not support some format, and it will return error here
+            };
+            let r = match_function(m, &re, &recv_str);
+            match r {
+                Some(r) => return Some(r),
+                None => (),
             }
         }
-        ret
+        None
     }
 }
 
@@ -97,14 +142,6 @@ fn ports_parser(ports: &str) -> Result<Vec<u16>> {
         }
     }
     Ok(ret)
-}
-
-fn pattern_parser(pattern: &str) -> String {
-    let pattern = pattern.replace("\\0", "\0");
-    let pattern = pattern.replace("\\r", "\r");
-    let pattern = pattern.replace("\\n", "\n");
-    let pattern = pattern.replace("\\t", "\t");
-    pattern
 }
 
 /// Instead of getting the `Exclude` port based on the `nmap-service-probes` file,
@@ -179,26 +216,25 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
             probe_global = Some(sp);
         } else if line.starts_with("match") {
             let line_split: Vec<&str> = line.split(" ").collect();
+            let class = line_split[0].to_string();
             let service = line_split[1].to_string();
-            let matchlast = line_split[2..].to_vec().join(" ");
-            let matchlast_split: Vec<&str> = if matchlast.starts_with("m|") {
-                matchlast.split("|").collect()
-            } else if matchlast.starts_with("m=") {
-                matchlast.split("=").collect()
-            } else {
-                matchlast.split("%").collect()
-            };
-            let mut pattern = matchlast_split[1].to_string();
-            if matchlast.contains("|i") {
-                pattern += "/i"
-            } else if matchlast.contains("|s") {
-                pattern += "/s";
-            }
-            let pattern = pattern_parser(&pattern);
+            let line_other = line_split[2..].to_vec().join(" ");
 
-            let versioninfo = matchlast_split[2..].to_vec().join("|");
+            let line_other_replace = line_other.replace("|s", "|");
+            let line_other_split: Vec<&str> = line_other_replace.split("|").collect();
+            let mut pattern = line_other_split[1].to_string();
+            if line_other.contains("|s") {
+                pattern += r"\s"
+            } else if line_other.contains("|i") {
+                pattern += r"\i";
+            }
+
+            let versioninfo = line_other_split[line_other_split.len() - 1]
+                .trim()
+                .to_string();
+
             let m = Match {
-                class: String::from("match"),
+                class,
                 service,
                 pattern,
                 versioninfo,
@@ -206,26 +242,25 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
             matchs_global.push(m);
         } else if line.starts_with("softmatch") {
             let line_split: Vec<&str> = line.split(" ").collect();
+            let class = line_split[0].to_string();
             let service = line_split[1].to_string();
-            let matchlast = line_split[2..].to_vec().join(" ");
-            let matchlast_split: Vec<&str> = if matchlast.starts_with("m|") {
-                matchlast.split("|").collect()
-            } else if matchlast.starts_with("m=") {
-                matchlast.split("=").collect()
-            } else {
-                matchlast.split("%").collect()
-            };
-            let mut pattern = matchlast_split[1].to_string();
-            if matchlast.contains("|i") {
-                pattern += "/i"
-            } else if matchlast.contains("|s") {
-                pattern += "/s";
-            }
-            let pattern = pattern_parser(&pattern);
+            let line_other = line_split[2..].to_vec().join(" ");
 
-            let versioninfo = matchlast_split[2..].to_vec().join("|");
+            let line_other_replace = line_other.replace("|s", "|");
+            let line_other_split: Vec<&str> = line_other_replace.split("|").collect();
+            let mut pattern = line_other_split[1].to_string();
+            if line_other.contains("|s") {
+                pattern += r"\s"
+            } else if line_other.contains("|i") {
+                pattern += r"\i";
+            }
+
+            let versioninfo = line_other_split[line_other_split.len() - 1]
+                .trim()
+                .to_string();
+
             let m = Match {
-                class: String::from("softmatch"),
+                class,
                 service,
                 pattern,
                 versioninfo,
@@ -284,6 +319,16 @@ pub struct ExcludePorts {
     pub ports: Vec<u16>,
     pub tcp_ports: Vec<u16>,
     pub udp_ports: Vec<u16>,
+}
+
+impl ExcludePorts {
+    pub fn new(ports: Vec<u16>) -> ExcludePorts {
+        ExcludePorts {
+            ports,
+            tcp_ports: vec![],
+            udp_ports: vec![],
+        }
+    }
 }
 
 pub fn nsp_exclued_parser(lines: &[String]) -> Result<ExcludePorts> {
@@ -409,21 +454,33 @@ mod tests {
         }
     }
     #[test]
-    fn test_build_regex_one() {
-        let p = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.7\n";
-        let pattern = r"^SSH-([\d.]+)-OpenSSH_([\w._-]+)[ -]{1,2}Ubuntu[ -_]([^\r\n]+)\r?\n";
-        let pattern = pattern_parser(pattern);
-        let re = Regex::new(&pattern).unwrap();
-        let result = re.is_match(p).unwrap();
-        println!("{}", result);
+    fn test_db_parser() {
+        let line = r"match http m|^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache +\(([^\r\n\)]+)\)\r\n|s p/Apache httpd/ i/$1/ cpe:/a:apache:http_server/";
+        let line_split: Vec<&str> = line.split(" ").collect();
+        let class = line_split[0].to_string();
+        let service = line_split[1].to_string();
+        let line_other = line_split[2..].to_vec().join(" ");
+        println!("{}", line_other);
 
-        let p = "HTTP/1.1 200 OK\r\nDate: Sun, 28 Apr 2024 13:42:24 GMT\r\nServer: Apache/2.4.52 (Ubuntu)\r\n";
-        let pattern =
-            // r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[.\w-]+)\s*\r?\n";
-            r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)/s";
-        let pattern = pattern_parser(pattern);
-        let re = Regex::new(&pattern).unwrap();
-        let result = re.is_match(&p).unwrap();
-        println!("{}", result);
+        let line_other_replace = line_other.replace("|s", "|");
+        let line_other_split: Vec<&str> = line_other_replace.split("|").collect();
+        let mut pattern = line_other_split[1].to_string();
+        if line_other.contains("|s") {
+            pattern += r"\s"
+        } else if line_other.contains("|i") {
+            pattern += r"\i";
+        }
+
+        let versioninfo = line_other_split[line_other_split.len() - 1]
+            .trim()
+            .to_string();
+
+        let m = Match {
+            class,
+            service,
+            pattern,
+            versioninfo,
+        };
+        println!("{:?}", m);
     }
 }

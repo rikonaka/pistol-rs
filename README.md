@@ -76,11 +76,10 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 
 ## Service and Application Version Detection
 
-The nmap `nmap-service-probes` file regex format is not standard as Rust regex (e.g. backreferences are not supported), there are a lot of syntax incompatible with rust, based on the nmap source file to do a lot of regex syntax correction. If you intend to update this file, it is best to add the new fingerprint information line by line rather than replacing the entire file.
-
-## TODO
-
-- [ ] Currently `pistol` uses command line commands to query the system routing table and the system ARP cache and then resolves, I tried to use native methods such as `netlink` or `libmnl` to do these things, but I found that this hit a blind spot in my knowledge, I'll write this up here for later.
+| Methods          | Detailed Documentation                                        | Notes |
+| :--------------- | :------------------------------------------------------------ | :---- |
+| [x] IPv4 VS scan | [nmap references](https://nmap.org/book/vscan-technique.html) |       |
+| [x] IPv6 VS scan | [nmap references](https://nmap.org/book/vscan-technique.html) |       |
 
 ## Examples
 
@@ -398,4 +397,60 @@ Android 7.1 (Linux 3.18)
 >>> Class:
 Google | Android | 7.X | phone
 >>> CPE:
+```
+
+
+### 3. Remote Service Detect Example
+
+* 192.168.1.51 - Ubuntu 22.04 (ssh: 22, httpd: 80)
+
+```rust
+use pistol::{vs_scan, Host, Target};
+use pistol::vs::dbparser::ExcludePorts;
+use std::net::Ipv4Addr;
+use std::time::Duration;
+use anyhow::Result;
+
+fn main() -> Result<()> {
+    let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
+    let host = Host::new(dst_addr, Some(vec![22, 80]))?;
+    let target = Target::new(vec![host]);
+    let threads_num = 8;
+    let timeout = Some(Duration::new(1, 0));
+    // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
+    // only_tcp_recommended = true: only try the tcp probe recommended port
+    // only_udp_recommended = true: only try the udp probe recommended port
+    let (only_null_probe, only_tcp_recommended, only_udp_recomended) = (false, true, true);
+    let exclude_ports = Some(ExcludePorts::new(vec![51, 52]));
+    let ret = vs_scan(
+        target,
+        only_null_probe,
+        only_tcp_recommended,
+        only_udp_recommended,
+        exclude_ports,
+        threads_num,
+        timeout,
+    )?;
+    for r in ret {
+        println!("{}", r);
+    }
+    Ok(())
+}
+```
+
+### Output
+
+```
+>>> port:
+22
+>>> services:
+ssh
+>>> versioninfo:
+p/OpenSSH/ v/8.9p1 Ubuntu 3ubuntu0.7/ i/Ubuntu Linux; protocol 2.0/ o/Linux/ cpe:/a:openbsd:openssh:8.9p1/ cpe:/o:canonical:ubuntu_linux/ cpe:/o:linux:linux_kernel/
+>>> port:
+80
+>>> services:
+http
+>>> versioninfo:
+p/Apache httpd/ v/2.4.52/ i/(Ubuntu)/ cpe:/a:apache:http_server:2.4.52/
 ```

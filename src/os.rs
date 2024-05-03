@@ -11,7 +11,7 @@ use crate::errors::{CanNotFoundSourceAddress, OsDetectPortError};
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::PistolFingerprint;
 use crate::os::osscan6::PistolFingerprint6;
-use crate::utils::{find_source_ipv4, find_source_ipv6, get_threads_pool, get_default_timeout};
+use crate::utils::{find_source_ipv4, find_source_ipv6, get_default_timeout, get_threads_pool};
 use crate::Target;
 
 pub mod dbparser;
@@ -503,35 +503,21 @@ mod tests {
     }
     #[test]
     fn test_os_detect() -> Result<()> {
-        // let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4_1 = Ipv4Addr::new(192, 168, 1, 51);
-        let dst_open_tcp_port_1 = 22;
-        let dst_closed_tcp_port_1 = 8765;
-        let dst_closed_udp_port_1 = 9876;
-        let host1 = Host::new(
-            dst_ipv4_1,
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
+        let dst_open_tcp_port = 22;
+        let dst_closed_tcp_port = 8765;
+        let dst_closed_udp_port = 9876;
+        let host = Host::new(
+            dst_ipv4,
             Some(vec![
-                dst_open_tcp_port_1,
-                dst_closed_tcp_port_1,
-                dst_closed_udp_port_1,
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
             ]),
         )?;
-        // let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 137);
-        // let dst_open_tcp_port_2 = 22;
-        // let dst_closed_tcp_port_2 = 54532;
-        // let dst_closed_udp_port_2 = 34098;
-        // let host2 = Host::new(
-        //     dst_ipv4_2,
-        //     Some(vec![
-        //         dst_open_tcp_port_2,
-        //         dst_closed_tcp_port_2,
-        //         dst_closed_udp_port_2,
-        //     ]),
-        // );
-        // let target = Target::new(vec![host1, host2]);
-        let target = Target::new(vec![host1]);
+        let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 1;
         let threads_num = 8;
@@ -539,13 +525,14 @@ mod tests {
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
         // println!("{}", ret.len());
 
-        for (ip, (fingerprint, detect_ret)) in ret {
+        for (ip, (fingerprint, _detect_ret)) in ret {
             println!(">>> IP:\n{}", ip);
             println!(">>> Pistol fingerprint:\n{}", fingerprint);
-            println!(">>> Details:");
-            for d in detect_ret {
-                println!("{}", d);
-            }
+            println!(">>> Nmap fingerprint:\n{}", fingerprint.nmap_format())
+            // println!(">>> Details:");
+            // for d in detect_ret {
+            //     println!("{}", d);
+            // }
         }
         Ok(())
     }

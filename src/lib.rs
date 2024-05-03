@@ -15,8 +15,8 @@ mod layers;
 mod os;
 mod ping;
 mod scan;
-mod vs;
 mod utils;
+mod vs;
 
 const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;
@@ -522,8 +522,8 @@ pub use os::os_detect;
 /// Detect target machine OS on IPv6.
 pub use os::os_detect6;
 
-/// Detect target port service
-pub use vs::vs_detect_tcp;
+/// Detect target port service.
+pub use vs::vs_scan;
 
 /* Work with domain */
 /// Queries the IP address of a domain name and returns.

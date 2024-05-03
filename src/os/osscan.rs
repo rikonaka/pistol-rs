@@ -1519,6 +1519,25 @@ impl fmt::Display for PistolFingerprint {
     }
 }
 
+impl PistolFingerprint {
+    pub fn nmap_format(&self) -> String {
+        let interval = 72; // from nmap format
+        let mut ret = String::new();
+        let mut i = 0;
+        let fingerprint = format!("{}", self);
+        for ch in fingerprint.chars() {
+            if i % interval == 0 {
+                ret += "\nOS:"
+            }
+            if ch != '\n' {
+                ret += &format!("{}", ch);
+                i += 1;
+            }
+        }
+        ret.trim().to_string()
+    }
+}
+
 pub fn os_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
