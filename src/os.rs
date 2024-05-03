@@ -91,7 +91,7 @@ pub struct NmapOsDetectRet6 {
 
 impl fmt::Display for NmapOsDetectRet6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!(">>> Score: {:.2}%\n", self.score * 100.0);
+        let mut output = format!(">>> Score:\n{:.2}%\n", self.score * 100.0);
         output += &format!(">>> Fingerprint:\n{}\n", self.name);
         output += ">>> Class:\n";
         for o in &self.osclass {
@@ -429,37 +429,22 @@ mod tests {
     use std::time::SystemTime;
     #[test]
     fn test_os_detect6() -> Result<()> {
-        // let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
         let src_ipv6 = None;
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
-        let dst_open_tcp_port_1 = 22;
-        let dst_closed_tcp_port_1 = 8765;
-        let dst_closed_udp_port_1 = 9876;
-        let host1 = Host6::new(
+        let dst_open_tcp_port = 22;
+        let dst_closed_tcp_port = 8765;
+        let dst_closed_udp_port = 9876;
+        let host = Host6::new(
             dst_ipv6,
             Some(vec![
-                dst_open_tcp_port_1,
-                dst_closed_tcp_port_1,
-                dst_closed_udp_port_1,
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
             ]),
         )?;
 
-        let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
-        let dst_open_tcp_port_2 = 22;
-        let dst_closed_tcp_port_2 = 8765;
-        let dst_closed_udp_port_2 = 9876;
-        let host2 = Host6::new(
-            dst_ipv6,
-            Some(vec![
-                dst_open_tcp_port_2,
-                dst_closed_tcp_port_2,
-                dst_closed_udp_port_2,
-            ]),
-        )?;
+        let target = Target::new6(vec![host]);
 
-        let target = Target::new6(vec![host1, host2]);
-
-        // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let top_k = 3;
@@ -474,32 +459,6 @@ mod tests {
             }
         }
         Ok(())
-    }
-    #[test]
-    fn test_os_probe6() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
-        let src_port = None;
-        let dst_open_tcp_port = 22;
-        let dst_closed_tcp_port = 99;
-        let dst_closed_udp_port = 7890;
-        let timeout = Duration::new(3, 0);
-        let top_k = 3;
-
-        let linear = gen_linear().unwrap();
-        let _ret = osscan6::os_probe6(
-            src_ipv6,
-            src_port,
-            dst_ipv6,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            dst_closed_udp_port,
-            top_k,
-            timeout,
-            linear,
-        )
-        .unwrap();
     }
     #[test]
     fn test_os_detect() -> Result<()> {

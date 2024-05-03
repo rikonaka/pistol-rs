@@ -375,14 +375,16 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 fe80::20c:29ff:feb6:8d99
 >>> Novelty:
 8.970839832634503
->>> Score: 92.00%
+>>> Score:
+92.00%
 >>> Fingerprint:
 Linux 4.19
 >>> Class:
 Linux | Linux | 4.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:4.19
->>> Score: 71.04%
+>>> Score:
+71.04%
 >>> Fingerprint:
 Linux 3.13 - 4.6
 >>> Class:
@@ -391,7 +393,8 @@ Linux | Linux | 4.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:3
 cpe:/o:linux:linux_kernel:4
->>> Score: 1.93%
+>>> Score:
+1.93%
 >>> Fingerprint:
 Android 7.1 (Linux 3.18)
 >>> Class:
