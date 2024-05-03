@@ -60,8 +60,8 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 | Methods            | Detailed Documentation                                              | Notes                        |
 | :----------------- | :------------------------------------------------------------------ | :--------------------------- |
-| [x] IPv4 OS detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                              |
-| [x] IPv6 OS detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Fingerprint is not supported |
+| [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                              |
+| [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Fingerprint is not supported |
 
 
 ### Why not support the nmap IPv6 fingerprints?
@@ -76,10 +76,10 @@ Above all, for the current mainstream operating systems, ipv6 support is not as 
 
 ## Service and Application Version Detection
 
-| Methods          | Detailed Documentation                                        | Notes |
-| :--------------- | :------------------------------------------------------------ | :---- |
-| [x] IPv4 VS scan | [nmap references](https://nmap.org/book/vscan-technique.html) |       |
-| [x] IPv6 VS scan | [nmap references](https://nmap.org/book/vscan-technique.html) |       |
+| Methods               | Detailed Documentation                                        |
+| :-------------------- | :------------------------------------------------------------ |
+| [x] IPv4 Service Scan | [nmap references](https://nmap.org/book/vscan-technique.html) |
+| [x] IPv6 Service Scan | [nmap references](https://nmap.org/book/vscan-technique.html) |
 
 ## Examples
 
