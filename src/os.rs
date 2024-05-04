@@ -347,6 +347,9 @@ mod tests {
     fn test_print() {
         let o: u8 = 12;
         println!("{:x}", o);
+        let a = 13;
+        println!("{}", a / 2);
+        println!("{}", a % 2);
     }
     #[test]
     fn test_os_detect6() -> Result<()> {

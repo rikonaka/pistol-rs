@@ -55,10 +55,64 @@ use super::NmapOsDetectRet6;
 // T7(P=6000{4}583a3cXX{32}0101ca5800{4}6001234500280630XX{32}c1bc01bbc5756300095eb241a029ffffec59000003030f0102040109080aff{4}00{4}0402%ST=1.06173%RT=1.07961)
 // EXTRA(FL=12345)
 
+fn p_reduce(p: &str) -> String {
+    let mut new_p = String::new();
+    let mut count = 0;
+
+    let p_chars: Vec<char> = p.chars().collect();
+    // println!("1 {}", p);
+    let mut i = 0;
+
+    loop {
+        // 000001
+        if i + 1 > p_chars.len() {
+            break;
+        }
+
+        let ch_i = p_chars[i];
+        let ch_i_next = if i + 1 >= p_chars.len() {
+            0 as char
+        } else {
+            p_chars[i + 1]
+        };
+
+        let ch_i_p_2 = if i + 2 >= p_chars.len() {
+            0 as char
+        } else {
+            p_chars[i + 2]
+        };
+        let ch_i_next_p_2 = if i + 3 >= p_chars.len() {
+            0 as char
+        } else {
+            p_chars[i + 3]
+        };
+
+        if ch_i == ch_i_p_2 && ch_i_next == ch_i_next_p_2 {
+            count += 1;
+            i += 2;
+        } else {
+            if count != 0 {
+                i += 2;
+            } else {
+                i += 1;
+            }
+            if count == 0 {
+                new_p += &format!("{}", ch_i);
+            } else {
+                new_p += &format!("{}{}{{{}}}", ch_i, ch_i_next, count + 1);
+            }
+            count = 0;
+        }
+    }
+
+    // println!("2 {}", new_p.trim());
+    new_p.trim().to_string()
+}
+
 fn p_as_nmap_format(input: &[u8]) -> String {
     let mut p = String::new();
-    let ip_start = 14;
-    let ip_end = ip_start + 32;
+    let ip_start = 16;
+    let ip_end = ip_start + 32 * 2;
 
     for (i, b) in input.iter().enumerate() {
         if i >= ip_start && i < ip_end {
@@ -70,37 +124,8 @@ fn p_as_nmap_format(input: &[u8]) -> String {
         }
     }
 
-    let mut new_p = String::new();
-    let mut last_ch_i = ' ';
-    let mut last_ch_i_plus_1 = ' ';
-    let mut count = 0;
-
-    let p_chars: Vec<char> = p.chars().collect();
-
-    for i in (0..p_chars.len()).step_by(2) {
-        let ch_i = p_chars[i];
-        let ch_i_plus_i = if i + 1 >= p_chars.len() {
-            ' '
-        } else {
-            p_chars[i + 1]
-        };
-
-        if last_ch_i != ch_i || last_ch_i_plus_1 != ch_i_plus_i {
-            if count == 0 {
-                new_p += &format!("{}{}", ch_i, ch_i_plus_i);
-            } else {
-                new_p += &format!("{}{}{{{}}}", ch_i, ch_i_plus_i, count);
-            }
-            last_ch_i = ch_i;
-            last_ch_i_plus_1 = ch_i_plus_i;
-            count = 0;
-        } else {
-            last_ch_i = ch_i;
-            last_ch_i_plus_1 = ch_i_plus_i;
-            count += 1;
-        }
-    }
-    new_p.trim().to_string()
+    let new_p = p_reduce(&p);
+    new_p
 }
 
 #[derive(Debug, Clone)]
@@ -1414,5 +1439,19 @@ mod tests {
         println!("{}", txrr.t5.response.len());
         println!("{}", txrr.t6.response.len());
         println!("{}", txrr.t7.response.len());
+    }
+    #[test]
+    fn test_something() {
+        let p = "000XXXXXX";
+        let ret = p_reduce(p);
+        println!("{}", ret);
+
+        let p = "0000XXXXXX";
+        let ret = p_reduce(p);
+        println!("{}", ret);
+
+        let p = "0000XXXXXXX";
+        let ret = p_reduce(p);
+        println!("{}", ret);
     }
 }

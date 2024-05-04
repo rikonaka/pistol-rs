@@ -132,7 +132,7 @@ impl fmt::Display for PistolFingerprint {
 
 impl PistolFingerprint {
     pub fn nmap_format(&self) -> String {
-        let interval = 72; // from nmap format
+        let interval = 72;
         let mut ret = String::new();
         let mut i = 0;
         let fingerprint = format!("{}", self);
