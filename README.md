@@ -17,7 +17,7 @@ In windows testing I used wireshark to monitor and found that windows was unable
 
 I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
-| Methods              | Detailed Documentation                                                                          | Notes                              |
+| Method               | Detailed Documentation                                                                          | Note                               |
 | :------------------- | :---------------------------------------------------------------------------------------------- | :--------------------------------- |
 | [x] TCP SYN Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6 support                |
 | [x] TCP ACK Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6 support                |
@@ -30,7 +30,7 @@ I implement `pistol` host discovery according to the nmap [documentation](https:
 
 I implement `pistol` transport layer scan according to the nmap [pdf](https://nmap.org/nmap_doc.html) and [documentation](https://nmap.org/book/scan-methods.html).
 
-| Methods                 | Detailed Documentation                                                        | Notes                                   |
+| Method                  | Detailed Documentation                                                        | Note                                    |
 | :---------------------- | :---------------------------------------------------------------------------- | :-------------------------------------- |
 | [x] TCP SYN Scan        | [nmap references](https://nmap.org/book/synscan.html)                         | IPv4 & IPv6 support                     |
 | [x] TCP Connect() Scan  | [nmap references](https://nmap.org/book/scan-methods-connect-scan.html)       | IPv4 & IPv6 support                     |
@@ -47,7 +47,7 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ## Flood Attack
 
-| Methods           | Notes                              |
+| Method            | Note                               |
 | :---------------- | :--------------------------------- |
 | [x] TCP SYN Flood | IPv4 & IPv6 support                |
 | [x] TCP ACK Flood | IPv4 & IPv6 support                |
@@ -56,7 +56,7 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ## Remote OS Detection
 
-| Methods            | Detailed Documentation                                              | Notes                                          |
+| Method             | Detailed Documentation                                              | Note                                           |
 | :----------------- | :------------------------------------------------------------------ | :--------------------------------------------- |
 | [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      | Print fingerprint as nmap format now supported |
 | [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Print fingerprint as nmap format now supported |
