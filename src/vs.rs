@@ -21,27 +21,19 @@ pub mod vscan;
 
 pub struct NmapVsDetectRet {
     pub port: u16,
-    pub services: Option<Match>,
+    pub services: Vec<Match>,
 }
 
 impl fmt::Display for NmapVsDetectRet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.services {
-            Some(m) => {
-                let output = format!(
-                    ">>> port:\n{}\n>>> services:\n{}\n>>> versioninfo:\n{}",
-                    self.port, m.service, m.versioninfo
-                );
-                write!(f, "{}", output)
-            }
-            None => {
-                let output = format!(
-                    ">>> port:\n{}\n>>> services:\n{}\n>>> versioninfo:\n{}",
-                    self.port, "null", "null"
-                );
-                write!(f, "{}", output)
-            }
+        let mut output = format!(">>> port:\n{}", self.port);
+        for m in &self.services {
+            output += &format!(
+                "\n>>> services:\n{}\n>>> versioninfo:\n{}",
+                m.service, m.versioninfo
+            );
         }
+        write!(f, "{}", output)
     }
 }
 
@@ -140,8 +132,8 @@ mod tests {
     use std::net::Ipv4Addr;
     #[test]
     fn test_vs_detect() -> Result<()> {
-        let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-        let host = Host::new(dst_addr, Some(vec![22, 80]))?;
+        let dst_addr = Ipv4Addr::new(192, 168, 72, 134);
+        let host = Host::new(dst_addr, Some(vec![22, 443]))?;
         let target = Target::new(vec![host]);
         let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));

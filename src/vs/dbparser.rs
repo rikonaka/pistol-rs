@@ -53,7 +53,7 @@ pub struct ServiceProbe {
 }
 
 impl ServiceProbe {
-    pub fn check(&self, recv_str: &str) -> Option<Match> {
+    pub fn check(&self, recv_str: &str) -> Vec<Match> {
         let match_function = |m: &Match, re: &Regex, recv_str: &str| -> Option<Match> {
             match re.is_match(&recv_str) {
                 Ok(b) => {
@@ -95,6 +95,7 @@ impl ServiceProbe {
             None
         };
 
+        let mut ret = Vec::new();
         // match
         for m in &self.matchs {
             // println!("{}", m.pattern);
@@ -105,7 +106,7 @@ impl ServiceProbe {
             };
             let r = match_function(m, &re, &recv_str);
             match r {
-                Some(r) => return Some(r),
+                Some(r) => ret.push(r),
                 None => (),
             }
         }
@@ -118,11 +119,11 @@ impl ServiceProbe {
             };
             let r = match_function(m, &re, &recv_str);
             match r {
-                Some(r) => return Some(r),
+                Some(r) => ret.push(r),
                 None => (),
             }
         }
-        None
+        ret
     }
 }
 
