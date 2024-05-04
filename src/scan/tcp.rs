@@ -1,10 +1,18 @@
 use anyhow::Result;
-use pnet::packet::icmp::{destination_unreachable, IcmpPacket, IcmpTypes};
+use pnet::packet::icmp::destination_unreachable;
+use pnet::packet::icmp::IcmpPacket;
+use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
-use pnet::packet::ipv4::{checksum, Ipv4Flags, Ipv4Packet, MutableIpv4Packet};
+use pnet::packet::ipv4::checksum;
+use pnet::packet::ipv4::Ipv4Flags;
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::tcp;
-use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags, TcpPacket};
+use pnet::packet::tcp::ipv4_checksum;
+use pnet::packet::tcp::MutableTcpPacket;
+use pnet::packet::tcp::TcpFlags;
+use pnet::packet::tcp::TcpPacket;
 use pnet::packet::Packet;
 use rand::Rng;
 use std::error::Error;
@@ -15,9 +23,13 @@ use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
-use crate::layers::{layer3_ipv4_send, Layer3Match};
-use crate::layers::{Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
-use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
+use crate::layers::layer3_ipv4_send;
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmp;
+use crate::layers::Layer4MatchTcpUdp;
+use crate::layers::LayersMatch;
+use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::TCP_HEADER_SIZE;
 use crate::IdleScanResults;
 use crate::TargetScanStatus;
 

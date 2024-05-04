@@ -1,7 +1,8 @@
 use anyhow::Result;
 use crc32fast;
 use gcdx::gcdx;
-use pnet::packet::icmp::{IcmpCode, IcmpPacket};
+use pnet::packet::icmp::IcmpCode;
+use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
@@ -10,8 +11,13 @@ use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
 use super::rr::{IERR, SEQRR, TXRR, U1RR};
-use crate::errors::{CalcDiffFailed, CalcISRFailed, GetIpv4PacketFailed, GetTcpPacketFailed};
-use crate::errors::{CalcSSFailed, GetIcmpPacketFailed, GetUdpPacketFailed};
+use crate::errors::CalcDiffFailed;
+use crate::errors::CalcISRFailed;
+use crate::errors::CalcSSFailed;
+use crate::errors::GetIcmpPacketFailed;
+use crate::errors::GetIpv4PacketFailed;
+use crate::errors::GetTcpPacketFailed;
+use crate::errors::GetUdpPacketFailed;
 
 use crate::utils::Hex;
 

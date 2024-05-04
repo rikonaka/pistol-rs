@@ -1,12 +1,15 @@
 use anyhow::Result;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::tcp::{TcpOptionNumbers, TcpPacket};
+use pnet::packet::tcp::TcpOptionNumbers;
+use pnet::packet::tcp::TcpPacket;
 use pnet::packet::Packet;
 use std::iter::zip;
 
 use super::rr::AllPacketRR6;
-use crate::errors::{GetIcmpv6PacketFailed, GetIpv6PacketFailed, GetTcpPacketFailed};
+use crate::errors::GetIcmpv6PacketFailed;
+use crate::errors::GetIpv6PacketFailed;
+use crate::errors::GetTcpPacketFailed;
 use crate::utils::Hex;
 
 const CWR_MASK: u8 = 0b10000000;

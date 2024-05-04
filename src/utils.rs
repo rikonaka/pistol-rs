@@ -3,10 +3,14 @@ use num_cpus;
 use pnet::datalink;
 use pnet::datalink::NetworkInterface;
 use rand::Rng;
-use std::{net::{IpAddr, Ipv4Addr, Ipv6Addr}, time::Duration};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
+use std::time::Duration;
 use threadpool::ThreadPool;
 
-use crate::{layers::system_route, DEFAULT_TIMEOUT};
+use crate::layers::system_route;
+use crate::DEFAULT_TIMEOUT;
 
 pub fn find_source_ipv4(
     src_ipv4: Option<Ipv4Addr>,

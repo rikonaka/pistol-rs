@@ -3,13 +3,15 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::packet::udp::{ipv4_checksum, MutableUdpPacket};
+use pnet::packet::udp::ipv4_checksum;
+use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::{IPV4_HEADER_SIZE, UDP_HEADER_SIZE};
+use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::UDP_HEADER_SIZE;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;

@@ -1,5 +1,6 @@
 use anyhow::Result;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 
 pub mod icmp;
 pub mod icmpv6;
@@ -9,8 +10,10 @@ pub mod udp;
 pub mod udp6;
 
 use crate::errors::CanNotFoundSourceAddress;
-use crate::utils::{find_source_ipv4, find_source_ipv6};
-use crate::utils::{get_threads_pool, random_port};
+use crate::utils::find_source_ipv4;
+use crate::utils::find_source_ipv6;
+use crate::utils::get_threads_pool;
+use crate::utils::random_port;
 use crate::Target;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

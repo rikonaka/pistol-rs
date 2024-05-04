@@ -1,20 +1,27 @@
 use anyhow::Result;
 use chrono::Utc;
 use pnet::packet::icmpv6;
+use pnet::packet::icmpv6::echo_reply;
 use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
+use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
-use pnet::packet::icmpv6::{echo_reply, MutableIcmpv6Packet};
-use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type, Icmpv6Types};
+use pnet::packet::icmpv6::Icmpv6Type;
+use pnet::packet::icmpv6::Icmpv6Types;
+use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::ip::IpNextHeaderProtocols;
-use pnet::packet::ipv6::{Ipv6Packet, MutableIpv6Packet};
+use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::{Layer3Match, Layer4MatchIcmpv6, LayersMatch};
-use crate::layers::{ICMPV6_ER_HEADER_SIZE, IPV6_HEADER_SIZE};
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmpv6;
+use crate::layers::LayersMatch;
+use crate::layers::ICMPV6_ER_HEADER_SIZE;
+use crate::layers::IPV6_HEADER_SIZE;
 use crate::ping::PingStatus;
 
 const TTL: u8 = 255;

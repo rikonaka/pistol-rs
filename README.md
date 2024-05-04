@@ -9,11 +9,9 @@ Cause the pull request to fix a bug I submitted to the upstream `libpnet` has no
 pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
 ```
 
-## Windows
+On Windows, download the `npcap` and `npcap-sdk` from [here](https://npcap.com/) and install `npcap` (to install with the "Install Npcap in WinPcap API-compatible Mode"), then place `Packet.lib` from the `npcap-sdk` pack x64 folder in your root of code.
 
-Download the `npcap` and `npcap-sdk` from [here](https://npcap.com/) and install `npcap` (to install with the "Install Npcap in WinPcap API-compatible Mode"), then place `Packet.lib` from the `npcap-sdk` pack x64 folder in your root of code.
-
-In windows testing I used wireshark to monitor and found that windows was unable to send packets and didn't know why.
+In windows testing I used wireshark to monitor and found that windows was unable to send packets and didn't know why 🤨.
 
 ## Host Discovery (Ping Scanning)
 

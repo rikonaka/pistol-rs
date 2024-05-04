@@ -1,11 +1,18 @@
 use anyhow::Result;
-use pnet::datalink::{MacAddr, NetworkInterface};
-use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, MutableArpPacket};
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
+use pnet::packet::arp::ArpHardwareTypes;
+use pnet::packet::arp::ArpOperations;
+use pnet::packet::arp::MutableArpPacket;
 use pnet::packet::ethernet::EtherTypes;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::layers::{get_mac_from_arp, layer2_send, Layer2Match, Layer3Match, LayersMatch};
+use crate::layers::get_mac_from_arp;
+use crate::layers::layer2_send;
+use crate::layers::Layer2Match;
+use crate::layers::Layer3Match;
+use crate::layers::LayersMatch;
 
 pub fn send_arp_scan_packet(
     dst_ipv4: Ipv4Addr,

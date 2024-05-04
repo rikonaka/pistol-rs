@@ -1,10 +1,14 @@
 use anyhow::Result;
 use chrono::Utc;
 use pnet::packet::icmp;
+use pnet::packet::icmp::destination_unreachable;
+use pnet::packet::icmp::echo_reply;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
+use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
-use pnet::packet::icmp::{destination_unreachable, echo_reply};
-use pnet::packet::icmp::{IcmpCode, IcmpType, IcmpTypes, MutableIcmpPacket};
+use pnet::packet::icmp::IcmpType;
+use pnet::packet::icmp::IcmpTypes;
+use pnet::packet::icmp::MutableIcmpPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
@@ -17,8 +21,11 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::{Layer3Match, Layer4MatchIcmp, LayersMatch};
-use crate::layers::{ICMP_HEADER_SIZE, IPV4_HEADER_SIZE};
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmp;
+use crate::layers::LayersMatch;
+use crate::layers::ICMP_HEADER_SIZE;
+use crate::layers::IPV4_HEADER_SIZE;
 use crate::ping::PingStatus;
 
 const TTL: u8 = 64;

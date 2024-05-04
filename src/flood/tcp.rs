@@ -1,14 +1,18 @@
 use anyhow::Result;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
-use pnet::packet::ipv4::{Ipv4Flags, MutableIpv4Packet};
-use pnet::packet::tcp::{ipv4_checksum, MutableTcpPacket, TcpFlags};
+use pnet::packet::ipv4::Ipv4Flags;
+use pnet::packet::ipv4::MutableIpv4Packet;
+use pnet::packet::tcp::ipv4_checksum;
+use pnet::packet::tcp::MutableTcpPacket;
+use pnet::packet::tcp::TcpFlags;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::{IPV4_HEADER_SIZE, TCP_HEADER_SIZE};
+use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::TCP_HEADER_SIZE;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;

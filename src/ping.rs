@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -8,9 +9,15 @@ pub mod icmp;
 pub mod icmpv6;
 
 use crate::errors::CanNotFoundSourceAddress;
-use crate::scan::{tcp, tcp6, udp, udp6};
-use crate::utils::{find_source_ipv4, find_source_ipv6, get_default_timeout};
-use crate::utils::{get_threads_pool, random_port};
+use crate::scan::tcp;
+use crate::scan::tcp6;
+use crate::scan::udp;
+use crate::scan::udp6;
+use crate::utils::find_source_ipv4;
+use crate::utils::find_source_ipv6;
+use crate::utils::get_default_timeout;
+use crate::utils::get_threads_pool;
+use crate::utils::random_port;
 use crate::PingResults;
 use crate::PingStatus;
 use crate::Target;

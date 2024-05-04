@@ -6,12 +6,15 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-use crate::utils::{get_default_timeout, get_threads_pool};
-use crate::vs::dbparser::{nsp_exclued_parser, nsp_parser, Match};
-use crate::vs::vscan::vs_probe;
-use crate::{Target, TargetType};
-
 use self::dbparser::ExcludePorts;
+use crate::utils::get_default_timeout;
+use crate::utils::get_threads_pool;
+use crate::vs::dbparser::nsp_exclued_parser;
+use crate::vs::dbparser::nsp_parser;
+use crate::vs::dbparser::Match;
+use crate::vs::vscan::vs_probe;
+use crate::Target;
+use crate::TargetType;
 
 pub mod dbparser;
 pub mod vscan;

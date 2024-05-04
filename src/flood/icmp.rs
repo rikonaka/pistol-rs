@@ -2,7 +2,9 @@ use anyhow::Result;
 use chrono::Utc;
 use pnet::packet::icmp;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
-use pnet::packet::icmp::{IcmpCode, IcmpType, MutableIcmpPacket};
+use pnet::packet::icmp::IcmpCode;
+use pnet::packet::icmp::IcmpType;
+use pnet::packet::icmp::MutableIcmpPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
@@ -13,7 +15,8 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::{ICMP_HEADER_SIZE, IPV4_HEADER_SIZE};
+use crate::layers::ICMP_HEADER_SIZE;
+use crate::layers::IPV4_HEADER_SIZE;
 
 const TTL: u8 = 64;
 pub fn send_icmp_flood_packet(

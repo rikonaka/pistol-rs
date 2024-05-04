@@ -6,15 +6,20 @@ use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::packet::udp::{ipv4_checksum, MutableUdpPacket};
+use pnet::packet::udp::ipv4_checksum;
+use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv4_send;
-use crate::layers::{Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
-use crate::layers::{IPV4_HEADER_SIZE, UDP_HEADER_SIZE};
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmp;
+use crate::layers::Layer4MatchTcpUdp;
+use crate::layers::LayersMatch;
+use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::UDP_HEADER_SIZE;
 use crate::TargetScanStatus;
 
 const UDP_DATA_SIZE: usize = 0;

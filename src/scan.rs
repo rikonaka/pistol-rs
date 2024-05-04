@@ -2,7 +2,9 @@ use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -13,10 +15,17 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress, CanNotFoundSourceAddress};
-use crate::utils::{find_interface_by_ipv4, find_source_ipv4, find_source_ipv6};
-use crate::utils::{get_default_timeout, get_threads_pool, random_port};
-use crate::{ArpAliveHosts, TargetType};
+use crate::errors::CanNotFoundInterface;
+use crate::errors::CanNotFoundMacAddress;
+use crate::errors::CanNotFoundSourceAddress;
+use crate::utils::find_interface_by_ipv4;
+use crate::utils::find_source_ipv4;
+use crate::utils::find_source_ipv6;
+use crate::utils::get_default_timeout;
+use crate::utils::get_threads_pool;
+use crate::utils::random_port;
+use crate::ArpAliveHosts;
+use crate::TargetType;
 
 use super::errors::NotSupportIpTypeForArpScan;
 use super::ArpScanResults;

@@ -1,10 +1,18 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::utils::Hex;
 
-use super::osscan::{PistolFingerprint, ECNX, IEX, OPSX, SEQX, TXX, U1X, WINX};
+use super::osscan::PistolFingerprint;
+use super::osscan::ECNX;
+use super::osscan::IEX;
+use super::osscan::OPSX;
+use super::osscan::SEQX;
+use super::osscan::TXX;
+use super::osscan::U1X;
+use super::osscan::WINX;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum DbRangeValueTypes {

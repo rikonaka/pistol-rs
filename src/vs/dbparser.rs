@@ -1,6 +1,7 @@
 use anyhow::Result;
 use fancy_regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbesProtocol {

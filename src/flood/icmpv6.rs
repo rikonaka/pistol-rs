@@ -2,8 +2,9 @@ use anyhow::Result;
 use chrono::Utc;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
+use pnet::packet::icmpv6::Icmpv6Code;
+use pnet::packet::icmpv6::Icmpv6Type;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
-use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use rand::Rng;
@@ -11,7 +12,8 @@ use std::net::Ipv6Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::{ICMPV6_ER_HEADER_SIZE, IPV6_HEADER_SIZE};
+use crate::layers::ICMPV6_ER_HEADER_SIZE;
+use crate::layers::IPV6_HEADER_SIZE;
 
 const TTL: u8 = 255;
 

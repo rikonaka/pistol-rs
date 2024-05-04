@@ -1,19 +1,30 @@
 use anyhow::Result;
-use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Packet, Icmpv6Types};
+use pnet::packet::icmpv6::Icmpv6Code;
+use pnet::packet::icmpv6::Icmpv6Packet;
+use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::ip::IpNextHeaderProtocols;
-use pnet::packet::ipv6::{Ipv6Packet, MutableIpv6Packet};
-use pnet::packet::tcp::{ipv6_checksum, MutableTcpPacket, TcpFlags, TcpPacket};
+use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::ipv6::MutableIpv6Packet;
+use pnet::packet::tcp::ipv6_checksum;
+use pnet::packet::tcp::MutableTcpPacket;
+use pnet::packet::tcp::TcpFlags;
+use pnet::packet::tcp::TcpPacket;
 use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV6;
 use std::net::TcpStream;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
-use crate::layers::{IPV6_HEADER_SIZE, TCP_HEADER_SIZE};
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmpv6;
+use crate::layers::Layer4MatchTcpUdp;
+use crate::layers::LayersMatch;
+use crate::layers::IPV6_HEADER_SIZE;
+use crate::layers::TCP_HEADER_SIZE;
 use crate::TargetScanStatus;
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
@@ -826,9 +837,7 @@ pub fn send_connect_scan_packet(
     let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
     let start_time = Instant::now();
     match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(_) => {
-            Ok((TargetScanStatus::Open, Some(start_time.elapsed())))
-        },
+        Ok(_) => Ok((TargetScanStatus::Open, Some(start_time.elapsed()))),
         Err(_) => Ok((TargetScanStatus::Closed, None)),
     }
 }

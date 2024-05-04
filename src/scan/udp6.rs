@@ -1,16 +1,22 @@
 use anyhow::Result;
-use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Packet};
+use pnet::packet::icmpv6::Icmpv6Code;
+use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::udp::{ipv6_checksum, MutableUdpPacket};
+use pnet::packet::udp::ipv6_checksum;
+use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::Packet;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::{Layer3Match, Layer4MatchIcmpv6, Layer4MatchTcpUdp, LayersMatch};
-use crate::layers::{IPV6_HEADER_SIZE, UDP_HEADER_SIZE};
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmpv6;
+use crate::layers::Layer4MatchTcpUdp;
+use crate::layers::LayersMatch;
+use crate::layers::IPV6_HEADER_SIZE;
+use crate::layers::UDP_HEADER_SIZE;
 use crate::TargetScanStatus;
 
 const UDP_DATA_SIZE: usize = 0;

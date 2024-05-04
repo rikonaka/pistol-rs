@@ -1,30 +1,84 @@
 use anyhow::Result;
-use chrono::{DateTime, Local, Utc};
+use chrono::DateTime;
+use chrono::Local;
+use chrono::Utc;
 use pnet::datalink::MacAddr;
 use rand::Rng;
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use crate::errors::{CanNotFoundInterface, CanNotFoundMacAddress};
+use crate::errors::CanNotFoundInterface;
+use crate::errors::CanNotFoundMacAddress;
 use crate::layers::layer3_ipv4_send;
-use crate::layers::{Layer3Match, Layer4MatchIcmp, Layer4MatchTcpUdp, LayersMatch};
+use crate::layers::Layer3Match;
+use crate::layers::Layer4MatchIcmp;
+use crate::layers::Layer4MatchTcpUdp;
+use crate::layers::LayersMatch;
 use crate::utils::find_interface_by_ipv4;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
 
 use super::dbparser::NmapOsDb;
-use super::operator::{icmp_cd, icmp_dfi, udp_ripck, udp_ruck, udp_rud};
-use super::operator::{tcp_a, tcp_cc, tcp_o, tcp_q, tcp_s, tcp_sp, tcp_ss};
-use super::operator::{tcp_f, tcp_gcd, tcp_isr, tcp_ox, tcp_rd};
-use super::operator::{tcp_ti_ci_ii, tcp_ts, tcp_udp_icmp_t, tcp_udp_icmp_tg, tcp_w, tcp_wx};
-use super::operator::{tcp_udp_df, tcp_udp_icmp_r, udp_ipl, udp_rid, udp_ripl, udp_un};
-use super::rr::{AllPacketRR, RequestAndResponse, ECNRR, IERR, SEQRR, TXRR, U1RR};
-use super::{packet, NmapOsDetectRet};
+use super::operator::icmp_cd;
+use super::operator::icmp_dfi;
+use super::operator::tcp_a;
+use super::operator::tcp_cc;
+use super::operator::tcp_f;
+use super::operator::tcp_gcd;
+use super::operator::tcp_isr;
+use super::operator::tcp_o;
+use super::operator::tcp_ox;
+use super::operator::tcp_q;
+use super::operator::tcp_rd;
+use super::operator::tcp_s;
+use super::operator::tcp_sp;
+use super::operator::tcp_ss;
+use super::operator::tcp_ti_ci_ii;
+use super::operator::tcp_ts;
+use super::operator::tcp_udp_df;
+use super::operator::tcp_udp_icmp_r;
+use super::operator::tcp_udp_icmp_t;
+use super::operator::tcp_udp_icmp_tg;
+use super::operator::tcp_w;
+use super::operator::tcp_wx;
+use super::operator::udp_ipl;
+use super::operator::udp_rid;
+use super::operator::udp_ripck;
+use super::operator::udp_ripl;
+use super::operator::udp_ruck;
+use super::operator::udp_rud;
+use super::operator::udp_un;
+use super::packet;
+use super::rr::AllPacketRR;
+use super::rr::RequestAndResponse;
+use super::rr::ECNRR;
+use super::rr::IERR;
+use super::rr::SEQRR;
+use super::rr::TXRR;
+use super::rr::U1RR;
+use super::NmapOsDetectRet;
+
+// EXAMPLE
+// SCAN(V=5.05BETA1%D=8/23%OT=22%CT=1%CU=42341%PV=N%DS=0%DC=L%G=Y%TM=4A91CB90%P=i686-pc-linux-gnu)
+// SEQ(SP=C9%GCD=1%ISR=CF%TI=Z%CI=Z%II=I%TS=A)
+// OPS(O1=M400CST11NW5%O2=M400CST11NW5%O3=M400CNNT11NW5%O4=M400CST11NW5%O5=M400CST11NW5%O6=M400CST11)
+// WIN(W1=8000%W2=8000%W3=8000%W4=8000%W5=8000%W6=8000)
+// ECN(R=Y%DF=Y%T=40%W=8018%O=M400CNNSNW5%CC=N%Q=)
+// T1(R=Y%DF=Y%T=40%S=O%A=S+%F=AS%RD=0%Q=)
+// T2(R=N)
+// T3(R=Y%DF=Y%T=40%W=8000%S=O%A=S+%F=AS%O=M400CST11NW5%RD=0%Q=)
+// T4(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+// T5(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
+// T6(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+// T7(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
+// U1(R=Y%DF=N%T=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
+// IE(R=Y%DFI=N%T=40%CD=S)
 
 pub struct PistolFingerprint {
     pub scan: String,

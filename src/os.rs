@@ -1,17 +1,23 @@
 /* Remote OS Detection */
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
-use crate::errors::{CanNotFoundSourceAddress, OsDetectPortError};
+use crate::errors::CanNotFoundSourceAddress;
+use crate::errors::OsDetectPortError;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::PistolFingerprint;
 use crate::os::osscan6::PistolFingerprint6;
-use crate::utils::{find_source_ipv4, find_source_ipv6, get_default_timeout, get_threads_pool};
+use crate::utils::find_source_ipv4;
+use crate::utils::find_source_ipv6;
+use crate::utils::get_default_timeout;
+use crate::utils::get_threads_pool;
 use crate::Target;
 
 use self::osscan::os_probe;

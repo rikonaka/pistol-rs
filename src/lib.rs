@@ -6,7 +6,9 @@ use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::time::Duration;
 
 mod errors;

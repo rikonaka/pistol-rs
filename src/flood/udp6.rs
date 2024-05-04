@@ -1,12 +1,14 @@
 use anyhow::Result;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::udp::{ipv6_checksum, MutableUdpPacket};
+use pnet::packet::udp::ipv6_checksum;
+use pnet::packet::udp::MutableUdpPacket;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
 use crate::layers::layer3_ipv6_send;
-use crate::layers::{IPV6_HEADER_SIZE, UDP_HEADER_SIZE};
+use crate::layers::IPV6_HEADER_SIZE;
+use crate::layers::UDP_HEADER_SIZE;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;

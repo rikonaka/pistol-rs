@@ -1,10 +1,18 @@
 use anyhow::Result;
-use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
+use std::io::Read;
+use std::io::Write;
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
+use std::net::SocketAddr;
+use std::net::TcpStream;
+use std::net::UdpSocket;
 use std::time::Duration;
 // use std::fs::File;
 
-use super::dbparser::{Match, ProbesProtocol, ServiceProbe};
+use super::dbparser::Match;
+use super::dbparser::ProbesProtocol;
+use super::dbparser::ServiceProbe;
 use crate::utils::random_port;
 
 const TCP_BUFF_SIZE: usize = 4096;
