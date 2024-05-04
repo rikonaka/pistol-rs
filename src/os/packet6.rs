@@ -4,14 +4,20 @@ use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
 use pnet::packet::icmpv6::ndp::NdpOption;
 use pnet::packet::icmpv6::ndp::NdpOptionTypes;
+use pnet::packet::icmpv6::Icmpv6Code;
+use pnet::packet::icmpv6::Icmpv6Type;
+use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
-use pnet::packet::icmpv6::{Icmpv6Code, Icmpv6Type, Icmpv6Types};
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::ipv6::MutableDestinationPacket;
+use pnet::packet::ipv6::MutableHopByHopPacket;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::ipv6::{MutableDestinationPacket, MutableHopByHopPacket, MutableRoutingPacket};
+use pnet::packet::ipv6::MutableRoutingPacket;
 use pnet::packet::tcp;
-use pnet::packet::tcp::{MutableTcpPacket, TcpFlags, TcpOption};
+use pnet::packet::tcp::MutableTcpPacket;
+use pnet::packet::tcp::TcpFlags;
+use pnet::packet::tcp::TcpOption;
 use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
@@ -19,8 +25,12 @@ use std::net::Ipv6Addr;
 
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
-use crate::layers::{ICMPV6_ER_HEADER_SIZE, ICMPV6_NI_HEADER_SIZE, ICMPV6_NS_HEADER_SIZE};
-use crate::layers::{IPV6_HEADER_SIZE, TCP_HEADER_SIZE, UDP_HEADER_SIZE};
+use crate::layers::ICMPV6_ER_HEADER_SIZE;
+use crate::layers::ICMPV6_NI_HEADER_SIZE;
+use crate::layers::ICMPV6_NS_HEADER_SIZE;
+use crate::layers::IPV6_HEADER_SIZE;
+use crate::layers::TCP_HEADER_SIZE;
+use crate::layers::UDP_HEADER_SIZE;
 use crate::utils::find_interface_by_ipv6;
 
 /* 8 options:

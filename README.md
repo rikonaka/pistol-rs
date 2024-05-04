@@ -58,15 +58,15 @@ I implement `pistol` transport layer scan according to the nmap [pdf](https://nm
 
 ## Remote OS Detection
 
-| Methods            | Detailed Documentation                                              | Notes                              |
-| :----------------- | :------------------------------------------------------------------ | :--------------------------------- |
-| [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      |                                    |
-| [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Print fingerprint is not supported |
+| Methods            | Detailed Documentation                                              | Notes                                          |
+| :----------------- | :------------------------------------------------------------------ | :--------------------------------------------- |
+| [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      | Print fingerprint as nmap format now supported |
+| [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Print fingerprint as nmap format now supported |
 
 
-### Why not support print the nmap fingerprints on IPv6?
+### OS Detection on IPv6?
 
-Fingerprints is not supported means that the program will not generate fingerprints in nmap format, this is because on ipv6 the fingerprints are unreadable and meaningless to humans, see [here](https://nmap.org/book/osdetect-fingerprint-format.html#osdetect-ex-typical-reference-fprint-ipv6) for details, and nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
+On ipv6, the fingerprints are unreadable and meaningless to humans, see [here](https://nmap.org/book/osdetect-fingerprint-format.html#osdetect-ex-typical-reference-fprint-ipv6) for details, and nmap uses logistic regression to match target OS on ipv6, but the matching algorithm is quite outdated with confusing design logic.
 
 The first is about the `ST`, `RT` and `EXTRA` metrics in fingerprints in detection on [ipv6](https://nmap.org/book/osdetect-fingerprint-format.html), these three metrics are not used at all in the code, at the same time, there is no detailed description of how `ST` and `RT` are calculated, I don't know why nmap would keep them in the final fingerprint.
 
@@ -345,11 +345,11 @@ fn main() -> Result<()> {
     let threads_num = 8;
 
     let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
-    for (i, p) in ret {
+    for (i, (fingerprint, detect_ret)) in ret {
         println!(">>> IP:\n{}", i);
-        println!(">>> Novelty:\n{}", p.novelty);
-        for pred in p.predict {
-            println!("{}", pred);
+        println!(">>> Novelty:\n{}", fingerprint.novelty);
+        for d in detect_ret {
+            println!("{}", d);
         }
     }
     Ok(())

@@ -17,34 +17,81 @@ use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
 
+use super::dbparser::NmapOsDb;
 use super::operator::{icmp_cd, icmp_dfi, udp_ripck, udp_ruck, udp_rud};
 use super::operator::{tcp_a, tcp_cc, tcp_o, tcp_q, tcp_s, tcp_sp, tcp_ss};
 use super::operator::{tcp_f, tcp_gcd, tcp_isr, tcp_ox, tcp_rd};
 use super::operator::{tcp_ti_ci_ii, tcp_ts, tcp_udp_icmp_t, tcp_udp_icmp_tg, tcp_w, tcp_wx};
 use super::operator::{tcp_udp_df, tcp_udp_icmp_r, udp_ipl, udp_rid, udp_ripl, udp_un};
-use super::packet;
 use super::rr::{AllPacketRR, RequestAndResponse, ECNRR, IERR, SEQRR, TXRR, U1RR};
+use super::{packet, NmapOsDetectRet};
 
-fn ipaddr_is_private(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => ip.is_private(),
-        IpAddr::V6(ip) => {
-            // fc00::/7 address block = RFC 4193 Unique Local Addresses (ULA)
-            // fec0::/10 address block = deprecated (RFC 3879)
-            let ip = ip.octets();
-            let mask_1 = 0xFC;
-            let mask_2 = 0xFE;
-            let mask_3 = 0xC0;
-            // println!("{:X}", ip[0] & mask_1);
-            // println!("{:X}", ip[0] & mask_2);
-            // println!("{:X}", ip[1] & mask_3);
-            if (ip[0] & mask_1 == mask_1) || (ip[0] & mask_2 == mask_2 && ip[1] & mask_3 == mask_3)
-            {
-                true
-            } else {
-                false
+pub struct PistolFingerprint {
+    pub scan: String,
+    pub seqx: SEQX,
+    pub opsx: OPSX,
+    pub winx: WINX,
+    pub ecnx: ECNX,
+    pub t1x: TXX,
+    pub t2x: TXX,
+    pub t3x: TXX,
+    pub t4x: TXX,
+    pub t5x: TXX,
+    pub t6x: TXX,
+    pub t7x: TXX,
+    pub u1x: U1X,
+    pub iex: IEX,
+}
+
+impl fmt::Display for PistolFingerprint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = format!("{}", self.scan);
+        let seqx_str = format!("\n{}", self.seqx);
+        let opsx_str = format!("\n{}", self.opsx);
+        let winx_str = format!("\n{}", self.winx);
+        let ecnx_str = format!("\n{}", self.ecnx);
+        let t1x_str = format!("\n{}", self.t1x);
+        let t2x_str = format!("\n{}", self.t2x);
+        let t3x_str = format!("\n{}", self.t3x);
+        let t4x_str = format!("\n{}", self.t4x);
+        let t5x_str = format!("\n{}", self.t5x);
+        let t6x_str = format!("\n{}", self.t6x);
+        let t7x_str = format!("\n{}", self.t7x);
+        let u1x_str = format!("\n{}", self.u1x);
+        let iex_str = format!("\n{}", self.iex);
+        output += &seqx_str;
+        output += &opsx_str;
+        output += &winx_str;
+        output += &ecnx_str;
+        output += &t1x_str;
+        output += &t2x_str;
+        output += &t3x_str;
+        output += &t4x_str;
+        output += &t5x_str;
+        output += &t6x_str;
+        output += &t7x_str;
+        output += &u1x_str;
+        output += &iex_str;
+        write!(f, "{}", output)
+    }
+}
+
+impl PistolFingerprint {
+    pub fn nmap_format(&self) -> String {
+        let interval = 72; // from nmap format
+        let mut ret = String::new();
+        let mut i = 0;
+        let fingerprint = format!("{}", self);
+        for ch in fingerprint.chars() {
+            if i % interval == 0 {
+                ret += "\nOS:"
+            }
+            if ch != '\n' {
+                ret += &format!("{}", ch);
+                i += 1;
             }
         }
+        ret.trim().to_string()
     }
 }
 
@@ -76,7 +123,7 @@ pub fn get_scan_line(
     // it distinguishes between a host that is truly directly connected and what may be just a miscalculation.
     let (pv, ds, dc) = if dst_addr.is_loopback() {
         ("Y", 0, "L")
-    } else if ipaddr_is_private(dst_addr) {
+    } else if !dst_addr.is_global() {
         ("Y", 1, "D")
     } else {
         ("N", hops.unwrap(), "I")
@@ -114,9 +161,9 @@ pub fn get_scan_line(
         }
         IpAddr::V6(_) => {
             let info_str = if m.len() > 0 {
-                format!("SCAN(V={v}E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
+                format!("SCAN(V={v}%E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
             } else {
-                format!("SCAN(V={v}E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+                format!("SCAN(V={v}%E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
             };
             info_str
         }
@@ -190,10 +237,7 @@ fn send_seq_probes(
             (Some(r), Some(_rtt)) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             0 => seq1 = rr,
             1 => seq2 = rr,
@@ -264,10 +308,7 @@ fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, timeout: Duration) -> 
             (Some(r), Some(_rtt)) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             1 => {
                 ie1 = rr;
@@ -436,10 +477,7 @@ fn send_tx_probes(
             (Some(r), Some(_rtt)) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse {
-            request,
-            response,
-        });
+        let rr = Some(RequestAndResponse { request, response });
         match i {
             0 => t2 = rr,
             1 => t3 = rr,
@@ -1469,73 +1507,48 @@ pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX> {
     Ok(IEX { r, dfi, t, tg, cd })
 }
 
-pub struct PistolFingerprint {
-    pub scan: String,
-    pub seqx: SEQX,
-    pub opsx: OPSX,
-    pub winx: WINX,
-    pub ecnx: ECNX,
-    pub t1x: TXX,
-    pub t2x: TXX,
-    pub t3x: TXX,
-    pub t4x: TXX,
-    pub t5x: TXX,
-    pub t6x: TXX,
-    pub t7x: TXX,
-    pub u1x: U1X,
-    pub iex: IEX,
-}
-
-impl fmt::Display for PistolFingerprint {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!("{}", self.scan);
-        let seqx_str = format!("\n{}", self.seqx);
-        let opsx_str = format!("\n{}", self.opsx);
-        let winx_str = format!("\n{}", self.winx);
-        let ecnx_str = format!("\n{}", self.ecnx);
-        let t1x_str = format!("\n{}", self.t1x);
-        let t2x_str = format!("\n{}", self.t2x);
-        let t3x_str = format!("\n{}", self.t3x);
-        let t4x_str = format!("\n{}", self.t4x);
-        let t5x_str = format!("\n{}", self.t5x);
-        let t6x_str = format!("\n{}", self.t6x);
-        let t7x_str = format!("\n{}", self.t7x);
-        let u1x_str = format!("\n{}", self.u1x);
-        let iex_str = format!("\n{}", self.iex);
-        output += &seqx_str;
-        output += &opsx_str;
-        output += &winx_str;
-        output += &ecnx_str;
-        output += &t1x_str;
-        output += &t2x_str;
-        output += &t3x_str;
-        output += &t4x_str;
-        output += &t5x_str;
-        output += &t6x_str;
-        output += &t7x_str;
-        output += &u1x_str;
-        output += &iex_str;
-        write!(f, "{}", output)
-    }
-}
-
-impl PistolFingerprint {
-    pub fn nmap_format(&self) -> String {
-        let interval = 72; // from nmap format
-        let mut ret = String::new();
-        let mut i = 0;
-        let fingerprint = format!("{}", self);
-        for ch in fingerprint.chars() {
-            if i % interval == 0 {
-                ret += "\nOS:"
-            }
-            if ch != '\n' {
-                ret += &format!("{}", ch);
-                i += 1;
+fn top_k_score(score_vec: &[usize], k: usize) -> Vec<usize> {
+    let find_position_one = |score_vec: &[usize], value: usize| -> Option<usize> {
+        for (i, s) in score_vec.iter().enumerate() {
+            if *s == value {
+                return Some(i);
             }
         }
-        ret.trim().to_string()
+        None
+    };
+
+    let mut score_vec = score_vec.to_vec();
+    let mut top_k_vec = Vec::new();
+    for _ in 0..k {
+        let mut max_score = 0;
+        for s in &score_vec {
+            if *s > max_score {
+                max_score = *s;
+            }
+        }
+
+        loop {
+            match find_position_one(&score_vec, max_score) {
+                Some(p) => {
+                    score_vec.remove(p);
+                }
+                None => break,
+            }
+        }
+
+        top_k_vec.push(max_score);
     }
+    top_k_vec
+}
+
+fn find_position_multi(score_vec: &[usize], value: usize) -> Vec<usize> {
+    let mut position = Vec::new();
+    for (i, s) in score_vec.iter().enumerate() {
+        if *s == value {
+            position.push(i)
+        }
+    }
+    position
 }
 
 pub fn os_probe(
@@ -1545,8 +1558,10 @@ pub fn os_probe(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    nmap_os_db: Vec<NmapOsDb>,
+    top_k: usize,
     timeout: Duration,
-) -> Result<PistolFingerprint> {
+) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
     // Check target.
     let dst_mac = match find_interface_by_ipv4(src_ipv4) {
         Some(interface) => match interface.mac {
@@ -1565,7 +1580,7 @@ pub fn os_probe(
         dst_closed_udp_port,
         timeout,
     )?;
-    
+
     let hops = None;
     let good_results = true;
     let scan = get_scan_line(
@@ -1589,7 +1604,7 @@ pub fn os_probe(
             let u1x = u1_fingerprint(&ap)?;
             let iex = ie_fingerprint(&ap)?;
 
-            Ok(PistolFingerprint {
+            let fingerprint = PistolFingerprint {
                 scan,
                 seqx,
                 opsx,
@@ -1604,7 +1619,34 @@ pub fn os_probe(
                 t7x,
                 u1x,
                 iex,
-            })
+            };
+
+            let mut score_vec = Vec::new();
+            let mut total_vec = Vec::new();
+            for n in &nmap_os_db {
+                let (score, total) = n.check(&fingerprint);
+                score_vec.push(score);
+                total_vec.push(total);
+            }
+
+            let top_k_score_vec = top_k_score(&score_vec, top_k);
+            let mut top_k_index_vec = Vec::new();
+            for k in top_k_score_vec {
+                for p in find_position_multi(&score_vec, k) {
+                    top_k_index_vec.push(p);
+                }
+            }
+
+            let mut dr_vec = Vec::new();
+            for i in top_k_index_vec {
+                let dr = NmapOsDetectRet {
+                    score: score_vec[i],
+                    total: total_vec[i],
+                    db: nmap_os_db[i].clone(),
+                };
+                dr_vec.push(dr);
+            }
+            Ok((fingerprint, dr_vec))
         }
         Err(e) => Err(e),
     }
@@ -1614,27 +1656,6 @@ pub fn os_probe(
 mod tests {
     use super::*;
     use std::net::Ipv6Addr;
-    #[test]
-    fn test_detect() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
-        let src_port = None;
-        let dst_open_tcp_port = 22;
-        let dst_closed_tcp_port = 9999;
-        let dst_closed_udp_port = 11111;
-        let timeout = Duration::new(3, 0);
-
-        let _ = os_probe(
-            src_ipv4,
-            src_port,
-            dst_ipv4,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            dst_closed_udp_port,
-            timeout,
-        )
-        .unwrap();
-    }
     #[test]
     fn test_w() {
         let a = 7;
@@ -1731,6 +1752,6 @@ mod tests {
     #[test]
     fn test_ipaddr_is_private() {
         let ip: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        println!("{}", ipaddr_is_private(ip.into()));
+        println!("{}", ip.is_global());
     }
 }

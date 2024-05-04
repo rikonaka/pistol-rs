@@ -14,6 +14,9 @@ use crate::os::osscan6::PistolFingerprint6;
 use crate::utils::{find_source_ipv4, find_source_ipv6, get_default_timeout, get_threads_pool};
 use crate::Target;
 
+use self::osscan::os_probe;
+use self::osscan6::os_probe6;
+
 pub mod dbparser;
 pub mod operator;
 pub mod operator6;
@@ -137,99 +140,6 @@ pub struct Linear {
     pub cpe: Vec<CPE>,
 }
 
-fn find_position_multi(score_vec: &[usize], value: usize) -> Vec<usize> {
-    let mut position = Vec::new();
-    for (i, s) in score_vec.iter().enumerate() {
-        if *s == value {
-            position.push(i)
-        }
-    }
-    position
-}
-
-fn find_position_one(score_vec: &[usize], value: usize) -> Option<usize> {
-    for (i, s) in score_vec.iter().enumerate() {
-        if *s == value {
-            return Some(i);
-        }
-    }
-    None
-}
-
-fn top_k_score(score_vec: &[usize], k: usize) -> Vec<usize> {
-    let mut score_vec = score_vec.to_vec();
-    let mut top_k_vec = Vec::new();
-    for _ in 0..k {
-        let mut max_score = 0;
-        for s in &score_vec {
-            if *s > max_score {
-                max_score = *s;
-            }
-        }
-
-        loop {
-            match find_position_one(&score_vec, max_score) {
-                Some(p) => {
-                    score_vec.remove(p);
-                }
-                None => break,
-            }
-        }
-
-        top_k_vec.push(max_score);
-    }
-    top_k_vec
-}
-
-fn os_detect_thread(
-    src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
-    dst_ipv4: Ipv4Addr,
-    dst_open_tcp_port: u16,
-    dst_closed_tcp_port: u16,
-    dst_closed_udp_port: u16,
-    nmap_os_db: Vec<NmapOsDb>,
-    top_k: usize,
-    timeout: Duration,
-) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
-    let nmap_fingerprint = osscan::os_probe(
-        src_ipv4,
-        src_port,
-        dst_ipv4,
-        dst_open_tcp_port,
-        dst_closed_tcp_port,
-        dst_closed_udp_port,
-        timeout,
-    )?;
-
-    let mut score_vec = Vec::new();
-    let mut total_vec = Vec::new();
-    for n in &nmap_os_db {
-        let (score, total) = n.check(&nmap_fingerprint);
-        score_vec.push(score);
-        total_vec.push(total);
-    }
-
-    let top_k_score_vec = top_k_score(&score_vec, top_k);
-    let mut top_k_index_vec = Vec::new();
-    for k in top_k_score_vec {
-        for p in find_position_multi(&score_vec, k) {
-            top_k_index_vec.push(p);
-        }
-    }
-
-    let mut dr_vec = Vec::new();
-    for i in top_k_index_vec {
-        let dr = NmapOsDetectRet {
-            score: score_vec[i],
-            total: total_vec[i],
-            db: nmap_os_db[i].clone(),
-        };
-        dr_vec.push(dr);
-    }
-    Ok((nmap_fingerprint, dr_vec))
-}
-
 pub fn os_detect(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -265,7 +175,7 @@ pub fn os_detect(
             let tx = tx.clone();
             let nmap_os_db = nmap_os_db.to_vec();
             pool.execute(move || {
-                let os_detect_ret = os_detect_thread(
+                let os_detect_ret = os_probe(
                     src_ipv4,
                     src_port,
                     dst_ipv4,
@@ -362,15 +272,15 @@ pub fn os_detect6(
     top_k: usize,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv6Addr, PistolFingerprint6>> {
+) -> Result<HashMap<Ipv6Addr, (PistolFingerprint6, Vec<NmapOsDetectRet6>)>> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
     };
-    let linear = gen_linear()?;
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
+    let linear = gen_linear()?;
     for t in target.hosts6 {
         let dst_ipv6 = t.addr;
         let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
@@ -385,7 +295,7 @@ pub fn os_detect6(
             let tx = tx.clone();
             let linear = linear.clone();
             pool.execute(move || {
-                let os_detect_ret = osscan6::os_probe6(
+                let os_detect_ret = os_probe6(
                     src_ipv6,
                     src_port,
                     dst_ipv6,
@@ -393,8 +303,8 @@ pub fn os_detect6(
                     dst_closed_tcp_port,
                     dst_closed_udp_port,
                     top_k,
-                    timeout,
                     linear,
+                    timeout,
                 );
                 match tx.send((dst_ipv6, os_detect_ret)) {
                     _ => (),
@@ -405,7 +315,7 @@ pub fn os_detect6(
         }
     }
 
-    let mut ret: HashMap<Ipv6Addr, PistolFingerprint6> = HashMap::new();
+    let mut ret: HashMap<Ipv6Addr, (PistolFingerprint6, Vec<NmapOsDetectRet6>)> = HashMap::new();
     let iter = rx.into_iter().take(recv_size);
     for (i, r) in iter {
         match r {
@@ -427,6 +337,11 @@ mod tests {
     use crate::Host6;
     use std::net::Ipv6Addr;
     use std::time::SystemTime;
+    #[test]
+    fn test_print() {
+        let o: u8 = 12;
+        println!("{:x}", o);
+    }
     #[test]
     fn test_os_detect6() -> Result<()> {
         let src_ipv6 = None;
@@ -451,11 +366,13 @@ mod tests {
         let threads_num = 8;
 
         let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
-        for (i, p) in ret {
+        for (i, (fingerprint, detect_ret)) in ret {
             println!(">>> IP:\n{}", i);
-            println!(">>> Novelty:\n{}", p.novelty);
-            for pred in p.predict {
-                println!("{}", pred);
+            println!(">>> Novelty:\n{}", fingerprint.novelty);
+            println!(">>> Fingerprint:\n{}", fingerprint);
+            println!(">>> Fingerprint:\n{}", fingerprint.nmap_format());
+            for d in detect_ret {
+                println!("{}", d);
             }
         }
         Ok(())
