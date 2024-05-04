@@ -60,6 +60,7 @@ fn tcp_continue_probe(
     stream: &mut TcpStream,
     dst_port: u16,
     only_tcp_recommended: bool,
+    intensity: usize,
     service_probes: &[ServiceProbe],
 ) -> Result<Option<Match>> {
     let mut run_probe = |sp: &ServiceProbe| -> Result<Option<Match>> {
@@ -89,7 +90,14 @@ fn tcp_continue_probe(
 
     // TCP connections continue here if the NULL probe described above fails or soft-matches.
     for sp in service_probes {
-        if sp.probe.probename != "NULL" && sp.probe.protocol == ProbesProtocol::Tcp {
+        let rarity = match sp.rarity {
+            Some(r) => r as usize,
+            None => 0,
+        };
+        if sp.probe.probename != "NULL"
+            && sp.probe.protocol == ProbesProtocol::Tcp
+            && intensity >= rarity
+        {
             match &sp.ports {
                 Some(p) => {
                     // Since the reality is that most ports are used by the service they are registered to in nmap-services,
@@ -119,7 +127,8 @@ fn tcp_continue_probe(
 fn udp_probe(
     dst_addr: IpAddr,
     dst_port: u16,
-    only_udp_recommanded: bool,
+    only_udp_recommended: bool,
+    intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
 ) -> Result<Option<Match>> {
@@ -162,12 +171,19 @@ fn udp_probe(
     socket.connect(dst_addr)?;
 
     for sp in service_probes {
-        if sp.probe.probename != "NULL" && sp.probe.protocol == ProbesProtocol::Udp {
+        let rarity = match sp.rarity {
+            Some(r) => r as usize,
+            None => 0,
+        };
+        if sp.probe.probename != "NULL"
+            && sp.probe.protocol == ProbesProtocol::Udp
+            && intensity >= rarity
+        {
             match &sp.ports {
                 Some(p) => {
                     // Since the reality is that most ports are used by the service they are registered to in nmap-services,
                     // every probe has a list of port numbers that are considered to be most effective.
-                    if only_udp_recommanded {
+                    if only_udp_recommended {
                         if p.contains(&dst_port) {
                             let ret = run_probe(socket, sp);
                             return ret;
@@ -178,7 +194,7 @@ fn udp_probe(
                     }
                 }
                 None => {
-                    if !only_udp_recommanded {
+                    if !only_udp_recommended {
                         let ret = run_probe(socket, sp);
                         return ret;
                     }
@@ -195,6 +211,7 @@ pub fn vs_probe(
     only_null_probe: bool,
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
+    intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
 ) -> Result<Option<Match>> {
@@ -222,6 +239,7 @@ pub fn vs_probe(
                             &mut stream,
                             dst_port,
                             only_tcp_recommended,
+                            intensity,
                             service_probes,
                         )?;
                         match tcp_ret {
@@ -233,6 +251,7 @@ pub fn vs_probe(
                                     dst_addr,
                                     dst_port,
                                     only_udp_recommended,
+                                    intensity,
                                     service_probes,
                                     timeout,
                                 )?;

@@ -424,12 +424,14 @@ fn main() -> Result<()> {
     // only_udp_recommended = true: only try the udp probe recommended port
     let (only_null_probe, only_tcp_recommended, only_udp_recomended) = (false, true, true);
     let exclude_ports = Some(ExcludePorts::new(vec![51, 52]));
+    let intensity = 7; // nmap default
     let ret = vs_scan(
         target,
         only_null_probe,
         only_tcp_recommended,
         only_udp_recommended,
         exclude_ports,
+        intensity,
         threads_num,
         timeout,
     )?;

@@ -51,6 +51,7 @@ pub fn vs_scan(
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
     exclude_ports: Option<ExcludePorts>,
+    intensity: usize,
     threads_num: usize,
     timeout: Option<Duration>,
 ) -> Result<Vec<NmapVsDetectRet>> {
@@ -102,6 +103,7 @@ pub fn vs_scan(
                         only_null_probe,
                         only_tcp_recommended,
                         only_udp_recommended,
+                        intensity,
                         &service_probes,
                         timeout,
                     );
@@ -145,12 +147,14 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let exclude_ports = Some(ExcludePorts::new(vec![51, 52]));
+        let intensity = 7; // nmap default
         let ret = vs_scan(
             target,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
             exclude_ports,
+            intensity,
             threads_num,
             timeout,
         )?;
