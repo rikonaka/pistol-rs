@@ -182,8 +182,7 @@ fn main() -> Result<()> {
         top_k,
         threads_num,
         timeout,
-    )
-    .unwrap();
+    )?;
 
     for (ip, (fingerprint, detect_ret)) in ret {
         println!(">>> IP:\n{}", ip);
@@ -342,7 +341,7 @@ fn main() -> Result<()> {
     let top_k = 3;
     let threads_num = 8;
 
-    let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
+    let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout)?;
     for (i, (fingerprint, detect_ret)) in ret {
         println!(">>> IP:\n{}", i);
         println!(">>> Novelty:\n{}", fingerprint.novelty);
