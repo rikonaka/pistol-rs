@@ -563,7 +563,7 @@ pub fn layer2_send(
             for _ in 0..DEFAULT_MAXLOOP {
                 let buff = match receiver.next() {
                     Ok(b) => b,
-                    Err(_) => &vec![],
+                    Err(_) => &[],
                 };
                 for m in &layers_match {
                     match m.do_match(buff) {
