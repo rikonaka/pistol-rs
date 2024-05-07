@@ -1,6 +1,6 @@
 # pistol-rs
 
-The library must be run as root (Linux), other systems are not supported, and the `nightly` version of rust is recommended.
+The library must be run as root (Linux) or administrator (Windows), other systems are not supported, and the `nightly` version of rust is recommended.
 
 Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
 
@@ -9,9 +9,7 @@ Cause the pull request to fix a bug I submitted to the upstream `libpnet` has no
 pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
 ```
 
-On Windows, download the `npcap` and `npcap-sdk` from [here](https://npcap.com/) and install `npcap` (to install with the "Install Npcap in WinPcap API-compatible Mode"), then place `Packet.lib` from the `npcap-sdk` pack x64 folder in your root of code.
-
-In windows testing I used wireshark to monitor and found that windows was unable to send packets and didn't know why 🤨.
+On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then place `Packet.lib` from the x64 folder in your root of code. The other lib like `npcap` did not test by libpnet.
 
 ## Host Discovery (Ping Scanning)
 
@@ -28,7 +26,7 @@ I implement `pistol` host discovery according to the nmap [documentation](https:
 
 ## Port Scanning Techniques and Algorithms
 
-I implement `pistol` transport layer scan according to the nmap [pdf](https://nmap.org/nmap_doc.html) and [documentation](https://nmap.org/book/scan-methods.html).
+I implement `pistol` port scan according to the nmap [pdf](https://nmap.org/nmap_doc.html) and [documentation](https://nmap.org/book/scan-methods.html).
 
 | Method                  | Detailed Documentation                                                        | Note                                    |
 | :---------------------- | :---------------------------------------------------------------------------- | :-------------------------------------- |
