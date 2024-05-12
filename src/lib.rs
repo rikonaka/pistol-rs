@@ -51,15 +51,8 @@ trait Ipv6CheckMethods {
 impl Ipv6CheckMethods for Ipv6Addr {
     fn is_global_x(&self) -> bool {
         let octets = self.octets();
-        // println!("{:#b} {:#b}", octets[0], octets[1]);
-        let is_local = if octets[0] == 0b11111110 {
-            let x2 = octets[1] >> 6;
-            // println!("x2: {:#b}", x2);
-            if x2 == 0b00000010 {
-                true
-            } else {
-                false
-            }
+        let is_local = if octets[0] == 0b11111110 && octets[1] >> 6 == 0b00000010 {
+            true
         } else {
             false
         };
