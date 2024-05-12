@@ -292,6 +292,10 @@ pub fn ping6(
     Ok(hm)
 }
 
+/// TCP SYN Ping.
+/// This ping probe stays away from being similar to a SYN port scan,
+/// and to keep the probe stealthy,
+/// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_syn_ping(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -326,6 +330,10 @@ pub fn tcp_syn_ping6(
     )
 }
 
+/// TCP ACK Ping.
+/// This ping probe stays away from being similar to a ACK port scan,
+/// and to keep the probe stealthy,
+/// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_ack_ping(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -360,6 +368,10 @@ pub fn tcp_ack_ping6(
     )
 }
 
+/// UDP Ping.
+/// This ping probe stays away from being similar to a UDP port scan,
+/// and to keep the probe stealthy,
+/// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn udp_ping(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -394,6 +406,7 @@ pub fn udp_ping6(
     )
 }
 
+/// Traditional Ping.
 pub fn icmp_ping(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
