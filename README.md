@@ -6,7 +6,7 @@ The library must be run as root (Linux) or administrator (Windows), other system
 
 https://github.com/libpnet/libpnet/issues/686
 
-Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline, so this library cannot be used as `crate` yet, but you can add this library through git.
+Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline https://github.com/libpnet/libpnet/pull/640, so this library cannot be used as `crate` yet, but you can add this library through git.
 
 ```toml
 [dependencies]
