@@ -23,6 +23,7 @@ use crate::utils::find_interface_by_ipv4;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
+use crate::IpCheckMethods;
 
 use super::dbparser::NmapOsDb;
 use super::operator::icmp_cd;
@@ -177,7 +178,7 @@ pub fn get_scan_line(
     // it distinguishes between a host that is truly directly connected and what may be just a miscalculation.
     let (pv, ds, dc) = if dst_addr.is_loopback() {
         ("Y", 0, "L")
-    } else if !dst_addr.is_global() {
+    } else if !dst_addr.is_global_x() {
         ("Y", 1, "D")
     } else {
         ("N", hops.unwrap(), "I")
@@ -1709,7 +1710,6 @@ pub fn os_probe(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv6Addr;
     #[test]
     fn test_w() {
         let a = 7;
@@ -1802,10 +1802,5 @@ mod tests {
         let timeout = Duration::new(3, 0);
         let u1rr = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_port, timeout).unwrap();
         println!("{}", u1rr.u1.response.len());
-    }
-    #[test]
-    fn test_ipaddr_is_private() {
-        let ip: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        println!("{}", ip.is_global());
     }
 }

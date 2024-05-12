@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-#![feature(ip)] // to use is_unicast_global in Ipv6Addr
 use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
@@ -22,6 +21,68 @@ mod vs;
 
 const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;
+
+// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API.
+// Use this trait instead until its become stable function.
+trait Ipv4CheckMethods {
+    fn is_global_x(&self) -> bool;
+}
+
+impl Ipv4CheckMethods for Ipv4Addr {
+    fn is_global_x(&self) -> bool {
+        let octets = self.octets();
+        let is_private = if octets[0] == 10 {
+            true
+        } else if octets[0] == 192 && octets[1] == 168 {
+            true
+        } else if octets[0] == 172 {
+            if octets[1] >= 16 && octets[1] <= 31 {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        !is_private
+    }
+}
+
+trait Ipv6CheckMethods {
+    fn is_global_x(&self) -> bool;
+}
+
+impl Ipv6CheckMethods for Ipv6Addr {
+    fn is_global_x(&self) -> bool {
+        let octets = self.octets();
+        // println!("{:#b} {:#b}", octets[0], octets[1]);
+        let is_local = if octets[0] == 0b11111110 {
+            let x2 = octets[1] >> 6;
+            // println!("x2: {:#b}", x2);
+            if x2 == 0b00000010 {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        !is_local
+    }
+}
+
+trait IpCheckMethods {
+    fn is_global_x(&self) -> bool;
+}
+
+impl IpCheckMethods for IpAddr {
+    fn is_global_x(&self) -> bool {
+        match self {
+            IpAddr::V4(ipv4) => ipv4.is_global_x(),
+            IpAddr::V6(ipv6) => ipv6.is_global_x(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingStatus {
@@ -172,7 +233,7 @@ pub struct Host {
 impl Host {
     pub fn new(addr: Ipv4Addr, ports: Option<Vec<u16>>) -> Result<Host> {
         // Check the dst addr when init the Host.
-        if !addr.is_global() {
+        if !addr.is_global_x() {
             match utils::find_source_ipv4(None, addr)? {
                 Some(_) => (),
                 None => return Err(errors::IllegalTarget::new(IpAddr::V4(addr)).into()),
@@ -205,7 +266,7 @@ pub struct Host6 {
 impl Host6 {
     pub fn new(addr: Ipv6Addr, ports: Option<Vec<u16>>) -> Result<Host6> {
         // Check the dst addr when init the Host.
-        if !addr.is_global() {
+        if !addr.is_global_x() {
             match utils::find_source_ipv6(None, addr)? {
                 Some(_) => (),
                 None => return Err(errors::IllegalTarget::new(IpAddr::V6(addr)).into()),
@@ -543,14 +604,12 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_ipv6_address() {
+    fn test_ip_address() {
         let ipv6_addr: Ipv6Addr = "240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap();
         println!("{}", ipv6_addr.is_unspecified()); // false
         println!("{}", ipv6_addr.is_multicast()); // false
         println!("{}", ipv6_addr.is_loopback()); // false
-        println!("{}", ipv6_addr.is_unicast_global()); // true
-        println!("{}", ipv6_addr.is_global()); // true
-        println!("{}", ipv6_addr.is_unicast_link_local()); // false
+        println!("{}", ipv6_addr.is_global_x()); // true
 
         println!(">>>>>>>>>>>>>>>>>>>>>>>");
 
@@ -558,9 +617,7 @@ mod tests {
         println!("{}", ipv6_addr.is_unspecified()); // false
         println!("{}", ipv6_addr.is_multicast()); // false
         println!("{}", ipv6_addr.is_loopback()); // false
-        println!("{}", ipv6_addr.is_unicast_global()); // false
-        println!("{}", ipv6_addr.is_global()); // false
-        println!("{}", ipv6_addr.is_unicast_link_local()); // true
+        println!("{}", ipv6_addr.is_global_x()); // false
 
         println!(">>>>>>>>>>>>>>>>>>>>>>>");
 
@@ -568,7 +625,13 @@ mod tests {
         println!("{}", ipv6_addr.is_unspecified()); // false
         println!("{}", ipv6_addr.is_multicast()); // false
         println!("{}", ipv6_addr.is_loopback()); // false
-        println!("{}", ipv6_addr.is_unicast_global()); // true
-        println!("{}", ipv6_addr.is_global()); // true
+        println!("{}", ipv6_addr.is_global_x()); // true
+
+        println!(">>>>>>>>>>>>>>>>>>>>>>>");
+
+        let ipv4_addr: Ipv4Addr = "192.168.1.23".parse().unwrap();
+        println!("{}", ipv4_addr.is_global_x()); // false
+        let ipv4_addr: Ipv4Addr = "114.114.114.114".parse().unwrap();
+        println!("{}", ipv4_addr.is_global_x()); // true
     }
 }

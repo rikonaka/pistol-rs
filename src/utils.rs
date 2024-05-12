@@ -10,6 +10,7 @@ use std::time::Duration;
 use threadpool::ThreadPool;
 
 use crate::layers::system_route;
+use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
 
 pub fn find_source_ipv4(
@@ -52,13 +53,7 @@ pub fn find_source_ipv6(
                         IpAddr::V6(ipv6) => {
                             if ipnetwork.contains(dst_ipv6.into()) {
                                 return Ok(Some(ipv6));
-                            } else if dst_ipv6.is_global() && ipv6.is_unicast_global() {
-                                return Ok(Some(ipv6));
-                            } else if dst_ipv6.is_unicast_global() && ipv6.is_unicast_global() {
-                                return Ok(Some(ipv6));
-                            } else if dst_ipv6.is_unicast_link_local()
-                                && ipv6.is_unicast_link_local()
-                            {
+                            } else if dst_ipv6.is_global_x() {
                                 return Ok(Some(ipv6));
                             }
                         }

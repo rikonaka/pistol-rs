@@ -52,6 +52,8 @@ use crate::errors::CreateDatalinkChannelFailed;
 use crate::utils::find_interface_by_ipv4;
 use crate::utils::find_interface_by_ipv6;
 use crate::utils::get_threads_pool;
+use crate::Ipv4CheckMethods;
+use crate::Ipv6CheckMethods;
 use crate::DEFAULT_MAXLOOP;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
@@ -872,7 +874,7 @@ pub fn layer3_ipv4_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
         Some(m) => m,
         None => {
-            if dst_ipv4.is_global() {
+            if dst_ipv4.is_global_x() {
                 // Not local net, then try to send this packet to router.
                 let route_ip = system_route()?;
                 // let route_ip = Ipv4Addr::new(0, 0, 0, 0); // default route address
@@ -1138,7 +1140,7 @@ pub fn layer3_ipv6_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
         Some(m) => m,
         None => {
-            if dst_ipv6.is_global() {
+            if dst_ipv6.is_global_x() {
                 // Not local net, then try to send this packet to router.
                 let route_ip = system_route6()?;
                 // let route_ip = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0); // default route address
