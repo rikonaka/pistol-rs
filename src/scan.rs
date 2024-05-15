@@ -102,7 +102,6 @@ pub fn arp_scan(
         TargetType::Ipv4 => {
             let nmap_mac_prefixes = get_nmap_mac_prefixes();
             let mut ret = ArpScanResults {
-                alive_hosts_num: 0,
                 alive_hosts: HashMap::new(),
             };
 
@@ -146,7 +145,6 @@ pub fn arp_scan(
                 match v {
                     Ok((target_ipv4, target_mac)) => match target_mac? {
                         (Some(m), Some(_rtt)) => {
-                            ret.alive_hosts_num += 1;
                             let mut ouis = String::new();
                             let mut mac_prefix = String::new();
                             let m0 = format!("{:X}", m.0);

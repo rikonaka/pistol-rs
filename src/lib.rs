@@ -125,14 +125,13 @@ pub struct ArpAliveHosts {
 
 #[derive(Debug, Clone)]
 pub struct ArpScanResults {
-    pub alive_hosts_num: usize,
     pub alive_hosts: HashMap<Ipv4Addr, ArpAliveHosts>,
 }
 
 impl fmt::Display for ArpScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result_str = String::new();
-        let s = format!("Alive hosts: {}", self.alive_hosts_num);
+        let s = format!("Alive hosts: {}", self.alive_hosts.len());
         result_str += &s;
         result_str += "\n";
         for (ip, aah) in &self.alive_hosts {
@@ -350,7 +349,7 @@ impl Target {
     /// use std::net::Ipv4Addr;
     ///
     /// fn test() {
-    ///     let target = Target::from_subnet("192.168.1.0/24", None).unwrap();
+    ///     let target = Target::from_subnet("192.168.1.0/24", Some(vec![22])).unwrap();
     /// }
     /// ```
     pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target> {
@@ -373,10 +372,6 @@ impl Target {
 
 /// ARP Scan.
 /// This will sends ARP packets to hosts on the local network and displays any responses that are received.
-/// The network interface to use can be specified with the `interface` option.
-/// If this option is not present, program will search the system interface list for `subnet` user provided, configured up interface (excluding loopback).
-/// By default, the ARP packets are sent to the Ethernet broadcast address, ff:ff:ff:ff:ff:ff, but that can be changed with the `destaddr` option.
-/// When `threads_num` is 0, means that automatic threads pool mode is used.
 pub use scan::arp_scan;
 
 /// TCP Connect() Scan.
