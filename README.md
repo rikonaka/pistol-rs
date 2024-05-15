@@ -394,13 +394,7 @@ Linux | Linux | 4.X | general purpose
 >>> CPE:
 cpe:/o:linux:linux_kernel:3
 cpe:/o:linux:linux_kernel:4
->>> Score:
-1.93%
->>> Fingerprint:
-Android 7.1 (Linux 3.18)
->>> Class:
-Google | Android | 7.X | phone
->>> CPE:
+...
 ```
 
 
