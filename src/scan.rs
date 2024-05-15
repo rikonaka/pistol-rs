@@ -870,6 +870,17 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn test_arp_scan_subnet_new() -> Result<()> {
+        let target: Target = Target::from_subnet("192.168.1.0/24", None)?;
+        let threads_num = 300;
+        let timeout = Some(Duration::new(1, 5));
+        // let print_result = false;
+        let src_ipv4 = None;
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
+        println!("{}", ret);
+        Ok(())
+    }
+    #[test]
     fn test_tcp_connect_scan() -> Result<()> {
         let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_port: Option<u16> = None;

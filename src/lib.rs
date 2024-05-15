@@ -9,6 +9,7 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
+use subnetwork::Ipv4Pool;
 
 mod errors;
 mod flood;
@@ -342,6 +343,29 @@ impl Target {
             hosts: vec![],
             hosts6: hosts6.to_vec(),
         }
+    }
+    /// Scan a IPv4 subnet with same ports.
+    /// ```rust
+    /// use pistol::{Host, Target};
+    /// use std::net::Ipv4Addr;
+    ///
+    /// fn test() {
+    ///     let target = Target::from_subnet("192.168.1.0/24", None).unwrap();
+    /// }
+    /// ```
+    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target> {
+        let ipv4_pool = Ipv4Pool::from(subnet)?;
+        let mut hosts = Vec::new();
+        for addr in ipv4_pool {
+            let h = Host::new(addr, ports.clone())?;
+            hosts.push(h);
+        }
+        let target = Target {
+            target_type: TargetType::Ipv4,
+            hosts,
+            hosts6: vec![],
+        };
+        Ok(target)
     }
 }
 
