@@ -13,7 +13,7 @@ mod flood;
 mod layers;
 mod os;
 mod ping;
-mod scan;
+pub mod scan;
 mod utils;
 mod vs;
 
