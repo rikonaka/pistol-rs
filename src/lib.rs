@@ -17,6 +17,8 @@ mod scan;
 mod utils;
 mod vs;
 
+use errors::IllegalTarget;
+
 const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;
 
@@ -106,10 +108,10 @@ pub struct Host {
 impl Host {
     pub fn new(addr: Ipv4Addr, ports: Option<Vec<u16>>) -> Result<Host> {
         // Check the dst addr when init the Host.
-        if !addr.is_global_x() {
+        if !addr.is_global_x() && !addr.is_loopback() {
             match utils::find_source_ipv4(None, addr)? {
                 Some(_) => (),
-                None => return Err(errors::IllegalTarget::new(IpAddr::V4(addr)).into()),
+                None => return Err(IllegalTarget::new(IpAddr::V4(addr)).into()),
             }
         }
         let h = match ports {

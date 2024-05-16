@@ -474,7 +474,8 @@ mod tests {
     fn test_os_detect() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
+        let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -492,7 +493,7 @@ mod tests {
         let threads_num = 8;
 
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
-        println!("{}", ret);
+        println!("{}", ret.results.get(&dst_ipv4).unwrap().fingerprint);
         Ok(())
     }
     #[test]

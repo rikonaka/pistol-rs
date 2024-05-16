@@ -51,6 +51,8 @@ use crate::errors::CanNotFoundRouterAddress;
 use crate::errors::CreateDatalinkChannelFailed;
 use crate::utils::find_interface_by_ipv4;
 use crate::utils::find_interface_by_ipv6;
+use crate::utils::find_interface_valid_mac_ipv4;
+use crate::utils::find_interface_valid_mac_ipv6;
 use crate::utils::get_threads_pool;
 use crate::Ipv4CheckMethods;
 use crate::Ipv6CheckMethods;
@@ -874,7 +876,14 @@ pub fn layer3_ipv4_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
         Some(m) => m,
         None => {
-            if dst_ipv4.is_global_x() {
+            if dst_ipv4 == src_ipv4 {
+                let interface = find_interface_by_ipv4(dst_ipv4).unwrap();
+                let mac = interface.mac.unwrap();
+                mac
+            } else if dst_ipv4.is_loopback() {
+                let mac = find_interface_valid_mac_ipv4();
+                mac.unwrap()
+            } else if dst_ipv4.is_global_x() {
                 // Not local net, then try to send this packet to router.
                 let route_ip = system_route()?;
                 // let route_ip = Ipv4Addr::new(0, 0, 0, 0); // default route address
@@ -1140,7 +1149,14 @@ pub fn layer3_ipv6_send(
     let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
         Some(m) => m,
         None => {
-            if dst_ipv6.is_global_x() {
+            if dst_ipv6 == src_ipv6 {
+                let interface = find_interface_by_ipv6(dst_ipv6).unwrap();
+                let mac = interface.mac.unwrap();
+                mac
+            } else if dst_ipv6.is_loopback() {
+                let mac = find_interface_valid_mac_ipv6();
+                mac.unwrap()
+            } else if dst_ipv6.is_global_x() {
                 // Not local net, then try to send this packet to router.
                 let route_ip = system_route6()?;
                 // let route_ip = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0); // default route address
