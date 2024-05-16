@@ -474,7 +474,7 @@ mod tests {
     fn test_os_detect() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 59, 1);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
