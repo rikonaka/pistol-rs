@@ -1,12 +1,14 @@
+/* Scan */
 use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::fmt;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
+use std::net::IpAddr;
 
 pub mod arp;
 pub mod ip;
@@ -24,15 +26,155 @@ use crate::utils::find_source_ipv6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::ArpAliveHosts;
 use crate::TargetType;
 
 use super::errors::NotSupportIpTypeForArpScan;
-use super::ArpScanResults;
-use super::IpScanResults;
 use super::Target;
-use super::TargetScanStatus;
-use super::TcpUdpScanResults;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TargetScanStatus {
+    Open,
+    Closed,
+    Filtered,
+    OpenOrFiltered,
+    Unfiltered,
+    Unreachable,
+    ClosedOrFiltered,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IdleScanResults {
+    pub zombie_ip_id_1: u16,
+    pub zombie_ip_id_2: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArpAliveHosts {
+    pub mac_addr: MacAddr,
+    pub ouis: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArpScanResults {
+    pub alive_hosts: HashMap<Ipv4Addr, ArpAliveHosts>,
+}
+
+impl fmt::Display for ArpScanResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result_str = String::new();
+        let s = format!("Alive hosts: {}", self.alive_hosts.len());
+        result_str += &s;
+        result_str += "\n";
+        for (ip, aah) in &self.alive_hosts {
+            let s = format!("{}: {} ({})", ip, aah.mac_addr, aah.ouis);
+            result_str += &s;
+            result_str += "\n";
+        }
+        write!(f, "{}", result_str)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PortStatus {
+    pub status: HashMap<u16, TargetScanStatus>,
+    pub rtt: Option<Duration>,
+}
+
+impl PortStatus {
+    pub fn new() -> PortStatus {
+        PortStatus {
+            status: HashMap::new(),
+            rtt: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TcpUdpScanResults {
+    pub results: HashMap<IpAddr, PortStatus>,
+}
+
+impl TcpUdpScanResults {
+    pub fn new() -> TcpUdpScanResults {
+        TcpUdpScanResults {
+            results: HashMap::new(),
+        }
+    }
+}
+
+impl fmt::Display for TcpUdpScanResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result_str = String::new();
+        for (ip, ps) in &self.results {
+            for (port, status) in &ps.status {
+                let status_str = match status {
+                    TargetScanStatus::Open => format!("{ip} {port} open"),
+                    TargetScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
+                    TargetScanStatus::Filtered => format!("{ip} {port} filtered"),
+                    TargetScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
+                    TargetScanStatus::Closed => format!("{ip} {port} closed"),
+                    TargetScanStatus::Unreachable => format!("{ip} {port} unreachable"),
+                    TargetScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
+                };
+                result_str += &status_str;
+                result_str += "\n";
+            }
+        }
+        write!(f, "{}", result_str)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProtocolStatus {
+    pub status: HashMap<IpNextHeaderProtocol, TargetScanStatus>,
+    pub rtt: Option<Duration>,
+}
+
+impl ProtocolStatus {
+    pub fn new() -> ProtocolStatus {
+        ProtocolStatus {
+            status: HashMap::new(),
+            rtt: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IpScanResults {
+    pub results: HashMap<IpAddr, ProtocolStatus>,
+}
+
+impl IpScanResults {
+    pub fn new() -> IpScanResults {
+        IpScanResults {
+            results: HashMap::new(),
+        }
+    }
+}
+
+impl fmt::Display for IpScanResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result_str = String::new();
+        for (ip, ps) in &self.results {
+            for (protocol, status) in &ps.status {
+                let status_str = match status {
+                    TargetScanStatus::Open => format!("{ip} {protocol} open"),
+                    TargetScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
+                    TargetScanStatus::Filtered => format!("{ip} {protocol} filtered"),
+                    TargetScanStatus::Unfiltered => format!("{ip} {protocol} unfiltered"),
+                    TargetScanStatus::Closed => format!("{ip} {protocol} closed"),
+                    TargetScanStatus::Unreachable => format!("{ip} {protocol} unreachable"),
+                    TargetScanStatus::ClosedOrFiltered => {
+                        format!("{ip} {protocol} closed|filtered")
+                    }
+                };
+                result_str += &status_str;
+                result_str += "\n";
+            }
+        }
+        write!(f, "{}", result_str)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct NmapMacPrefix {
@@ -314,10 +456,7 @@ pub fn scan(
     protocol: Option<IpNextHeaderProtocol>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<(
-    HashMap<IpAddr, TcpUdpScanResults>,
-    HashMap<IpAddr, IpScanResults>,
-)> {
+) -> Result<(TcpUdpScanResults, IpScanResults)> {
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -359,42 +498,53 @@ pub fn scan(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut ret: HashMap<IpAddr, TcpUdpScanResults> = HashMap::new();
-    let mut ret_procotol: HashMap<IpAddr, IpScanResults> = HashMap::new();
+    let mut tcpudp_ret = TcpUdpScanResults::new();
+    let mut ip_ret = IpScanResults::new();
 
     for v in iter {
         match v {
-            Ok((dst_ipv4, dst_port, procotol, scan_rets, rtt)) => match procotol {
+            Ok((dst_ipv4, dst_port, procotol, scan_ret, rtt)) => match procotol {
                 Some(p) => {
-                    if ret_procotol.contains_key(&dst_ipv4.into()) {
-                        ret_procotol
-                            .get_mut(&dst_ipv4.into())
-                            .unwrap()
-                            .results
-                            .insert(p, scan_rets);
+                    if ip_ret.results.contains_key(&dst_ipv4.into()) {
+                        let ps = ip_ret.results.get_mut(&dst_ipv4.into()).unwrap();
+                        ps.status.insert(p, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
                     } else {
-                        let mut v = IpScanResults::new(dst_ipv4.into(), rtt);
-                        v.results.insert(p, scan_rets);
-                        ret_procotol.insert(dst_ipv4.into(), v);
+                        let mut ps = ProtocolStatus::new();
+                        ps.status.insert(p, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
+                        ip_ret.results.insert(dst_ipv4.into(), ps);
                     }
                 }
                 _ => {
-                    if ret.contains_key(&dst_ipv4.into()) {
-                        ret.get_mut(&dst_ipv4.into())
-                            .unwrap()
-                            .results
-                            .insert(dst_port, scan_rets);
+                    if tcpudp_ret.results.contains_key(&dst_ipv4.into()) {
+                        let ps = tcpudp_ret.results.get_mut(&dst_ipv4.into()).unwrap();
+                        ps.status.insert(dst_port, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
                     } else {
-                        let mut v = TcpUdpScanResults::new(dst_ipv4.into(), rtt);
-                        v.results.insert(dst_port, scan_rets);
-                        ret.insert(dst_ipv4.into(), v);
+                        let mut ps = PortStatus::new();
+                        ps.status.insert(dst_port, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
+                        tcpudp_ret.results.insert(dst_ipv4.into(), ps);
                     }
                 }
             },
             Err(e) => return Err(e),
         }
     }
-    Ok((ret, ret_procotol))
+    Ok((tcpudp_ret, ip_ret))
 }
 
 pub fn scan6(
@@ -404,7 +554,7 @@ pub fn scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -436,26 +586,32 @@ pub fn scan6(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut ret: HashMap<IpAddr, TcpUdpScanResults> = HashMap::new();
+    let mut tcpudp_ret = TcpUdpScanResults::new();
 
     for v in iter {
         match v {
-            Ok((dst_ipv6, dst_port, scan_rets, rtt)) => {
-                if ret.contains_key(&dst_ipv6.into()) {
-                    ret.get_mut(&dst_ipv6.into())
-                        .unwrap()
-                        .results
-                        .insert(dst_port, scan_rets);
+            Ok((dst_ipv6, dst_port, scan_ret, rtt)) => {
+                if tcpudp_ret.results.contains_key(&dst_ipv6.into()) {
+                    let ps = tcpudp_ret.results.get_mut(&dst_ipv6.into()).unwrap();
+                    ps.status.insert(dst_port, scan_ret);
+                    match ps.rtt {
+                        Some(_) => (),
+                        None => ps.rtt = rtt,
+                    }
                 } else {
-                    let mut v = TcpUdpScanResults::new(dst_ipv6.into(), rtt);
-                    v.results.insert(dst_port, scan_rets);
-                    ret.insert(dst_ipv6.into(), v);
+                    let mut ps = PortStatus::new();
+                    ps.status.insert(dst_port, scan_ret);
+                    match ps.rtt {
+                        Some(_) => (),
+                        None => ps.rtt = rtt,
+                    }
+                    tcpudp_ret.results.insert(dst_ipv6.into(), ps);
                 }
             }
             Err(e) => return Err(e),
         }
     }
-    Ok(ret)
+    Ok(tcpudp_ret)
 }
 
 pub fn tcp_connect_scan(
@@ -464,7 +620,7 @@ pub fn tcp_connect_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Connect,
@@ -485,7 +641,7 @@ pub fn tcp_connect_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Connect,
@@ -502,7 +658,7 @@ pub fn tcp_syn_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Syn,
@@ -523,7 +679,7 @@ pub fn tcp_syn_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Syn,
@@ -540,7 +696,7 @@ pub fn tcp_fin_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Fin,
@@ -561,7 +717,7 @@ pub fn tcp_fin_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Fin,
@@ -578,7 +734,7 @@ pub fn tcp_ack_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Ack,
@@ -599,7 +755,7 @@ pub fn tcp_ack_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Ack,
@@ -616,7 +772,7 @@ pub fn tcp_null_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Null,
@@ -637,7 +793,7 @@ pub fn tcp_null_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Null,
@@ -654,7 +810,7 @@ pub fn tcp_xmas_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Xmas,
@@ -675,7 +831,7 @@ pub fn tcp_xmas_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Xmas,
@@ -692,7 +848,7 @@ pub fn tcp_window_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Window,
@@ -713,7 +869,7 @@ pub fn tcp_window_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Window,
@@ -730,7 +886,7 @@ pub fn tcp_maimon_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Maimon,
@@ -751,7 +907,7 @@ pub fn tcp_maimon_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Maimon,
@@ -770,7 +926,7 @@ pub fn tcp_idle_scan(
     zombie_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Idle,
@@ -791,7 +947,7 @@ pub fn udp_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     let (ret, _) = scan(
         target,
         ScanMethod::Udp,
@@ -812,7 +968,7 @@ pub fn udp_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, TcpUdpScanResults>> {
+) -> Result<TcpUdpScanResults> {
     scan6(
         target,
         ScanMethod6::Udp,
@@ -830,7 +986,7 @@ pub fn ip_procotol_scan(
     protocol: Option<IpNextHeaderProtocol>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<IpAddr, IpScanResults>> {
+) -> Result<IpScanResults> {
     let (_, ret) = scan(
         target,
         ScanMethod::IpProcotol,
@@ -869,7 +1025,7 @@ mod tests {
     }
     #[test]
     fn test_arp_scan_subnet_new() -> Result<()> {
-        let target: Target = Target::from_subnet("192.168.1.0/24", None)?;
+        let target: Target = Target::from_subnet("192.168.59.130/24", None)?;
         let threads_num = 300;
         let timeout = Some(Duration::new(1, 5));
         // let print_result = false;
@@ -880,18 +1036,15 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan() -> Result<()> {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
+        let src_ipv4 = None;
+        let src_port = None;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 2);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        let ret = tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -903,11 +1056,8 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -919,11 +1069,8 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_fin_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        let ret = tcp_fin_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -935,11 +1082,8 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_ack_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        let ret = tcp_ack_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -951,11 +1095,8 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            tcp_null_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        let ret = tcp_null_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -967,11 +1108,8 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, TcpUdpScanResults> =
-            udp_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        let ret = udp_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -985,11 +1123,9 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
         let target: Target = Target::new(vec![host]);
-        let ret: HashMap<IpAddr, IpScanResults> =
+        let ret =
             ip_procotol_scan(target, src_ipv4, src_port, protocol, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        println!("{}", ret);
         Ok(())
     }
 }

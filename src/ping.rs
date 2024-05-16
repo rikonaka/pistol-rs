@@ -13,6 +13,7 @@ use crate::scan::tcp;
 use crate::scan::tcp6;
 use crate::scan::udp;
 use crate::scan::udp6;
+use crate::scan::TargetScanStatus;
 use crate::utils::find_source_ipv4;
 use crate::utils::find_source_ipv6;
 use crate::utils::get_default_timeout;
@@ -21,7 +22,6 @@ use crate::utils::random_port;
 use crate::PingResults;
 use crate::PingStatus;
 use crate::Target;
-use crate::TargetScanStatus;
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;

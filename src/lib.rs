@@ -1,9 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use anyhow::Result;
-use pnet::datalink::MacAddr;
-use pnet::packet::ip::IpNextHeaderProtocol;
-use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -96,119 +93,6 @@ impl fmt::Display for PingResults {
             PingStatus::Down => format!("{ip} down"),
         };
         result_str += &str;
-        write!(f, "{}", result_str)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TargetScanStatus {
-    Open,
-    Closed,
-    Filtered,
-    OpenOrFiltered,
-    Unfiltered,
-    Unreachable,
-    ClosedOrFiltered,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct IdleScanResults {
-    pub zombie_ip_id_1: u16,
-    pub zombie_ip_id_2: u16,
-}
-
-#[derive(Debug, Clone)]
-pub struct ArpAliveHosts {
-    pub mac_addr: MacAddr,
-    pub ouis: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ArpScanResults {
-    pub alive_hosts: HashMap<Ipv4Addr, ArpAliveHosts>,
-}
-
-impl fmt::Display for ArpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut result_str = String::new();
-        let s = format!("Alive hosts: {}", self.alive_hosts.len());
-        result_str += &s;
-        result_str += "\n";
-        for (ip, aah) in &self.alive_hosts {
-            let s = format!("{}: {} ({})", ip, aah.mac_addr, aah.ouis);
-            result_str += &s;
-            result_str += "\n";
-        }
-        write!(f, "{}", result_str)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TcpUdpScanResults {
-    pub addr: IpAddr,
-    pub results: HashMap<u16, TargetScanStatus>,
-    pub rtt: Option<Duration>,
-}
-
-impl TcpUdpScanResults {
-    pub fn new(addr: IpAddr, rtt: Option<Duration>) -> TcpUdpScanResults {
-        let results = HashMap::new();
-        TcpUdpScanResults { addr, results, rtt }
-    }
-}
-
-impl fmt::Display for TcpUdpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        for port in self.results.keys() {
-            let str = match self.results.get(port).unwrap() {
-                TargetScanStatus::Open => format!("{ip} {port} open"),
-                TargetScanStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
-                TargetScanStatus::Filtered => format!("{ip} {port} filtered"),
-                TargetScanStatus::Unfiltered => format!("{ip} {port} unfiltered"),
-                TargetScanStatus::Closed => format!("{ip} {port} closed"),
-                TargetScanStatus::Unreachable => format!("{ip} {port} unreachable"),
-                TargetScanStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
-            };
-            result_str += &str;
-            result_str += "\n";
-        }
-        write!(f, "{}", result_str)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct IpScanResults {
-    pub addr: IpAddr,
-    pub results: HashMap<IpNextHeaderProtocol, TargetScanStatus>,
-    pub rtt: Option<Duration>,
-}
-
-impl IpScanResults {
-    pub fn new(addr: IpAddr, rtt: Option<Duration>) -> IpScanResults {
-        let results = HashMap::new();
-        IpScanResults { addr, results, rtt }
-    }
-}
-
-impl fmt::Display for IpScanResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        for protocol in self.results.keys() {
-            let str = match self.results.get(protocol).unwrap() {
-                TargetScanStatus::Open => format!("{ip} {protocol} open"),
-                TargetScanStatus::OpenOrFiltered => format!("{ip} {protocol} open|filtered"),
-                TargetScanStatus::Filtered => format!("{ip} {protocol} filtered"),
-                TargetScanStatus::Unfiltered => format!("{ip} {protocol} unfiltered"),
-                TargetScanStatus::Closed => format!("{ip} {protocol} closed"),
-                TargetScanStatus::Unreachable => format!("{ip} {protocol} unreachable"),
-                TargetScanStatus::ClosedOrFiltered => format!("{ip} {protocol} closed|filtered"),
-            };
-            result_str += &str;
-            result_str += "\n";
-        }
         write!(f, "{}", result_str)
     }
 }

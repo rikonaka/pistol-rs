@@ -17,7 +17,8 @@ use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
-use crate::TargetScanStatus;
+
+use super::TargetScanStatus;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;

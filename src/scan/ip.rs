@@ -29,7 +29,8 @@ use crate::layers::ICMP_HEADER_SIZE;
 use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
-use crate::TargetScanStatus;
+
+use super::TargetScanStatus;
 
 const TTL: u8 = 64;
 

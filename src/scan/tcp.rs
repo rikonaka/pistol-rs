@@ -30,8 +30,9 @@ use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
-use crate::IdleScanResults;
-use crate::TargetScanStatus;
+
+use super::IdleScanResults;
+use super::TargetScanStatus;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;

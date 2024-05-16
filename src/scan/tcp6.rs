@@ -25,7 +25,8 @@ use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
-use crate::TargetScanStatus;
+
+use super::TargetScanStatus;
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
 // const TCP_FLAGS_ECE_MASK: u8 = 0b01000000;
