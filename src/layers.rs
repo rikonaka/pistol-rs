@@ -49,13 +49,13 @@ use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
 use crate::errors::CanNotFoundRouterAddress;
 use crate::errors::CreateDatalinkChannelFailed;
+use crate::utils::dst_ipv4_is_local_net;
+use crate::utils::dst_ipv6_is_local_net;
 use crate::utils::find_interface_by_ipv4;
 use crate::utils::find_interface_by_ipv6;
-use crate::utils::find_interface_valid_mac_ipv4;
-use crate::utils::find_interface_valid_mac_ipv6;
+use crate::utils::find_interface_loopback;
+use crate::utils::find_interface_loopback6;
 use crate::utils::get_threads_pool;
-use crate::Ipv4CheckMethods;
-use crate::Ipv6CheckMethods;
 use crate::DEFAULT_MAXLOOP;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
@@ -535,9 +535,13 @@ pub fn layer2_send(
         Some((s, r)) => (s, r),
         None => return Err(CreateDatalinkChannelFailed::new().into()),
     };
-    let src_mac = match interface.mac {
-        Some(m) => m,
-        None => return Err(CanNotFoundMacAddress::new().into()),
+    let src_mac = if dst_mac == MacAddr::zero() {
+        MacAddr::zero()
+    } else {
+        match interface.mac {
+            Some(m) => m,
+            None => return Err(CanNotFoundMacAddress::new().into()),
+        }
     };
 
     let mut ethernet_buff = [0u8; ETHERNET_BUFF_SIZE];
@@ -873,44 +877,43 @@ pub fn layer3_ipv4_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
-    let dst_mac = match search_system_neighbour_cache(dst_ipv4.into())? {
-        Some(m) => m,
-        None => {
-            if dst_ipv4 == src_ipv4 {
-                let interface = find_interface_by_ipv4(dst_ipv4).unwrap();
-                let mac = interface.mac.unwrap();
-                mac
-            } else if dst_ipv4.is_loopback() {
-                let mac = find_interface_valid_mac_ipv4();
-                mac.unwrap()
-            } else if dst_ipv4.is_global_x() {
-                // Not local net, then try to send this packet to router.
-                let route_ip = system_route()?;
-                // let route_ip = Ipv4Addr::new(0, 0, 0, 0); // default route address
-                match search_system_neighbour_cache(route_ip.into())? {
-                    Some(m) => m,
-                    None => {
-                        let mut mac: Option<MacAddr> = None;
-                        for _ in 0..NEIGNBOUR_MAX_TRY {
-                            match arp(src_ipv4, route_ip)? {
-                                (Some(m), Some(_rtt)) => {
-                                    mac = Some(m);
-                                    break;
-                                }
-                                (_, _) => (),
+    let mut dst_loopbook = false;
+    let dst_mac = if dst_ipv4_is_local_net(dst_ipv4) {
+        // local address
+        if dst_ipv4 == src_ipv4 || dst_ipv4.is_loopback() {
+            println!("loopback");
+            dst_loopbook = true;
+            MacAddr::zero()
+        } else {
+            match search_system_neighbour_cache(dst_ipv4.into())? {
+                Some(m) => m,
+                None => {
+                    let mut mac: Option<MacAddr> = None;
+                    for _ in 0..NEIGNBOUR_MAX_TRY {
+                        match arp(src_ipv4, dst_ipv4)? {
+                            (Some(m), Some(_rtt)) => {
+                                mac = Some(m);
+                                break;
                             }
-                        }
-                        match mac {
-                            Some(m) => m,
-                            None => return Err(CanNotFoundMacAddress::new().into()),
+                            (_, _) => (),
                         }
                     }
+                    match mac {
+                        Some(m) => m,
+                        None => return Err(CanNotFoundMacAddress::new().into()),
+                    }
                 }
-            } else {
-                // Try to get mac througn arp.
+            }
+        }
+    } else {
+        // can not found it in local, just send it to router
+        let route_ip = system_route()?;
+        match search_system_neighbour_cache(route_ip.into())? {
+            Some(m) => m,
+            None => {
                 let mut mac: Option<MacAddr> = None;
                 for _ in 0..NEIGNBOUR_MAX_TRY {
-                    match arp(src_ipv4, dst_ipv4)? {
+                    match arp(src_ipv4, route_ip)? {
                         (Some(m), Some(_rtt)) => {
                             mac = Some(m);
                             break;
@@ -925,12 +928,21 @@ pub fn layer3_ipv4_send(
             }
         }
     };
-    let interface = match find_interface_by_ipv4(src_ipv4) {
-        Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+
+    let interface = if dst_loopbook {
+        match find_interface_loopback() {
+            Some(i) => i,
+            None => return Err(CanNotFoundInterface::new().into()),
+        }
+    } else {
+        match find_interface_by_ipv4(src_ipv4) {
+            Some(i) => i,
+            None => return Err(CanNotFoundInterface::new().into()),
+        }
     };
 
     let ethernet_type = EtherTypes::Ipv4;
+
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
         interface,
@@ -966,7 +978,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Option<MacAddr> {
     None
 }
 
-fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
+fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     // same as arp in ipv4
     let interface = match find_interface_by_ipv6(src_ipv6) {
         Some(i) => i,
@@ -1023,7 +1035,7 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
 
     let ethernet_type = EtherTypes::Ipv6;
     let timeout = Duration::new(3, 0);
-    let (r, _rtt) = layer2_send(
+    let (r, rtt) = layer2_send(
         multicast_mac(dst_ipv6),
         interface.clone(),
         &ipv6_buff,
@@ -1039,8 +1051,8 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
         None => None,
     };
     match mac {
-        Some(mac) => Ok(Some(mac)),
-        None => Ok(None),
+        Some(mac) => Ok((Some(mac), rtt)),
+        None => Ok((None, None)),
     }
 }
 
@@ -1055,7 +1067,7 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
     }
 }
 
-fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
+fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     // router solicitation
     let dst_ipv6_all_router = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 2);
     let interface = match find_interface_by_ipv6(src_ipv6) {
@@ -1116,7 +1128,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
     let timeout = Duration::new(3, 0);
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ethernet_type = EtherTypes::Ipv6;
-    let (r, _rtt) = layer2_send(
+    let (r, rtt) = layer2_send(
         dst_mac,
         interface.clone(),
         &ipv6_buff,
@@ -1129,8 +1141,8 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<Option<MacAddr>> {
         None => None,
     };
     match mac {
-        Some(mac) => Ok(Some(mac)),
-        None => Ok(None),
+        Some(mac) => Ok((Some(mac), rtt)),
+        None => Ok((None, None)),
     }
 }
 
@@ -1146,49 +1158,49 @@ pub fn layer3_ipv6_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
-    let dst_mac = match search_system_neighbour_cache(dst_ipv6.into())? {
-        Some(m) => m,
-        None => {
-            if dst_ipv6 == src_ipv6 {
-                let interface = find_interface_by_ipv6(dst_ipv6).unwrap();
-                let mac = interface.mac.unwrap();
-                mac
-            } else if dst_ipv6.is_loopback() {
-                let mac = find_interface_valid_mac_ipv6();
-                mac.unwrap()
-            } else if dst_ipv6.is_global_x() {
-                // Not local net, then try to send this packet to router.
-                let route_ip = system_route6()?;
-                // let route_ip = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0); // default route address
-                match search_system_neighbour_cache6(route_ip.into())? {
-                    Some(m) => m,
-                    None => {
-                        let mut mac: Option<MacAddr> = None;
-                        for _ in 0..NEIGNBOUR_MAX_TRY {
-                            match ndp_rs(src_ipv6)? {
-                                Some(m) => {
-                                    mac = Some(m);
-                                    break;
-                                }
-                                None => (),
+    let mut dst_loopback = false;
+    let dst_mac = if dst_ipv6_is_local_net(dst_ipv6) {
+        // local address
+        if dst_ipv6 == src_ipv6 || dst_ipv6.is_loopback() {
+            dst_loopback = true;
+            MacAddr::zero()
+        } else {
+            match search_system_neighbour_cache6(dst_ipv6.into())? {
+                Some(m) => m,
+                None => {
+                    let mut mac: Option<MacAddr> = None;
+                    for _ in 0..NEIGNBOUR_MAX_TRY {
+                        // found neighbourhood mac
+                        match ndp_ns(src_ipv6, dst_ipv6)? {
+                            (Some(m), Some(_rtt)) => {
+                                mac = Some(m);
+                                break;
                             }
-                        }
-                        match mac {
-                            Some(m) => m,
-                            None => return Err(CanNotFoundMacAddress::new().into()),
+                            (_, _) => (),
                         }
                     }
+                    match mac {
+                        Some(m) => m,
+                        None => return Err(CanNotFoundMacAddress::new().into()),
+                    }
                 }
-            } else {
-                // Try to get mac through ndp.
+            }
+        }
+    } else {
+        // not local address
+        let route_ip = system_route6()?;
+        match search_system_neighbour_cache6(route_ip.into())? {
+            Some(m) => m,
+            None => {
                 let mut mac: Option<MacAddr> = None;
                 for _ in 0..NEIGNBOUR_MAX_TRY {
-                    match ndp_ns(src_ipv6, dst_ipv6)? {
-                        Some(m) => {
+                    // found router mac
+                    match ndp_rs(src_ipv6)? {
+                        (Some(m), Some(_rtt)) => {
                             mac = Some(m);
                             break;
                         }
-                        None => (),
+                        (_, _) => (),
                     }
                 }
                 match mac {
@@ -1198,9 +1210,17 @@ pub fn layer3_ipv6_send(
             }
         }
     };
-    let interface = match find_interface_by_ipv6(src_ipv6) {
-        Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+
+    let interface = if dst_loopback {
+        match find_interface_loopback6() {
+            Some(i) => i,
+            None => return Err(CanNotFoundInterface::new().into()),
+        }
+    } else {
+        match find_interface_by_ipv6(src_ipv6) {
+            Some(i) => i,
+            None => return Err(CanNotFoundInterface::new().into()),
+        }
     };
 
     let ethernet_type = EtherTypes::Ipv6;
@@ -1249,7 +1269,7 @@ mod tests {
         let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
         // let dst_ipv6 = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
         match ndp_ns(src_ipv6, dst_ipv6).unwrap() {
-            Some(mac) => println!("{}", mac),
+            (Some(mac), Some(_rtt)) => println!("{}", mac),
             _ => println!("None"),
         }
     }
@@ -1257,7 +1277,7 @@ mod tests {
     fn test_send_ndp_rs_packet() {
         let src_ipv6: Ipv6Addr = "240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap();
         match ndp_rs(src_ipv6).unwrap() {
-            Some(mac) => println!("{}", mac),
+            (Some(mac), Some(_rtt)) => println!("{}", mac),
             _ => println!("None"),
         }
     }
