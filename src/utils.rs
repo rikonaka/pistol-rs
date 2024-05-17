@@ -2,7 +2,6 @@ use anyhow::Result;
 use num_cpus;
 use pnet::datalink;
 use pnet::datalink::NetworkInterface;
-use pnet::util::MacAddr;
 use rand::Rng;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -13,6 +12,28 @@ use threadpool::ThreadPool;
 use crate::layers::system_route;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
+
+pub fn dst_ipv4_is_local_net(dst_ipv4: Ipv4Addr) -> bool {
+    for interface in datalink::interfaces() {
+        for ipnetwork in interface.ips {
+            if ipnetwork.contains(dst_ipv4.into()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub fn dst_ipv6_is_local_net(dst_ipv6: Ipv6Addr) -> bool {
+    for interface in datalink::interfaces() {
+        for ipnetwork in interface.ips {
+            if ipnetwork.contains(dst_ipv6.into()) {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 pub fn find_source_ipv4(
     src_ipv4: Option<Ipv4Addr>,
@@ -67,44 +88,44 @@ pub fn find_source_ipv6(
     Ok(None)
 }
 
-pub fn find_interface_valid_mac_ipv4() -> Option<MacAddr> {
-    for interface in datalink::interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(ipv4) => {
-                    if ipv4.is_private() {
-                        return interface.mac;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
-
-pub fn find_interface_valid_mac_ipv6() -> Option<MacAddr> {
-    for interface in datalink::interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V6(ipv6) => {
-                    if !ipv6.is_global_x() {
-                        return interface.mac;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    None
-}
-
 pub fn find_interface_by_ipv4(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
     for interface in datalink::interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
                 IpAddr::V4(ipv4) => {
                     if ipv4 == src_ipv4 {
+                        return Some(interface);
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    None
+}
+
+pub fn find_interface_loopback() -> Option<NetworkInterface> {
+    for interface in datalink::interfaces() {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V4(ipv4) => {
+                    if ipv4.is_loopback() {
+                        return Some(interface);
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    None
+}
+
+pub fn find_interface_loopback6() -> Option<NetworkInterface> {
+    for interface in datalink::interfaces() {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V6(ipv6) => {
+                    if ipv6.is_loopback() {
                         return Some(interface);
                     }
                 }

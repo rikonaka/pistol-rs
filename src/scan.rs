@@ -1049,12 +1049,12 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() -> Result<()> {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
-        let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let src_ipv4 = None;
+        let src_port = None;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 128);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22]))?;
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
