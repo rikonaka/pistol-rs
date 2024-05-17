@@ -7,7 +7,6 @@ use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
-use std::time::Duration;
 use subnetwork::Ipv4Pool;
 
 pub mod errors;
@@ -75,31 +74,7 @@ impl IpCheckMethods for IpAddr {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PingStatus {
-    Up,
-    Down,
-}
 
-#[derive(Debug, Clone, Copy)]
-pub struct PingResults {
-    pub addr: IpAddr,
-    pub status: PingStatus,
-    pub rtt: Option<Duration>,
-}
-
-impl fmt::Display for PingResults {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ip = self.addr;
-        let mut result_str = String::new();
-        let str = match self.status {
-            PingStatus::Up => format!("{ip} up"),
-            PingStatus::Down => format!("{ip} down"),
-        };
-        result_str += &str;
-        write!(f, "{}", result_str)
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Host {

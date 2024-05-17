@@ -21,7 +21,7 @@ pub enum DbRangeValueTypes {
     Both,  // 10 <= x <= 20
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DbRangeValue {
     pub start: usize,
     pub end: usize,
@@ -38,7 +38,7 @@ impl DbRangeValue {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DbSingleValue {
     pub value: usize,
 }
@@ -49,7 +49,7 @@ impl DbSingleValue {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DbStringValue {
     pub value: Vec<String>,
 }
@@ -60,7 +60,7 @@ impl DbStringValue {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DbEmptyValue {}
 
 impl DbEmptyValue {
@@ -69,7 +69,7 @@ impl DbEmptyValue {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DbMixValue {
     pub range_values: Vec<DbRangeValue>,
     pub single_values: Vec<DbSingleValue>,
@@ -84,7 +84,7 @@ impl DbMixValue {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum NmapOsDbValueTypes {
     DbMixStringValue(DbStringValue),
     DbEmptyValue(DbEmptyValue),

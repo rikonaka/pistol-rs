@@ -75,7 +75,7 @@ pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
 
 const NEIGNBOUR_MAX_TRY: usize = 3;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer2Match {
     pub src_mac: Option<MacAddr>,         // response packet src mac
     pub dst_mac: Option<MacAddr>,         // response packet src mac
@@ -124,7 +124,7 @@ impl Layer2Match {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer3Match {
     pub layer2: Option<Layer2Match>,
     pub src_addr: Option<IpAddr>, // response packet
@@ -249,7 +249,7 @@ impl Layer3Match {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer4MatchTcpUdp {
     pub layer3: Option<Layer3Match>,
     pub src_port: Option<u16>, // response tcp or udp packet src port
@@ -341,7 +341,7 @@ impl Layer4MatchTcpUdp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer4MatchIcmp {
     pub layer3: Option<Layer3Match>,
     pub types: Option<IcmpType>, // response icmp packet types
@@ -405,7 +405,7 @@ impl Layer4MatchIcmp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer4MatchIcmpv6 {
     pub layer3: Option<Layer3Match>,
     pub types: Option<Icmpv6Type>, // response icmp packet types
@@ -473,7 +473,7 @@ impl Layer4MatchIcmpv6 {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LayersMatch {
     Layer2Match(Layer2Match),
     Layer3Match(Layer3Match),

@@ -1,5 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
+use std::fmt;
+use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
@@ -19,13 +21,56 @@ use crate::utils::find_source_ipv6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::PingResults;
-use crate::PingStatus;
 use crate::Target;
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;
 const UDP_PING_DEFAULT_PORT: u16 = 125;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PingStatus {
+    Up,
+    Down,
+}
+
+#[derive(Debug, Clone)]
+pub struct PingRet {
+    pub status: PingStatus,
+    pub rtt: Option<Duration>,
+}
+
+impl PingRet {
+    pub fn new(status: PingStatus, rtt: Option<Duration>) -> PingRet {
+        PingRet { status, rtt }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PingResults {
+    pub results: HashMap<IpAddr, PingRet>,
+}
+
+impl PingResults {
+    pub fn new() -> PingResults {
+        PingResults {
+            results: HashMap::new(),
+        }
+    }
+}
+
+impl fmt::Display for PingResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result_str = String::new();
+        for (ip, ping_ret) in &self.results {
+            let str = match ping_ret.status {
+                PingStatus::Up => format!("{ip} up"),
+                PingStatus::Down => format!("{ip} down"),
+            };
+            result_str += &str;
+        }
+        write!(f, "{}", result_str)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingMethods {
@@ -42,7 +87,7 @@ fn run_ping(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<PingResults> {
+) -> Result<(PingStatus, Option<Duration>)> {
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -86,11 +131,7 @@ fn run_ping(
         }
         PingMethods::Icmp => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?,
     };
-    Ok(PingResults {
-        addr: dst_ipv4.into(),
-        status: ping_status,
-        rtt,
-    })
+    Ok((ping_status, rtt))
 }
 
 fn run_ping6(
@@ -100,7 +141,7 @@ fn run_ping6(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<PingResults> {
+) -> Result<(PingStatus, Option<Duration>)> {
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -144,11 +185,7 @@ fn run_ping6(
         }
         PingMethods::Icmp => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?,
     };
-    Ok(PingResults {
-        addr: dst_ipv6.into(),
-        status: ping_status,
-        rtt,
-    })
+    Ok((ping_status, rtt))
 }
 
 pub fn ping(
@@ -158,7 +195,7 @@ pub fn ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv4Addr, PingResults>> {
+) -> Result<PingResults> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -209,17 +246,18 @@ pub fn ping(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut hm: HashMap<Ipv4Addr, PingResults> = HashMap::new();
+    let mut ping_results = PingResults::new();
 
     for (dst_ipv4, pr) in iter {
         match pr {
-            Ok(p) => {
-                hm.insert(dst_ipv4, p);
+            Ok((p, rtt)) => {
+                let pr = PingRet::new(p, rtt);
+                ping_results.results.insert(dst_ipv4.into(), pr);
             }
             _ => (),
         }
     }
-    Ok(hm)
+    Ok(ping_results)
 }
 
 pub fn ping6(
@@ -229,7 +267,7 @@ pub fn ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv6Addr, PingResults>> {
+) -> Result<PingResults> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -279,17 +317,18 @@ pub fn ping6(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut hm: HashMap<Ipv6Addr, PingResults> = HashMap::new();
+    let mut ping_results = PingResults::new();
 
     for (dst_ipv6, pr) in iter {
         match pr {
-            Ok(p) => {
-                hm.insert(dst_ipv6, p);
+            Ok((p, rtt)) => {
+                let pr = PingRet::new(p, rtt);
+                ping_results.results.insert(dst_ipv6.into(), pr);
             }
             _ => (),
         }
     }
-    Ok(hm)
+    Ok(ping_results)
 }
 
 /// TCP SYN Ping.
@@ -302,7 +341,7 @@ pub fn tcp_syn_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv4Addr, PingResults>> {
+) -> Result<PingResults> {
     ping(
         target,
         PingMethods::Syn,
@@ -319,7 +358,7 @@ pub fn tcp_syn_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv6Addr, PingResults>> {
+) -> Result<PingResults> {
     ping6(
         target,
         PingMethods::Syn,
@@ -340,7 +379,7 @@ pub fn tcp_ack_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv4Addr, PingResults>> {
+) -> Result<PingResults> {
     ping(
         target,
         PingMethods::Ack,
@@ -357,7 +396,7 @@ pub fn tcp_ack_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv6Addr, PingResults>> {
+) -> Result<PingResults> {
     ping6(
         target,
         PingMethods::Ack,
@@ -378,7 +417,7 @@ pub fn udp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv4Addr, PingResults>> {
+) -> Result<PingResults> {
     ping(
         target,
         PingMethods::Udp,
@@ -395,7 +434,7 @@ pub fn udp_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv6Addr, PingResults>> {
+) -> Result<PingResults> {
     ping6(
         target,
         PingMethods::Udp,
@@ -413,7 +452,7 @@ pub fn icmp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv4Addr, PingResults>> {
+) -> Result<PingResults> {
     ping(
         target,
         PingMethods::Icmp,
@@ -430,7 +469,7 @@ pub fn icmpv6_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<HashMap<Ipv6Addr, PingResults>> {
+) -> Result<PingResults> {
     ping6(
         target,
         PingMethods::Icmp,
@@ -455,9 +494,7 @@ mod tests {
         let host = Host::new(dst_ipv4, Some(vec![22]))?;
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -473,9 +510,7 @@ mod tests {
         let host = Host::new(dst_ipv4, Some(vec![]))?;
         let target: Target = Target::new(vec![host]);
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{} - {}", r, r.rtt.unwrap().as_secs_f32());
-        }
+        println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -495,9 +530,7 @@ mod tests {
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout).unwrap();
-        for (_ip, r) in ret {
-            println!("{}", r);
-        }
+        println!("{}", ret);
         Ok(())
     }
 }
