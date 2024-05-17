@@ -32,7 +32,7 @@ pub mod packet;
 pub mod packet6;
 pub mod rr;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsStatus {
     pub fingerprint: PistolFingerprint,
     pub detects: Vec<NmapOsDetectRet>,
@@ -47,7 +47,7 @@ impl OsStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResults {
     pub results: HashMap<Ipv4Addr, OsStatus>,
 }
@@ -77,7 +77,7 @@ impl fmt::Display for OsDetectResults {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsStatus6 {
     pub fingerprint: PistolFingerprint6,
     pub detects: Vec<NmapOsDetectRet6>,
@@ -92,7 +92,7 @@ impl OsStatus6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResults6 {
     pub results: HashMap<Ipv6Addr, OsStatus6>,
 }
@@ -121,7 +121,7 @@ impl fmt::Display for OsDetectResults6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapOsDetectRet {
     pub score: usize,
     pub total: usize,
@@ -179,7 +179,7 @@ impl fmt::Display for NmapOsDetectRet {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapOsDetectRet6 {
     pub name: String,
     pub osclass: Vec<Vec<String>>,
@@ -226,7 +226,7 @@ pub struct CPE {
     pub cpe: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Linear {
     pub namelist: Vec<String>,
     pub w: Vec<Vec<f64>>,

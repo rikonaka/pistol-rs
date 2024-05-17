@@ -22,6 +22,8 @@ use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::Layer3Match;
@@ -38,7 +40,7 @@ const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
 
 /* IdleScanAllZeroError */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdleScanAllZeroError {
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,

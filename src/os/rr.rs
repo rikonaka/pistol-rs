@@ -1,14 +1,16 @@
 use std::time::Duration;
+use serde::Deserialize;
+use serde::Serialize;
 
 // Each request corresponds to a response, all layer3 packet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestAndResponse {
     // pub name: String,
     pub request: Vec<u8>,  // layer3
     pub response: Vec<u8>, // layer3, if no response: response.len() == 0
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SEQRR {
     pub seq1: RequestAndResponse,
     pub seq2: RequestAndResponse,
@@ -19,18 +21,18 @@ pub struct SEQRR {
     pub elapsed: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IERR {
     pub ie1: RequestAndResponse,
     pub ie2: RequestAndResponse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ECNRR {
     pub ecn: RequestAndResponse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TXRR {
     pub t2: RequestAndResponse,
     pub t3: RequestAndResponse,
@@ -40,12 +42,12 @@ pub struct TXRR {
     pub t7: RequestAndResponse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct U1RR {
     pub u1: RequestAndResponse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllPacketRR {
     pub seq: SEQRR,
     pub ie: IERR,
@@ -54,7 +56,7 @@ pub struct AllPacketRR {
     pub u1: U1RR,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NXRR6 {
     pub ni: RequestAndResponse,
     pub ns: RequestAndResponse,
@@ -64,14 +66,14 @@ pub struct NXRR6 {
     pub rts: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TECNRR6 {
     pub tecn: RequestAndResponse,
     pub st: Duration,
     pub rt: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SEQRR6 {
     pub seq1: RequestAndResponse,
     pub seq2: RequestAndResponse,
@@ -94,7 +96,7 @@ pub struct SEQRR6 {
     pub rt6: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IERR6 {
     pub ie1: RequestAndResponse,
     pub ie2: RequestAndResponse,
@@ -104,14 +106,14 @@ pub struct IERR6 {
     pub rt2: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct U1RR6 {
     pub u1: RequestAndResponse,
     pub st: Duration,
     pub rt: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TXRR6 {
     pub t2: RequestAndResponse,
     pub t3: RequestAndResponse,
@@ -133,7 +135,7 @@ pub struct TXRR6 {
     pub rt7: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllPacketRR6 {
     pub seq: SEQRR6,
     pub ie: IERR6,

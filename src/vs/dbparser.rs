@@ -316,7 +316,7 @@ pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
     Ok(ret)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExcludePorts {
     pub ports: Vec<u16>,
     pub tcp_ports: Vec<u16>,

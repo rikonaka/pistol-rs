@@ -9,6 +9,8 @@ use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::net::IpAddr;
+use serde::Deserialize;
+use serde::Serialize;
 
 pub mod arp;
 pub mod ip;
@@ -176,7 +178,7 @@ impl fmt::Display for IpScanResults {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapMacPrefix {
     pub prefix: String,
     pub ouis: String,

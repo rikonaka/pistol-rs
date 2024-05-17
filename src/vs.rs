@@ -20,18 +20,32 @@ pub mod dbparser;
 pub mod vscan;
 
 pub struct NmapVsDetectRet {
-    pub port: u16,
     pub services: Vec<Match>,
 }
 
-impl fmt::Display for NmapVsDetectRet {
+pub struct VsScanResults {
+    results: HashMap<u16, NmapVsDetectRet>,
+}
+
+impl VsScanResults {
+    pub fn new() -> VsScanResults {
+        VsScanResults {
+            results: HashMap::new(),
+        }
+    }
+}
+
+impl fmt::Display for VsScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!(">>> port:\n{}", self.port);
-        for m in &self.services {
-            output += &format!(
-                "\n>>> services:\n{}\n>>> versioninfo:\n{}",
-                m.service, m.versioninfo
-            );
+        let mut output = String::new();
+        for (port, detect_ret) in &self.results {
+            output += &format!(">>> port:\n{}\n", port);
+            for m in &detect_ret.services {
+                output += &format!(
+                    ">>> services:\n{}\n>>> versioninfo:\n{}\n",
+                    m.service, m.versioninfo
+                );
+            }
         }
         write!(f, "{}", output)
     }
@@ -46,7 +60,7 @@ pub fn vs_scan(
     intensity: usize,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<Vec<NmapVsDetectRet>> {
+) -> Result<VsScanResults> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
@@ -108,13 +122,13 @@ pub fn vs_scan(
         }
     }
 
-    let mut ret = Vec::new();
+    let mut ret = VsScanResults::new();
     let rx = rx.into_iter().take(recv_size);
     for (port, r) in rx {
         match r {
             Ok(r) => {
-                let nvdr = NmapVsDetectRet { port, services: r };
-                ret.push(nvdr);
+                let nvdr = NmapVsDetectRet { services: r };
+                ret.results.insert(port, nvdr);
             }
             Err(e) => return Err(e),
         }
@@ -132,7 +146,7 @@ mod tests {
     use std::net::Ipv4Addr;
     #[test]
     fn test_vs_detect() -> Result<()> {
-        let dst_addr = Ipv4Addr::new(192, 168, 72, 134);
+        let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
         let host = Host::new(dst_addr, Some(vec![22, 443]))?;
         let target = Target::new(vec![host]);
         let threads_num = 8;
@@ -150,9 +164,7 @@ mod tests {
             threads_num,
             timeout,
         )?;
-        for r in ret {
-            println!("{}", r);
-        }
+        println!("{}", ret);
         Ok(())
     }
     #[test]

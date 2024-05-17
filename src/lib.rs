@@ -1,6 +1,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use anyhow::Result;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -99,7 +101,7 @@ impl fmt::Display for PingResults {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Host {
     pub addr: Ipv4Addr,
     pub ports: Vec<u16>,
@@ -132,7 +134,7 @@ impl fmt::Display for Host {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Host6 {
     pub addr: Ipv6Addr,
     pub ports: Vec<u16>,
@@ -165,13 +167,13 @@ impl fmt::Display for Host6 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum TargetType {
     Ipv4,
     Ipv6,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Target {
     pub target_type: TargetType,
     pub hosts: Vec<Host>,

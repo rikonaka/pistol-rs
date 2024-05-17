@@ -11,6 +11,8 @@ use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
@@ -81,7 +83,7 @@ use super::rr::U1RR;
 // U1(R=Y%DF=N%T=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 // IE(R=Y%DFI=N%T=40%CD=S)
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PistolFingerprint {
     pub scan: String,
     pub seqx: SEQX,
@@ -633,7 +635,7 @@ fn send_all_probes(
     Ok(ap)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SEQX {
     // SP, GCD, ISR, TI, CI, II, SS, and TS.
     pub sp: u32,
@@ -741,7 +743,7 @@ pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX> {
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OPSX {
     pub o1: String,
     pub o2: String,
@@ -862,7 +864,7 @@ pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX> {
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WINX {
     pub w1: u16,
     pub w2: u16,
@@ -981,7 +983,7 @@ pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX> {
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ECNX {
     // R, DF, T, TG, W, O, CC, and Q tests.
     pub r: String,
@@ -1120,7 +1122,7 @@ pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX> {
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TXX {
     pub name: String,
     // R, DF, T, TG, W, S, A, F, O, RD, and Q tests.
@@ -1311,7 +1313,7 @@ pub fn tx_fingerprint(ap: &AllPacketRR) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX,
     Ok((t1, t2, t3, t4, t5, t6, t7))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct U1X {
     // R, DF, T, TG, IPL, UN, RIPL, RID, RIPCK, RUCK, and RUD tests.
     pub r: String,
@@ -1481,7 +1483,7 @@ pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X> {
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IEX {
     // R, DFI, T, TG, and CD tests.
     pub r: String,

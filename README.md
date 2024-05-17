@@ -415,9 +415,7 @@ fn main() -> Result<()> {
         threads_num,
         timeout,
     )?;
-    for r in ret {
-        println!("{}", r);
-    }
+    println!("{}", ret);
     Ok(())
 }
 ```

@@ -7,6 +7,8 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
@@ -128,7 +130,7 @@ fn p_as_nmap_format(input: &[u8]) -> String {
     new_p
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SEQX6 {
     pub name: String,
     pub rr: RequestAndResponse,
@@ -154,7 +156,7 @@ impl fmt::Display for SEQX6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IEX6 {
     pub name: String,
     pub rr: RequestAndResponse,
@@ -180,7 +182,7 @@ impl fmt::Display for IEX6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NX6 {
     pub name: String,
     pub rr: RequestAndResponse,
@@ -206,7 +208,7 @@ impl fmt::Display for NX6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct U1X6 {
     pub rr: RequestAndResponse,
     pub st: Duration,
@@ -230,7 +232,7 @@ impl fmt::Display for U1X6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TECNX6 {
     pub rr: RequestAndResponse,
     pub st: Duration,
@@ -254,7 +256,7 @@ impl fmt::Display for TECNX6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TX6 {
     pub name: String,
     pub rr: RequestAndResponse,
@@ -280,7 +282,7 @@ impl fmt::Display for TX6 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PistolFingerprint6 {
     // Some fields just for display.
     pub scan: String,
