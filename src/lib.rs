@@ -8,14 +8,14 @@ use std::net::Ipv6Addr;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 
-mod errors;
-mod flood;
-mod layers;
-mod os;
-mod ping;
-mod scan;
-mod utils;
-mod vs;
+pub mod errors;
+pub mod flood;
+pub mod layers;
+pub mod os;
+pub mod ping;
+pub mod scan;
+pub mod utils;
+pub mod vs;
 
 use errors::IllegalTarget;
 
