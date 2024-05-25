@@ -58,6 +58,9 @@ impl OsDetectResults {
             results: HashMap::new(),
         }
     }
+    pub fn get(&self, k: &Ipv4Addr) -> Option<&OsStatus> {
+        self.results.get(k)
+    }
 }
 
 impl fmt::Display for OsDetectResults {
@@ -102,6 +105,9 @@ impl OsDetectResults6 {
         OsDetectResults6 {
             results: HashMap::new(),
         }
+    }
+    pub fn get(&self, k: &Ipv6Addr) -> Option<&OsStatus6> {
+        self.results.get(k)
     }
 }
 

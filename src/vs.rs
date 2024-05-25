@@ -33,6 +33,9 @@ impl VsScanResults {
             results: HashMap::new(),
         }
     }
+    pub fn get(&self, k: &u16) -> Option<&NmapVsDetectRet> {
+        self.results.get(k)
+    }
 }
 
 impl fmt::Display for VsScanResults {

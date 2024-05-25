@@ -2,15 +2,15 @@
 use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use std::net::IpAddr;
-use serde::Deserialize;
-use serde::Serialize;
 
 pub mod arp;
 pub mod ip;
@@ -61,6 +61,12 @@ pub struct ArpScanResults {
     pub alive_hosts: HashMap<Ipv4Addr, ArpAliveHosts>,
 }
 
+impl ArpScanResults {
+    pub fn get(&self, k: &Ipv4Addr) -> Option<&ArpAliveHosts> {
+        self.alive_hosts.get(k)
+    }
+}
+
 impl fmt::Display for ArpScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result_str = String::new();
@@ -102,6 +108,9 @@ impl TcpUdpScanResults {
             results: HashMap::new(),
         }
     }
+    pub fn get(&self, k: &IpAddr) -> Option<&PortStatus> {
+        self.results.get(k)
+    }
 }
 
 impl fmt::Display for TcpUdpScanResults {
@@ -139,6 +148,9 @@ impl ProtocolStatus {
             rtt: None,
         }
     }
+    pub fn get(&self, k: &IpNextHeaderProtocol) -> Option<&TargetScanStatus> {
+        self.status.get(k)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -151,6 +163,9 @@ impl IpScanResults {
         IpScanResults {
             results: HashMap::new(),
         }
+    }
+    pub fn get(&self, k: &IpAddr) -> Option<&ProtocolStatus> {
+        self.results.get(k)
     }
 }
 
@@ -1053,13 +1068,14 @@ mod tests {
     fn test_tcp_syn_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 128);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22]))?;
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
+        // println!("{:#?}", ret.get(&dst_ipv4.into()).unwrap().status);
         Ok(())
     }
     #[test]

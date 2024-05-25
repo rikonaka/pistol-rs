@@ -56,6 +56,9 @@ impl PingResults {
             results: HashMap::new(),
         }
     }
+    pub fn get(&self, k: &IpAddr) -> Option<&PingRet> {
+        self.results.get(k)
+    }
 }
 
 impl fmt::Display for PingResults {
