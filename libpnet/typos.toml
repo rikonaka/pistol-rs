@@ -1,7 +1,0 @@
-[default]
-extend-ignore-identifiers-re = [
-    "tolen",
-    "IOC_INOUT",
-    "ND",
-    "SunNd",
-]

@@ -24,6 +24,6 @@ crc32fast = "^1"
 hex = "^0"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
-pnet = { version = "^0", path = "./libpnet" }
 dns-lookup = "^2"
 fancy-regex = "^0"
+pnet = "^0"

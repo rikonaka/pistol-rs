@@ -6,11 +6,11 @@ The library must be run as root (Linux) or administrator (Windows), other system
 
 Bug issue: https://github.com/libpnet/libpnet/issues/686
 
-Cause the pull request to fix a bug I submitted to the upstream `libpnet` has not yet been merged into the mainline https://github.com/libpnet/libpnet/pull/640, so this library cannot be used as `crate` yet, but you can add this library through git.
+## Import from crates.io
 
 ```toml
 [dependencies]
-pistol = { git = "https://github.com/rikonaka/pistol-rs.git" }
+pistol = "1.0.2"
 ```
 
 On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then place `Packet.lib` from the x64 folder in your root of code. The other lib like `npcap` did not test by libpnet.
