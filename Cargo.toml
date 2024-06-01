@@ -8,7 +8,7 @@ homepage = "https://github.com/rikonaka/pistol-rs"
 documentation = "https://docs.rs/pistol"
 repository = "https://github.com/rikonaka/pistol-rs"
 readme = "README.md"
-keywords = ["arp-scan", "port-scan", "host-discovery", "server-scan", "os-detect", "penetration-test", "cybersecurity", "nmap"]
+keywords = ["penetration-test", "cybersecurity", "nmap"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
