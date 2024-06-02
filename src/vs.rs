@@ -54,6 +54,7 @@ impl fmt::Display for VsScanResults {
     }
 }
 
+/// Detect target port service.
 pub fn vs_scan(
     target: Target,
     only_null_probe: bool,

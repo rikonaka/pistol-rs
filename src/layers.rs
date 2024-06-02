@@ -1238,6 +1238,7 @@ pub fn layer3_ipv6_send(
     }
 }
 
+/// Queries the IP address of a domain name and returns.
 pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>> {
     let ips: Vec<IpAddr> = lookup_host(hostname)?;
     Ok(ips)

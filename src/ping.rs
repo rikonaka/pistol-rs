@@ -448,7 +448,12 @@ pub fn udp_ping6(
     )
 }
 
-/// Traditional Ping.
+/// ICMP Ping.
+/// In addition to the unusual TCP and UDP host discovery types discussed previously, we can send the standard packets sent by the ubiquitous ping program.
+/// We sends an ICMP type 8 (echo request) packet to the target IP addresses, expecting a type 0 (echo reply) in return from available hosts.
+/// As noted at the beginning of this chapter, many hosts and firewalls now block these packets, rather than responding as required by RFC 1122.
+/// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
+/// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 pub fn icmp_ping(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -466,6 +471,7 @@ pub fn icmp_ping(
     )
 }
 
+/// Sends an ICMPv6 type 128 (echo request) packet .
 pub fn icmpv6_ping(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,

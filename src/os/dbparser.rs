@@ -1242,6 +1242,7 @@ fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
     }
 }
 
+/// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
 pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>> {

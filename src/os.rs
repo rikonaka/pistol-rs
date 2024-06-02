@@ -242,6 +242,7 @@ pub struct Linear {
     pub cpe: Vec<CPE>,
 }
 
+/// Detect target machine OS.
 pub fn os_detect(
     target: Target,
     src_ipv4: Option<Ipv4Addr>,
@@ -368,6 +369,7 @@ fn gen_linear() -> Result<Linear> {
     Ok(linear)
 }
 
+/// Detect target machine OS on IPv6.
 pub fn os_detect6(
     target: Target,
     src_ipv6: Option<Ipv6Addr>,
