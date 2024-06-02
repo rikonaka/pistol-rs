@@ -10,7 +10,10 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
-use super::rr::{IERR, SEQRR, TXRR, U1RR};
+use super::rr::IERR;
+use super::rr::SEQRR;
+use super::rr::TXRR;
+use super::rr::U1RR;
 use crate::errors::CalcDiffFailed;
 use crate::errors::CalcISRFailed;
 use crate::errors::CalcSSFailed;
