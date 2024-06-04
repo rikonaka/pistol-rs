@@ -10,7 +10,7 @@ Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 ```toml
 [dependencies]
-pistol = "1.0.2"
+pistol = "^1"
 ```
 
 On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then place `Packet.lib` from the x64 folder in your root of code. The other lib like `npcap` did not test by libpnet.
