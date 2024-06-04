@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt;
-use std::net::IpAddr;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -241,19 +240,3 @@ impl CanNotFoundSourceAddress {
     }
 }
 impl Error for CanNotFoundSourceAddress {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IllegalTarget {
-    addr: IpAddr,
-}
-impl fmt::Display for IllegalTarget {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "illegal target addr: {}", self.addr)
-    }
-}
-impl IllegalTarget {
-    pub fn new(addr: IpAddr) -> IllegalTarget {
-        IllegalTarget {addr}
-    }
-}
-impl Error for IllegalTarget {}

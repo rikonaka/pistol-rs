@@ -465,7 +465,7 @@ mod tests {
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
             ]),
-        )?;
+        );
 
         let target = Target::new6(vec![host]);
 
@@ -494,7 +494,7 @@ mod tests {
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
             ]),
-        )?;
+        );
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 1;

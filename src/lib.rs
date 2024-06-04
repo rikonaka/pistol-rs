@@ -18,8 +18,6 @@ pub mod scan;
 pub mod utils;
 pub mod vs;
 
-use errors::IllegalTarget;
-
 const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;
 
@@ -74,8 +72,6 @@ impl IpCheckMethods for IpAddr {
     }
 }
 
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Host {
     pub addr: Ipv4Addr,
@@ -83,14 +79,7 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(addr: Ipv4Addr, ports: Option<Vec<u16>>) -> Result<Host> {
-        // Check the dst addr when init the Host.
-        if !addr.is_global_x() && !addr.is_loopback() {
-            match utils::find_source_ipv4(None, addr)? {
-                Some(_) => (),
-                None => return Err(IllegalTarget::new(IpAddr::V4(addr)).into()),
-            }
-        }
+    pub fn new(addr: Ipv4Addr, ports: Option<Vec<u16>>) -> Host {
         let h = match ports {
             Some(p) => Host { addr, ports: p },
             None => Host {
@@ -98,7 +87,7 @@ impl Host {
                 ports: vec![],
             },
         };
-        Ok(h)
+        h
     }
 }
 
@@ -116,14 +105,7 @@ pub struct Host6 {
 }
 
 impl Host6 {
-    pub fn new(addr: Ipv6Addr, ports: Option<Vec<u16>>) -> Result<Host6> {
-        // Check the dst addr when init the Host.
-        if !addr.is_global_x() {
-            match utils::find_source_ipv6(None, addr)? {
-                Some(_) => (),
-                None => return Err(errors::IllegalTarget::new(IpAddr::V6(addr)).into()),
-            }
-        }
+    pub fn new(addr: Ipv6Addr, ports: Option<Vec<u16>>) -> Host6 {
         let h = match ports {
             Some(p) => Host6 { addr, ports: p },
             None => Host6 {
@@ -131,7 +113,7 @@ impl Host6 {
                 ports: vec![],
             },
         };
-        Ok(h)
+        h
     }
 }
 
@@ -219,7 +201,7 @@ impl Target {
         let ipv4_pool = Ipv4Pool::from(subnet)?;
         let mut hosts = Vec::new();
         for addr in ipv4_pool {
-            let h = Host::new(addr, ports.clone())?;
+            let h = Host::new(addr, ports.clone());
             hosts.push(h);
         }
         let target = Target {
@@ -261,7 +243,6 @@ pub use scan::tcp_maimon_scan6;
 
 pub use scan::tcp_idle_scan;
 
-
 pub use scan::udp_scan;
 pub use scan::udp_scan6;
 
@@ -281,7 +262,6 @@ pub use ping::tcp_ack_ping6;
 pub use ping::udp_ping;
 pub use ping::udp_ping6;
 
-
 pub use ping::icmp_ping;
 pub use ping::icmpv6_ping;
 
@@ -289,7 +269,6 @@ pub use ping::icmpv6_ping;
 
 pub use flood::icmp_flood;
 pub use flood::icmp_flood6;
-
 
 pub use flood::tcp_ack_flood;
 pub use flood::tcp_ack_flood6;
@@ -299,7 +278,6 @@ pub use flood::tcp_ack_psh_flood6;
 
 pub use flood::tcp_syn_flood;
 pub use flood::tcp_syn_flood6;
-
 
 pub use flood::udp_flood;
 pub use flood::udp_flood6;
@@ -319,8 +297,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_target_print() -> Result<()> {
-        let host1 = Host::new(Ipv4Addr::new(192, 168, 1, 135), Some(vec![22, 23]))?;
-        let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]))?;
+        let host1 = Host::new(Ipv4Addr::new(192, 168, 1, 135), Some(vec![22, 23]));
+        let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]));
         let target = Target::new(vec![host1, host2]);
         println!("{}", target);
         Ok(())

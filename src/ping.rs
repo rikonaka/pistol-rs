@@ -500,7 +500,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -511,12 +511,12 @@ mod tests {
         // let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 1);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
         // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(39, 156, 66, 10);
         // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(114, 114, 114, 114);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![]))?;
+        let host = Host::new(dst_ipv4, Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -532,9 +532,9 @@ mod tests {
         // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
         let src_ipv6 = None;
         let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
-        let host1 = Host6::new(dst_ipv6, Some(vec![]))?;
+        let host1 = Host6::new(dst_ipv6, Some(vec![]));
         let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
-        let host2 = Host6::new(dst_ipv6, Some(vec![]))?;
+        let host2 = Host6::new(dst_ipv6, Some(vec![]));
         let target: Target = Target::new6(vec![host1, host2]);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));

@@ -103,7 +103,7 @@ fn main() -> Result<()> {
     let threads_num = 8;
     let timeout = Some(Duration::new(3, 0));
     // Test with an open port `22` and a closed port `99`.
-    let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+    let host = Host::new(dst_ipv4, Some(vec![22, 99]));
     /// Users should build the `target` themselves.
     let target = Target::new(vec![host]);
     let ret = tcp_syn_scan(
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
             dst_closed_tcp_port_1,
             dst_closed_udp_port_1,
         ]),
-    )?;
+    );
     let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 136);
     let dst_open_tcp_port_2 = 22;
     let dst_closed_tcp_port_2 = 8765;
@@ -167,7 +167,7 @@ fn main() -> Result<()> {
             dst_closed_tcp_port_2,
             dst_closed_udp_port_2,
         ]),
-    )?;
+    );
     let target = Target::new(vec![host1, host2]);
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
@@ -310,7 +310,7 @@ fn main() -> Result<()> {
             dst_closed_tcp_port_1,
             dst_closed_udp_port_1,
         ]),
-    )?;
+    );
 
     let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
     let dst_open_tcp_port_2 = 22;
@@ -323,7 +323,7 @@ fn main() -> Result<()> {
             dst_closed_tcp_port_2,
             dst_closed_udp_port_2,
         ]),
-    )?;
+    );
 
     let target = Target::new6(vec![host1, host2]);
 
@@ -395,7 +395,7 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-    let host = Host::new(dst_addr, Some(vec![22, 80]))?;
+    let host = Host::new(dst_addr, Some(vec![22, 80]));
     let target = Target::new(vec![host]);
     let threads_num = 8;
     let timeout = Some(Duration::new(1, 0));

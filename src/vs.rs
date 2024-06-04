@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_vs_detect() -> Result<()> {
         let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-        let host = Host::new(dst_addr, Some(vec![22, 443]))?;
+        let host = Host::new(dst_addr, Some(vec![22, 443]));
         let target = Target::new(vec![host]);
         let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));

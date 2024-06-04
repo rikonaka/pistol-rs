@@ -1115,7 +1115,7 @@ mod tests {
         let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
         let mut hosts: Vec<Host> = vec![];
         for ip in subnet {
-            let host = Host::new(ip, None)?;
+            let host = Host::new(ip, None);
             hosts.push(host);
         }
         let target: Target = Target::new(hosts);
@@ -1145,7 +1145,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 2);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -1158,7 +1158,7 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -1172,7 +1172,7 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_fin_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -1185,7 +1185,7 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_ack_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -1198,7 +1198,7 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_null_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -1211,7 +1211,7 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = udp_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
@@ -1226,7 +1226,7 @@ mod tests {
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(dst_ipv4, Some(vec![22, 99]))?;
+        let host = Host::new(dst_ipv4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret =
             ip_procotol_scan(target, src_ipv4, src_port, protocol, threads_num, timeout).unwrap();
