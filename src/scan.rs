@@ -1167,7 +1167,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan() -> Result<()> {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
@@ -1180,7 +1180,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan() -> Result<()> {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
@@ -1193,7 +1193,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan() -> Result<()> {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
         let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
         let threads_num: usize = 8;
@@ -1206,9 +1206,9 @@ mod tests {
     }
     #[test]
     fn test_udp_scan() -> Result<()> {
-        let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
+        let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
