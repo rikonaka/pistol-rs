@@ -117,10 +117,10 @@ impl fmt::Display for OsDetectResults6 {
         for (ipv6, oss) in &self.results {
             let fingerprint = &oss.fingerprint;
             let detect_ret = &oss.detects;
-            output += &format!(">>> IP:\n{ipv6}");
+            output += &format!(">>> IP:\n{ipv6}\n");
             output += &format!(">>> Novelty:\n{}", fingerprint.novelty);
             for d in detect_ret {
-                println!("{}", d);
+                output += &format!("{}", d);
             }
         }
         write!(f, "{}", output)
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn test_os_detect6() -> Result<()> {
         let src_ipv6 = None;
-        let dst_ipv6: Ipv6Addr = "240e:34c:81:2850::1001".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2c:9e4".parse().unwrap();
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
