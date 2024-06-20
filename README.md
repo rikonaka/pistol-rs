@@ -1,6 +1,6 @@
 # pistol-rs
 
-The library must be run as root (Linux) or administrator (Windows), other systems are not supported, and the `stable` version of rust is recommended.
+The library must be run as root (Linux, *BSD) or administrator (Windows), the `stable` version of rust is recommended.
 
 ## libpnet bug on rust nightly version
 
