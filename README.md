@@ -15,37 +15,45 @@ pistol = "^1"
 
 On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then place `Packet.lib` from the x64 folder in your root of code. The other lib like `npcap` did not test by libpnet.
 
+## Cross Platform Support
+
+| Platform           | Note                         |
+| :----------------- | :--------------------------- |
+| Linux              | supported                    |
+| Windows            | supported (winpcap or npcap) |
+| Unix (*BSD, MacOS) | supported                    |
+
 ## Host Discovery (Ping Scanning)
 
-I implement `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
+The implementation of the `pistol' host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
-| Method               | Detailed Documentation                                                                          | Note                               |
-| :------------------- | :---------------------------------------------------------------------------------------------- | :--------------------------------- |
-| [x] TCP SYN Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6 support                |
-| [x] TCP ACK Ping     | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6 support                |
-| [x] UDP Ping         | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       | IPv4 & IPv6 support                |
-| [x] ICMP Ping        | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 support (ICMP, ICMPv6) |
-| [x] ARP Scan         | [nmap references](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                | IPv4 support                       |
-| [ ] IP Protocol Ping | [nmap references](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful    |
+| Method               | Detailed Documentation                                                                         | Note                            |
+| :------------------- | :--------------------------------------------------------------------------------------------- | :------------------------------ |
+| [x] TCP SYN Ping     | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6                     |
+| [x] TCP ACK Ping     | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6                     |
+| [x] UDP Ping         | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       | IPv4 & IPv6                     |
+| [x] ICMP Ping        | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 (ICMP, ICMPv6)      |
+| [x] ARP Scan         | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                | IPv4                            |
+| [ ] IP Protocol Ping | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful |
 
 ## Port Scanning Techniques and Algorithms
 
-I implement `pistol` port scan according to the nmap [pdf](https://nmap.org/nmap_doc.html) and [documentation](https://nmap.org/book/scan-methods.html).
+The implementation of the `pistol` port scan according to the nmap [pdf](https://nmap.org/nmap_doc.html) and [documentation](https://nmap.org/book/scan-methods.html).
 
-| Method                  | Detailed Documentation                                                        | Note                                    |
-| :---------------------- | :---------------------------------------------------------------------------- | :-------------------------------------- |
-| [x] TCP SYN Scan        | [nmap references](https://nmap.org/book/synscan.html)                         | IPv4 & IPv6 support                     |
-| [x] TCP Connect() Scan  | [nmap references](https://nmap.org/book/scan-methods-connect-scan.html)       | IPv4 & IPv6 support                     |
-| [x] TCP FIN Scan        | [nmap references](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6 support                     |
-| [x] TCP Null Scan       | [nmap references](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6 support                     |
-| [x] TCP Xmas Scan       | [nmap references](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6 support                     |
-| [x] TCP ACK Scan        | [nmap references](https://nmap.org/book/scan-methods-ack-scan.html)           | IPv4 & IPv6 support                     |
-| [x] TCP Window Scan     | [nmap references](https://nmap.org/book/scan-methods-window-scan.html)        | IPv4 & IPv6 support                     |
-| [x] TCP Maimon Scan     | [nmap references](https://nmap.org/book/scan-methods-maimon-scan.html)        | IPv4 & IPv6 support                     |
-| [x] UDP Scan            | [nmap references](https://nmap.org/book/scan-methods-udp-scan.html)           | IPv4 & IPv6 support                     |
-| [x] TCP Idle Scan       | [nmap references](https://nmap.org/book/idlescan.html)                        | IPv4 support                            |
-| [ ] IP Protocol Scan    | [nmap references](https://nmap.org/book/scan-methods-ip-protocol-scan.html)   | Complicated and not very useful         |
-| [ ] TCP FTP Bounce Scan | [nmap references](https://nmap.org/book/scan-methods-ftp-bounce-scan.html)    | The bugs exploited have long been fixed |
+| Method                  | Detailed Documentation                                                       | Note                                    |
+| :---------------------- | :--------------------------------------------------------------------------- | :-------------------------------------- |
+| [x] TCP SYN Scan        | [nmap reference](https://nmap.org/book/synscan.html)                         | IPv4 & IPv6                             |
+| [x] TCP Connect() Scan  | [nmap reference](https://nmap.org/book/scan-methods-connect-scan.html)       | IPv4 & IPv6                             |
+| [x] TCP FIN Scan        | [nmap reference](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6                             |
+| [x] TCP Null Scan       | [nmap reference](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6                             |
+| [x] TCP Xmas Scan       | [nmap reference](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6                             |
+| [x] TCP ACK Scan        | [nmap reference](https://nmap.org/book/scan-methods-ack-scan.html)           | IPv4 & IPv6                             |
+| [x] TCP Window Scan     | [nmap reference](https://nmap.org/book/scan-methods-window-scan.html)        | IPv4 & IPv6                             |
+| [x] TCP Maimon Scan     | [nmap reference](https://nmap.org/book/scan-methods-maimon-scan.html)        | IPv4 & IPv6                             |
+| [x] UDP Scan            | [nmap reference](https://nmap.org/book/scan-methods-udp-scan.html)           | IPv4 & IPv6                             |
+| [x] TCP Idle Scan       | [nmap reference](https://nmap.org/book/idlescan.html)                        | IPv4                                    |
+| [ ] IP Protocol Scan    | [nmap reference](https://nmap.org/book/scan-methods-ip-protocol-scan.html)   | Complicated and not very useful         |
+| [ ] TCP FTP Bounce Scan | [nmap reference](https://nmap.org/book/scan-methods-ftp-bounce-scan.html)    | The bugs exploited have long been fixed |
 
 ## Flood Attack
 
@@ -58,10 +66,10 @@ I implement `pistol` port scan according to the nmap [pdf](https://nmap.org/nmap
 
 ## Remote OS Detection
 
-| Method             | Detailed Documentation                                              | Note                                           |
-| :----------------- | :------------------------------------------------------------------ | :--------------------------------------------- |
-| [x] IPv4 OS Detect | [nmap references](https://nmap.org/book/osdetect-methods.html)      | Print fingerprint as nmap format now supported |
-| [x] IPv6 OS Detect | [nmap references](https://nmap.org/book/osdetect-ipv6-methods.html) | Print fingerprint as nmap format now supported |
+| Method             | Detailed Documentation                                             | Note                                           |
+| :----------------- | :----------------------------------------------------------------- | :--------------------------------------------- |
+| [x] IPv4 OS Detect | [nmap reference](https://nmap.org/book/osdetect-methods.html)      | Print fingerprint as nmap format now supported |
+| [x] IPv6 OS Detect | [nmap reference](https://nmap.org/book/osdetect-ipv6-methods.html) | Print fingerprint as nmap format now supported |
 
 
 ### OS Detection on IPv6?
@@ -76,10 +84,10 @@ Furthermore, for the current mainstream operating systems, ipv6 fingerprint supp
 
 ## Service and Application Version Detection
 
-| Methods               | Detailed Documentation                                        |
-| :-------------------- | :------------------------------------------------------------ |
-| [x] IPv4 Service Scan | [nmap references](https://nmap.org/book/vscan-technique.html) |
-| [x] IPv6 Service Scan | [nmap references](https://nmap.org/book/vscan-technique.html) |
+| Methods               | Detailed Documentation                                       |
+| :-------------------- | :----------------------------------------------------------- |
+| [x] IPv4 Service Scan | [nmap reference](https://nmap.org/book/vscan-technique.html) |
+| [x] IPv6 Service Scan | [nmap reference](https://nmap.org/book/vscan-technique.html) |
 
 ## Examples
 

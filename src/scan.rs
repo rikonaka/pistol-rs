@@ -70,14 +70,14 @@ pub enum PortStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct HostStatus {
+pub struct HostPortScanStatus {
     pub status: HashMap<u16, PortStatus>,
     pub rtt: Option<Duration>,
 }
 
-impl HostStatus {
-    pub fn new() -> HostStatus {
-        HostStatus {
+impl HostPortScanStatus {
+    pub fn new() -> HostPortScanStatus {
+        HostPortScanStatus {
             status: HashMap::new(),
             rtt: None,
         }
@@ -85,22 +85,68 @@ impl HostStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct TcpUdpScanResults {
-    pub results: HashMap<IpAddr, HostStatus>,
+pub struct PortScanResults {
+    pub results: HashMap<IpAddr, HostPortScanStatus>,
+    pub avg_rtt: Option<Duration>,
+    pub alive_host_num: usize,
 }
 
-impl TcpUdpScanResults {
-    pub fn new() -> TcpUdpScanResults {
-        TcpUdpScanResults {
+impl PortScanResults {
+    pub fn new() -> PortScanResults {
+        PortScanResults {
             results: HashMap::new(),
+            avg_rtt: None,
+            alive_host_num: 0,
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HostStatus> {
+    pub fn get(&self, k: &IpAddr) -> Option<&HostPortScanStatus> {
         self.results.get(k)
+    }
+    pub fn enrichment(&mut self) {
+        // avg rtt
+        let mut total_rtt = 0.0;
+        let mut total_num = 0;
+        for (_ip, ping_status) in &self.results {
+            let rtt = ping_status.rtt;
+            match rtt {
+                Some(r) => {
+                    total_rtt += r.as_secs_f64();
+                    total_num += 1;
+                }
+                None => (),
+            }
+        }
+        let avg_rtt = if total_num != 0 {
+            let avg_rtt = total_rtt / total_num as f64;
+            let avg_rtt = Duration::from_secs_f64(avg_rtt);
+            Some(avg_rtt)
+        } else {
+            None
+        };
+        self.avg_rtt = avg_rtt;
+
+        // alive hosts
+        let mut total_alive = 0;
+        for (_ip, ping_status) in &self.results {
+            let mut alive = false;
+            for (_port, status) in &ping_status.status {
+                match status {
+                    PortStatus::Open => {
+                        alive = true;
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+            if alive {
+                total_alive += 1;
+            }
+        }
+        self.alive_host_num = total_alive;
     }
 }
 
-impl fmt::Display for TcpUdpScanResults {
+impl fmt::Display for PortScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result_str = String::new();
         for (ip, ps) in &self.results {
@@ -137,11 +183,22 @@ pub struct ArpAliveHost {
 #[derive(Debug, Clone)]
 pub struct ArpScanResults {
     pub alive_hosts: HashMap<Ipv4Addr, ArpAliveHost>,
+    pub alive_host_num: usize,
 }
 
 impl ArpScanResults {
+    pub fn new() -> ArpScanResults {
+        ArpScanResults {
+            alive_hosts: HashMap::new(),
+            alive_host_num: 0,
+        }
+    }
     pub fn get(&self, k: &Ipv4Addr) -> Option<&ArpAliveHost> {
         self.alive_hosts.get(k)
+    }
+    pub fn enrichment(&mut self) {
+        // alive hosts
+        self.alive_host_num = self.alive_hosts.len();
     }
 }
 
@@ -201,9 +258,7 @@ pub fn arp_scan(
     match target.target_type {
         TargetType::Ipv4 => {
             let nmap_mac_prefixes = get_nmap_mac_prefixes();
-            let mut ret = ArpScanResults {
-                alive_hosts: HashMap::new(),
-            };
+            let mut ret = ArpScanResults::new();
 
             // println!("{:?}", bi_vec);
             let pool = get_threads_pool(threads_num);
@@ -288,6 +343,7 @@ pub fn arp_scan(
                     Err(e) => return Err(e),
                 }
             }
+            ret.enrichment();
             Ok(ret)
         }
         _ => Err(NotSupportIpTypeForArpScan::new(target.target_type).into()),
@@ -404,7 +460,7 @@ pub fn scan(
     zombie_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -445,31 +501,34 @@ pub fn scan(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut tcpudp_ret = TcpUdpScanResults::new();
+    let mut tcpudp_ret = PortScanResults::new();
 
     for v in iter {
         match v {
             Ok((dst_ipv4, dst_port, scan_ret, rtt)) => {
-                if tcpudp_ret.results.contains_key(&dst_ipv4.into()) {
-                    let ps = tcpudp_ret.results.get_mut(&dst_ipv4.into()).unwrap();
-                    ps.status.insert(dst_port, scan_ret);
-                    match ps.rtt {
-                        Some(_) => (),
-                        None => ps.rtt = rtt,
+                match tcpudp_ret.results.get_mut(&dst_ipv4.into()) {
+                    Some(ps) => {
+                        ps.status.insert(dst_port, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
                     }
-                } else {
-                    let mut ps = HostStatus::new();
-                    ps.status.insert(dst_port, scan_ret);
-                    match ps.rtt {
-                        Some(_) => (),
-                        None => ps.rtt = rtt,
+                    None => {
+                        let mut ps = HostPortScanStatus::new();
+                        ps.status.insert(dst_port, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
+                        tcpudp_ret.results.insert(dst_ipv4.into(), ps);
                     }
-                    tcpudp_ret.results.insert(dst_ipv4.into(), ps);
                 }
             }
             Err(e) => return Err(e),
         }
     }
+    tcpudp_ret.enrichment();
     Ok(tcpudp_ret)
 }
 
@@ -480,7 +539,7 @@ pub fn scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -512,32 +571,35 @@ pub fn scan6(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut tcpudp_ret = TcpUdpScanResults::new();
+    let mut port_scan_ret = PortScanResults::new();
 
     for v in iter {
         match v {
             Ok((dst_ipv6, dst_port, scan_ret, rtt)) => {
-                if tcpudp_ret.results.contains_key(&dst_ipv6.into()) {
-                    let ps = tcpudp_ret.results.get_mut(&dst_ipv6.into()).unwrap();
-                    ps.status.insert(dst_port, scan_ret);
-                    match ps.rtt {
-                        Some(_) => (),
-                        None => ps.rtt = rtt,
+                match port_scan_ret.results.get_mut(&dst_ipv6.into()) {
+                    Some(ps) => {
+                        ps.status.insert(dst_port, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
                     }
-                } else {
-                    let mut ps = HostStatus::new();
-                    ps.status.insert(dst_port, scan_ret);
-                    match ps.rtt {
-                        Some(_) => (),
-                        None => ps.rtt = rtt,
+                    None => {
+                        let mut ps = HostPortScanStatus::new();
+                        ps.status.insert(dst_port, scan_ret);
+                        match ps.rtt {
+                            Some(_) => (),
+                            None => ps.rtt = rtt,
+                        }
+                        port_scan_ret.results.insert(dst_ipv6.into(), ps);
                     }
-                    tcpudp_ret.results.insert(dst_ipv6.into(), ps);
                 }
             }
             Err(e) => return Err(e),
         }
     }
-    Ok(tcpudp_ret)
+    port_scan_ret.enrichment();
+    Ok(port_scan_ret)
 }
 
 /// TCP Connect() Scan.
@@ -559,7 +621,7 @@ pub fn tcp_connect_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Connect,
@@ -578,7 +640,7 @@ pub fn tcp_connect_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Connect,
@@ -607,7 +669,7 @@ pub fn tcp_syn_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Syn,
@@ -626,7 +688,7 @@ pub fn tcp_syn_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Syn,
@@ -656,7 +718,7 @@ pub fn tcp_fin_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Fin,
@@ -675,7 +737,7 @@ pub fn tcp_fin_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Fin,
@@ -698,7 +760,7 @@ pub fn tcp_ack_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Ack,
@@ -717,7 +779,7 @@ pub fn tcp_ack_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Ack,
@@ -739,7 +801,7 @@ pub fn tcp_null_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Null,
@@ -758,7 +820,7 @@ pub fn tcp_null_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Null,
@@ -780,7 +842,7 @@ pub fn tcp_xmas_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Xmas,
@@ -799,7 +861,7 @@ pub fn tcp_xmas_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Xmas,
@@ -822,7 +884,7 @@ pub fn tcp_window_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Window,
@@ -841,7 +903,7 @@ pub fn tcp_window_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Window,
@@ -864,7 +926,7 @@ pub fn tcp_maimon_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Maimon,
@@ -883,7 +945,7 @@ pub fn tcp_maimon_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Maimon,
@@ -909,7 +971,7 @@ pub fn tcp_idle_scan(
     zombie_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Idle,
@@ -936,7 +998,7 @@ pub fn udp_scan(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan(
         target,
         ScanMethod::Udp,
@@ -955,7 +1017,7 @@ pub fn udp_scan6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<TcpUdpScanResults> {
+) -> Result<PortScanResults> {
     scan6(
         target,
         ScanMethod6::Udp,

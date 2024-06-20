@@ -398,18 +398,18 @@ mod tests {
     use std::time::Instant;
     #[test]
     fn test_spp() {
-        let start = Instant::now();
+        let start_time = Instant::now();
         let nsp_str = include_str!("../db/nmap-service-probes");
         let mut nsp_lines = Vec::new();
         for l in nsp_str.lines() {
             nsp_lines.push(l.to_string());
         }
-        let duration = start.elapsed();
+        let duration = start_time.elapsed();
         println!("Read time elapsed is: {:?}", duration);
 
-        let start = Instant::now();
+        let start_time = Instant::now();
         let _ret = nsp_parser(&nsp_lines).unwrap();
-        let duration = start.elapsed();
+        let duration = start_time.elapsed();
         println!("Parse file time elapsed is: {:?}", duration);
         // println!("{}", ret.len());
         // println!("{}", ret[0].matchs.len());

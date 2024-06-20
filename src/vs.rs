@@ -1,3 +1,5 @@
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -19,36 +21,129 @@ use crate::TargetType;
 pub mod dbparser;
 pub mod vscan;
 
-pub struct NmapVsDetectRet {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceStatus {
     pub services: Vec<Match>,
+    pub elapsed: Option<Duration>,
 }
 
-pub struct VsScanResults {
-    results: HashMap<u16, NmapVsDetectRet>,
-}
-
-impl VsScanResults {
-    pub fn new() -> VsScanResults {
-        VsScanResults {
-            results: HashMap::new(),
+impl ServiceStatus {
+    pub fn new() -> ServiceStatus {
+        ServiceStatus {
+            services: Vec::new(),
+            elapsed: None,
         }
     }
-    pub fn get(&self, k: &u16) -> Option<&NmapVsDetectRet> {
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostServiceScanStatus {
+    pub results: HashMap<u16, ServiceStatus>,
+    pub avg_elapsed: Option<Duration>,
+}
+
+impl HostServiceScanStatus {
+    pub fn new() -> HostServiceScanStatus {
+        HostServiceScanStatus {
+            results: HashMap::new(),
+            avg_elapsed: None,
+        }
+    }
+    pub fn get(&self, k: &u16) -> Option<&ServiceStatus> {
         self.results.get(k)
+    }
+    pub fn enrichment(&mut self) {
+        // avg rtt
+        let mut total_elapsed = 0.0;
+        let mut total_num = 0;
+        for (_port, services) in &self.results {
+            let elapsed = services.elapsed;
+            match elapsed {
+                Some(d) => {
+                    total_elapsed += d.as_secs_f64();
+                    total_num += 1;
+                }
+                None => (),
+            }
+        }
+        let avg_elapsed = if total_num != 0 {
+            let avg_elapsed = total_elapsed / total_num as f64;
+            let avg_elapsed = Duration::from_secs_f64(avg_elapsed);
+            Some(avg_elapsed)
+        } else {
+            None
+        };
+        self.avg_elapsed = avg_elapsed;
     }
 }
 
-impl fmt::Display for VsScanResults {
+impl fmt::Display for HostServiceScanStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
         for (port, detect_ret) in &self.results {
             output += &format!(">>> port:\n{}\n", port);
             for m in &detect_ret.services {
                 output += &format!(
-                    ">>> services:\n{}\n>>> versioninfo:\n{}\n",
+                    ">>> Services:\n{}\n>>> Versioninfo:\n{}\n",
                     m.service, m.versioninfo
                 );
             }
+        }
+        write!(f, "{}", output)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VsScanResults {
+    pub results: HashMap<IpAddr, HostServiceScanStatus>,
+    pub avg_elapsed: Option<Duration>,
+}
+
+impl VsScanResults {
+    pub fn new() -> VsScanResults {
+        VsScanResults {
+            results: HashMap::new(),
+            avg_elapsed: None,
+        }
+    }
+    pub fn get(&self, k: &IpAddr) -> Option<&HostServiceScanStatus> {
+        self.results.get(k)
+    }
+    pub fn enrichment(&mut self) {
+        // reverser
+        for (_ip, host_service_status) in &mut self.results {
+            host_service_status.enrichment();
+        }
+
+        // avg rtt
+        let mut total_elapsed = 0.0;
+        let mut total_num = 0;
+        for (_ip, host_service_status) in &self.results {
+            let elapsed = host_service_status.avg_elapsed;
+            match elapsed {
+                Some(d) => {
+                    total_elapsed += d.as_secs_f64();
+                    total_num += 1;
+                }
+                None => (),
+            }
+        }
+        let avg_elapsed = if total_num != 0 {
+            let avg_elapsed = total_elapsed / total_num as f64;
+            let avg_elapsed = Duration::from_secs_f64(avg_elapsed);
+            Some(avg_elapsed)
+        } else {
+            None
+        };
+        self.avg_elapsed = avg_elapsed;
+    }
+}
+
+impl fmt::Display for VsScanResults {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = String::new();
+        for (addr, services) in &self.results {
+            output += &format!(">>>> IP:\n{}\n{}", addr, services);
         }
         write!(f, "{}", output)
     }
@@ -117,7 +212,7 @@ pub fn vs_scan(
                         &service_probes,
                         timeout,
                     );
-                    match tx.send((port, r)) {
+                    match tx.send((addr, port, r)) {
                         _ => (),
                     }
                 });
@@ -128,15 +223,27 @@ pub fn vs_scan(
 
     let mut ret = VsScanResults::new();
     let rx = rx.into_iter().take(recv_size);
-    for (port, r) in rx {
+    for (addr, port, r) in rx {
         match r {
-            Ok(r) => {
-                let nvdr = NmapVsDetectRet { services: r };
-                ret.results.insert(port, nvdr);
+            Ok((r, elapsed)) => {
+                let mut service_status = ServiceStatus::new();
+                service_status.services = r;
+                service_status.elapsed = Some(elapsed);
+                match ret.results.get_mut(&addr) {
+                    Some(host) => {
+                        host.results.insert(port, service_status);
+                    }
+                    None => {
+                        let mut host = HostServiceScanStatus::new();
+                        host.results.insert(port, service_status);
+                        ret.results.insert(addr, host);
+                    }
+                }
             }
             Err(e) => return Err(e),
         }
     }
+    ret.enrichment();
     Ok(ret)
 }
 
@@ -151,7 +258,7 @@ mod tests {
     #[test]
     fn test_vs_detect() -> Result<()> {
         let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-        let host = Host::new(dst_addr, Some(vec![22, 443]));
+        let host = Host::new(dst_addr, Some(vec![22, 80]));
         let target = Target::new(vec![host]);
         let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));
@@ -169,6 +276,7 @@ mod tests {
             timeout,
         )?;
         println!("{}", ret);
+        println!("{:?}", ret);
         Ok(())
     }
     #[test]

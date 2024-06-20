@@ -1,7 +1,7 @@
-use std::error::Error;
-use std::fmt;
 use serde::Deserialize;
 use serde::Serialize;
+use std::error::Error;
+use std::fmt;
 
 use crate::TargetType;
 

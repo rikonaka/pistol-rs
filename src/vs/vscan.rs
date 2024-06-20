@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::net::UdpSocket;
 use std::time::Duration;
+use std::time::Instant;
 // use std::fs::File;
 
 use super::dbparser::Match;
@@ -219,8 +220,9 @@ pub fn vs_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
-) -> Result<Vec<Match>> {
+) -> Result<(Vec<Match>, Duration)> {
     // If the port is TCP, Nmap starts by connecting to it.
+    let start_time = Instant::now();
     let tcp_dst_addr = SocketAddr::new(dst_addr, dst_port);
     match TcpStream::connect_timeout(&tcp_dst_addr, timeout) {
         Ok(mut stream) => {
@@ -235,7 +237,7 @@ pub fn vs_probe(
             // Ignore this step here.
             let null_probe_ret = tcp_null_probe(&mut stream, service_probes)?;
             if null_probe_ret.len() > 0 {
-                Ok(null_probe_ret)
+                Ok((null_probe_ret, start_time.elapsed()))
             } else {
                 if !only_null_probe {
                     // Start TCP continue probe.
@@ -248,7 +250,7 @@ pub fn vs_probe(
                         service_probes,
                     )?;
                     if tcp_ret.len() > 0 {
-                        Ok(tcp_ret)
+                        Ok((tcp_ret, start_time.elapsed()))
                     } else {
                         // This point is where Nmap starts for UDP probes,
                         // and TCP connections continue here if the NULL probe described above fails or soft-matches.
@@ -260,14 +262,14 @@ pub fn vs_probe(
                             service_probes,
                             timeout,
                         )?;
-                        Ok(udp_ret)
+                        Ok((udp_ret, start_time.elapsed()))
                     }
                 } else {
-                    Ok(vec![])
+                    Ok((vec![], start_time.elapsed()))
                 }
             }
         }
-        Err(_) => Ok(vec![]), // ignore closed port here
+        Err(_) => Ok((vec![], start_time.elapsed())), // ignore closed port here
     }
 }
 

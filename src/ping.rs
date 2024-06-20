@@ -34,30 +34,60 @@ pub enum PingStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct PingRet {
+pub struct HostPingStatus {
     pub status: PingStatus,
     pub rtt: Option<Duration>,
 }
 
-impl PingRet {
-    pub fn new(status: PingStatus, rtt: Option<Duration>) -> PingRet {
-        PingRet { status, rtt }
+impl HostPingStatus {
+    pub fn new(status: PingStatus, rtt: Option<Duration>) -> HostPingStatus {
+        HostPingStatus { status, rtt }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct PingResults {
-    pub results: HashMap<IpAddr, PingRet>,
+    pub results: HashMap<IpAddr, HostPingStatus>,
+    pub avg_rtt: Option<Duration>,
+    pub alive_host_num: usize,
 }
 
 impl PingResults {
     pub fn new() -> PingResults {
         PingResults {
             results: HashMap::new(),
+            avg_rtt: None,
+            alive_host_num: 0,
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&PingRet> {
+    pub fn get(&self, k: &IpAddr) -> Option<&HostPingStatus> {
         self.results.get(k)
+    }
+    pub fn enrichment(&mut self) {
+        // avg rtt
+        let mut total_rtt = 0.0;
+        let mut total_num = 0;
+        for (_ip, ping_status) in &self.results {
+            let rtt = ping_status.rtt;
+            match rtt {
+                Some(r) => {
+                    total_rtt += r.as_secs_f64();
+                    total_num += 1;
+                }
+                None => (),
+            }
+        }
+        let avg_rtt = if total_num != 0 {
+            let avg_rtt = total_rtt / total_num as f64;
+            let avg_rtt = Duration::from_secs_f64(avg_rtt);
+            Some(avg_rtt)
+        } else {
+            None
+        };
+        self.avg_rtt = avg_rtt;
+
+        // alive hosts
+        self.alive_host_num = self.results.len();
     }
 }
 
@@ -254,12 +284,13 @@ pub fn ping(
     for (dst_ipv4, pr) in iter {
         match pr {
             Ok((p, rtt)) => {
-                let pr = PingRet::new(p, rtt);
+                let pr = HostPingStatus::new(p, rtt);
                 ping_results.results.insert(dst_ipv4.into(), pr);
             }
             _ => (),
         }
     }
+    ping_results.enrichment();
     Ok(ping_results)
 }
 
@@ -325,12 +356,13 @@ pub fn ping6(
     for (dst_ipv6, pr) in iter {
         match pr {
             Ok((p, rtt)) => {
-                let pr = PingRet::new(p, rtt);
+                let pr = HostPingStatus::new(p, rtt);
                 ping_results.results.insert(dst_ipv6.into(), pr);
             }
             _ => (),
         }
     }
+    ping_results.enrichment();
     Ok(ping_results)
 }
 
