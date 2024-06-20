@@ -1052,7 +1052,7 @@ mod tests {
     }
     #[test]
     fn test_arp_scan_subnet_new() -> Result<()> {
-        let target: Target = Target::from_subnet("192.168.59.130/24", None)?;
+        let target: Target = Target::from_subnet("192.168.1.1/24", None)?;
         let threads_num = 300;
         let timeout = Some(Duration::new(1, 5));
         // let print_result = false;
@@ -1065,7 +1065,7 @@ mod tests {
     fn test_tcp_connect_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 2);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
@@ -1092,7 +1092,7 @@ mod tests {
     fn test_tcp_fin_scan() -> Result<()> {
         let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
@@ -1105,7 +1105,7 @@ mod tests {
     fn test_tcp_ack_scan() -> Result<()> {
         let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
@@ -1118,7 +1118,7 @@ mod tests {
     fn test_tcp_null_scan() -> Result<()> {
         let src_ipv4: Option<Ipv4Addr> = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 135);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(dst_ipv4, Some(vec![22, 99]));
