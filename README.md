@@ -44,7 +44,7 @@ I implement `pistol` port scan according to the nmap [pdf](https://nmap.org/nmap
 | [x] TCP Maimon Scan     | [nmap references](https://nmap.org/book/scan-methods-maimon-scan.html)        | IPv4 & IPv6 support                     |
 | [x] UDP Scan            | [nmap references](https://nmap.org/book/scan-methods-udp-scan.html)           | IPv4 & IPv6 support                     |
 | [x] TCP Idle Scan       | [nmap references](https://nmap.org/book/idlescan.html)                        | IPv4 support                            |
-| [x] IP Protocol Scan    | [nmap references](https://nmap.org/book/scan-methods-ip-protocol-scan.html)   | IPv4 support                            |
+| [ ] IP Protocol Scan    | [nmap references](https://nmap.org/book/scan-methods-ip-protocol-scan.html)   | Complicated and not very useful         |
 | [ ] TCP FTP Bounce Scan | [nmap references](https://nmap.org/book/scan-methods-ftp-bounce-scan.html)    | The bugs exploited have long been fixed |
 
 ## Flood Attack

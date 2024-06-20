@@ -246,8 +246,6 @@ pub use scan::tcp_idle_scan;
 pub use scan::udp_scan;
 pub use scan::udp_scan6;
 
-pub use scan::ip_procotol_scan;
-
 pub use scan::scan;
 pub use scan::scan6;
 

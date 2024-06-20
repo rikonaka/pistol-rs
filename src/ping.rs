@@ -15,7 +15,7 @@ use crate::scan::tcp;
 use crate::scan::tcp6;
 use crate::scan::udp;
 use crate::scan::udp6;
-use crate::scan::TargetScanStatus;
+use crate::scan::PortStatus;
 use crate::utils::find_source_ipv4;
 use crate::utils::find_source_ipv6;
 use crate::utils::get_default_timeout;
@@ -101,7 +101,7 @@ fn run_ping(
             let (ret, rtt) =
                 tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => (PingStatus::Up, rtt),
+                PortStatus::Open => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }
@@ -114,7 +114,7 @@ fn run_ping(
             let (ret, rtt) =
                 tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Unfiltered => (PingStatus::Up, rtt),
+                PortStatus::Unfiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }
@@ -127,8 +127,8 @@ fn run_ping(
             let (ret, rtt) =
                 udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => (PingStatus::Up, rtt),
-                TargetScanStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                PortStatus::Open => (PingStatus::Up, rtt),
+                PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }
@@ -155,7 +155,7 @@ fn run_ping6(
             let (ret, rtt) =
                 tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => (PingStatus::Up, rtt),
+                PortStatus::Open => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }
@@ -168,7 +168,7 @@ fn run_ping6(
             let (ret, rtt) =
                 tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Unfiltered => (PingStatus::Up, rtt),
+                PortStatus::Unfiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }
@@ -181,8 +181,8 @@ fn run_ping6(
             let (ret, rtt) =
                 udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
             match ret {
-                TargetScanStatus::Open => (PingStatus::Up, rtt),
-                TargetScanStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                PortStatus::Open => (PingStatus::Up, rtt),
+                PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }

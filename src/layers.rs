@@ -607,6 +607,19 @@ pub fn layer2_send(
     }
 }
 
+fn unix_get_default_shell() -> String {
+    let shell_name = if cfg!(target_os = "freebsd") || cfg!(target_os = "netbsd") {
+        "sh"
+    } else if cfg!(target_os = "openbsd") {
+        "ksh"
+    } else if cfg!(target_os = "macos") {
+        "zsh"
+    } else {
+        "sh"
+    };
+    shell_name.to_string()
+}
+
 pub fn system_route() -> Result<Ipv4Addr> {
     if cfg!(target_os = "linux") {
         // ip route (default)
@@ -614,10 +627,18 @@ pub fn system_route() -> Result<Ipv4Addr> {
         // default via 192.168.72.2 dev ens33
         // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         for line in lines {
             if line.contains("default") {
-                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let l_split: Vec<&str> = line
+                    .split(" ")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
                 let route_ipv4: Ipv4Addr = l_split[2].parse()?;
                 return Ok(route_ipv4);
             }
@@ -629,11 +650,55 @@ pub fn system_route() -> Result<Ipv4Addr> {
             .output()?;
         // 0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.30    281
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         for line in lines {
             if line.contains("0.0.0.0") {
-                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let l_split: Vec<&str> = line
+                    .split(" ")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
                 let route_ipv4: Ipv4Addr = l_split[2].parse()?;
+                return Ok(route_ipv4);
+            }
+        }
+    } else if cfg!(target_os = "freebsd")
+        || cfg!(target_os = "openbsd")
+        || cfg!(target_os = "netbsd")
+        || cfg!(target_os = "macos")
+    {
+        let shell_name = unix_get_default_shell();
+        // route -n get default
+        let c = Command::new(shell_name)
+            .args(["-c", "route -n get default"])
+            .output()?;
+        //    route to: 0.0.0.0
+        // destination: 0.0.0.0
+        //        mask: 0.0.0.0
+        //     gateway: 192.168.72.2
+        //         fib: 0
+        //   interface: em0
+        //       flags: <UP,GATEWAY,DONE,STATIC>
+        //   recvpipe  sendpipe  ssthresh  rtt,msec    mtu        weight    expire
+        //     0         0         0         0      1500         1         0
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
+        for line in lines {
+            if line.contains("gateway") {
+                let l_split: Vec<&str> = line
+                    .split(":")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
+                let route_ipv4: Ipv4Addr = l_split[1].parse()?;
                 return Ok(route_ipv4);
             }
         }
@@ -650,10 +715,18 @@ pub fn system_route6() -> Result<Ipv6Addr> {
         // fe80::/64 dev ens36 proto kernel metric 256 pref medium
         // default via fe80::4a5f:8ff:fee0:1394 dev ens36 proto ra metric 1024 expires 1772sec hoplimit 64 pref medium
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         for line in lines {
             if line.contains("default") {
-                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let l_split: Vec<&str> = line
+                    .split(" ")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
                 let route_ipv6: Ipv6Addr = l_split[2].parse()?;
                 return Ok(route_ipv6);
             }
@@ -665,11 +738,55 @@ pub fn system_route6() -> Result<Ipv6Addr> {
             .output()?;
         // 16    281 ::/0                     fe80::4a5f:8ff:fee0:1394
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\r\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\r\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         for line in lines {
             if line.contains("::/0") {
-                let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+                let l_split: Vec<&str> = line
+                    .split(" ")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
                 let route_ipv6: Ipv6Addr = l_split[3].parse()?;
+                return Ok(route_ipv6);
+            }
+        }
+    } else if cfg!(target_os = "freebsd")
+        || cfg!(target_os = "openbsd")
+        || cfg!(target_os = "netbsd")
+        || cfg!(target_os = "macos")
+    {
+        let shell_name = unix_get_default_shell();
+        // route -n get default
+        let c = Command::new(shell_name)
+            .args(["-c", "route -n get -inet6 default"])
+            .output()?;
+        //    route to: 0.0.0.0
+        // destination: 0.0.0.0
+        //        mask: 0.0.0.0
+        //     gateway: 192.168.72.2
+        //         fib: 0
+        //   interface: em0
+        //       flags: <UP,GATEWAY,DONE,STATIC>
+        //   recvpipe  sendpipe  ssthresh  rtt,msec    mtu        weight    expire
+        //     0         0         0         0      1500         1         0
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
+        for line in lines {
+            if line.contains("gateway:") {
+                let l_split: Vec<&str> = line
+                    .split(":")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
+                let route_ipv6: Ipv6Addr = l_split[1].parse()?;
                 return Ok(route_ipv6);
             }
         }
@@ -685,10 +802,18 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         // 192.168.72.254 dev ens33 lladdr 00:50:56:fa:d4:85 STALE
         // 192.168.72.2 dev ens33 lladdr 00:50:56:ff:8c:06 STALE
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
         for line in lines {
-            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            let l_split: Vec<&str> = line
+                .split(" ")
+                .filter(|v| v.len() > 0)
+                .map(|x| x.trim())
+                .collect();
             if l_split.len() >= 6 {
                 let ip_str = l_split[0];
                 // let device = l_split[2];
@@ -709,10 +834,18 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
         // 17      ff02::1:ffd0:8c47                                  33-33-FF-D0-8C-47     Permanent   ActiveStore
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\r\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\r\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
         for line in lines[2..].to_vec() {
-            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            let l_split: Vec<&str> = line
+                .split(" ")
+                .filter(|v| v.len() > 0)
+                .map(|x| x.trim())
+                .collect();
             if l_split.len() >= 5 {
                 let ip_str = l_split[1];
                 let mac_str = l_split[2].replace("-", ":");
@@ -720,6 +853,38 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
                 let mac: MacAddr = mac_str.parse()?;
                 ret.insert(ip, mac);
             }
+        }
+        return Ok(Some(ret));
+    } else if cfg!(target_os = "freebsd")
+        || cfg!(target_os = "openbsd")
+        || cfg!(target_os = "netbsd")
+        || cfg!(target_os = "macos")
+    {
+        let shell_name = unix_get_default_shell();
+        // route -n get default
+        let c = Command::new(shell_name).args(["-c", "arp -a"]).output()?;
+        // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1198 seconds [ethernet]
+        // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
+        // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 817 seconds [ethernet]
+        // ? (192.168.72.254) at 00:50:56:e4:a4:32 on em0 expires in 982 seconds [ethernet]
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
+        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
+        for line in lines {
+            let l_split: Vec<&str> = line
+                .split(" ")
+                .filter(|v| v.len() > 0)
+                .map(|x| x.trim())
+                .collect();
+            let ip_str = l_split[1].replace("(", "").replace(")", "");
+            let mac_str = l_split[3];
+            let ip: IpAddr = ip_str.parse()?;
+            let mac: MacAddr = mac_str.parse()?;
+            ret.insert(ip, mac);
         }
         return Ok(Some(ret));
     }
@@ -735,10 +900,18 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         // fe80::4a5f:8ff:fee0:1394 dev ens33 FAILED
         // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
         for line in lines {
-            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            let l_split: Vec<&str> = line
+                .split(" ")
+                .filter(|v| v.len() > 0)
+                .map(|x| x.trim())
+                .collect();
             if l_split.len() >= 6 {
                 let ip_str = l_split[0];
                 // let device = l_split[2];
@@ -759,13 +932,54 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
         // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
         // 17      ff02::1:ffd0:8c47                                  33-33-FF-D0-8C-47     Permanent   ActiveStore
         let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
         for line in lines[2..].to_vec() {
-            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            let l_split: Vec<&str> = line
+                .split(" ")
+                .filter(|v| v.len() > 0)
+                .map(|x| x.trim())
+                .collect();
             if l_split.len() >= 5 {
                 let ip_str = l_split[1];
                 let mac_str = l_split[2].replace("-", ":");
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = mac_str.parse()?;
+                ret.insert(ip, mac);
+            }
+        }
+        return Ok(Some(ret));
+    } else if cfg!(target_os = "freebsd")
+        || cfg!(target_os = "openbsd")
+        || cfg!(target_os = "netbsd")
+        || cfg!(target_os = "macos")
+    {
+        let shell_name = unix_get_default_shell();
+        // route -n get default
+        let c = Command::new(shell_name).args(["-c", "ndp -a"]).output()?;
+        // Neighbor                             Linklayer Address  Netif Expire    1s 5s
+        // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output
+            .split("\n")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
+        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
+        for line in lines {
+            if !line.contains("Neighbor") {
+                let l_split: Vec<&str> = line
+                    .split(" ")
+                    .filter(|v| v.len() > 0)
+                    .map(|x| x.trim())
+                    .collect();
+                let ip_str_split: Vec<&str> = l_split[0].split("%").map(|x| x.trim()).collect();
+                let ip_str = ip_str_split[0];
+                let mac_str = l_split[1];
                 let ip: IpAddr = ip_str.parse()?;
                 let mac: MacAddr = mac_str.parse()?;
                 ret.insert(ip, mac);
@@ -1325,5 +1539,40 @@ mod tests {
         let s = s.replace("-", ":");
         let _: MacAddr = s.parse()?;
         Ok(())
+    }
+    #[test]
+    fn test_unix_arp() -> Result<()> {
+        let output =
+            "? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1198 seconds [ethernet]
+            ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
+            ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 817 seconds [ethernet]
+            ? (192.168.72.254) at 00:50:56:e4:a4:32 on em0 expires in 982 seconds [ethernet]";
+
+        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
+        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
+        for line in lines {
+            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
+            let ip_str = l_split[1];
+            let ip_str = ip_str.replace("(", "");
+            let ip_str = ip_str.replace(")", "");
+            let mac_str = l_split[3].replace("-", ":");
+            let ip: IpAddr = ip_str.parse()?;
+            let mac: MacAddr = mac_str.parse()?;
+            ret.insert(ip, mac);
+        }
+        println!("{:?}", ret);
+        Ok(())
+    }
+    #[test]
+    fn test_map() {
+        let line = "gateway: 192.168.72.2";
+        let l_split: Vec<&str> = line.split(":").filter(|v| v.len() > 0).collect();
+        println!("{:?}", l_split);
+        let l_split: Vec<&str> = line
+            .split(":")
+            .filter(|v| v.len() > 0)
+            .map(|x| x.trim())
+            .collect();
+        println!("{:?}", l_split);
     }
 }
