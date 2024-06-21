@@ -639,8 +639,13 @@ pub fn system_route() -> Result<Ipv4Addr> {
                     .filter(|v| v.len() > 0)
                     .map(|x| x.trim())
                     .collect();
-                let route_ipv4: Ipv4Addr = l_split[2].parse()?;
-                return Ok(route_ipv4);
+                if l_split.len() > 2 {
+                    let route_ipv4_str = l_split[2];
+                    match route_ipv4_str.parse() {
+                        Ok(route_ipv4) => return Ok(route_ipv4),
+                        Err(_) => (), // ignore the error
+                    }
+                }
             }
         }
     } else if cfg!(target_os = "windows") {
@@ -662,8 +667,13 @@ pub fn system_route() -> Result<Ipv4Addr> {
                     .filter(|v| v.len() > 0)
                     .map(|x| x.trim())
                     .collect();
-                let route_ipv4: Ipv4Addr = l_split[2].parse()?;
-                return Ok(route_ipv4);
+                if l_split.len() > 2 {
+                    let route_ipv4_str = l_split[2];
+                    match route_ipv4_str.parse() {
+                        Ok(route_ipv4) => return Ok(route_ipv4),
+                        Err(_) => (), // ignore the error
+                    }
+                }
             }
         }
     } else if cfg!(target_os = "freebsd")
@@ -698,8 +708,13 @@ pub fn system_route() -> Result<Ipv4Addr> {
                     .filter(|v| v.len() > 0)
                     .map(|x| x.trim())
                     .collect();
-                let route_ipv4: Ipv4Addr = l_split[1].parse()?;
-                return Ok(route_ipv4);
+                if l_split.len() > 1 {
+                    let route_ipv4_str = l_split[1];
+                    match route_ipv4_str.parse() {
+                        Ok(route_ipv4) => return Ok(route_ipv4),
+                        Err(_) => (), // ignore the error
+                    }
+                }
             }
         }
     }
@@ -727,8 +742,13 @@ pub fn system_route6() -> Result<Ipv6Addr> {
                     .filter(|v| v.len() > 0)
                     .map(|x| x.trim())
                     .collect();
-                let route_ipv6: Ipv6Addr = l_split[2].parse()?;
-                return Ok(route_ipv6);
+                if l_split.len() > 2 {
+                    let route_ipv6_str = l_split[2];
+                    match route_ipv6_str.parse() {
+                        Ok(route_ipv6) => return Ok(route_ipv6),
+                        Err(_) => (), // ignore the error
+                    }
+                }
             }
         }
     } else if cfg!(target_os = "windows") {
@@ -750,8 +770,13 @@ pub fn system_route6() -> Result<Ipv6Addr> {
                     .filter(|v| v.len() > 0)
                     .map(|x| x.trim())
                     .collect();
-                let route_ipv6: Ipv6Addr = l_split[3].parse()?;
-                return Ok(route_ipv6);
+                if l_split.len() > 3 {
+                    let route_ipv6_str = l_split[3];
+                    match route_ipv6_str.parse() {
+                        Ok(route_ipv6) => return Ok(route_ipv6),
+                        Err(_) => (), // ignore the error
+                    }
+                }
             }
         }
     } else if cfg!(target_os = "freebsd")
@@ -786,8 +811,13 @@ pub fn system_route6() -> Result<Ipv6Addr> {
                     .filter(|v| v.len() > 0)
                     .map(|x| x.trim())
                     .collect();
-                let route_ipv6: Ipv6Addr = l_split[1].parse()?;
-                return Ok(route_ipv6);
+                if l_split.len() > 1 {
+                    let route_ipv6_str = l_split[1];
+                    match route_ipv6_str.parse() {
+                        Ok(route_ipv6) => return Ok(route_ipv6),
+                        Err(_) => (), // ignore the error
+                    }
+                }
             }
         }
     }
@@ -814,13 +844,19 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
                 .filter(|v| v.len() > 0)
                 .map(|x| x.trim())
                 .collect();
-            if l_split.len() >= 6 {
+            if l_split.len() > 4 {
                 let ip_str = l_split[0];
                 // let device = l_split[2];
                 let mac_str = l_split[4];
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = mac_str.parse()?;
-                ret.insert(ip, mac);
+                match ip_str.parse() {
+                    Ok(ip) => match mac_str.parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(_) => (),
+                    },
+                    Err(_) => (),
+                }
             }
         }
         return Ok(Some(ret));
@@ -846,12 +882,18 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
                 .filter(|v| v.len() > 0)
                 .map(|x| x.trim())
                 .collect();
-            if l_split.len() >= 5 {
+            if l_split.len() > 2 {
                 let ip_str = l_split[1];
                 let mac_str = l_split[2].replace("-", ":");
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = mac_str.parse()?;
-                ret.insert(ip, mac);
+                match ip_str.parse() {
+                    Ok(ip) => match mac_str.parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(_) => (),
+                    },
+                    Err(_) => (),
+                }
             }
         }
         return Ok(Some(ret));
@@ -880,11 +922,19 @@ pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
                 .filter(|v| v.len() > 0)
                 .map(|x| x.trim())
                 .collect();
-            let ip_str = l_split[1].replace("(", "").replace(")", "");
-            let mac_str = l_split[3];
-            let ip: IpAddr = ip_str.parse()?;
-            let mac: MacAddr = mac_str.parse()?;
-            ret.insert(ip, mac);
+            if l_split.len() > 3 {
+                let ip_str = l_split[1].replace("(", "").replace(")", "");
+                let mac_str = l_split[3];
+                match ip_str.parse() {
+                    Ok(ip) => match mac_str.parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(_) => (),
+                    },
+                    Err(_) => (),
+                }
+            }
         }
         return Ok(Some(ret));
     }
@@ -912,13 +962,19 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
                 .filter(|v| v.len() > 0)
                 .map(|x| x.trim())
                 .collect();
-            if l_split.len() >= 6 {
+            if l_split.len() > 4 {
                 let ip_str = l_split[0];
                 // let device = l_split[2];
                 let mac_str = l_split[4];
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = mac_str.parse()?;
-                ret.insert(ip, mac);
+                match ip_str.parse() {
+                    Ok(ip) => match mac_str.parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(_) => (),
+                    },
+                    Err(_) => (),
+                }
             }
         }
         return Ok(Some(ret));
@@ -938,18 +994,24 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
             .map(|x| x.trim())
             .collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines[2..].to_vec() {
+        for line in lines {
             let l_split: Vec<&str> = line
                 .split(" ")
                 .filter(|v| v.len() > 0)
                 .map(|x| x.trim())
                 .collect();
-            if l_split.len() >= 5 {
+            if l_split.len() > 2 {
                 let ip_str = l_split[1];
                 let mac_str = l_split[2].replace("-", ":");
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = mac_str.parse()?;
-                ret.insert(ip, mac);
+                match ip_str.parse() {
+                    Ok(ip) => match mac_str.parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(_) => (),
+                    },
+                    Err(_) => (),
+                }
             }
         }
         return Ok(Some(ret));
@@ -971,18 +1033,24 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
             .collect();
         let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
         for line in lines {
-            if !line.contains("Neighbor") {
-                let l_split: Vec<&str> = line
-                    .split(" ")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
+            let l_split: Vec<&str> = line
+                .split(" ")
+                .filter(|v| v.len() > 0)
+                .map(|x| x.trim())
+                .collect();
+            if l_split.len() > 1 {
                 let ip_str_split: Vec<&str> = l_split[0].split("%").map(|x| x.trim()).collect();
                 let ip_str = ip_str_split[0];
                 let mac_str = l_split[1];
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = mac_str.parse()?;
-                ret.insert(ip, mac);
+                match ip_str.parse() {
+                    Ok(ip) => match mac_str.parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(_) => (),
+                    },
+                    Err(_) => (),
+                }
             }
         }
         return Ok(Some(ret));

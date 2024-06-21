@@ -112,7 +112,7 @@ fn main() -> Result<()> {
     let timeout = Some(Duration::new(3, 0));
     // Test with an open port `22` and a closed port `99`.
     let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-    /// Users should build the `target` themselves.
+    // Users should build the `target` themselves.
     let target = Target::new(vec![host]);
     let ret = tcp_syn_scan(
         target,
