@@ -18,7 +18,7 @@ use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 
-use crate::utils::find_interface_by_ipv6;
+use crate::utils::find_interface_by_ip6;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -1109,7 +1109,7 @@ pub fn os_probe6(
     timeout: Duration,
 ) -> Result<(PistolFingerprint6, Vec<NmapOsDetectRet6>)> {
     // Check target.
-    let dst_mac = match find_interface_by_ipv6(src_ipv6) {
+    let dst_mac = match find_interface_by_ip6(src_ipv6) {
         Some(interface) => match interface.mac {
             Some(m) => m,
             None => return Err(CanNotFoundMacAddress::new().into()),

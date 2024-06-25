@@ -14,8 +14,8 @@ use crate::errors::OsDetectPortError;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::PistolFingerprint;
 use crate::os::osscan6::PistolFingerprint6;
-use crate::utils::find_source_ipv4;
-use crate::utils::find_source_ipv6;
+use crate::utils::find_source_addr;
+use crate::utils::find_source_addr6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::Target;
@@ -272,7 +272,7 @@ pub fn os_detect(
     let mut recv_size = 0;
     for t in target.hosts {
         let dst_ipv4 = t.addr;
-        let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
+        let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
@@ -394,7 +394,7 @@ pub fn os_detect6(
     let linear = gen_linear()?;
     for t in target.hosts6 {
         let dst_ipv6 = t.addr;
-        let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
+        let src_ipv6 = match find_source_addr6(src_ipv6, dst_ipv6)? {
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };

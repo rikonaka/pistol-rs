@@ -20,9 +20,9 @@ pub mod udp6;
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
 use crate::errors::CanNotFoundSourceAddress;
-use crate::utils::find_interface_by_ipv4;
-use crate::utils::find_source_ipv4;
-use crate::utils::find_source_ipv6;
+use crate::utils::find_interface_by_ip;
+use crate::utils::find_source_addr;
+use crate::utils::find_source_addr6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
@@ -273,11 +273,11 @@ pub fn arp_scan(
             for host in target.hosts {
                 recv_size += 1;
                 let dst_ipv4 = host.addr;
-                let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
+                let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
                     Some(s) => s,
                     None => return Err(CanNotFoundSourceAddress::new().into()),
                 };
-                let interface = match find_interface_by_ipv4(src_ipv4) {
+                let interface = match find_interface_by_ip(src_ipv4) {
                     Some(i) => i,
                     None => return Err(CanNotFoundInterface::new().into()),
                 };
@@ -471,7 +471,7 @@ pub fn scan(
 
     for host in target.hosts {
         let dst_ipv4 = host.addr;
-        let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
+        let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
@@ -550,7 +550,7 @@ pub fn scan6(
 
     for host in target.hosts6 {
         let dst_ipv6 = host.addr;
-        let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
+        let src_ipv6 = match find_source_addr6(src_ipv6, dst_ipv6)? {
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };

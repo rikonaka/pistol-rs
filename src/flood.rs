@@ -10,8 +10,8 @@ pub mod udp;
 pub mod udp6;
 
 use crate::errors::CanNotFoundSourceAddress;
-use crate::utils::find_source_ipv4;
-use crate::utils::find_source_ipv6;
+use crate::utils::find_source_addr;
+use crate::utils::find_source_addr6;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::Target;
@@ -97,7 +97,7 @@ pub fn flood(
     let pool = get_threads_pool(threads_num);
     for host in target.hosts {
         let dst_ipv4 = host.addr;
-        let src_ipv4 = match find_source_ipv4(src_ipv4, dst_ipv4)? {
+        let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
@@ -148,7 +148,7 @@ pub fn flood6(
     let pool = get_threads_pool(threads_num);
     for host in target.hosts6 {
         let dst_ipv6 = host.addr;
-        let src_ipv6 = match find_source_ipv6(src_ipv6, dst_ipv6)? {
+        let src_ipv6 = match find_source_addr6(src_ipv6, dst_ipv6)? {
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };

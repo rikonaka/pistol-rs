@@ -22,7 +22,7 @@ use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 use crate::os::NmapOsDetectRet;
-use crate::utils::find_interface_by_ipv4;
+use crate::utils::find_interface_by_ip;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -1628,7 +1628,7 @@ pub fn os_probe(
     timeout: Duration,
 ) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
     // Check target.
-    let dst_mac = match find_interface_by_ipv4(src_ipv4) {
+    let dst_mac = match find_interface_by_ip(src_ipv4) {
         Some(interface) => match interface.mac {
             Some(m) => m,
             None => return Err(CanNotFoundMacAddress::new().into()),

@@ -1,22 +1,29 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use anyhow::Result;
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
+use std::sync::Arc;
+use std::sync::Mutex;
 use subnetwork::Ipv4Pool;
 
-pub mod errors;
 pub mod flood;
-pub mod layers;
 pub mod os;
 pub mod ping;
 pub mod scan;
-pub mod utils;
 pub mod vs;
+// inner use only
+mod errors;
+mod layers;
+mod memdb;
+mod utils;
+
+static MEMDBINIT: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
 const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;

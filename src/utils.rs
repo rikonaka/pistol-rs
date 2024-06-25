@@ -9,6 +9,7 @@ use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
 
+use crate::errors::CanNotFoundRouterAddress;
 use crate::layers::system_route;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
@@ -35,14 +36,17 @@ pub fn dst_ipv6_is_local_net(dst_ipv6: Ipv6Addr) -> bool {
     false
 }
 
-pub fn find_source_ipv4(
+pub fn find_source_addr(
     src_ipv4: Option<Ipv4Addr>,
     dst_ipv4: Ipv4Addr,
 ) -> Result<Option<Ipv4Addr>> {
     match src_ipv4 {
         Some(s) => return Ok(Some(s)),
         None => {
-            let route_ipv4 = system_route()?;
+            let route_ipv4 = match system_route()? {
+                Some(r) => r,
+                None => return Err(CanNotFoundRouterAddress::new().into()),
+            };
             for interface in datalink::interfaces() {
                 for ipnetwork in interface.ips {
                     match ipnetwork.ip() {
@@ -62,7 +66,7 @@ pub fn find_source_ipv4(
     Ok(None)
 }
 
-pub fn find_source_ipv6(
+pub fn find_source_addr6(
     src_ipv6: Option<Ipv6Addr>,
     dst_ipv6: Ipv6Addr,
 ) -> Result<Option<Ipv6Addr>> {
@@ -88,7 +92,7 @@ pub fn find_source_ipv6(
     Ok(None)
 }
 
-pub fn find_interface_by_ipv4(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
+pub fn find_interface_by_ip(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
     for interface in datalink::interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
@@ -136,7 +140,7 @@ pub fn find_interface_loopback6() -> Option<NetworkInterface> {
     None
 }
 
-pub fn find_interface_by_ipv6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
+pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
     for interface in datalink::interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
@@ -276,11 +280,11 @@ mod tests {
     #[test]
     fn test_find_source_ipv6() {
         let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
-        let find = find_source_ipv6(None, dst_ipv6).unwrap().unwrap();
+        let find = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
         println!("{}", find);
 
         let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
-        let find = find_source_ipv6(None, dst_ipv6).unwrap().unwrap();
+        let find = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
         println!("{}", find);
     }
 }
