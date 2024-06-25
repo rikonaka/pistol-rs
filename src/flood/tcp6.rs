@@ -21,7 +21,7 @@ pub fn send_syn_flood_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -52,10 +52,12 @@ pub fn send_syn_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ipv6_buff.len() * count)
 }
 
 pub fn send_ack_flood_packet(
@@ -64,7 +66,7 @@ pub fn send_ack_flood_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -95,10 +97,12 @@ pub fn send_ack_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ipv6_buff.len() * count)
 }
 
 pub fn send_ack_psh_flood_packet(
@@ -107,7 +111,7 @@ pub fn send_ack_psh_flood_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -138,10 +142,12 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ipv6_buff.len() * count)
 }
 
 #[cfg(test)]

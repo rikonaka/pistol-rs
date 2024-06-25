@@ -19,7 +19,7 @@ pub fn send_udp_flood_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
@@ -43,10 +43,12 @@ pub fn send_udp_flood_packet(
     udp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ipv6_buff.len() * count)
 }
 
 #[cfg(test)]

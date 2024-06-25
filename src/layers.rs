@@ -49,7 +49,6 @@ use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
 use crate::errors::CanNotFoundRouterAddress;
 use crate::errors::CreateDatalinkChannelFailed;
-use crate::memdb::MemDB;
 use crate::utils::dst_ipv4_is_local_net;
 use crate::utils::dst_ipv6_is_local_net;
 use crate::utils::find_interface_by_ip;
@@ -58,7 +57,7 @@ use crate::utils::find_interface_loopback;
 use crate::utils::find_interface_loopback6;
 use crate::utils::get_threads_pool;
 use crate::DEFAULT_MAXLOOP;
-use crate::MEMDBINIT;
+use crate::MEMDB;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -1159,14 +1158,9 @@ pub fn layer3_ipv4_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
-    let memdb = MemDB::init()?;
-    let mut memdb_init = MEMDBINIT.lock().expect("can not lock the MEMDBINIT");
-    if !*memdb_init {
-        memdb.fill_system_info()?;
-        *memdb_init = true;
-    }
+    let memdb = MEMDB.lock().expect("lock memdb failed");
 
-    let get_mac_through_system = |src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr| -> Result<MacAddr> {
+    let get_mac_from_system = |src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr| -> Result<MacAddr> {
         match search_system_neighbour_cache(dst_ipv4.into())? {
             Some(m) => Ok(m),
             None => match arp(src_ipv4, dst_ipv4)? {
@@ -1177,7 +1171,8 @@ pub fn layer3_ipv4_send(
     };
 
     let search_mac = |src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr| -> Result<MacAddr> {
-        let neighbor_cache = memdb.search_macaddr(dst_ipv4.to_string(), false, false)?;
+        let neighbor_cache = memdb.search_mac(dst_ipv4.to_string())?;
+        // println!("MEMDB: {:?} {:?}", dst_ipv4, neighbor_cache);
         let m = match neighbor_cache {
             Some(nc) => match nc.macaddr {
                 Some(m) => Some(m),
@@ -1191,7 +1186,7 @@ pub fn layer3_ipv4_send(
                 mac
             }
             None => {
-                let mac = get_mac_through_system(src_ipv4, dst_ipv4)?;
+                let mac = get_mac_from_system(src_ipv4, dst_ipv4)?;
                 mac
             }
         };
@@ -1210,22 +1205,37 @@ pub fn layer3_ipv4_send(
         mac
     } else {
         // Can not found the dst_ipv4 in local net, just send it to router.
-        let cache = memdb.search_route_ipaddr(false)?;
-        let route_ip = match cache {
-            Some(nc) => {
-                let route_ip: Ipv4Addr = nc.ipaddr.parse()?;
-                route_ip
+        let cache = memdb.search_route_ip()?;
+        let (route_ip, route_mac) = match cache {
+            Some(rc) => {
+                let route_ip: Ipv4Addr = rc.ipaddr.parse()?;
+                let route_mac = match rc.macaddr {
+                    Some(m) => {
+                        let mac: MacAddr = m.parse()?;
+                        Some(mac)
+                    }
+                    None => None,
+                };
+                (route_ip, route_mac)
             }
             None => {
                 let route_ip = match system_route()? {
                     Some(r) => r,
                     None => return Err(CanNotFoundRouterAddress::new().into()),
                 };
-                route_ip
+                let mac = get_mac_from_system(src_ipv4, route_ip)?;
+                memdb.update_route(route_ip.to_string(), Some(mac.to_string()))?;
+                (route_ip, Some(mac))
             }
         };
-        let mac = search_mac(src_ipv4, route_ip)?;
-        memdb.update_route(route_ip.to_string(), Some(mac.to_string()), false)?;
+        let mac = match route_mac {
+            Some(m) => m,
+            None => {
+                let mac = search_mac(src_ipv4, route_ip)?;
+                memdb.update_route6(route_ip.to_string(), Some(mac.to_string()))?;
+                mac
+            }
+        };
         mac
     };
 
@@ -1457,14 +1467,9 @@ pub fn layer3_ipv6_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
-    let memdb = MemDB::init()?;
-    let mut memdb_init = MEMDBINIT.lock().expect("can not lock the MEMDBINIT");
-    if !*memdb_init {
-        memdb.fill_system_info()?;
-        *memdb_init = true;
-    }
+    let memdb = MEMDB.lock().expect("lock memdb failed");
 
-    let get_mac_through_system =
+    let get_mac_from_system =
         |src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, isroute: bool| -> Result<MacAddr> {
             match search_system_neighbour_cache6(dst_ipv6.into())? {
                 Some(m) => Ok(m),
@@ -1485,7 +1490,7 @@ pub fn layer3_ipv6_send(
         };
 
     let search_mac = |src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, isroute: bool| -> Result<MacAddr> {
-        let neighbor_cache = memdb.search_macaddr(dst_ipv6.to_string(), false, true)?;
+        let neighbor_cache = memdb.search_mac(dst_ipv6.to_string())?;
         let m = match neighbor_cache {
             Some(nc) => match nc.macaddr {
                 Some(m) => Some(m),
@@ -1499,7 +1504,7 @@ pub fn layer3_ipv6_send(
                 mac
             }
             None => {
-                let mac = get_mac_through_system(src_ipv6, dst_ipv6, isroute)?;
+                let mac = get_mac_from_system(src_ipv6, dst_ipv6, isroute)?;
                 mac
             }
         };
@@ -1518,22 +1523,37 @@ pub fn layer3_ipv6_send(
         mac
     } else {
         // Can not found the dst_ipv4 in local net, just send it to router.
-        let cache = memdb.search_route_ipaddr(true)?;
-        let route_ip = match cache {
-            Some(nc) => {
-                let route_ip: Ipv6Addr = nc.ipaddr.parse()?;
-                route_ip
+        let cache = memdb.search_route_ip6()?;
+        let (route_ip, route_mac) = match cache {
+            Some(rc) => {
+                let route_ip: Ipv6Addr = rc.ipaddr.parse()?;
+                let route_mac = match rc.macaddr {
+                    Some(m) => {
+                        let mac: MacAddr = m.parse()?;
+                        Some(mac)
+                    }
+                    None => None,
+                };
+                (route_ip, route_mac)
             }
             None => {
                 let route_ip = match system_route6()? {
                     Some(r) => r,
                     None => return Err(CanNotFoundRouterAddress::new().into()),
                 };
-                route_ip
+                let mac = get_mac_from_system(src_ipv6, route_ip, true)?;
+                memdb.update_route6(route_ip.to_string(), Some(mac.to_string()))?;
+                (route_ip, Some(mac))
             }
         };
-        let mac = search_mac(src_ipv6, route_ip, true)?;
-        memdb.update_route(route_ip.to_string(), Some(mac.to_string()), true)?;
+        let mac = match route_mac {
+            Some(m) => m,
+            None => {
+                let mac = search_mac(src_ipv6, route_ip, true)?;
+                memdb.update_route6(route_ip.to_string(), Some(mac.to_string()))?;
+                mac
+            }
+        };
         mac
     };
 

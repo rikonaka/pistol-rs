@@ -23,7 +23,7 @@ pub fn send_icmpv6_flood_packet(
     dst_ipv6: Ipv6Addr,
     _: u16, // unified interface
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ipv6 header
@@ -61,10 +61,12 @@ pub fn send_icmpv6_flood_packet(
     icmp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ipv6_buff.len() * count)
 }
 
 #[cfg(test)]

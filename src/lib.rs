@@ -23,7 +23,17 @@ mod layers;
 mod memdb;
 mod utils;
 
-static MEMDBINIT: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+use crate::memdb::MemDB;
+
+static MEMDB: Lazy<Arc<Mutex<MemDB>>> = Lazy::new(|| {
+    Arc::new(Mutex::new({
+        let memdb = MemDB::init().expect("can not init the memdb");
+        memdb
+            .fill_system_info()
+            .expect("fill memdb with system info failed");
+        memdb
+    }))
+});
 
 const DEFAULT_MAXLOOP: usize = 512;
 const DEFAULT_TIMEOUT: u64 = 3;

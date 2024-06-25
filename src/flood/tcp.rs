@@ -23,7 +23,7 @@ pub fn send_syn_flood_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -56,10 +56,12 @@ pub fn send_syn_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ip_buff.len() * count)
 }
 
 pub fn send_ack_flood_packet(
@@ -68,7 +70,7 @@ pub fn send_ack_flood_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -101,10 +103,12 @@ pub fn send_ack_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ip_buff.len() * count)
 }
 
 pub fn send_ack_psh_flood_packet(
@@ -113,7 +117,7 @@ pub fn send_ack_psh_flood_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -146,10 +150,12 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0);
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
+        count += 1;
     }
-    Ok(())
+    Ok(ip_buff.len() * count)
 }
 
 #[cfg(test)]

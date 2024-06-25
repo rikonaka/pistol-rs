@@ -25,7 +25,7 @@ pub fn send_icmp_flood_packet(
     dst_ipv4: Ipv4Addr,
     _: u16, // unified interface
     max_same_packet: usize,
-) -> Result<()> {
+) -> Result<usize> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ip header
@@ -65,11 +65,13 @@ pub fn send_icmp_flood_packet(
     icmp_header.set_checksum(checksum);
     let timeout = Duration::new(0, 0); // not wait the result
 
+    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
+        count += 1;
     }
 
-    Ok(())
+    Ok(ip_buff.len() * count)
 }
 
 #[cfg(test)]
