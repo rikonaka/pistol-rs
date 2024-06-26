@@ -14,7 +14,7 @@ use crate::layers::system_route;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
 
-pub fn dst_ipv4_is_local_net(dst_ipv4: Ipv4Addr) -> bool {
+pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in datalink::interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv4.into()) {
@@ -25,7 +25,7 @@ pub fn dst_ipv4_is_local_net(dst_ipv4: Ipv4Addr) -> bool {
     false
 }
 
-pub fn dst_ipv6_is_local_net(dst_ipv6: Ipv6Addr) -> bool {
+pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     for interface in datalink::interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv6.into()) {

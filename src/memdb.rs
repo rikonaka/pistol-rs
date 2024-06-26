@@ -188,7 +188,7 @@ impl MemDB {
         }
         Ok(None)
     }
-    pub fn search_route_ip(&self) -> Result<Option<RouteCache>> {
+    pub fn get_route_ip(&self) -> Result<Option<RouteCache>> {
         let sql = format!(
             "SELECT * FROM {} WHERE name = ?1 LIMIT 1",
             self.route_cache_table_name
@@ -212,7 +212,7 @@ impl MemDB {
         }
         Ok(None)
     }
-    pub fn search_route_ip6(&self) -> Result<Option<RouteCache>> {
+    pub fn get_route_ip6(&self) -> Result<Option<RouteCache>> {
         let sql = format!(
             "SELECT * FROM {} WHERE name = ?1 LIMIT 1",
             self.route_cache_table_name
@@ -278,7 +278,7 @@ mod tests {
             "192.168.1.1".to_string(),
             Some("00:0c:29:43:9c:82".to_string()),
         )?;
-        let ret = memdb.search_route_ip()?;
+        let ret = memdb.get_route_ip()?;
         match ret {
             Some(ret) => println!("{:?}", ret),
             None => println!("null value found"),
