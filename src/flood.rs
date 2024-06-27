@@ -618,13 +618,13 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::Target;
+    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 122, 248);
     #[test]
-    fn test_convert() {
+    fn test_flood() {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 52);
         let threads_num: usize = 128;
-        let host = Host::new(dst_ipv4, Some(vec![22]));
+        let host = Host::new(DST_IPV4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 10, 6000).unwrap();
         println!("{}", ret);

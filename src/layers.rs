@@ -563,7 +563,7 @@ pub fn layer2_send(
     }
 
     if timeout != Duration::new(0, 0) {
-        let pool = get_threads_pool(1);
+        let pool = get_threads_pool(32);
         let (tx, rx) = channel();
 
         pool.execute(move || {
