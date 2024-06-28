@@ -449,23 +449,18 @@ mod tests {
     use crate::Host6;
     use std::net::Ipv6Addr;
     use std::time::SystemTime;
-    #[test]
-    fn test_print() {
-        let o: u8 = 12;
-        println!("{:x}", o);
-        let a = 13;
-        println!("{}", a / 2);
-        println!("{}", a % 2);
-    }
+    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
+    // 240e:34c:87:5050:5054:ff:feb8:b0ac
+    const DST_IPV6: Ipv6Addr =
+        Ipv6Addr::new(0x240e, 0x34c, 0x87, 0x5050, 0x5054, 0xff, 0xfeb8, 0xb0ac);
     #[test]
     fn test_os_detect6() -> Result<()> {
         let src_ipv6 = None;
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2c:9e4".parse().unwrap();
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
         let host = Host6::new(
-            dst_ipv6,
+            DST_IPV6,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -474,12 +469,10 @@ mod tests {
         );
 
         let target = Target::new6(vec![host]);
-
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let top_k = 3;
         let threads_num = 8;
-
         let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
         println!("{}", ret);
         Ok(())
@@ -488,13 +481,12 @@ mod tests {
     fn test_os_detect() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
         // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
         let host = Host::new(
-            dst_ipv4,
+            DST_IPV4,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,

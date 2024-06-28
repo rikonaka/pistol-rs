@@ -527,7 +527,9 @@ mod tests {
     use crate::Host;
     use crate::Host6;
     use crate::Target;
-    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 122, 248);
+    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
+    const DST_IPV6: Ipv6Addr =
+        Ipv6Addr::new(0x240e, 0x34c, 0x87, 0x5050, 0x5054, 0xff, 0xfeb8, 0xb0ac);
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         let src_ipv4 = None;
@@ -537,6 +539,18 @@ mod tests {
         let host = Host::new(DST_IPV4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        println!("{}", ret);
+        Ok(())
+    }
+    #[test]
+    fn test_tcp_syn_ping6() -> Result<()> {
+        let src_ipv4 = None;
+        let src_port = None;
+        let threads_num: usize = 8;
+        let timeout = Some(Duration::new(3, 0));
+        let host = Host6::new(DST_IPV6, Some(vec![22]));
+        let target: Target = Target::new6(vec![host]);
+        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
         Ok(())
     }
