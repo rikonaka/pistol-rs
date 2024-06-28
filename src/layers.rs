@@ -1058,7 +1058,6 @@ pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
 }
 
 pub fn search_system_neighbour_cache(ip: IpAddr) -> Result<Option<MacAddr>> {
-    println!("search from system now");
     let ret = system_neighbour_cache()?;
     match ret {
         Some(r) => {
@@ -1155,6 +1154,7 @@ fn layer2_ipv4_to_mac(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(MacAddr
     let memdb = MEMDB.lock().expect("lock memdb failed");
 
     let get_mac_from_system = |src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr| -> Result<MacAddr> {
+        // println!("get mac from system");
         match search_system_neighbour_cache(dst_ipv4.into())? {
             Some(m) => Ok(m),
             None => match arp(src_ipv4, dst_ipv4)? {

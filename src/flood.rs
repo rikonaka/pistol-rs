@@ -626,7 +626,7 @@ mod tests {
         let threads_num: usize = 128;
         let host = Host::new(DST_IPV4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
-        let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 10, 6000).unwrap();
+        let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 10, 600).unwrap();
         println!("{}", ret);
     }
 }
