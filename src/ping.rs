@@ -529,7 +529,7 @@ mod tests {
     use crate::Target;
     const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
     const DST_IPV6: Ipv6Addr =
-        Ipv6Addr::new(0x240e, 0x34c, 0x87, 0x5050, 0x5054, 0xff, 0xfeb8, 0xb0ac);
+        Ipv6Addr::new(0x240e, 0x034c, 0x0087, 0x5050, 0x5054, 0x00ff, 0xfeb8, 0xb0ac);
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         let src_ipv4 = None;
@@ -556,12 +556,8 @@ mod tests {
     }
     #[test]
     fn test_icmp_ping() -> Result<()> {
-        // let src_ipv4: Option<Ipv4Addr> = Some(Ipv4Addr::new(192, 168, 72, 128));
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
-        // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
-        // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(39, 156, 66, 10);
-        // let dst_ipv4: Ipv4Addr = Ipv4Addr::new(114, 114, 114, 114);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(DST_IPV4, Some(vec![]));
@@ -573,17 +569,9 @@ mod tests {
     #[test]
     fn test_icmpv6_ping() -> Result<()> {
         let src_port: Option<u16> = None;
-        // let src_ipv6: Option<Ipv6Addr> = Some("fe80::20c:29ff:fe43:9c82".parse().unwrap());
-        // let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        // let dst_ipv6: Ipv6Addr = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
-        // let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
-        // let src_ipv6: Option<Ipv6Addr> = Some("240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap());
         let src_ipv6 = None;
-        let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
-        let host1 = Host6::new(dst_ipv6, Some(vec![]));
-        let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
-        let host2 = Host6::new(dst_ipv6, Some(vec![]));
-        let target: Target = Target::new6(vec![host1, host2]);
+        let host = Host6::new(DST_IPV6, Some(vec![]));
+        let target: Target = Target::new6(vec![host]);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout).unwrap();
