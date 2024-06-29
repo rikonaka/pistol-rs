@@ -25,6 +25,49 @@ mod utils;
 
 use crate::memdb::MemDB;
 
+// debug code
+// #[cfg(test)]
+// const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
+// #[cfg(test)]
+// const DST_IPV6: Ipv6Addr = Ipv6Addr::new(
+//     0x240e, 0x034c, 0x0087, 0x5050, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
+// );
+#[cfg(test)]
+const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 118);
+#[cfg(test)]
+const DST_IPV6: Ipv6Addr = Ipv6Addr::new(
+    0x240e, 0x34c, 0x008a, 0x7f60, 0x54c1, 0x9cfc, 0x674b, 0x4589,
+);
+
+pub struct Logger {}
+
+impl Logger {
+    pub fn init_debug_logging() -> Result<()> {
+        let _ = env_logger::builder()
+            // .target(env_logger::Target::Stdout)
+            .filter_level(log::LevelFilter::Debug)
+            .is_test(true)
+            .try_init()?;
+        Ok(())
+    }
+    pub fn init_warn_logging() -> Result<()> {
+        let _ = env_logger::builder()
+            // .target(env_logger::Target::Stdout)
+            .filter_level(log::LevelFilter::Warn)
+            .is_test(true)
+            .try_init()?;
+        Ok(())
+    }
+    pub fn init_info_logging() -> Result<()> {
+        let _ = env_logger::builder()
+            // .target(env_logger::Target::Stdout)
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .try_init()?;
+        Ok(())
+    }
+}
+
 static MEMDB: Lazy<Arc<Mutex<MemDB>>> = Lazy::new(|| {
     Arc::new(Mutex::new({
         let memdb = MemDB::init().expect("can not init the memdb");
@@ -35,8 +78,7 @@ static MEMDB: Lazy<Arc<Mutex<MemDB>>> = Lazy::new(|| {
     }))
 });
 
-const DEFAULT_MAXLOOP: usize = 512;
-const DEFAULT_TIMEOUT: u64 = 3;
+const DEFAULT_TIMEOUT_SEC: u64 = 3;
 
 // Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API.
 // Use this trait instead until its become stable function.

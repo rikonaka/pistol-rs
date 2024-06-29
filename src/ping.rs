@@ -110,7 +110,7 @@ pub enum PingMethods {
     Syn,
     Ack,
     Udp,
-    Icmp,
+    Icmpv6,
 }
 
 fn run_ping(
@@ -162,7 +162,7 @@ fn run_ping(
                 _ => (PingStatus::Down, rtt),
             }
         }
-        PingMethods::Icmp => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?,
+        PingMethods::Icmpv6 => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?,
     };
     Ok((ping_status, rtt))
 }
@@ -216,7 +216,7 @@ fn run_ping6(
                 _ => (PingStatus::Down, rtt),
             }
         }
-        PingMethods::Icmp => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?,
+        PingMethods::Icmpv6 => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?,
     };
     Ok((ping_status, rtt))
 }
@@ -248,7 +248,7 @@ pub fn ping(
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
-        if host.ports.len() > 0 && method != PingMethods::Icmp {
+        if host.ports.len() > 0 && method != PingMethods::Icmpv6 {
             for dst_port in host.ports {
                 let tx = tx.clone();
                 recv_size += 1;
@@ -320,7 +320,7 @@ pub fn ping6(
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
-        if host.ports.len() > 0 && method != PingMethods::Icmp {
+        if host.ports.len() > 0 && method != PingMethods::Icmpv6 {
             for dst_port in host.ports {
                 let tx = tx.clone();
                 recv_size += 1;
@@ -495,7 +495,7 @@ pub fn icmp_ping(
 ) -> Result<PingResults> {
     ping(
         target,
-        PingMethods::Icmp,
+        PingMethods::Icmpv6,
         src_ipv4,
         src_port,
         threads_num,
@@ -513,7 +513,7 @@ pub fn icmpv6_ping(
 ) -> Result<PingResults> {
     ping6(
         target,
-        PingMethods::Icmp,
+        PingMethods::Icmpv6,
         src_ipv6,
         src_port,
         threads_num,
@@ -527,9 +527,9 @@ mod tests {
     use crate::Host;
     use crate::Host6;
     use crate::Target;
-    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
-    const DST_IPV6: Ipv6Addr =
-        Ipv6Addr::new(0x240e, 0x034c, 0x0087, 0x5050, 0x5054, 0x00ff, 0xfeb8, 0xb0ac);
+    use crate::DST_IPV4;
+    use crate::DST_IPV6;
+    use crate::Logger;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         let src_ipv4 = None;
@@ -568,6 +568,7 @@ mod tests {
     }
     #[test]
     fn test_icmpv6_ping() -> Result<()> {
+        Logger::init_debug_logging()?;
         let src_port: Option<u16> = None;
         let src_ipv6 = None;
         let host = Host6::new(DST_IPV6, Some(vec![]));

@@ -12,7 +12,7 @@ use threadpool::ThreadPool;
 use crate::errors::CanNotFoundRouterAddress;
 use crate::layers::system_route;
 use crate::Ipv6CheckMethods;
-use crate::DEFAULT_TIMEOUT;
+use crate::DEFAULT_TIMEOUT_SEC;
 
 pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in datalink::interfaces() {
@@ -189,7 +189,7 @@ pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
 }
 
 pub fn get_default_timeout() -> Duration {
-    Duration::new(DEFAULT_TIMEOUT, 0)
+    Duration::new(DEFAULT_TIMEOUT_SEC, 0)
 }
 
 pub struct Hex {

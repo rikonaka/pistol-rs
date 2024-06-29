@@ -1,5 +1,7 @@
 use anyhow::Result;
 use dns_lookup::lookup_host;
+use log::debug;
+use log::warn;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::DataLinkReceiver;
@@ -56,7 +58,6 @@ use crate::utils::find_interface_by_ip6;
 use crate::utils::find_interface_loopback;
 use crate::utils::find_interface_loopback6;
 use crate::utils::get_threads_pool;
-use crate::DEFAULT_MAXLOOP;
 use crate::MEMDB;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
@@ -554,6 +555,7 @@ pub fn layer2_send(
     let final_buff = ethernet_buff[..(ETHERNET_HEADER_SIZE + send_buff.len())].to_vec();
     // _print_packet_as_wireshark_format(&final_buff);
     let send_time = Instant::now();
+    debug!("layer2 send: {}", final_buff.len());
     match sender.send_to(&final_buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),
@@ -566,22 +568,21 @@ pub fn layer2_send(
         let pool = get_threads_pool(32);
         let (tx, rx) = channel();
 
-        pool.execute(move || {
-            for _ in 0..DEFAULT_MAXLOOP {
-                let buff = match receiver.next() {
-                    Ok(b) => b,
-                    Err(_) => &[],
-                };
-                for m in &layers_match {
-                    match m.do_match(buff) {
-                        true => {
-                            match tx.send(buff.to_vec()) {
-                                _ => (),
-                            }
-                            break;
+        pool.execute(move || loop {
+            let buff = match receiver.next() {
+                Ok(b) => b,
+                Err(_) => &[],
+            };
+            for m in &layers_match {
+                match m.do_match(buff) {
+                    true => {
+                        debug!("match found: {:?}", m);
+                        match tx.send(buff.to_vec()) {
+                            _ => (),
                         }
-                        false => (),
+                        break;
                     }
+                    false => (),
                 }
             }
         });
@@ -1088,6 +1089,7 @@ pub fn search_system_neighbour_cache6(ip: IpAddr) -> Result<Option<MacAddr>> {
 }
 
 pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
+    debug!("get mac from arp");
     let re = EthernetPacket::new(ethernet_buff).unwrap();
     match re.get_ethertype() {
         EtherTypes::Arp => {
@@ -1155,6 +1157,7 @@ fn layer2_ipv4_to_mac(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(MacAddr
 
     let get_mac_from_system = |src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr| -> Result<MacAddr> {
         // println!("get mac from system");
+        debug!("get mac from system");
         match search_system_neighbour_cache(dst_ipv4.into())? {
             Some(m) => Ok(m),
             None => match arp(src_ipv4, dst_ipv4)? {
@@ -1251,6 +1254,7 @@ pub fn layer3_ipv4_send(
     let (dst_mac, dst_is_loopback) = layer2_ipv4_to_mac(src_ipv4, dst_ipv4)?;
 
     let interface = if dst_is_loopback {
+        warn!("found dst is loopback");
         match find_interface_loopback() {
             Some(i) => i,
             None => return Err(CanNotFoundInterface::new().into()),
@@ -1284,6 +1288,7 @@ pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
 }
 
 fn get_mac_from_ndp_ns(buff: &[u8]) -> Option<MacAddr> {
+    debug!("get mac from ndp ns");
     // return mac address from ndp
     let ethernet_packet = EthernetPacket::new(buff).unwrap();
     let ipv6_packet = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
@@ -1378,6 +1383,7 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Op
 
 fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
     // return mac address from ndp
+    debug!("get mac from ndp rs");
     match EthernetPacket::new(buff) {
         Some(ethernet_packet) => {
             let mac = ethernet_packet.get_source();
@@ -1476,6 +1482,7 @@ fn layer2_ipv6_to_mac(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(MacAddr
 
     let get_mac_from_system =
         |src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, isroute: bool| -> Result<MacAddr> {
+            debug!("get mac from system");
             match search_system_neighbour_cache6(dst_ipv6.into())? {
                 Some(m) => Ok(m),
                 None => {
@@ -1579,8 +1586,10 @@ pub fn layer3_ipv6_send(
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
     let (dst_mac, dst_is_loopback) = layer2_ipv6_to_mac(src_ipv6, dst_ipv6)?;
+    debug!("convert ipv6: {} to mac: {}", dst_ipv6, dst_mac);
 
     let interface = if dst_is_loopback {
+        warn!("found dst is loopback");
         match find_interface_loopback6() {
             Some(i) => i,
             None => return Err(CanNotFoundInterface::new().into()),
@@ -1625,21 +1634,20 @@ mod tests {
     #[test]
     fn test_send_arp_packet() {
         let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
+        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 118);
         match arp(src_ipv4, dst_ipv4).unwrap() {
-            (Some(m), rtt) => {
-                println!("{} => rtt: {}", m, rtt.unwrap().as_secs_f32());
+            (Some(m), Some(rtt)) => {
+                println!("{} => rtt: {:.3}", m, rtt.as_secs_f32());
             }
             (_, _) => println!("None"),
         }
     }
     #[test]
     fn test_send_ndp_ns_packet() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        // let dst_ipv6 = "fe80::47c:7f4a:10a8:7f4a".parse().unwrap();
+        let src_ipv6: Ipv6Addr = "240e:34c:8a:7f60:3447:7fff:fef7:f42f".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "240e:34c:8a:7f60:54c1:9cfc:674b:4589".parse().unwrap();
         match ndp_ns(src_ipv6, dst_ipv6).unwrap() {
-            (Some(mac), Some(_rtt)) => println!("{}", mac),
+            (Some(mac), Some(rtt)) => println!("{} => rtt: {:.3}", mac, rtt.as_secs_f64()),
             _ => println!("None"),
         }
     }

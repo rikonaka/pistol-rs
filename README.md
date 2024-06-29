@@ -89,6 +89,18 @@ Furthermore, for the current mainstream operating systems, ipv6 fingerprint supp
 | [x] IPv4 Service Scan | [nmap reference](https://nmap.org/book/vscan-technique.html) |
 | [x] IPv6 Service Scan | [nmap reference](https://nmap.org/book/vscan-technique.html) |
 
+## Debugs
+
+```rust
+use pistol::Logger;
+
+fn main() -> Result<()> {
+    Logger::init_debug_logging()?;
+    // your code below
+    ...
+}
+```
+
 ## Examples
 
 ### 1. SYN Port Scan Example

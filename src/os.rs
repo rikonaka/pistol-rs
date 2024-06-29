@@ -447,12 +447,9 @@ mod tests {
     use crate::nmap_os_db_parser;
     use crate::Host;
     use crate::Host6;
-    use std::net::Ipv6Addr;
+    use crate::DST_IPV4;
+    use crate::DST_IPV6;
     use std::time::SystemTime;
-    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
-    // 240e:34c:87:5050:5054:ff:feb8:b0ac
-    const DST_IPV6: Ipv6Addr =
-        Ipv6Addr::new(0x240e, 0x34c, 0x87, 0x5050, 0x5054, 0xff, 0xfeb8, 0xb0ac);
     #[test]
     fn test_os_detect6() -> Result<()> {
         let src_ipv6 = None;
