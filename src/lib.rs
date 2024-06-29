@@ -26,18 +26,18 @@ mod utils;
 use crate::memdb::MemDB;
 
 // debug code
-// #[cfg(test)]
-// const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
-// #[cfg(test)]
-// const DST_IPV6: Ipv6Addr = Ipv6Addr::new(
-//     0x240e, 0x034c, 0x0087, 0x5050, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
-// );
 #[cfg(test)]
-const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 118);
+const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
 #[cfg(test)]
 const DST_IPV6: Ipv6Addr = Ipv6Addr::new(
-    0x240e, 0x34c, 0x008a, 0x7f60, 0x54c1, 0x9cfc, 0x674b, 0x4589,
+    0x240e, 0x034c, 0x0087, 0x5050, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
 );
+// #[cfg(test)]
+// const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 118);
+// #[cfg(test)]
+// const DST_IPV6: Ipv6Addr = Ipv6Addr::new(
+//     0x240e, 0x34c, 0x008a, 0x7f60, 0x54c1, 0x9cfc, 0x674b, 0x4589,
+// );
 
 pub struct Logger {}
 

@@ -72,8 +72,8 @@ pub fn send_udp_scan_packet(
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: None,
+        icmpv6_code: None,
     };
     let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);

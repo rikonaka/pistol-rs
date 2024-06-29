@@ -557,8 +557,8 @@ fn send_ie_probes(
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: None,
+        icmpv6_code: None,
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -637,8 +637,8 @@ fn send_nx_probes(
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: None,
+        icmpv6_code: None,
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -718,8 +718,8 @@ fn send_u1_probe(
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: None,
+        icmpv6_code: None,
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 

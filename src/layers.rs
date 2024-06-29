@@ -408,8 +408,8 @@ impl Layer4MatchIcmp {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer4MatchIcmpv6 {
     pub layer3: Option<Layer3Match>,
-    pub types: Option<Icmpv6Type>, // response icmp packet types
-    pub codes: Option<Icmpv6Code>, // response icmp packet codes
+    pub icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
+    pub icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
 }
 
 impl Layer4MatchIcmpv6 {
@@ -448,7 +448,8 @@ impl Layer4MatchIcmpv6 {
             }
             _ => (Icmpv6Type(0), Icmpv6Code(0)),
         };
-        let m2 = match self.types {
+        // println!("types: {:?}, codes: {:?}", r_types, r_codes);
+        let m2 = match self.icmpv6_type {
             Some(types) => {
                 if types == r_types {
                     true
@@ -458,7 +459,7 @@ impl Layer4MatchIcmpv6 {
             }
             None => true,
         };
-        let m3 = match self.codes {
+        let m3 = match self.icmpv6_code {
             Some(codes) => {
                 if codes == r_codes {
                     true
@@ -556,6 +557,7 @@ pub fn layer2_send(
     // _print_packet_as_wireshark_format(&final_buff);
     let send_time = Instant::now();
     debug!("layer2 send: {}", final_buff.len());
+    debug!("interface: {}", interface);
     match sender.send_to(&final_buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),
@@ -1353,8 +1355,8 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Op
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: Some(Icmpv6Type(136)),
+        icmpv6_code: Some(Icmpv6Code(0)),
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -1395,7 +1397,8 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
 
 fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     // router solicitation
-    let dst_ipv6_all_router = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 2);
+    let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
+    // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
     let interface = match find_interface_by_ip6(src_ipv6) {
         Some(i) => i,
         None => return Err(CanNotFoundInterface::new().into()),
@@ -1415,7 +1418,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    ipv6_header.set_destination(dst_ipv6_all_router);
+    ipv6_header.set_destination(route_addr_2);
 
     // icmpv6
     let mut icmpv6_header =
@@ -1432,22 +1435,23 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     icmpv6_header.set_options(&vec![ndp_option]);
 
     let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
-    let checksum = icmpv6::checksum(
-        &icmpv6_header.to_immutable(),
-        &src_ipv6,
-        &dst_ipv6_all_router,
-    );
+    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &route_addr_2);
     icmpv6_header.set_checksum(checksum);
 
+    // let layer3 = Layer3Match {
+    //     layer2: None,
+    //     src_addr: None,
+    //     dst_addr: Some(route_addr_1.into()),
+    // };
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: None,
-        dst_addr: Some(dst_ipv6_all_router.into()),
+        dst_addr: None,
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: Some(Icmpv6Type(134)), // Type: Router Advertisement (134)
+        icmpv6_code: Some(Icmpv6Code(0)),
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -1462,6 +1466,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
         vec![layers_match],
         timeout,
     )?;
+
     let mac = match r {
         Some(r) => get_mac_from_ndp_rs(&r),
         None => None,
@@ -1585,6 +1590,7 @@ pub fn layer3_ipv6_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
+    // println!("src_ipv6: {}", src_ipv6);
     let (dst_mac, dst_is_loopback) = layer2_ipv6_to_mac(src_ipv6, dst_ipv6)?;
     debug!("convert ipv6: {} to mac: {}", dst_ipv6, dst_mac);
 
@@ -1600,7 +1606,6 @@ pub fn layer3_ipv6_send(
             None => return Err(CanNotFoundInterface::new().into()),
         }
     };
-
     let ethernet_type = EtherTypes::Ipv6;
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
@@ -1644,8 +1649,8 @@ mod tests {
     }
     #[test]
     fn test_send_ndp_ns_packet() {
-        let src_ipv6: Ipv6Addr = "240e:34c:8a:7f60:3447:7fff:fef7:f42f".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "240e:34c:8a:7f60:54c1:9cfc:674b:4589".parse().unwrap();
+        let src_ipv6: Ipv6Addr = "240e:34c:8a:7f60:54c1:9cfc:674b:4589".parse().unwrap();
+        let dst_ipv6: Ipv6Addr = "240e:34c:8a:7f60:5054:ff:feb8:b0ac".parse().unwrap();
         match ndp_ns(src_ipv6, dst_ipv6).unwrap() {
             (Some(mac), Some(rtt)) => println!("{} => rtt: {:.3}", mac, rtt.as_secs_f64()),
             _ => println!("None"),
@@ -1653,7 +1658,7 @@ mod tests {
     }
     #[test]
     fn test_send_ndp_rs_packet() {
-        let src_ipv6: Ipv6Addr = "240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap();
+        let src_ipv6: Ipv6Addr = "240e:34c:8a:7f60:54c1:9cfc:674b:4589".parse().unwrap();
         match ndp_rs(src_ipv6).unwrap() {
             (Some(mac), Some(_rtt)) => println!("{}", mac),
             _ => println!("None"),

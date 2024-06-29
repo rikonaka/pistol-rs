@@ -83,8 +83,8 @@ pub fn send_icmpv6_ping_packet(
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmpv6_type: Some(Icmpv6Type(129)),
+        icmpv6_code: Some(Icmpv6Code(0)),
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 

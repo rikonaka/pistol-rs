@@ -78,8 +78,10 @@ pub fn find_source_addr6(
                     match ipnetwork.ip() {
                         IpAddr::V6(ipv6) => {
                             if ipnetwork.contains(dst_ipv6.into()) {
+                                println!("1111");
                                 return Ok(Some(ipv6));
-                            } else if dst_ipv6.is_global_x() {
+                            } else if !ipv6.is_multicast() && !ipv6.is_loopback() {
+                                println!("2222: {}", ipv6);
                                 return Ok(Some(ipv6));
                             }
                         }
@@ -145,6 +147,7 @@ pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
         for ip in &interface.ips {
             match ip.ip() {
                 IpAddr::V6(ipv6) => {
+                    // println!("ipv6: {}, src_ipv6: {}", ipv6, src_ipv6);
                     if ipv6 == src_ipv6 {
                         return Some(interface);
                     }

@@ -526,10 +526,10 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::Host6;
+    use crate::Logger;
     use crate::Target;
     use crate::DST_IPV4;
     use crate::DST_IPV6;
-    use crate::Logger;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         let src_ipv4 = None;
