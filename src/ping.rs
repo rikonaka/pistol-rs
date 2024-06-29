@@ -544,6 +544,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_ping6() -> Result<()> {
+        Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;

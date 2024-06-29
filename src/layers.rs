@@ -557,7 +557,7 @@ pub fn layer2_send(
     // _print_packet_as_wireshark_format(&final_buff);
     let send_time = Instant::now();
     debug!("layer2 send: {}", final_buff.len());
-    debug!("interface: {}", interface);
+    // debug!("interface: {}", interface);
     match sender.send_to(&final_buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),

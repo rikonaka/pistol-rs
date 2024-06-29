@@ -22,7 +22,7 @@ use crate::errors::GetIpv4PacketFailed;
 use crate::errors::GetTcpPacketFailed;
 use crate::errors::GetUdpPacketFailed;
 
-use crate::utils::Hex;
+use crate::utils::SpHex;
 
 const CWR_MASK: u8 = 0b10000000;
 const ECE_MASK: u8 = 0b01000000;
@@ -592,7 +592,7 @@ fn get_tsval(ipv4_response: &[u8]) -> Result<Option<u32>> {
                         }
                     }
                     if tsval_vec.len() != 0 {
-                        let tsval = Hex::vec_4u8_to_u32(&tsval_vec);
+                        let tsval = SpHex::vec_4u8_to_u32(&tsval_vec);
                         Ok(Some(tsval))
                     } else {
                         Ok(None)
@@ -696,7 +696,7 @@ pub fn tcp_o(ipv4_response: &[u8]) -> Result<String> {
                     for option in options_vec {
                         match option.number {
                             TcpOptionNumbers::MSS => {
-                                let data = Hex::vec_4u8_to_u32(&option.data);
+                                let data = SpHex::vec_4u8_to_u32(&option.data);
                                 let o_str = format!("M{:X}", data);
                                 o_ret += &o_str;
                             }
@@ -710,7 +710,7 @@ pub fn tcp_o(ipv4_response: &[u8]) -> Result<String> {
                                 o_ret += "N";
                             }
                             TcpOptionNumbers::WSCALE => {
-                                let data = Hex::vec_4u8_to_u32(&option.data);
+                                let data = SpHex::vec_4u8_to_u32(&option.data);
                                 let o_str = format!("W{:X}", data);
                                 o_ret += &o_str;
                             }
@@ -726,8 +726,8 @@ pub fn tcp_o(ipv4_response: &[u8]) -> Result<String> {
                                         t1.push(option.data[i]);
                                     }
                                 }
-                                let t0_u32 = Hex::vec_4u8_to_u32(&t0);
-                                let t1_u32 = Hex::vec_4u8_to_u32(&t1);
+                                let t0_u32 = SpHex::vec_4u8_to_u32(&t0);
+                                let t1_u32 = SpHex::vec_4u8_to_u32(&t1);
                                 if t0_u32 == 0 {
                                     o_ret += "0";
                                 } else {
@@ -1092,7 +1092,7 @@ pub fn udp_un(u1: &U1RR) -> Result<u32> {
             match icmp_packet {
                 Some(icmp_packet) => {
                     let rest_of_header = icmp_packet.payload()[0..4].to_vec();
-                    let un = Hex::vec_4u8_to_u32(&rest_of_header);
+                    let un = SpHex::vec_4u8_to_u32(&rest_of_header);
                     Ok(un)
                 }
                 None => Ok(0),

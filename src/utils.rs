@@ -1,4 +1,6 @@
 use anyhow::Result;
+use log::debug;
+use log::warn;
 use num_cpus;
 use pnet::datalink;
 use pnet::datalink::NetworkInterface;
@@ -18,10 +20,12 @@ pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in datalink::interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv4.into()) {
+                debug!("found dst ipv4: {} in local net", dst_ipv4);
                 return true;
             }
         }
     }
+    warn!("can not found the dst ipv4: {}", dst_ipv4);
     false
 }
 
@@ -29,10 +33,12 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     for interface in datalink::interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv6.into()) {
+                debug!("found dst ipv6: {} in local net", dst_ipv6);
                 return true;
             }
         }
     }
+    warn!("can not found the dst ipv6: {}", dst_ipv6);
     false
 }
 
@@ -52,8 +58,10 @@ pub fn find_source_addr(
                     match ipnetwork.ip() {
                         IpAddr::V4(ipv4) => {
                             if ipnetwork.contains(dst_ipv4.into()) {
+                                debug!("found source ipv4: {}", ipv4);
                                 return Ok(Some(ipv4));
                             } else if ipnetwork.contains(route_ipv4.into()) {
+                                debug!("found source ipv4: {}", ipv4);
                                 return Ok(Some(ipv4));
                             }
                         }
@@ -63,6 +71,7 @@ pub fn find_source_addr(
             }
         }
     }
+    debug!("can not found source of the dst: {}", dst_ipv4);
     Ok(None)
 }
 
@@ -77,11 +86,30 @@ pub fn find_source_addr6(
                 for ipnetwork in interface.ips {
                     match ipnetwork.ip() {
                         IpAddr::V6(ipv6) => {
-                            if ipnetwork.contains(dst_ipv6.into()) {
-                                println!("1111");
+                            debug!(
+                                "dst_ipv6: {}, g: {}, l: {}, ipv6: {}, g: {}, l: {}",
+                                dst_ipv6,
+                                dst_ipv6.is_global_x(),
+                                dst_ipv6.is_loopback(),
+                                ipv6,
+                                ipv6.is_global_x(),
+                                ipv6.is_loopback(),
+                            );
+                            if !dst_ipv6.is_global_x()
+                                && !dst_ipv6.is_loopback()
+                                && !ipv6.is_global_x()
+                                && !ipv6.is_loopback()
+                            {
+                                // both is link-local address
+                                debug!("found source ipv6: {}", ipv6);
                                 return Ok(Some(ipv6));
-                            } else if !ipv6.is_multicast() && !ipv6.is_loopback() {
-                                println!("2222: {}", ipv6);
+                            } else if dst_ipv6.is_global_x()
+                                && !dst_ipv6.is_loopback()
+                                && ipv6.is_global_x()
+                                && !ipv6.is_loopback()
+                            {
+                                // both is global address
+                                debug!("found source ipv6: {}", ipv6);
                                 return Ok(Some(ipv6));
                             }
                         }
@@ -91,6 +119,7 @@ pub fn find_source_addr6(
             }
         }
     }
+    debug!("can not found source of the dst: {}", dst_ipv6);
     Ok(None)
 }
 
@@ -100,6 +129,7 @@ pub fn find_interface_by_ip(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
             match ip.ip() {
                 IpAddr::V4(ipv4) => {
                     if ipv4 == src_ipv4 {
+                        debug!("found the interface: {}, by {}", interface.name, src_ipv4);
                         return Some(interface);
                     }
                 }
@@ -107,6 +137,25 @@ pub fn find_interface_by_ip(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
             }
         }
     }
+    debug!("can not found interface of the ip: {}", src_ipv4);
+    None
+}
+
+pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
+    for interface in datalink::interfaces() {
+        for ip in &interface.ips {
+            match ip.ip() {
+                IpAddr::V6(ipv6) => {
+                    if ipv6 == src_ipv6 {
+                        debug!("found the interface: {}, by {}", interface.name, src_ipv6);
+                        return Some(interface);
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    debug!("can not found interface of the ip: {}", src_ipv6);
     None
 }
 
@@ -116,6 +165,7 @@ pub fn find_interface_loopback() -> Option<NetworkInterface> {
             match ip.ip() {
                 IpAddr::V4(ipv4) => {
                     if ipv4.is_loopback() {
+                        debug!("found loopback interface of ipv4: {}", interface.name);
                         return Some(interface);
                     }
                 }
@@ -123,6 +173,7 @@ pub fn find_interface_loopback() -> Option<NetworkInterface> {
             }
         }
     }
+    debug!("can not found the loopback address of ipv4");
     None
 }
 
@@ -132,6 +183,7 @@ pub fn find_interface_loopback6() -> Option<NetworkInterface> {
             match ip.ip() {
                 IpAddr::V6(ipv6) => {
                     if ipv6.is_loopback() {
+                        debug!("found loopback interface of ipv6: {}", interface.name);
                         return Some(interface);
                     }
                 }
@@ -139,23 +191,7 @@ pub fn find_interface_loopback6() -> Option<NetworkInterface> {
             }
         }
     }
-    None
-}
-
-pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V6(ipv6) => {
-                    // println!("ipv6: {}, src_ipv6: {}", ipv6, src_ipv6);
-                    if ipv6 == src_ipv6 {
-                        return Some(interface);
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
+    debug!("can not found the loopback address of ipv6");
     None
 }
 
@@ -195,14 +231,14 @@ pub fn get_default_timeout() -> Duration {
     Duration::new(DEFAULT_TIMEOUT_SEC, 0)
 }
 
-pub struct Hex {
+pub struct SpHex {
     pub hex: Option<String>, // hex => dec
 }
 
-impl Hex {
-    pub fn new_hex(hex_str: &str) -> Hex {
-        Hex {
-            hex: Some(Hex::length_completion(hex_str).to_string()),
+impl SpHex {
+    pub fn new_hex(hex_str: &str) -> SpHex {
+        SpHex {
+            hex: Some(SpHex::length_completion(hex_str).to_string()),
         }
     }
     pub fn length_completion(hex_str: &str) -> String {
@@ -227,7 +263,7 @@ impl Hex {
     pub fn decode(&self) -> Result<u32> {
         match &self.hex {
             Some(hex_str) => match hex::decode(hex_str) {
-                Ok(d) => Ok(Hex::vec_4u8_to_u32(&d)),
+                Ok(d) => Ok(SpHex::vec_4u8_to_u32(&d)),
                 Err(e) => Err(e.into()),
             },
             None => panic!("set value before decode!"),
@@ -242,21 +278,21 @@ mod tests {
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
-        let r = Hex::vec_4u8_to_u32(&v);
+        let r = SpHex::vec_4u8_to_u32(&v);
         assert_eq!(r, 257);
 
         let s = "51E80C";
-        let h = Hex::new_hex(s);
+        let h = SpHex::new_hex(s);
         let r = h.decode().unwrap();
         assert_eq!(r, 5367820);
 
         let s = "1C";
-        let h = Hex::new_hex(s);
+        let h = SpHex::new_hex(s);
         let r = h.decode().unwrap();
         assert_eq!(r, 28);
 
         let s = "A";
-        let h = Hex::new_hex(s);
+        let h = SpHex::new_hex(s);
         let r = h.decode().unwrap();
         assert_eq!(r, 10);
     }

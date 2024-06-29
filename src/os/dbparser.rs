@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 
-use crate::utils::Hex;
+use crate::utils::SpHex;
 
 use super::osscan::PistolFingerprint;
 use super::osscan::ECNX;
@@ -1191,28 +1191,28 @@ fn value_parser_usize(info: &str) -> Result<NmapOsDbValueTypes> {
         if i.contains("-") {
             // 1-6
             let range_value_split: Vec<&str> = i.split("-").collect();
-            let hs = Hex::new_hex(range_value_split[0]);
+            let hs = SpHex::new_hex(range_value_split[0]);
             let start = hs.decode()? as usize;
-            let he = Hex::new_hex(range_value_split[1]);
+            let he = SpHex::new_hex(range_value_split[1]);
             let end = he.decode()? as usize;
             let range_value = DbRangeValue::new(start, end, DbRangeValueTypes::Both);
             range_values.push(range_value);
         } else if i.contains(">") {
             // still have some problem
             let special_value_split: Vec<&str> = i.split(">").collect();
-            let h = Hex::new_hex(special_value_split[1]);
+            let h = SpHex::new_hex(special_value_split[1]);
             let value = h.decode()? as usize;
             let range_value = DbRangeValue::new(value, 0, DbRangeValueTypes::Left);
             range_values.push(range_value);
         } else if i.contains("<") {
             // still have some problem
             let special_value_split: Vec<&str> = i.split(">").collect();
-            let h = Hex::new_hex(special_value_split[1]);
+            let h = SpHex::new_hex(special_value_split[1]);
             let value = h.decode()? as usize;
             let range_value = DbRangeValue::new(value, 0, DbRangeValueTypes::Right);
             range_values.push(range_value);
         } else {
-            let he = Hex::new_hex(i);
+            let he = SpHex::new_hex(i);
             let e_u32 = he.decode()?;
             let single_value = DbSingleValue::new(e_u32 as usize);
             single_values.push(single_value);
