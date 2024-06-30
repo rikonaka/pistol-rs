@@ -20,10 +20,10 @@ pub mod vs;
 // inner use only
 mod errors;
 mod layers;
-mod memdb;
+mod network;
 mod utils;
 
-use crate::memdb::MemDB;
+use crate::network::NetworkCache;
 
 // debug code
 #[cfg(test)]
@@ -32,6 +32,13 @@ const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
 // const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfeb6, 0x8d99);
 #[cfg(test)]
 const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0x240e, 0x34c, 0x8a, 0x7f60, 0x5054, 0xff, 0xfeb8, 0xb0ac);
+
+static NETWORK: Lazy<Arc<Mutex<NetworkCache>>> = Lazy::new(|| {
+    let lnc = NetworkCache::init().expect("can not init the linux network cache");
+    Arc::new(Mutex::new(lnc))
+});
+
+const DEFAULT_TIMEOUT_SEC: u64 = 3;
 
 pub struct Logger {}
 
@@ -61,18 +68,6 @@ impl Logger {
         Ok(())
     }
 }
-
-static MEMDB: Lazy<Arc<Mutex<MemDB>>> = Lazy::new(|| {
-    Arc::new(Mutex::new({
-        let memdb = MemDB::init().expect("can not init the memdb");
-        memdb
-            .fill_system_info()
-            .expect("fill memdb with system info failed");
-        memdb
-    }))
-});
-
-const DEFAULT_TIMEOUT_SEC: u64 = 3;
 
 // Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API.
 // Use this trait instead until its become stable function.

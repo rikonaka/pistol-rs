@@ -58,7 +58,7 @@ use crate::utils::find_interface_by_ip6;
 use crate::utils::find_interface_loopback;
 use crate::utils::find_interface_loopback6;
 use crate::utils::get_threads_pool;
-use crate::MEMDB;
+use crate::LINUX_NETWORK;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -1154,9 +1154,28 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Optio
     }
 }
 
-fn layer2_ipv4_to_mac(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(MacAddr, bool)> {
-    let memdb = MEMDB.lock().expect("lock memdb failed");
+fn network_search_mac(ipaddr: IpAddr) -> Option<MacAddr> {
+    let mac = if cfg!(target_os = "windows") {
+        None
+    } else if cfg!(target_os = "linux") {
+        let ln = LINUX_NETWORK
+            .lock()
+            .expect("lock linux table failed")
+            .unwrap();
+        ln.search_mac(ipaddr)
+    } else if cfg!(target_os = "freebsd")
+        || cfg!(target_os = "openbsd")
+        || cfg!(target_os = "netbsd")
+        || cfg!(target_os = "macos")
+    {
+        None
+    } else {
+        None
+    };
+    mac
+}
 
+fn layer2_ipv4_to_mac(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(MacAddr, bool)> {
     let get_mac_from_system = |src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr| -> Result<MacAddr> {
         // println!("get mac from system");
         debug!("get mac from system");
@@ -1177,7 +1196,7 @@ fn layer2_ipv4_to_mac(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(MacAddr
             dst_is_loopback = true;
             MacAddr::zero()
         } else {
-            let mac_str = match memdb.search_mac(dst_ipv4.to_string())? {
+            let mac_str = match network_search_mac(dst_ipv4.to_string())? {
                 Some(m) => m.macaddr,
                 None => None,
             };

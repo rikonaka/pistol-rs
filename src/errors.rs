@@ -240,3 +240,19 @@ impl CanNotFoundSourceAddress {
     }
 }
 impl Error for CanNotFoundSourceAddress {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvalidRouteFormat {
+    route: String,
+}
+impl fmt::Display for InvalidRouteFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the source address, please set it maunal")
+    }
+}
+impl InvalidRouteFormat {
+    pub fn new(route: String) -> InvalidRouteFormat {
+        InvalidRouteFormat { route }
+    }
+}
+impl Error for InvalidRouteFormat {}

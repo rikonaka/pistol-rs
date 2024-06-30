@@ -2,7 +2,7 @@ use anyhow::Result;
 use log::debug;
 use log::warn;
 use num_cpus;
-use pnet::datalink;
+use pnet::datalink::interfaces;
 use pnet::datalink::NetworkInterface;
 use rand::Rng;
 use std::net::IpAddr;
@@ -17,7 +17,7 @@ use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT_SEC;
 
 pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
-    for interface in datalink::interfaces() {
+    for interface in interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv4.into()) {
                 debug!("found dst ipv4: {} in local net", dst_ipv4);
@@ -30,7 +30,7 @@ pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
 }
 
 pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
-    for interface in datalink::interfaces() {
+    for interface in interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv6.into()) {
                 debug!("found dst ipv6: {} in local net", dst_ipv6);
@@ -53,7 +53,7 @@ pub fn find_source_addr(
                 Some(r) => r,
                 None => return Err(CanNotFoundRouterAddress::new().into()),
             };
-            for interface in datalink::interfaces() {
+            for interface in interfaces() {
                 for ipnetwork in interface.ips {
                     match ipnetwork.ip() {
                         IpAddr::V4(ipv4) => {
@@ -82,7 +82,7 @@ pub fn find_source_addr6(
     match src_ipv6 {
         Some(s) => return Ok(Some(s)),
         None => {
-            for interface in datalink::interfaces() {
+            for interface in interfaces() {
                 for ipnetwork in interface.ips {
                     match ipnetwork.ip() {
                         IpAddr::V6(ipv6) => {
@@ -123,8 +123,17 @@ pub fn find_source_addr6(
     Ok(None)
 }
 
+pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        if interface.name == name {
+            return Some(interface);
+        }
+    }
+    None
+}
+
 pub fn find_interface_by_ip(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
+    for interface in interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
                 IpAddr::V4(ipv4) => {
@@ -142,7 +151,7 @@ pub fn find_interface_by_ip(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
 }
 
 pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
+    for interface in interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
                 IpAddr::V6(ipv6) => {
@@ -160,7 +169,7 @@ pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
 }
 
 pub fn find_interface_loopback() -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
+    for interface in interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
                 IpAddr::V4(ipv4) => {
@@ -178,7 +187,7 @@ pub fn find_interface_loopback() -> Option<NetworkInterface> {
 }
 
 pub fn find_interface_loopback6() -> Option<NetworkInterface> {
-    for interface in datalink::interfaces() {
+    for interface in interfaces() {
         for ip in &interface.ips {
             match ip.ip() {
                 IpAddr::V6(ipv6) => {
