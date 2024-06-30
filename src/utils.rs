@@ -132,39 +132,29 @@ pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     None
 }
 
-pub fn find_interface_by_ip(src_ipv4: Ipv4Addr) -> Option<NetworkInterface> {
+pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(ipv4) => {
-                    if ipv4 == src_ipv4 {
-                        debug!("found the interface: {}, by {}", interface.name, src_ipv4);
-                        return Some(interface);
-                    }
-                }
-                _ => (),
+            if ipaddr == ip.ip() && !ip.ip().is_unspecified() {
+                debug!("found the interface: {}, by {}", interface.name, ipaddr);
+                return Some(interface);
             }
         }
     }
-    debug!("can not found interface of the ip: {}", src_ipv4);
+    debug!("can not found interface of the ip: {}", ipaddr);
     None
 }
 
-pub fn find_interface_by_ip6(src_ipv6: Ipv6Addr) -> Option<NetworkInterface> {
+pub fn find_interface_by_subnetwork(ipaddr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V6(ipv6) => {
-                    if ipv6 == src_ipv6 {
-                        debug!("found the interface: {}, by {}", interface.name, src_ipv6);
-                        return Some(interface);
-                    }
-                }
-                _ => (),
+            if ip.contains(ipaddr) {
+                debug!("found the interface: {}, by {}", interface.name, ipaddr);
+                return Some(interface);
             }
         }
     }
-    debug!("can not found interface of the ip: {}", src_ipv6);
+    debug!("can not found interface of the ip: {}", ipaddr);
     None
 }
 

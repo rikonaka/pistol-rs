@@ -277,7 +277,7 @@ pub fn arp_scan(
                     Some(s) => s,
                     None => return Err(CanNotFoundSourceAddress::new().into()),
                 };
-                let interface = match find_interface_by_ip(src_ipv4) {
+                let interface = match find_interface_by_ip(src_ipv4.into()) {
                     Some(i) => i,
                     None => return Err(CanNotFoundInterface::new().into()),
                 };

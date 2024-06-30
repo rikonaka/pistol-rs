@@ -31,7 +31,7 @@ use crate::layers::ICMPV6_NS_HEADER_SIZE;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
-use crate::utils::find_interface_by_ip6;
+use crate::utils::find_interface_by_ip;
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.
@@ -710,7 +710,7 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
 
 pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>> {
     // This probe is only sent to hosts on the same subnet.
-    let interface = match find_interface_by_ip6(src_ipv6) {
+    let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
         None => return Err(CanNotFoundInterface::new().into()),
     };

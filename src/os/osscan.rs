@@ -1628,7 +1628,7 @@ pub fn os_probe(
     timeout: Duration,
 ) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
     // Check target.
-    let dst_mac = match find_interface_by_ip(src_ipv4) {
+    let dst_mac = match find_interface_by_ip(src_ipv4.into()) {
         Some(interface) => match interface.mac {
             Some(m) => m,
             None => return Err(CanNotFoundMacAddress::new().into()),

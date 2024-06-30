@@ -6,7 +6,9 @@ use std::net::IpAddr;
 use std::process::Command;
 
 use crate::errors::InvalidRouteFormat;
+use crate::utils::find_interface_by_ip;
 use crate::utils::find_interface_by_name;
+use crate::utils::find_interface_by_subnetwork;
 
 // ubuntu22.04 output:
 // default via 192.168.72.2 dev ens33
@@ -26,10 +28,14 @@ pub struct LinuxDefaultRoute {
 impl LinuxDefaultRoute {
     pub fn parse(line: &str) -> Result<LinuxDefaultRoute> {
         // default via 192.168.72.2 dev ens33
-        let line_split: Vec<&str> = line.split(" ").collect();
+        let line_split: Vec<&str> = line
+            .split(" ")
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
         let max_iters = line_split.len();
         let mut i = 0;
-        let dst = line_split[0].to_string();
+        let dst = String::from("default");
         let mut via = None;
         let mut dev = None;
 
@@ -173,7 +179,102 @@ impl LinuxRouteTable {
 }
 
 #[derive(Debug, Clone)]
-pub struct WindowsRouteTable {}
+pub struct WindowsDefaultRoute {
+    pub dst: String,           // Destination network or host address
+    pub via: IpAddr,           // Next hop gateway address
+    pub dev: NetworkInterface, // Device interface name
+    pub raw: String,           // The raw output
+}
+
+impl WindowsDefaultRoute {
+    pub fn parse(line: &str) -> Result<WindowsDefaultRoute> {
+        // 0.0.0.0 0.0.0.0 192.168.1.1 192.168.1.115 25
+        let line_split: Vec<&str> = line
+            .split(" ")
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+        let dst = String::from("default");
+        let via: IpAddr = line_split[2].parse()?;
+
+        let dev = find_interface_by_subnetwork(via);
+        match dev {
+            Some(dev) => {
+                let wdr = WindowsDefaultRoute {
+                    dst,
+                    via,
+                    dev,
+                    raw: line.to_string(),
+                };
+                return Ok(wdr);
+            }
+            None => (),
+        }
+
+        Err(InvalidRouteFormat::new(line.to_string()).into())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WindowsRoute {
+    pub dst: String,           // Destination network or host address
+    pub dev: NetworkInterface, // Device interface name
+    pub src: IpAddr,           // Source address
+    pub raw: String,           // The raw output
+}
+
+impl WindowsRoute {
+    pub fn parse(line: &str) -> Result<WindowsRoute> {
+        // 192.168.1.0 255.255.255.0 On-link 192.168.1.100 281
+        let line_split: Vec<&str> = line.split(" ").collect();
+        let max_iters = line_split.len();
+        let mut i = 0;
+        let dst = line_split[0].to_string();
+        let src: IpAddr = line_split[3].parse()?;
+        let dev = find_interface_by_subnetwork(src);
+
+        Err(InvalidRouteFormat::new(line.to_string()).into())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WindowsRouteTable {
+    pub default_route: Option<WindowsDefaultRoute>,
+    pub routes: Vec<WindowsRoute>,
+}
+
+impl WindowsRouteTable {
+    pub fn from_system() -> Result<WindowsRouteTable> {
+        let c = Command::new("powershell").args(["route print"]).output()?;
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output
+            .lines()
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+
+        let mut default_route = None;
+        let mut routes = Vec::new();
+
+        for line in lines {
+            let line_split: Vec<&str> = line.split(" ").collect();
+            let dst = line_split[0];
+            if dst == "0.0.0.0" {
+                let d = WindowsDefaultRoute::parse(line)?;
+                default_route = Some(d);
+            } else {
+                let r = WindowsRoute::parse(line)?;
+                routes.push(r);
+            }
+        }
+
+        let wrt = WindowsRouteTable {
+            default_route,
+            routes,
+        };
+        Ok(wrt)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct NetworkCache {
@@ -188,6 +289,8 @@ impl NetworkCache {
     pub fn init() -> Result<NetworkCache> {
         #[cfg(target_os = "linux")]
         let route_table = LinuxRouteTable::from_system()?;
+        #[cfg(target_os = "windows")]
+        let route_table = WindowsRouteTable::from_system()?;
         let neighbor_cache = HashMap::new();
         let lnc = NetworkCache {
             route_table,
@@ -207,10 +310,33 @@ impl NetworkCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pnet::datalink::interfaces;
     #[test]
     fn test_linux_route_table() -> Result<()> {
         let lrt = LinuxRouteTable::from_system()?;
         println!("{:?}", lrt);
+        Ok(())
+    }
+    #[test]
+    fn test_windows() {
+        for interface in interfaces() {
+            println!("{}", interface);
+            for ip in interface.ips {
+                println!("IP: {}", ip);
+            }
+        }
+    }
+    #[test]
+    fn test_windows_default_route() -> Result<()> {
+        let line = "          0.0.0.0          0.0.0.0      192.168.1.1    192.168.1.115     25";
+        let wr = WindowsDefaultRoute::parse(line)?;
+        println!("{:?}", wr);
+        Ok(())
+    }
+    #[test]
+    fn test_windows_route_table() -> Result<()> {
+        let wrt = WindowsRouteTable::from_system()?;
+        println!("{:?}", wrt);
         Ok(())
     }
 }
