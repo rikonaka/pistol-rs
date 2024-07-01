@@ -247,7 +247,7 @@ pub struct InvalidRouteFormat {
 }
 impl fmt::Display for InvalidRouteFormat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the source address, please set it maunal")
+        write!(f, "invalid route format: {}", self.route)
     }
 }
 impl InvalidRouteFormat {
@@ -263,7 +263,7 @@ pub struct UnsupportedSystemDetected {
 }
 impl fmt::Display for UnsupportedSystemDetected {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "can not found the source address, please set it maunal")
+        write!(f, "unsupported system detected: {}", self.system)
     }
 }
 impl UnsupportedSystemDetected {
