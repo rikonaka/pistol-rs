@@ -85,7 +85,7 @@ impl DefaultRoute {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn parse(line: &str) -> Result<Route> {
+    pub fn parse(line: &str) -> Result<DefaultRoute> {
         // default 192.168.72.2 UGS em0
         let line_split: Vec<&str> = line
             .split(" ")
