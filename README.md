@@ -21,7 +21,7 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then pl
 
 ### libpnet bug on Windows
 
-Bug [issues](https://github.com/libpnet/libpnet/issues/707), the `libpnet` cannot get IPv6 address on Windows.
+Bug issues: https://github.com/libpnet/libpnet/issues/707, the `libpnet` cannot get IPv6 address on Windows.
 
 Therefore, until `libpnet` fixes this bug, Windows is not supported yet.
 
