@@ -256,3 +256,19 @@ impl InvalidRouteFormat {
     }
 }
 impl Error for InvalidRouteFormat {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnsupportedSystemDetected {
+    system: String,
+}
+impl fmt::Display for UnsupportedSystemDetected {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the source address, please set it maunal")
+    }
+}
+impl UnsupportedSystemDetected {
+    pub fn new(system: String) -> UnsupportedSystemDetected {
+        UnsupportedSystemDetected { system }
+    }
+}
+impl Error for UnsupportedSystemDetected {}
