@@ -33,6 +33,7 @@ pub struct DefaultRoute {
 }
 
 impl DefaultRoute {
+    #[cfg(target_os = "linux")]
     pub fn parse(line: &str) -> Result<DefaultRoute> {
         // default via 192.168.72.2 dev ens33
         let line_split: Vec<&str> = line
