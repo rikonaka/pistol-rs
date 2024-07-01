@@ -2,10 +2,6 @@
 
 The library must be run as root (Linux, *BSD) or administrator (Windows), the `stable` version of rust is recommended.
 
-## libpnet bug on rust nightly version
-
-Bug issue: https://github.com/libpnet/libpnet/issues/686
-
 ## Import from crates.io
 
 ```toml
@@ -23,11 +19,15 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then pl
 | Unix (*BSD, MacOS) | supported                        |
 | ~~Windows~~        | ~~supported (winpcap or npcap)~~ |
 
-# Libpnet bug on Windows
+### libpnet bug on Windows
 
 Bug [issues](https://github.com/libpnet/libpnet/issues/707), the `libpnet` cannot get IPv6 address on Windows.
 
 Therefore, until `libpnet` fixes this bug, Windows is not supported yet.
+
+### libpnet bug on rust nightly version
+
+Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 ## Host Discovery (Ping Scanning)
 
