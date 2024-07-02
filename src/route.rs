@@ -69,10 +69,7 @@ impl DefaultRoute {
         match via {
             Some(via) => match dev {
                 Some(dev) => {
-                    let dr = DefaultRoute {
-                        via,
-                        dev,
-                    };
+                    let dr = DefaultRoute { via, dev };
                     return Ok((dr, is_ipv4));
                 }
                 None => (),
@@ -105,10 +102,7 @@ impl DefaultRoute {
 
         match dev {
             Some(dev) => {
-                let dr = DefaultRoute {
-                    via,
-                    dev,
-                };
+                let dr = DefaultRoute { via, dev };
                 // println!("{:?}", dr);
                 return Ok((dr, is_ipv4));
             }
@@ -157,10 +151,7 @@ impl Route {
 
         match dev {
             Some(dev) => {
-                let r = Route {
-                    dst,
-                    dev,
-                };
+                let r = Route { dst, dev };
                 return Ok(r);
             }
             None => (),
@@ -189,7 +180,11 @@ impl Route {
                 .map(|x| x.trim())
                 .filter(|v| v.len() > 0)
                 .collect();
-            dst_split[0].to_string()
+            if dst_split.len() > 1 {
+                dst_split[0].to_string()
+            } else {
+                dst_split[0].to_string()
+            }
         } else {
             dst
         };
@@ -199,10 +194,7 @@ impl Route {
 
         match dev {
             Some(dev) => {
-                let r = Route {
-                    dst,
-                    dev,
-                };
+                let r = Route { dst, dev };
                 // println!("{:?}", r);
                 return Ok(r);
             }
@@ -518,6 +510,12 @@ mod tests {
             .filter(|v| v.len() > 0)
             .collect();
         let _ip: IpAddr = input_split[0].parse()?;
+        let ipnetwork = IpNetwork::from_str("fe80::")?;
+        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
+        println!("{}", ipnetwork.contains(test_ipv6));
+        let ipnetwork = IpNetwork::from_str("fe80::/64")?;
+        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
+        println!("{}", ipnetwork.contains(test_ipv6));
         Ok(())
     }
 }
