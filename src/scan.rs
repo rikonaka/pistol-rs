@@ -1,8 +1,14 @@
 /* Scan */
 use anyhow::Result;
+use log::warn;
 use pnet::datalink::MacAddr;
+use prettytable::row;
+use prettytable::Cell;
+use prettytable::Row;
+use prettytable::Table;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -67,53 +73,42 @@ pub enum PortStatus {
     Unfiltered,
     Unreachable,
     ClosedOrFiltered,
-}
-
-#[derive(Debug, Clone)]
-pub struct HostPortScanStatus {
-    pub status: HashMap<u16, PortStatus>,
-    pub rtt: Option<Duration>,
-}
-
-impl HostPortScanStatus {
-    pub fn new() -> HostPortScanStatus {
-        HostPortScanStatus {
-            status: HashMap::new(),
-            rtt: None,
-        }
-    }
+    Error,
 }
 
 #[derive(Debug, Clone)]
 pub struct PortScanResults {
-    pub ports: HashMap<IpAddr, HostPortScanStatus>,
+    pub scans: HashMap<IpAddr, HashMap<u16, PortStatus>>,
+    pub rtts: HashMap<IpAddr, HashMap<u16, Option<Duration>>>,
     pub avg_rtt: Option<Duration>,
-    pub alive_host_num: usize,
+    pub open_ports: usize,
 }
 
 impl PortScanResults {
     pub fn new() -> PortScanResults {
         PortScanResults {
-            ports: HashMap::new(),
+            scans: HashMap::new(),
+            rtts: HashMap::new(),
             avg_rtt: None,
-            alive_host_num: 0,
+            open_ports: 0,
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HostPortScanStatus> {
-        self.ports.get(k)
+    pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, PortStatus>> {
+        self.scans.get(k)
     }
     pub fn enrichment(&mut self) {
         // avg rtt
         let mut total_rtt = 0.0;
         let mut total_num = 0;
-        for (_ip, ping_status) in &self.ports {
-            let rtt = ping_status.rtt;
-            match rtt {
-                Some(r) => {
-                    total_rtt += r.as_secs_f64();
-                    total_num += 1;
+        for (_ip, rtts) in &self.rtts {
+            for (_port, rtt) in rtts {
+                match rtt {
+                    Some(r) => {
+                        total_rtt += r.as_secs_f64();
+                        total_num += 1;
+                    }
+                    None => (),
                 }
-                None => (),
             }
         }
         let avg_rtt = if total_num != 0 {
@@ -125,46 +120,59 @@ impl PortScanResults {
         };
         self.avg_rtt = avg_rtt;
 
-        // alive hosts
-        let mut total_alive = 0;
-        for (_ip, ping_status) in &self.ports {
-            let mut alive = false;
-            for (_port, status) in &ping_status.status {
+        let mut open_ports = 0;
+        for (_ip, ports_status) in &self.scans {
+            for (_port, status) in ports_status {
                 match status {
-                    PortStatus::Open => {
-                        alive = true;
-                        break;
-                    }
+                    PortStatus::Open => open_ports += 1,
                     _ => (),
                 }
             }
-            if alive {
-                total_alive += 1;
-            }
         }
-        self.alive_host_num = total_alive;
+        self.open_ports = open_ports;
     }
 }
 
 impl fmt::Display for PortScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut result_str = String::new();
-        for (ip, ps) in &self.ports {
-            for (port, status) in &ps.status {
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![Cell::new("Scan Results")
+            .style_spec("c")
+            .with_hspan(3)]));
+
+        // convert hashmap to btreemap here
+        let scans = &self.scans;
+        let scans: BTreeMap<IpAddr, &HashMap<u16, PortStatus>> =
+            scans.into_iter().map(|(i, h)| (*i, h)).collect();
+        for (ip, ports_status) in scans {
+            let ports_status: BTreeMap<u16, PortStatus> =
+                ports_status.into_iter().map(|(p, s)| (*p, *s)).collect();
+            for (port, status) in ports_status {
                 let status_str = match status {
-                    PortStatus::Open => format!("{ip} {port} open"),
-                    PortStatus::OpenOrFiltered => format!("{ip} {port} open|filtered"),
-                    PortStatus::Filtered => format!("{ip} {port} filtered"),
-                    PortStatus::Unfiltered => format!("{ip} {port} unfiltered"),
-                    PortStatus::Closed => format!("{ip} {port} closed"),
-                    PortStatus::Unreachable => format!("{ip} {port} unreachable"),
-                    PortStatus::ClosedOrFiltered => format!("{ip} {port} closed|filtered"),
+                    PortStatus::Open => format!("open"),
+                    PortStatus::OpenOrFiltered => format!("open|filtered"),
+                    PortStatus::Filtered => format!("filtered"),
+                    PortStatus::Unfiltered => format!("unfiltered"),
+                    PortStatus::Closed => format!("closed"),
+                    PortStatus::Unreachable => format!("unreachable"),
+                    PortStatus::ClosedOrFiltered => format!("closed|filtered"),
+                    PortStatus::Error => format!("error"),
                 };
-                result_str += &status_str;
-                result_str += "\n";
+                table.add_row(row![c -> ip, c-> port, c -> status_str]);
             }
         }
-        write!(f, "{}", result_str)
+
+        let summary = match self.avg_rtt {
+            Some(avg_rtt) => format!(
+                "Summary:\navg rtt {:.3}\nopen ports: {}",
+                avg_rtt.as_secs_f32(),
+                self.open_ports
+            ),
+            None => format!("Summary:\navg rtt 0.00s\nopen ports {}", self.open_ports),
+        };
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
+
+        write!(f, "{}", table)
     }
 }
 
@@ -350,7 +358,7 @@ pub fn arp_scan(
     }
 }
 
-fn run_scan(
+fn threads_scan(
     method: ScanMethod,
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -359,7 +367,7 @@ fn run_scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Duration,
-) -> Result<(Ipv4Addr, u16, PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Option<Duration>)> {
     let (scan_ret, rtt) = match method {
         ScanMethod::Connect => {
             tcp::send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
@@ -406,17 +414,17 @@ fn run_scan(
         }
     };
 
-    Ok((dst_ipv4, dst_port, scan_ret, rtt))
+    Ok((scan_ret, rtt))
 }
 
-fn run_scan6(
+fn threads_scan6(
     method: ScanMethod6,
     src_ipv6: Ipv6Addr,
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(Ipv6Addr, u16, PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Option<Duration>)> {
     let (scan_ret, rtt) = match method {
         ScanMethod6::Connect => {
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
@@ -447,7 +455,7 @@ fn run_scan6(
         }
     };
 
-    Ok((dst_ipv6, dst_port, scan_ret, rtt))
+    Ok((scan_ret, rtt))
 }
 
 /// General scan function.
@@ -483,7 +491,7 @@ pub fn scan(
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
-                let scan_ret = run_scan(
+                let scan_ret = threads_scan(
                     method,
                     src_ipv4,
                     src_port,
@@ -493,7 +501,7 @@ pub fn scan(
                     zombie_port,
                     timeout,
                 );
-                match tx.send(scan_ret) {
+                match tx.send((dst_ipv4, dst_port, scan_ret)) {
                     _ => (),
                 }
             });
@@ -501,35 +509,59 @@ pub fn scan(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut tcpudp_ret = PortScanResults::new();
+    let mut port_scan_ret = PortScanResults::new();
 
-    for v in iter {
+    for (dst_ipv4, dst_port, v) in iter {
         match v {
-            Ok((dst_ipv4, dst_port, scan_ret, rtt)) => {
-                match tcpudp_ret.ports.get_mut(&dst_ipv4.into()) {
-                    Some(ps) => {
-                        ps.status.insert(dst_port, scan_ret);
-                        match ps.rtt {
-                            Some(_) => (),
-                            None => ps.rtt = rtt,
-                        }
+            Ok((scan_ret, rtt)) => {
+                match port_scan_ret.scans.get_mut(&dst_ipv4.into()) {
+                    Some(ports_status) => {
+                        ports_status.insert(dst_port, scan_ret);
                     }
                     None => {
-                        let mut ps = HostPortScanStatus::new();
-                        ps.status.insert(dst_port, scan_ret);
-                        match ps.rtt {
-                            Some(_) => (),
-                            None => ps.rtt = rtt,
-                        }
-                        tcpudp_ret.ports.insert(dst_ipv4.into(), ps);
+                        let mut ps = HashMap::new();
+                        ps.insert(dst_port, scan_ret);
+                        port_scan_ret.scans.insert(dst_ipv4.into(), ps);
+                    }
+                }
+                match port_scan_ret.rtts.get_mut(&dst_ipv4.into()) {
+                    Some(rtts) => {
+                        rtts.insert(dst_port, rtt);
+                    }
+                    None => {
+                        let mut rtts = HashMap::new();
+                        rtts.insert(dst_port, rtt);
+                        port_scan_ret.rtts.insert(dst_ipv4.into(), rtts);
                     }
                 }
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                warn!("scan error: {}", e);
+                match port_scan_ret.scans.get_mut(&dst_ipv4.into()) {
+                    Some(ports_status) => {
+                        ports_status.insert(dst_port, PortStatus::Error);
+                    }
+                    None => {
+                        let mut ps = HashMap::new();
+                        ps.insert(dst_port, PortStatus::Error);
+                        port_scan_ret.scans.insert(dst_ipv4.into(), ps);
+                    }
+                }
+                match port_scan_ret.rtts.get_mut(&dst_ipv4.into()) {
+                    Some(rtts) => {
+                        rtts.insert(dst_port, None);
+                    }
+                    None => {
+                        let mut rtts = HashMap::new();
+                        rtts.insert(dst_port, None);
+                        port_scan_ret.rtts.insert(dst_ipv4.into(), rtts);
+                    }
+                }
+            }
         }
     }
-    tcpudp_ret.enrichment();
-    Ok(tcpudp_ret)
+    port_scan_ret.enrichment();
+    Ok(port_scan_ret)
 }
 
 pub fn scan6(
@@ -562,8 +594,9 @@ pub fn scan6(
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
-                let scan_ret = run_scan6(method, src_ipv6, src_port, dst_ipv6, dst_port, timeout);
-                match tx.send(scan_ret) {
+                let scan_ret =
+                    threads_scan6(method, src_ipv6, src_port, dst_ipv6, dst_port, timeout);
+                match tx.send((dst_ipv6, dst_port, scan_ret)) {
                     _ => (),
                 }
             });
@@ -573,29 +606,53 @@ pub fn scan6(
     let iter = rx.into_iter().take(recv_size);
     let mut port_scan_ret = PortScanResults::new();
 
-    for v in iter {
+    for (dst_ipv6, dst_port, v) in iter {
         match v {
-            Ok((dst_ipv6, dst_port, scan_ret, rtt)) => {
-                match port_scan_ret.ports.get_mut(&dst_ipv6.into()) {
-                    Some(ps) => {
-                        ps.status.insert(dst_port, scan_ret);
-                        match ps.rtt {
-                            Some(_) => (),
-                            None => ps.rtt = rtt,
-                        }
+            Ok((scan_ret, rtt)) => {
+                match port_scan_ret.scans.get_mut(&dst_ipv6.into()) {
+                    Some(ports_status) => {
+                        ports_status.insert(dst_port, scan_ret);
                     }
                     None => {
-                        let mut ps = HostPortScanStatus::new();
-                        ps.status.insert(dst_port, scan_ret);
-                        match ps.rtt {
-                            Some(_) => (),
-                            None => ps.rtt = rtt,
-                        }
-                        port_scan_ret.ports.insert(dst_ipv6.into(), ps);
+                        let mut ps = HashMap::new();
+                        ps.insert(dst_port, scan_ret);
+                        port_scan_ret.scans.insert(dst_ipv6.into(), ps);
+                    }
+                }
+                match port_scan_ret.rtts.get_mut(&dst_ipv6.into()) {
+                    Some(rtts) => {
+                        rtts.insert(dst_port, rtt);
+                    }
+                    None => {
+                        let mut rtts = HashMap::new();
+                        rtts.insert(dst_port, rtt);
+                        port_scan_ret.rtts.insert(dst_ipv6.into(), rtts);
                     }
                 }
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                warn!("scan error: {}", e);
+                match port_scan_ret.scans.get_mut(&dst_ipv6.into()) {
+                    Some(ports_status) => {
+                        ports_status.insert(dst_port, PortStatus::Error);
+                    }
+                    None => {
+                        let mut ps = HashMap::new();
+                        ps.insert(dst_port, PortStatus::Error);
+                        port_scan_ret.scans.insert(dst_ipv6.into(), ps);
+                    }
+                }
+                match port_scan_ret.rtts.get_mut(&dst_ipv6.into()) {
+                    Some(rtts) => {
+                        rtts.insert(dst_port, None);
+                    }
+                    None => {
+                        let mut rtts = HashMap::new();
+                        rtts.insert(dst_port, None);
+                        port_scan_ret.rtts.insert(dst_ipv6.into(), rtts);
+                    }
+                }
+            }
         }
     }
     port_scan_ret.enrichment();
@@ -1068,11 +1125,15 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
-        let timeout = Some(Duration::new(3, 0));
+        let timeout = Some(Duration::new(0, 500));
         let host = Host::new(DST_IPV4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);
+
+        // let target: Target = Target::from_subnet("192.168.1.1/24", Some(vec![22]))?;
+        // let ret = tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        // println!("{}", ret);
         Ok(())
     }
     #[test]

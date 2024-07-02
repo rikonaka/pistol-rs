@@ -1,5 +1,10 @@
+use prettytable::row;
+use prettytable::Cell;
+use prettytable::Row;
+use prettytable::Table;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -22,130 +27,93 @@ pub mod dbparser;
 pub mod vscan;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceStatus {
-    pub services: Vec<Match>,
-    pub elapsed: Option<Duration>,
+pub struct Services {
+    pub matchs: Vec<Match>,
+    pub rtt: Option<Duration>,
 }
 
-impl ServiceStatus {
-    pub fn new() -> ServiceStatus {
-        ServiceStatus {
-            services: Vec::new(),
-            elapsed: None,
+impl Services {
+    pub fn new() -> Services {
+        Services {
+            matchs: Vec::new(),
+            rtt: None,
         }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostServiceScanStatus {
-    pub results: HashMap<u16, ServiceStatus>,
-    pub avg_elapsed: Option<Duration>,
-}
-
-impl HostServiceScanStatus {
-    pub fn new() -> HostServiceScanStatus {
-        HostServiceScanStatus {
-            results: HashMap::new(),
-            avg_elapsed: None,
-        }
-    }
-    pub fn get(&self, k: &u16) -> Option<&ServiceStatus> {
-        self.results.get(k)
-    }
-    pub fn enrichment(&mut self) {
-        // avg rtt
-        let mut total_elapsed = 0.0;
-        let mut total_num = 0;
-        for (_port, services) in &self.results {
-            let elapsed = services.elapsed;
-            match elapsed {
-                Some(d) => {
-                    total_elapsed += d.as_secs_f64();
-                    total_num += 1;
-                }
-                None => (),
-            }
-        }
-        let avg_elapsed = if total_num != 0 {
-            let avg_elapsed = total_elapsed / total_num as f64;
-            let avg_elapsed = Duration::from_secs_f64(avg_elapsed);
-            Some(avg_elapsed)
-        } else {
-            None
-        };
-        self.avg_elapsed = avg_elapsed;
-    }
-}
-
-impl fmt::Display for HostServiceScanStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = String::new();
-        for (port, detect_ret) in &self.results {
-            output += &format!(">>> port:\n{}\n", port);
-            for m in &detect_ret.services {
-                output += &format!(
-                    ">>> Services:\n{}\n>>> Versioninfo:\n{}\n",
-                    m.service, m.versioninfo
-                );
-            }
-        }
-        write!(f, "{}", output)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VsScanResults {
-    pub results: HashMap<IpAddr, HostServiceScanStatus>,
-    pub avg_elapsed: Option<Duration>,
+    pub vss: HashMap<IpAddr, HashMap<u16, Services>>,
+    pub avg_rtt: Option<Duration>,
 }
 
 impl VsScanResults {
     pub fn new() -> VsScanResults {
         VsScanResults {
-            results: HashMap::new(),
-            avg_elapsed: None,
+            vss: HashMap::new(),
+            avg_rtt: None,
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HostServiceScanStatus> {
-        self.results.get(k)
+    pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Services>> {
+        self.vss.get(k)
     }
     pub fn enrichment(&mut self) {
-        // reverser
-        for (_ip, host_service_status) in &mut self.results {
-            host_service_status.enrichment();
-        }
-
         // avg rtt
-        let mut total_elapsed = 0.0;
+        let mut total_rtt = 0.0;
         let mut total_num = 0;
-        for (_ip, host_service_status) in &self.results {
-            let elapsed = host_service_status.avg_elapsed;
-            match elapsed {
-                Some(d) => {
-                    total_elapsed += d.as_secs_f64();
-                    total_num += 1;
-                }
-                None => (),
+        for (_ip, ports_service) in &self.vss {
+            for (_port, services) in ports_service {
+                match services.rtt {
+                    Some(rtt) => {
+                        total_rtt += rtt.as_secs_f64();
+                        total_num += 1;
+                    }
+                    None => (),
+                };
             }
         }
-        let avg_elapsed = if total_num != 0 {
-            let avg_elapsed = total_elapsed / total_num as f64;
-            let avg_elapsed = Duration::from_secs_f64(avg_elapsed);
-            Some(avg_elapsed)
+        let avg_rtt = if total_num != 0 {
+            let avg_rtt = total_rtt / total_num as f64;
+            let avg_rtt = Duration::from_secs_f64(avg_rtt);
+            Some(avg_rtt)
         } else {
             None
         };
-        self.avg_elapsed = avg_elapsed;
+        self.avg_rtt = avg_rtt;
     }
 }
 
 impl fmt::Display for VsScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = String::new();
-        for (addr, services) in &self.results {
-            output += &format!(">>>> IP:\n{}\n{}", addr, services);
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![Cell::new("Service Scan Results")
+            .style_spec("c")
+            .with_hspan(3)]));
+
+        let vss = &self.vss;
+        let vss: BTreeMap<IpAddr, &HashMap<u16, Services>> =
+            vss.into_iter().map(|(i, h)| (*i, h)).collect();
+        for (ip, ports_service) in vss {
+            let ports_service: BTreeMap<u16, &Services> =
+                ports_service.into_iter().map(|(p, s)| (*p, s)).collect();
+            for (port, services) in ports_service {
+                let mut sv = Vec::new();
+                for m in &services.matchs {
+                    if !sv.contains(&m.service) {
+                        sv.push(m.service.clone());
+                    }
+                }
+                let services_str = sv.join(",");
+                table.add_row(row![c -> ip, c -> port, c -> services_str]);
+            }
         }
-        write!(f, "{}", output)
+        let summary = match self.avg_rtt {
+            Some(avg_rtt) => format!("Summary:\navg rtt: {:.3}s", avg_rtt.as_secs_f32(),),
+            None => format!("Summary:\navg rtt: 0.00s"),
+        };
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
+
+        write!(f, "{}", table)
     }
 }
 
@@ -195,16 +163,16 @@ pub fn vs_scan(
     let service_probes = nsp_parser(&nsp_lines)?;
 
     let mut recv_size = 0;
-    for (addr, ports) in vs_target {
-        for port in ports {
+    for (dst_addr, ports) in vs_target {
+        for dst_port in ports {
             // Nmap checks to see if the port is one of the ports to be excluded.
-            if !exclude_ports.ports.contains(&port) {
+            if !exclude_ports.ports.contains(&dst_port) {
                 let tx = tx.clone();
                 let service_probes = service_probes.clone();
                 pool.execute(move || {
-                    let r = vs_probe(
-                        addr,
-                        port,
+                    let ret = vs_probe(
+                        dst_addr,
+                        dst_port,
                         only_null_probe,
                         only_tcp_recommended,
                         only_udp_recommended,
@@ -212,7 +180,7 @@ pub fn vs_scan(
                         &service_probes,
                         timeout,
                     );
-                    match tx.send((addr, port, r)) {
+                    match tx.send((dst_addr, dst_port, ret)) {
                         _ => (),
                     }
                 });
@@ -225,18 +193,18 @@ pub fn vs_scan(
     let rx = rx.into_iter().take(recv_size);
     for (addr, port, r) in rx {
         match r {
-            Ok((r, elapsed)) => {
-                let mut service_status = ServiceStatus::new();
-                service_status.services = r;
-                service_status.elapsed = Some(elapsed);
-                match ret.results.get_mut(&addr) {
-                    Some(host) => {
-                        host.results.insert(port, service_status);
+            Ok((r, rtt)) => {
+                let mut service_status = Services::new();
+                service_status.matchs = r;
+                service_status.rtt = Some(rtt);
+                match ret.vss.get_mut(&addr) {
+                    Some(services) => {
+                        services.insert(port, service_status);
                     }
                     None => {
-                        let mut host = HostServiceScanStatus::new();
-                        host.results.insert(port, service_status);
-                        ret.results.insert(addr, host);
+                        let mut host = HashMap::new();
+                        host.insert(port, service_status);
+                        ret.vss.insert(addr, host);
                     }
                 }
             }
@@ -251,14 +219,13 @@ pub fn vs_scan(
 mod tests {
     use super::*;
     use crate::Host;
+    use crate::DST_IPV4_REMOTE;
     use fancy_regex::Regex;
     use std::fs::File;
     use std::io::Read;
-    use std::net::Ipv4Addr;
     #[test]
     fn test_vs_detect() -> Result<()> {
-        let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-        let host = Host::new(dst_addr, Some(vec![22, 80]));
+        let host = Host::new(DST_IPV4_REMOTE, Some(vec![22, 80]));
         let target = Target::new(vec![host]);
         let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));
@@ -276,7 +243,6 @@ mod tests {
             timeout,
         )?;
         println!("{}", ret);
-        println!("{:?}", ret);
         Ok(())
     }
     #[test]

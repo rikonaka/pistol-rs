@@ -88,8 +88,8 @@ pub fn send_icmp_ping_packet(
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        types: Some(IcmpType(0)),
+        codes: Some(IcmpCode(0)),
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 

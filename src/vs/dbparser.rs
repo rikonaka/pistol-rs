@@ -2,6 +2,7 @@ use anyhow::Result;
 use fancy_regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbesProtocol {
@@ -19,6 +20,12 @@ pub struct Match {
     pub pattern: String,
     // The <versioninfo> section actually contains several optional fields.
     pub versioninfo: String,
+}
+
+impl fmt::Display for Match {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.service)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

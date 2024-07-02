@@ -1,7 +1,12 @@
 /* Remote OS Detection */
 use anyhow::Result;
+use prettytable::row;
+use prettytable::Cell;
+use prettytable::Row;
+use prettytable::Table;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::Ipv4Addr;
@@ -20,7 +25,7 @@ use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::Target;
 
-use self::osscan::os_probe;
+use self::osscan::threads_os_probe;
 use self::osscan6::os_probe6;
 
 pub mod dbparser;
@@ -33,106 +38,30 @@ pub mod packet6;
 pub mod rr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsDetect {
+pub struct NmapOsInfo {
     pub score: usize,
     pub total: usize,
     pub db: NmapOsDb,
 }
 
-impl fmt::Display for NmapOsDetect {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = String::new();
-        let s = format!(">>> Score:\n{}/{}\n", self.score, self.total);
-        output += &s;
-
-        let info_split: Vec<&str> = self.db.info.split("\n").collect();
-        for (i, v) in info_split.iter().enumerate() {
-            let v = v.replace("# ", "");
-            let s = if i == 0 {
-                format!(">>> Info:\n{}\n", v)
-            } else {
-                format!("{}\n", v)
-            };
-            output += &s;
-        }
-        let fingerprint_split: Vec<&str> = self.db.fingerprint.split("\n").collect();
-        for (i, v) in fingerprint_split.iter().enumerate() {
-            let v = v.replace("Fingerprint ", "");
-            let s = if i == 0 {
-                format!(">>> Fingerprint:\n{}\n", v)
-            } else {
-                format!("{}\n", v)
-            };
-            output += &s;
-        }
-        let class_split: Vec<&str> = self.db.class.split("\n").collect();
-        for (i, v) in class_split.iter().enumerate() {
-            let v = v.replace("Class ", "");
-            let s = if i == 0 {
-                format!(">>> Class:\n{}\n", v)
-            } else {
-                format!("{}\n", v)
-            };
-            output += &s;
-        }
-        let cpe_split: Vec<&str> = self.db.cpe.split("\n").collect();
-        for (i, v) in cpe_split.iter().enumerate() {
-            let v = v.replace("CPE ", "");
-            let s = if i == 0 {
-                format!(">>> CPE:\n{}\n", v)
-            } else {
-                format!("{}\n", v)
-            };
-            output += &s;
-        }
-        // let output = output.trim();
-        write!(f, "{}", output)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsDetect6 {
+pub struct NmapOsInfo6 {
     pub name: String,
-    pub osclass: Vec<Vec<String>>,
+    pub class: Vec<Vec<String>>,
     pub cpe: Vec<String>,
     pub score: f64,
     pub label: usize,
 }
 
-impl fmt::Display for NmapOsDetect6 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!(">>> Score:\n{:.2}%\n", self.score * 100.0);
-        output += &format!(">>> Fingerprint:\n{}\n", self.name);
-        output += ">>> Class:\n";
-        for o in &self.osclass {
-            let mut o_str = String::new();
-            for c in o {
-                let c_str = format!(" {} |", c);
-                o_str += &c_str;
-            }
-            let o_str = o_str[1..o_str.len() - 2].to_string();
-            output += &o_str;
-            output += "\n";
-        }
-        output += ">>> CPE:\n";
-        for c in &self.cpe {
-            output += c;
-            output += "\n";
-        }
-        let output = output.trim();
-        write!(f, "{}", output)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostOsDetectStatus {
+pub struct HostOsDetect {
     pub fingerprint: PistolFingerprint,
-    pub detects: Vec<NmapOsDetect>,
+    pub detects: Vec<NmapOsInfo>,
 }
 
-impl HostOsDetectStatus {
-    pub fn new(fingerprint: PistolFingerprint, detects: Vec<NmapOsDetect>) -> HostOsDetectStatus {
-        HostOsDetectStatus {
+impl HostOsDetect {
+    pub fn new(fingerprint: PistolFingerprint, detects: Vec<NmapOsInfo>) -> HostOsDetect {
+        HostOsDetect {
             fingerprint,
             detects,
         }
@@ -141,7 +70,7 @@ impl HostOsDetectStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResults {
-    pub oss: HashMap<Ipv4Addr, HostOsDetectStatus>,
+    pub oss: HashMap<Ipv4Addr, HostOsDetect>,
 }
 
 impl OsDetectResults {
@@ -150,40 +79,45 @@ impl OsDetectResults {
             oss: HashMap::new(),
         }
     }
-    pub fn get(&self, k: &Ipv4Addr) -> Option<&HostOsDetectStatus> {
+    pub fn get(&self, k: &Ipv4Addr) -> Option<&HostOsDetect> {
         self.oss.get(k)
     }
 }
 
 impl fmt::Display for OsDetectResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = String::new();
-        for (ipv4, oss) in &self.oss {
-            let fingerprint = &oss.fingerprint;
-            let detect_ret = &oss.detects;
-            output += &format!(">>> IP:\n{ipv4}\n");
-            output += &format!(">>> Pistol fingerprint:\n{fingerprint}\n");
-            output += &format!(">>> Details:");
-            for d in detect_ret {
-                output += &format!("{}", d);
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![Cell::new("OS Detect Results")
+            .style_spec("c")
+            .with_hspan(4)]));
+
+        let oss = &self.oss;
+        let oss: BTreeMap<Ipv4Addr, &HostOsDetect> =
+            oss.into_iter().map(|(i, h)| (*i, h)).collect();
+        for (ip, o) in oss {
+            for (i, ni) in o.detects.iter().enumerate() {
+                let number_str = format!("#{}", i + 1);
+                let score_str = format!("{}/{}", ni.score, ni.total);
+                let os_str = format!("{}", ni.db.info);
+                table.add_row(row![c -> ip, c -> number_str, c -> score_str, c -> os_str]);
             }
         }
-        write!(f, "{}", output)
+        let summary = format!("Summary");
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
+
+        write!(f, "{}", table)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostOsDetectStatus6 {
+pub struct HostOsDetect6 {
     pub fingerprint: PistolFingerprint6,
-    pub detects: Vec<NmapOsDetect6>,
+    pub detects: Vec<NmapOsInfo6>,
 }
 
-impl HostOsDetectStatus6 {
-    pub fn new(
-        fingerprint: PistolFingerprint6,
-        detects: Vec<NmapOsDetect6>,
-    ) -> HostOsDetectStatus6 {
-        HostOsDetectStatus6 {
+impl HostOsDetect6 {
+    pub fn new(fingerprint: PistolFingerprint6, detects: Vec<NmapOsInfo6>) -> HostOsDetect6 {
+        HostOsDetect6 {
             fingerprint,
             detects,
         }
@@ -192,7 +126,7 @@ impl HostOsDetectStatus6 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResults6 {
-    pub oss: HashMap<Ipv6Addr, HostOsDetectStatus6>,
+    pub oss: HashMap<Ipv6Addr, HostOsDetect6>,
 }
 
 impl OsDetectResults6 {
@@ -201,24 +135,33 @@ impl OsDetectResults6 {
             oss: HashMap::new(),
         }
     }
-    pub fn get(&self, k: &Ipv6Addr) -> Option<&HostOsDetectStatus6> {
+    pub fn get(&self, k: &Ipv6Addr) -> Option<&HostOsDetect6> {
         self.oss.get(k)
     }
 }
 
 impl fmt::Display for OsDetectResults6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = String::new();
-        for (ipv6, oss) in &self.oss {
-            let fingerprint = &oss.fingerprint;
-            let detect_ret = &oss.detects;
-            output += &format!(">>> IP:\n{ipv6}\n");
-            output += &format!(">>> Novelty:\n{}", fingerprint.novelty);
-            for d in detect_ret {
-                output += &format!("{}", d);
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![Cell::new("OS Detect Results")
+            .style_spec("c")
+            .with_hspan(4)]));
+
+        let oss = &self.oss;
+        let oss: BTreeMap<Ipv6Addr, &HostOsDetect6> =
+            oss.into_iter().map(|(i, h)| (*i, h)).collect();
+        for (ip, o) in oss {
+            for (i, ni) in o.detects.iter().enumerate() {
+                let number_str = format!("#{}", i);
+                let score_str = format!("{:.1}", ni.score);
+                let os_str = ni.class[0].join(",");
+                table.add_row(row![c -> ip, c -> number_str, c -> score_str, c -> os_str]);
             }
         }
-        write!(f, "{}", output)
+        let summary = format!("Summary");
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
+
+        write!(f, "{}", table)
     }
 }
 
@@ -281,7 +224,7 @@ pub fn os_detect(
             let tx = tx.clone();
             let nmap_os_db = nmap_os_db.to_vec();
             pool.execute(move || {
-                let os_detect_ret = os_probe(
+                let os_detect_ret = threads_os_probe(
                     src_ipv4,
                     src_port,
                     dst_ipv4,
@@ -305,7 +248,7 @@ pub fn os_detect(
     for (ipv4, r) in iter {
         match r {
             Ok((fingerprint, detect_ret)) => {
-                let oss = HostOsDetectStatus::new(fingerprint, detect_ret);
+                let oss = HostOsDetect::new(fingerprint, detect_ret);
                 ret.oss.insert(ipv4, oss);
             }
             Err(e) => return Err(e),
@@ -428,7 +371,7 @@ pub fn os_detect6(
     for (ipv6, r) in iter {
         match r {
             Ok((fingerprint, detect_ret)) => {
-                let oss = HostOsDetectStatus6::new(fingerprint, detect_ret);
+                let oss = HostOsDetect6::new(fingerprint, detect_ret);
                 ret.oss.insert(ipv6, oss);
             }
             Err(e) => return Err(e),
@@ -464,7 +407,7 @@ mod tests {
 
         let target = Target::new6(vec![host]);
         let src_port = None;
-        let timeout = Some(Duration::new(3, 0));
+        let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let threads_num = 8;
         let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
@@ -475,7 +418,6 @@ mod tests {
     fn test_os_detect() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -493,7 +435,6 @@ mod tests {
         let threads_num = 8;
 
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
-        // println!("{}", ret.results.get(&dst_ipv4).unwrap().fingerprint);
         println!("{}", ret);
         Ok(())
     }
