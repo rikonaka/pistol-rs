@@ -494,7 +494,9 @@ mod tests {
         let rt = RouteTable::init()?;
         println!("{:?}", rt.default_ipv4_route);
         println!("{:?}", rt.default_ipv6_route);
-        println!("{:?}", rt.routes);
+        for route in rt.routes {
+            println!("{:?}", route);
+        }
         Ok(())
     }
     #[test]
