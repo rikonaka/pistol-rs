@@ -90,15 +90,20 @@ impl DefaultRoute {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn parse(line: &str) -> Result<DefaultRoute> {
+    pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
         // default 192.168.72.2 UGS em0
         let line_split: Vec<&str> = line
             .split(" ")
             .map(|x| x.trim())
             .filter(|v| v.len() > 0)
             .collect();
+
+        let mut is_ipv4 = true;
         let dst = String::from("default");
         let via: IpAddr = line_split[1].parse()?;
+        if line_split[1].contains(":") {
+            is_ipv4 = false;
+        }
         let dev = find_interface_by_subnetwork(via);
 
         match dev {
@@ -110,7 +115,7 @@ impl DefaultRoute {
                     raw: line.to_string(),
                 };
                 // println!("{:?}", dr);
-                return Ok(dr);
+                return Ok((dr, is_ipv4));
             }
             None => (),
         }
