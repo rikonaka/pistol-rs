@@ -88,6 +88,7 @@ impl DefaultRoute {
     ))]
     pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
         // default 192.168.72.2 UGS em0
+        // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
         let line_split: Vec<&str> = line
             .split(" ")
             .map(|x| x.trim())
@@ -96,7 +97,17 @@ impl DefaultRoute {
 
         let mut is_ipv4 = true;
         debug!("default route parse (unix): {}", line_split[1]);
-        let via: IpAddr = line_split[1].parse()?;
+        let via_str = if line_split[1].contains("%") {
+            let via_split = line_split[1]
+                .split("%")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
+            via_split[0]
+        } else {
+            line_split[1]
+        };
+        let via: IpAddr = via_str.parse()?;
         if line_split[1].contains(":") {
             is_ipv4 = false;
         }
