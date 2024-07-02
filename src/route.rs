@@ -181,13 +181,15 @@ impl Route {
                 .filter(|v| v.len() > 0)
                 .collect();
             let mut ret = dst_split[0].to_string();
-            let i_split: Vec<&str> = dst_split[1]
-                .split("/")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            ret += "/";
-            ret += i_split[1];
+            if dst_split[1].contains("/") {
+                let i_split: Vec<&str> = dst_split[1]
+                    .split("/")
+                    .map(|x| x.trim())
+                    .filter(|v| v.len() > 0)
+                    .collect();
+                ret += "/";
+                ret += i_split[1];
+            }
             ret
         } else {
             dst
