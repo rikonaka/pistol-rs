@@ -312,8 +312,10 @@ impl RouteTable {
                     default_ipv6_route = Some(d);
                 }
             } else {
-                let r = Route::parse(line)?;
-                routes.push(r);
+                if dst.contains(".") || dst.contains(":") {
+                    let r = Route::parse(line)?;
+                    routes.push(r);
+                }
             }
         }
 
