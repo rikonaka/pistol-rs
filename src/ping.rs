@@ -573,7 +573,9 @@ mod tests {
     fn test_icmpv6_ping() -> Result<()> {
         Logger::init_debug_logging()?;
         let src_port: Option<u16> = None;
-        let src_ipv6 = None;
+        let src_ipv6 = Some(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe88, 0x20d2,
+        ));
         let host = Host6::new(DST_IPV6, Some(vec![]));
         let target: Target = Target::new6(vec![host]);
         let threads_num: usize = 8;
