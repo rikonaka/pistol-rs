@@ -416,7 +416,7 @@ impl NetworkCache {
             .collect();
 
         let mut ret = HashMap::new();
-        for line in line {
+        for line in lines {
             let line_split: Vec<&str> = line
                 .split(" ")
                 .map(|x| x.trim())
