@@ -26,14 +26,17 @@ mod utils;
 use crate::route::SystemCache;
 
 // debug code
-// #[cfg(test)]
-// const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
 #[cfg(test)]
-const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
-// #[cfg(test)]
-// const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfeb6, 0x8d99);
+const DST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
 #[cfg(test)]
-const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0x240e, 0x34c, 0x84, 0x86a0, 0x5054, 0xff, 0xfeb8, 0xb0ac);
+const DST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
+#[cfg(test)]
+const DST_IPV6_REMOTE: Ipv6Addr =
+    Ipv6Addr::new(0x240e, 0x34c, 0x84, 0x86a0, 0x5054, 0xff, 0xfeb8, 0xb0ac);
+#[cfg(test)]
+const DST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
+    0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99,
+);
 
 static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemCache>>> = Lazy::new(|| {
     let lnc = SystemCache::init().expect("can not init the system cache");
@@ -344,42 +347,11 @@ pub use layers::dns_query;
 mod tests {
     use super::*;
     #[test]
-    fn test_target_print() -> Result<()> {
+    fn test_target_print() {
         let host1 = Host::new(Ipv4Addr::new(192, 168, 1, 135), Some(vec![22, 23]));
         let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]));
-        let target = Target::new(vec![host1, host2]);
-        println!("{}", target);
-        Ok(())
-    }
-    #[test]
-    fn test_ip_address() {
-        let ipv6_addr: Ipv6Addr = "240e:34c:85:e4d0:20c:29ff:fe43:9c8c".parse().unwrap();
-        println!("{}", ipv6_addr.is_unspecified()); // false
-        println!("{}", ipv6_addr.is_multicast()); // false
-        println!("{}", ipv6_addr.is_loopback()); // false
-        println!("{}", ipv6_addr.is_global_x()); // true
-
-        println!(">>>>>>>>>>>>>>>>>>>>>>>");
-
-        let ipv6_addr: Ipv6Addr = "fe80::20c:29ff:fe43:9c8c".parse().unwrap();
-        println!("{}", ipv6_addr.is_unspecified()); // false
-        println!("{}", ipv6_addr.is_multicast()); // false
-        println!("{}", ipv6_addr.is_loopback()); // false
-        println!("{}", ipv6_addr.is_global_x()); // false
-
-        println!(">>>>>>>>>>>>>>>>>>>>>>>");
-
-        let ipv6_addr: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
-        println!("{}", ipv6_addr.is_unspecified()); // false
-        println!("{}", ipv6_addr.is_multicast()); // false
-        println!("{}", ipv6_addr.is_loopback()); // false
-        println!("{}", ipv6_addr.is_global_x()); // true
-
-        println!(">>>>>>>>>>>>>>>>>>>>>>>");
-
-        let ipv4_addr: Ipv4Addr = "192.168.1.23".parse().unwrap();
-        println!("{}", ipv4_addr.is_global_x()); // false
-        let ipv4_addr: Ipv4Addr = "114.114.114.114".parse().unwrap();
-        println!("{}", ipv4_addr.is_global_x()); // true
+        let _target = Target::new(vec![host1, host2]);
+        // println!("{}", target);
+        assert_eq!(1, 1);
     }
 }

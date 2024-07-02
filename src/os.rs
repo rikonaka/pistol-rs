@@ -447,8 +447,8 @@ mod tests {
     use crate::nmap_os_db_parser;
     use crate::Host;
     use crate::Host6;
-    use crate::DST_IPV4;
-    use crate::DST_IPV6;
+    use crate::DST_IPV4_REMOTE;
+    use crate::DST_IPV6_REMOTE;
     use std::time::SystemTime;
     #[test]
     fn test_os_detect6() -> Result<()> {
@@ -457,7 +457,7 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
         let host = Host6::new(
-            DST_IPV6,
+            DST_IPV6_REMOTE,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -483,7 +483,7 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
         let host = Host::new(
-            DST_IPV4,
+            DST_IPV4_REMOTE,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,

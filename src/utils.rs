@@ -154,7 +154,8 @@ pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
-            if ipaddr == ip.ip() && !ip.ip().is_unspecified() {
+            let i = ip.ip();
+            if ipaddr == i && !i.is_unspecified() {
                 debug!("found the interface: {}, by {}", interface.name, ipaddr);
                 return Some(interface);
             }
@@ -174,7 +175,10 @@ pub fn find_interface_by_subnetwork(ipaddr: IpAddr) -> Option<NetworkInterface> 
     for interface in interfaces() {
         for ip in &interface.ips {
             if ip.contains(ipaddr) {
-                debug!("found the interface (unix): {}, by {}", interface.name, ipaddr);
+                debug!(
+                    "found the interface (unix): {}, by {}",
+                    interface.name, ipaddr
+                );
                 return Some(interface);
             }
         }

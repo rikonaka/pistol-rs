@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::debug;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -11,6 +12,7 @@ pub mod icmp;
 pub mod icmpv6;
 
 use crate::errors::CanNotFoundSourceAddress;
+use crate::errors::UnsupportedPingMethod;
 use crate::scan::tcp;
 use crate::scan::tcp6;
 use crate::scan::udp;
@@ -47,7 +49,7 @@ impl HostPingStatus {
 
 #[derive(Debug, Clone)]
 pub struct PingResults {
-    pub results: HashMap<IpAddr, HostPingStatus>,
+    pub pings: HashMap<IpAddr, HostPingStatus>,
     pub avg_rtt: Option<Duration>,
     pub alive_host_num: usize,
 }
@@ -55,19 +57,19 @@ pub struct PingResults {
 impl PingResults {
     pub fn new() -> PingResults {
         PingResults {
-            results: HashMap::new(),
+            pings: HashMap::new(),
             avg_rtt: None,
             alive_host_num: 0,
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HostPingStatus> {
-        self.results.get(k)
+        self.pings.get(k)
     }
     pub fn enrichment(&mut self) {
         // avg rtt
         let mut total_rtt = 0.0;
         let mut total_num = 0;
-        for (_ip, ping_status) in &self.results {
+        for (_ip, ping_status) in &self.pings {
             let rtt = ping_status.rtt;
             match rtt {
                 Some(r) => {
@@ -87,14 +89,14 @@ impl PingResults {
         self.avg_rtt = avg_rtt;
 
         // alive hosts
-        self.alive_host_num = self.results.len();
+        self.alive_host_num = self.pings.len();
     }
 }
 
 impl fmt::Display for PingResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result_str = String::new();
-        for (ip, ping_ret) in &self.results {
+        for (ip, ping_ret) in &self.pings {
             let str = match ping_ret.status {
                 PingStatus::Up => format!("{ip} up"),
                 PingStatus::Down => format!("{ip} down"),
@@ -110,10 +112,11 @@ pub enum PingMethods {
     Syn,
     Ack,
     Udp,
+    Icmp,
     Icmpv6,
 }
 
-fn run_ping(
+fn threads_ping(
     method: PingMethods,
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -130,6 +133,7 @@ fn run_ping(
 
             let (ret, rtt) =
                 tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+            debug!("syn ret: {:?}", ret);
             match ret {
                 PortStatus::Open => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
@@ -143,6 +147,7 @@ fn run_ping(
 
             let (ret, rtt) =
                 tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+            debug!("ack ret: {:?}", ret);
             match ret {
                 PortStatus::Unfiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
@@ -156,18 +161,24 @@ fn run_ping(
 
             let (ret, rtt) =
                 udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+            debug!("udp ret: {:?}", ret);
             match ret {
                 PortStatus::Open => (PingStatus::Up, rtt),
-                PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
             }
         }
-        PingMethods::Icmpv6 => icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?,
+        PingMethods::Icmp => {
+            let (ret, rtt) = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?;
+            debug!("icmp ret: {:?}", ret);
+            (ret, rtt)
+        },
+        PingMethods::Icmpv6 => return Err(UnsupportedPingMethod::new().into()),
     };
     Ok((ping_status, rtt))
 }
 
-fn run_ping6(
+fn threads_ping6(
     method: PingMethods,
     src_ipv6: Ipv6Addr,
     src_port: u16,
@@ -217,6 +228,7 @@ fn run_ping6(
             }
         }
         PingMethods::Icmpv6 => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?,
+        PingMethods::Icmp => return Err(UnsupportedPingMethod::new().into()),
     };
     Ok((ping_status, rtt))
 }
@@ -253,7 +265,7 @@ pub fn ping(
                 let tx = tx.clone();
                 recv_size += 1;
                 pool.execute(move || {
-                    let ret = run_ping(
+                    let ret = threads_ping(
                         method,
                         src_ipv4,
                         src_port,
@@ -270,7 +282,7 @@ pub fn ping(
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
-                let ret = run_ping(method, src_ipv4, src_port, dst_ipv4, None, timeout);
+                let ret = threads_ping(method, src_ipv4, src_port, dst_ipv4, None, timeout);
                 match tx.send((dst_ipv4, ret)) {
                     _ => (),
                 }
@@ -285,7 +297,7 @@ pub fn ping(
         match pr {
             Ok((p, rtt)) => {
                 let pr = HostPingStatus::new(p, rtt);
-                ping_results.results.insert(dst_ipv4.into(), pr);
+                ping_results.pings.insert(dst_ipv4.into(), pr);
             }
             _ => (),
         }
@@ -325,7 +337,7 @@ pub fn ping6(
                 let tx = tx.clone();
                 recv_size += 1;
                 pool.execute(move || {
-                    let ret = run_ping6(
+                    let ret = threads_ping6(
                         method,
                         src_ipv6,
                         src_port,
@@ -342,7 +354,7 @@ pub fn ping6(
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
-                let ret = run_ping6(method, src_ipv6, src_port, dst_ipv6, None, timeout);
+                let ret = threads_ping6(method, src_ipv6, src_port, dst_ipv6, None, timeout);
                 match tx.send((dst_ipv6, ret)) {
                     _ => (),
                 }
@@ -357,7 +369,7 @@ pub fn ping6(
         match pr {
             Ok((p, rtt)) => {
                 let pr = HostPingStatus::new(p, rtt);
-                ping_results.results.insert(dst_ipv6.into(), pr);
+                ping_results.pings.insert(dst_ipv6.into(), pr);
             }
             _ => (),
         }
@@ -367,8 +379,7 @@ pub fn ping6(
 }
 
 /// TCP SYN Ping.
-/// This ping probe stays away from being similar to a SYN port scan,
-/// and to keep the probe stealthy,
+/// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_syn_ping(
     target: Target,
@@ -405,8 +416,7 @@ pub fn tcp_syn_ping6(
 }
 
 /// TCP ACK Ping.
-/// This ping probe stays away from being similar to a ACK port scan,
-/// and to keep the probe stealthy,
+/// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_ack_ping(
     target: Target,
@@ -443,8 +453,7 @@ pub fn tcp_ack_ping6(
 }
 
 /// UDP Ping.
-/// This ping probe stays away from being similar to a UDP port scan,
-/// and to keep the probe stealthy,
+/// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn udp_ping(
     target: Target,
@@ -481,7 +490,8 @@ pub fn udp_ping6(
 }
 
 /// ICMP Ping.
-/// In addition to the unusual TCP and UDP host discovery types discussed previously, we can send the standard packets sent by the ubiquitous ping program.
+/// In addition to the unusual TCP and UDP host discovery types discussed previously,
+/// we can send the standard packets sent by the ubiquitous ping program.
 /// We sends an ICMP type 8 (echo request) packet to the target IP addresses, expecting a type 0 (echo reply) in return from available hosts.
 /// As noted at the beginning of this chapter, many hosts and firewalls now block these packets, rather than responding as required by RFC 1122.
 /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
@@ -495,7 +505,7 @@ pub fn icmp_ping(
 ) -> Result<PingResults> {
     ping(
         target,
-        PingMethods::Icmpv6,
+        PingMethods::Icmp,
         src_ipv4,
         src_port,
         threads_num,
@@ -528,8 +538,10 @@ mod tests {
     use crate::Host6;
     use crate::Logger;
     use crate::Target;
-    use crate::DST_IPV4;
-    use crate::DST_IPV6;
+    use crate::DST_IPV4_REMOTE;
+    use crate::DST_IPV4_LOCAL;
+    use crate::DST_IPV6_REMOTE;
+    use crate::DST_IPV6_LOCAL;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         Logger::init_debug_logging()?;
@@ -537,10 +549,16 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4, Some(vec![22]));
+
+        let host = Host::new(DST_IPV4_REMOTE, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout)?;
-        println!("{}", ret);
+        println!("remote: {}\n", ret);
+
+        let host = Host::new(DST_IPV4_LOCAL, Some(vec![22]));
+        let target: Target = Target::new(vec![host]);
+        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout)?;
+        println!("local: {}\n", ret);
         Ok(())
     }
     #[test]
@@ -550,7 +568,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host6::new(DST_IPV6, Some(vec![22]));
+        let host = Host6::new(DST_IPV6_REMOTE, Some(vec![22]));
         let target: Target = Target::new6(vec![host]);
         let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout)?;
         println!("{}", ret);
@@ -563,7 +581,7 @@ mod tests {
         let src_port: Option<u16> = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(1, 0));
-        let host = Host::new(DST_IPV4, Some(vec![]));
+        let host = Host::new(DST_IPV4_REMOTE, Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout)?;
         println!("{}", ret);
@@ -573,8 +591,12 @@ mod tests {
     fn test_icmpv6_ping() -> Result<()> {
         Logger::init_debug_logging()?;
         let src_port: Option<u16> = None;
-        let src_ipv6 = None;
-        let host = Host6::new(DST_IPV6, Some(vec![]));
+        #[cfg(target_os = "linux")]
+        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse()?;
+        #[cfg(target_os = "freebsd")]
+        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe88:20d2".parse()?;
+        let src_ipv6 = Some(src_ipv6);
+        let host = Host6::new(DST_IPV6_LOCAL, Some(vec![]));
         let target: Target = Target::new6(vec![host]);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));

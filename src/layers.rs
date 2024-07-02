@@ -673,6 +673,26 @@ fn layer3_ipv4_system_route(
     dst_ipv4: Ipv4Addr,
 ) -> Result<(MacAddr, NetworkInterface)> {
     let mut sc = SYSTEM_CACHE.lock().expect("can not local network cache");
+
+    let interface = match find_interface_by_ip(src_ipv4.into()) {
+        Some(i) => i,
+        None => {
+            let interface = match sc.search_route(dst_ipv4.into())? {
+                Some(i) => i,
+                None => {
+                    // The system route table not contain this ipaddr,
+                    // so send it to the default route.
+                    let default_route = match sc.default_ipv4_route() {
+                        Some(d) => d,
+                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                    };
+                    default_route.dev
+                }
+            };
+            interface
+        }
+    };
+
     let dst_mac = match sc.search_mac(dst_ipv4.into()) {
         Some(m) => m,
         None => {
@@ -706,19 +726,6 @@ fn layer3_ipv4_system_route(
                 };
                 dst_mac
             }
-        }
-    };
-
-    let interface = match sc.search_route(dst_ipv4.into())? {
-        Some(i) => i,
-        None => {
-            // The system route table not contain this ipaddr,
-            // so send it to the default route.
-            let default_route = match sc.default_ipv4_route() {
-                Some(d) => d,
-                None => return Err(CanNotFoundRouterAddress::new().into()),
-            };
-            default_route.dev
         }
     };
 
@@ -955,6 +962,26 @@ fn layer3_ipv6_system_route(
     dst_ipv6: Ipv6Addr,
 ) -> Result<(MacAddr, NetworkInterface)> {
     let mut sc = SYSTEM_CACHE.lock().expect("can not local network cache");
+
+    let interface = match find_interface_by_ip(src_ipv6.into()) {
+        Some(i) => i,
+        None => {
+            let interface = match sc.search_route(dst_ipv6.into())? {
+                Some(i) => i,
+                None => {
+                    // The system route table not contain this ipaddr,
+                    // so send it to the default route.
+                    let default_route = match sc.default_ipv6_route() {
+                        Some(d) => d,
+                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                    };
+                    default_route.dev
+                }
+            };
+            interface
+        }
+    };
+
     let dst_mac = match sc.search_mac(dst_ipv6.into()) {
         Some(m) => m,
         None => {
@@ -988,19 +1015,6 @@ fn layer3_ipv6_system_route(
                 };
                 dst_mac
             }
-        }
-    };
-
-    let interface = match sc.search_route(dst_ipv6.into())? {
-        Some(i) => i,
-        None => {
-            // The system route table not contain this ipaddr,
-            // so send it to the default route.
-            let default_route = match sc.default_ipv6_route() {
-                Some(d) => d,
-                None => return Err(CanNotFoundRouterAddress::new().into()),
-            };
-            default_route.dev
         }
     };
 

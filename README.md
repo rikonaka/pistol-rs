@@ -112,7 +112,9 @@ fn main() -> Result<()> {
 ### 1. SYN Port Scan Example
 
 ```rust
-use pistol::{tcp_syn_scan, Host, Target};
+use pistol::scan::tcp_syn_scan;
+use pistol::Target;
+use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use anyhow::Result;
@@ -157,7 +159,9 @@ fn main() -> Result<()> {
 * 192.168.72.136 - Ubuntu 22.04
 
 ```rust
-use pistol::{os_detect, Host, Target};
+use pistol::os::os_detect;
+use pistol::Target;
+use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use anyhow::Result;
@@ -318,7 +322,9 @@ cpe:/o:linux:linux_kernel:4 auto
 * fe80::20c:29ff:feb6:8d99 - Ubuntu 22.04
 
 ```rust
-use pistol::{os_detect6, Host, Target};
+use pistol::os_detect6;
+use pistol::Target;
+use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use anyhow::Result;
@@ -413,8 +419,10 @@ cpe:/o:linux:linux_kernel:4
 * 192.168.1.51 - Ubuntu 22.04 (ssh: 22, httpd: 80)
 
 ```rust
-use pistol::{vs_scan, Host, Target};
+use pistol::vs::vs_scan;
 use pistol::vs::dbparser::ExcludePorts;
+use pistol::Target;
+use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use anyhow::Result;

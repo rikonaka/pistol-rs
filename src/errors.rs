@@ -271,6 +271,20 @@ impl InvalidRouteFormat {
 }
 impl Error for InvalidRouteFormat {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnsupportedPingMethod {}
+impl fmt::Display for UnsupportedPingMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "unsupported ping method")
+    }
+}
+impl UnsupportedPingMethod {
+    pub fn new() -> UnsupportedPingMethod {
+        UnsupportedPingMethod {}
+    }
+}
+impl Error for UnsupportedPingMethod {}
+
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsupportedSystemDetected {
