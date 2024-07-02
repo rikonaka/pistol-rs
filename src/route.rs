@@ -197,7 +197,7 @@ impl Route {
             dst
         };
 
-        let dst = IpNetwork::from_str(dst)?;
+        let dst = IpNetwork::from_str(&dst)?;
         let dev_name = line_split[3];
         let dev = find_interface_by_name(dev_name);
 
