@@ -98,7 +98,7 @@ impl DefaultRoute {
         let mut is_ipv4 = true;
         debug!("default route parse (unix): {}", line_split[1]);
         let via_str = if line_split[1].contains("%") {
-            let via_split = line_split[1]
+            let via_split: Vec<&str> = line_split[1]
                 .split("%")
                 .map(|x| x.trim())
                 .filter(|v| v.len() > 0)
