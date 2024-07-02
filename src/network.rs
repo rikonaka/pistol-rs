@@ -235,7 +235,7 @@ pub struct RouteTable {
 
 impl RouteTable {
     #[cfg(target_os = "linux")]
-    pub fn from_system() -> Result<RouteTable> {
+    pub fn init() -> Result<RouteTable> {
         let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
         let ipv4_output = String::from_utf8_lossy(&c.stdout);
         let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
@@ -284,7 +284,7 @@ impl RouteTable {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn from_system() -> Result<RouteTable> {
+    pub fn init() -> Result<RouteTable> {
         let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
         let output = String::from_utf8_lossy(&c.stdout);
         let lines: Vec<&str> = output
@@ -312,7 +312,7 @@ impl RouteTable {
                     default_ipv6_route = Some(d);
                 }
             } else {
-                if line_split.len() > 1 && (dst.contains(".") || dst.contains(":")) {
+                if line_split.len() >= 4 && (dst.contains(".") || dst.contains(":")) {
                     let r = Route::parse(line)?;
                     routes.push(r);
                 }
@@ -327,7 +327,7 @@ impl RouteTable {
         Ok(rt)
     }
     #[cfg(target_os = "windows")]
-    pub fn from_system() -> Result<RouteTable> {
+    pub fn init() -> Result<RouteTable> {
         // let c = Command::new("powershell")
         //     .args(["route", "print"])
         //     .output()?;
@@ -350,9 +350,111 @@ pub struct NetworkCache {
 }
 
 impl NetworkCache {
+    #[cfg(target_os = "linux")]
+    pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+        // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
+        // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
+        // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
+        // 192.168.1.128 dev ens36 lladdr a8:9c:ed:d5:00:4c STALE
+        // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
+        // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
+        let c = Command::new("sh").args(["-c", "ip neigh show"]).output()?;
+        let output = String::from_utf8_lossy(&c.stdout);
+        let lines: Vec<&str> = output
+            .lines()
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+
+        let mut ret = HashMap::new();
+        for line in lines {
+            let line_split: Vec<&str> = line
+                .split(" ")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
+            let max_iters = line_split.len();
+            let mut i = 0;
+            let ipaddr: IpAddr = line_split[0].parse()?;
+
+            while i < max_iters {
+                let item = line_split[i];
+                if item == "lladdr" {
+                    i += 1;
+                    let mac: MacAddr = line_split[i].parse()?;
+                    ret.insert(ipaddr, mac);
+                    break;
+                }
+                i += 1;
+            }
+        }
+        Ok(ret)
+    }
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
+    pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+        // # arp -a
+        // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
+        // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
+        // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 1168 seconds [ethernet]
+        // # ndp -a
+        // Neighbor                             Linklayer Address  Netif Expire    1s 5s
+        // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
+        let c = Command::new("sh").args(["-c", "arp -a"]).output()?;
+        let arp_output = String::from_utf8_lossy(&c.stdout);
+        let c = Command::new("sh").args(["-c", "ndp -a"]).output()?;
+        let ndp_output = String::from_utf8_lossy(&c.stdout);
+        let output = arp_output.to_string() + &ndp_output;
+        let lines: Vec<&str> = output
+            .lines()
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+
+        let mut ret = HashMap::new();
+        for line in line {
+            let line_split: Vec<&str> = line
+                .split(" ")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
+            if line_split[0].contains("?") {
+                // ipv4 cache
+                let ip_str = line_split[1].replace("(", "").replace(")", "");
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = line_split[3].parse()?;
+                ret.insert(ip, mac);
+            } else if line_split[0].contains(":") {
+                // ipv6 cache
+                let ip_str = if line_split[0].contains("%") {
+                    let ip_split: Vec<&str> = line_split[0]
+                        .split("%")
+                        .map(|x| x.trim())
+                        .filter(|v| v.len() > 0)
+                        .collect();
+                    ip_split[0]
+                } else {
+                    line_split[0]
+                };
+                let ip: IpAddr = ip_str.parse()?;
+                let mac: MacAddr = line_split[3].parse()?;
+                ret.insert(ip, mac);
+            }
+        }
+        Ok(ret)
+    }
+    #[cfg(target_os = "windows")]
+    pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+        // The Windows is not supported now.
+        Err(UnsupportedSystemDetected::new(String::from("windows")).into())
+    }
     pub fn init() -> Result<NetworkCache> {
-        let route_table = RouteTable::from_system()?;
-        let neighbor_cache = HashMap::new();
+        let route_table = RouteTable::init()?;
+        let neighbor_cache = NetworkCache::neighbor_cache_init()?;
         let lnc = NetworkCache {
             route_table,
             neighbor_cache,
@@ -366,6 +468,12 @@ impl NetworkCache {
         };
         mac
     }
+    pub fn default_ipv4_route(&self) -> Option<DefaultRoute> {
+        self.route_table.default_ipv4_route.clone()
+    }
+    pub fn default_ipv6_route(&self) -> Option<DefaultRoute> {
+        self.route_table.default_ipv6_route.clone()
+    }
 }
 
 #[cfg(test)]
@@ -374,10 +482,17 @@ mod tests {
     use pnet::datalink::interfaces;
     #[test]
     fn test_route_table() -> Result<()> {
-        let rt = RouteTable::from_system()?;
+        let rt = RouteTable::init()?;
         println!("{:?}", rt.default_ipv4_route);
         println!("{:?}", rt.default_ipv6_route);
         println!("{:?}", rt.routes);
+        Ok(())
+    }
+    #[test]
+    fn test_network_cache() -> Result<()> {
+        let nc = NetworkCache::init()?;
+        // println!("{:?}", nc);
+        println!("{:?}", nc.neighbor_cache);
         Ok(())
     }
     #[test]
