@@ -52,6 +52,7 @@ impl DefaultRoute {
             let item = line_split[i];
             if item == "via" {
                 i += 1;
+                debug!("default route parse: {}", line_split[i]);
                 let v: IpAddr = line_split[i].parse()?;
                 via = Some(v);
                 if line_split[i].contains(":") {
@@ -94,6 +95,7 @@ impl DefaultRoute {
             .collect();
 
         let mut is_ipv4 = true;
+        debug!("default route parse (unix): {}", line_split[1]);
         let via: IpAddr = line_split[1].parse()?;
         if line_split[1].contains(":") {
             is_ipv4 = false;
@@ -120,7 +122,7 @@ impl DefaultRoute {
 
 #[derive(Debug, Clone)]
 pub struct Route {
-    pub dst: String,           // Destination network or host address
+    pub dst: IpNetwork,        // Destination network or host address
     pub dev: NetworkInterface, // Device interface name
 }
 
@@ -135,7 +137,7 @@ impl Route {
             .collect();
         let max_iters = line_split.len();
         let mut i = 0;
-        let dst = line_split[0].to_string();
+        let dst = IpNetwork::from_str(line_split[0])?;
         let mut dev = None;
 
         while i < max_iters {
@@ -195,6 +197,7 @@ impl Route {
             dst
         };
 
+        let dst = IpNetwork::from_str(dst)?;
         let dev_name = line_split[3];
         let dev = find_interface_by_name(dev_name);
 
@@ -444,7 +447,9 @@ impl SystemCache {
     }
     pub fn init() -> Result<SystemCache> {
         let route_table = RouteTable::init()?;
+        debug!("route table done");
         let neighbor_cache = SystemCache::neighbor_cache_init()?;
+        debug!("neighbor cache done");
         let lnc = SystemCache {
             route_table,
             neighbor_cache,
@@ -465,7 +470,7 @@ impl SystemCache {
         debug!("search route: {}", ipaddr);
         let route_table = &self.route_table;
         for route in &route_table.routes {
-            let ipn = IpNetwork::from_str(&route.dst)?;
+            let ipn = route.dst;
             if ipn.contains(ipaddr) {
                 debug!(
                     "found route interface: {}, ip: {}, ipn: {}",
