@@ -34,7 +34,7 @@ pub struct DefaultRoute {
 
 impl DefaultRoute {
     #[cfg(target_os = "linux")]
-    pub fn parse(line: &str) -> Result<DefaultRoute> {
+    pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
         // default via 192.168.72.2 dev ens33
         let line_split: Vec<&str> = line
             .split(" ")
@@ -46,6 +46,7 @@ impl DefaultRoute {
         let dst = String::from("default");
         let mut via = None;
         let mut dev = None;
+        let mut is_ipv4 = true;
 
         while i < max_iters {
             let item = line_split[i];
@@ -53,6 +54,9 @@ impl DefaultRoute {
                 i += 1;
                 let v: IpAddr = line_split[i].parse()?;
                 via = Some(v);
+                if line_split[i].contains(":") {
+                    is_ipv4 = false;
+                }
             } else if item == "dev" {
                 i += 1;
                 let dev_name = line_split[i];
@@ -65,13 +69,13 @@ impl DefaultRoute {
         match via {
             Some(via) => match dev {
                 Some(dev) => {
-                    let ldr = DefaultRoute {
+                    let dr = DefaultRoute {
                         dst,
                         via,
                         dev,
                         raw: line.to_string(),
                     };
-                    return Ok(ldr);
+                    return Ok((dr, is_ipv4));
                 }
                 None => (),
             },
@@ -174,12 +178,23 @@ impl Route {
     ))]
     pub fn parse(line: &str) -> Result<Route> {
         // 127.0.0.1          link#2             UH          lo0
+        println!("line: {}", line);
         let line_split: Vec<&str> = line
             .split(" ")
             .map(|x| x.trim())
             .filter(|v| v.len() > 0)
             .collect();
         let dst = line_split[0].to_string();
+        let dst = if dst.contains("%") {
+            let dst_split: Vec<&str> = dst
+                .split("%")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
+            dst_split[0].to_string
+        } else {
+            dst
+        };
 
         let dev_name = line_split[3];
         let dev = find_interface_by_name(dev_name);
@@ -208,30 +223,43 @@ impl Route {
 
 #[derive(Debug, Clone)]
 pub struct RouteTable {
-    pub default_route: Option<DefaultRoute>,
+    pub default_ipv4_route: Option<DefaultRoute>,
+    pub default_ipv6_route: Option<DefaultRoute>,
     pub routes: Vec<Route>,
 }
 
 impl RouteTable {
     #[cfg(target_os = "linux")]
     pub fn from_system() -> Result<RouteTable> {
-        let c = Command::new("sh").args(["-c", "ip route"]).output()?;
-        let output = String::from_utf8_lossy(&c.stdout);
+        let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
+        let ipv4_output = String::from_utf8_lossy(&c.stdout);
+        let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
+        let ipv6_output = String::from_utf8_lossy(&c.stdout);
+        let output = ipv4_output.to_string() + &ipv6_output;
         let lines: Vec<&str> = output
             .lines()
             .map(|x| x.trim())
             .filter(|v| v.len() > 0)
             .collect();
 
-        let mut default_route = None;
+        let mut default_ipv4_route = None;
+        let mut default_ipv6_route = None;
         let mut routes = Vec::new();
 
         for line in lines {
-            let line_split: Vec<&str> = line.split(" ").collect();
+            let line_split: Vec<&str> = line
+                .split(" ")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
             let dst = line_split[0];
             if dst == "default" {
-                let d = DefaultRoute::parse(line)?;
-                default_route = Some(d);
+                let (d, is_ipv4) = DefaultRoute::parse(line)?;
+                if is_ipv4 {
+                    default_ipv4_route = Some(d);
+                } else {
+                    default_ipv6_route = Some(d);
+                }
             } else {
                 let r = Route::parse(line)?;
                 routes.push(r);
@@ -239,7 +267,8 @@ impl RouteTable {
         }
 
         let rt = RouteTable {
-            default_route,
+            default_ipv4_route,
+            default_ipv6_route,
             routes,
         };
         Ok(rt)
@@ -259,15 +288,24 @@ impl RouteTable {
             .filter(|v| v.len() > 0)
             .collect();
 
-        let mut default_route = None;
+        let mut default_ipv4_route = None;
+        let mut default_ipv6_route = None;
         let mut routes = Vec::new();
 
         for line in lines {
-            let line_split: Vec<&str> = line.split(" ").collect();
+            let line_split: Vec<&str> = line
+                .split(" ")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
             let dst = line_split[0];
             if dst == "default" {
-                let d = DefaultRoute::parse(line)?;
-                default_route = Some(d);
+                let (d, is_ipv4) = DefaultRoute::parse(line)?;
+                if is_ipv4 {
+                    default_ipv4_route = Some(d);
+                } else {
+                    default_ipv6_route = Some(d);
+                }
             } else {
                 let r = Route::parse(line)?;
                 routes.push(r);
@@ -275,7 +313,8 @@ impl RouteTable {
         }
 
         let rt = RouteTable {
-            default_route,
+            default_ipv4_route,
+            default_ipv6_route,
             routes,
         };
         Ok(rt)
@@ -329,7 +368,9 @@ mod tests {
     #[test]
     fn test_route_table() -> Result<()> {
         let rt = RouteTable::from_system()?;
-        println!("{:?}", rt);
+        println!("{:?}", rt.default_ipv4_route);
+        println!("{:?}", rt.default_ipv6_route);
+        println!("{:?}", rt.routes);
         Ok(())
     }
     #[test]
@@ -341,6 +382,13 @@ mod tests {
     }
     #[test]
     fn test_unix() -> Result<()> {
+        let input = "fe80::%em0/64";
+        let input_split: Vec<&str> = input
+            .split("%")
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+        let ip: IpAddr = input_split[0].parse()?;
         Ok(())
     }
 }
