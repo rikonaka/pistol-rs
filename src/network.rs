@@ -196,7 +196,7 @@ impl Route {
                 .map(|x| x.trim())
                 .filter(|v| v.len() > 0)
                 .collect();
-            dst_split[0].to_string
+            dst_split[0].to_string()
         } else {
             dst
         };
