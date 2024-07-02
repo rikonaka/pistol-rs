@@ -312,11 +312,7 @@ impl RouteTable {
                     default_ipv6_route = Some(d);
                 }
             } else {
-                if dst.contains(".")
-                    || dst.contains(":")
-                    || !dst.contains("Internet:")
-                    || !dst.contains("Internet6:")
-                {
+                if line_split.len() > 1 && (dst.contains(".") || dst.contains(":")) {
                     let r = Route::parse(line)?;
                     routes.push(r);
                 }
