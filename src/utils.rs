@@ -174,7 +174,7 @@ pub fn find_interface_by_subnetwork(ipaddr: IpAddr) -> Option<NetworkInterface> 
     for interface in interfaces() {
         for ip in &interface.ips {
             if ip.contains(ipaddr) {
-                debug!("found the interface: {}, by {}", interface.name, ipaddr);
+                debug!("found the interface (unix): {}, by {}", interface.name, ipaddr);
                 return Some(interface);
             }
         }

@@ -31,13 +31,9 @@ use crate::utils::find_interface_by_subnetwork;
 pub struct DefaultRoute {
     pub via: IpAddr,           // Next hop gateway address
     pub dev: NetworkInterface, // Device interface name
-    pub raw: String,           // The raw output
 }
 
 impl DefaultRoute {
-    pub fn raw(&self) -> String {
-        self.raw.clone()
-    }
     #[cfg(target_os = "linux")]
     pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
         // default via 192.168.72.2 dev ens33
@@ -76,7 +72,6 @@ impl DefaultRoute {
                     let dr = DefaultRoute {
                         via,
                         dev,
-                        raw: line.to_string(),
                     };
                     return Ok((dr, is_ipv4));
                 }
@@ -113,7 +108,6 @@ impl DefaultRoute {
                 let dr = DefaultRoute {
                     via,
                     dev,
-                    raw: line.to_string(),
                 };
                 // println!("{:?}", dr);
                 return Ok((dr, is_ipv4));
@@ -134,13 +128,9 @@ impl DefaultRoute {
 pub struct Route {
     pub dst: String,           // Destination network or host address
     pub dev: NetworkInterface, // Device interface name
-    pub raw: String,           // The raw output
 }
 
 impl Route {
-    pub fn raw(&self) -> String {
-        self.raw.clone()
-    }
     #[cfg(target_os = "linux")]
     pub fn parse(line: &str) -> Result<Route> {
         // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
@@ -170,7 +160,6 @@ impl Route {
                 let r = Route {
                     dst,
                     dev,
-                    raw: line.to_string(),
                 };
                 return Ok(r);
             }
@@ -213,7 +202,6 @@ impl Route {
                 let r = Route {
                     dst,
                     dev,
-                    raw: line.to_string(),
                 };
                 // println!("{:?}", r);
                 return Ok(r);

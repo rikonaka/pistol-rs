@@ -966,7 +966,7 @@ fn layer3_ipv6_system_route(
                 sc.update_neighbor_cache(dst_ipv6.into(), dst_mac);
                 dst_mac
             } else {
-                let default_route = match sc.default_ipv4_route() {
+                let default_route = match sc.default_ipv6_route() {
                     Some(r) => r,
                     None => return Err(CanNotFoundRouterAddress::new().into()),
                 };
@@ -996,7 +996,7 @@ fn layer3_ipv6_system_route(
         None => {
             // The system route table not contain this ipaddr,
             // so send it to the default route.
-            let default_route = match sc.default_ipv4_route() {
+            let default_route = match sc.default_ipv6_route() {
                 Some(d) => d,
                 None => return Err(CanNotFoundRouterAddress::new().into()),
             };
