@@ -183,7 +183,7 @@ impl Route {
     ))]
     pub fn parse(line: &str) -> Result<Route> {
         // 127.0.0.1          link#2             UH          lo0
-        println!("line: {}", line);
+        // println!("line: {}", line);
         let line_split: Vec<&str> = line
             .split(" ")
             .map(|x| x.trim())
@@ -441,7 +441,7 @@ impl NetworkCache {
                     line_split[0]
                 };
                 let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = line_split[3].parse()?;
+                let mac: MacAddr = line_split[1].parse()?;
                 ret.insert(ip, mac);
             }
         }
