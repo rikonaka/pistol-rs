@@ -172,7 +172,7 @@ fn threads_ping(
             let (ret, rtt) = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?;
             debug!("icmp ret: {:?}", ret);
             (ret, rtt)
-        },
+        }
         PingMethods::Icmpv6 => return Err(UnsupportedPingMethod::new().into()),
     };
     Ok((ping_status, rtt))
@@ -538,10 +538,10 @@ mod tests {
     use crate::Host6;
     use crate::Logger;
     use crate::Target;
-    use crate::DST_IPV4_REMOTE;
     use crate::DST_IPV4_LOCAL;
-    use crate::DST_IPV6_REMOTE;
+    use crate::DST_IPV4_REMOTE;
     use crate::DST_IPV6_LOCAL;
+    use crate::DST_IPV6_REMOTE;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         Logger::init_debug_logging()?;

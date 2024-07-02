@@ -86,7 +86,7 @@ impl HostPortScanStatus {
 
 #[derive(Debug, Clone)]
 pub struct PortScanResults {
-    pub results: HashMap<IpAddr, HostPortScanStatus>,
+    pub ports: HashMap<IpAddr, HostPortScanStatus>,
     pub avg_rtt: Option<Duration>,
     pub alive_host_num: usize,
 }
@@ -94,19 +94,19 @@ pub struct PortScanResults {
 impl PortScanResults {
     pub fn new() -> PortScanResults {
         PortScanResults {
-            results: HashMap::new(),
+            ports: HashMap::new(),
             avg_rtt: None,
             alive_host_num: 0,
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HostPortScanStatus> {
-        self.results.get(k)
+        self.ports.get(k)
     }
     pub fn enrichment(&mut self) {
         // avg rtt
         let mut total_rtt = 0.0;
         let mut total_num = 0;
-        for (_ip, ping_status) in &self.results {
+        for (_ip, ping_status) in &self.ports {
             let rtt = ping_status.rtt;
             match rtt {
                 Some(r) => {
@@ -127,7 +127,7 @@ impl PortScanResults {
 
         // alive hosts
         let mut total_alive = 0;
-        for (_ip, ping_status) in &self.results {
+        for (_ip, ping_status) in &self.ports {
             let mut alive = false;
             for (_port, status) in &ping_status.status {
                 match status {
@@ -149,7 +149,7 @@ impl PortScanResults {
 impl fmt::Display for PortScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result_str = String::new();
-        for (ip, ps) in &self.results {
+        for (ip, ps) in &self.ports {
             for (port, status) in &ps.status {
                 let status_str = match status {
                     PortStatus::Open => format!("{ip} {port} open"),
@@ -506,7 +506,7 @@ pub fn scan(
     for v in iter {
         match v {
             Ok((dst_ipv4, dst_port, scan_ret, rtt)) => {
-                match tcpudp_ret.results.get_mut(&dst_ipv4.into()) {
+                match tcpudp_ret.ports.get_mut(&dst_ipv4.into()) {
                     Some(ps) => {
                         ps.status.insert(dst_port, scan_ret);
                         match ps.rtt {
@@ -521,7 +521,7 @@ pub fn scan(
                             Some(_) => (),
                             None => ps.rtt = rtt,
                         }
-                        tcpudp_ret.results.insert(dst_ipv4.into(), ps);
+                        tcpudp_ret.ports.insert(dst_ipv4.into(), ps);
                     }
                 }
             }
@@ -576,7 +576,7 @@ pub fn scan6(
     for v in iter {
         match v {
             Ok((dst_ipv6, dst_port, scan_ret, rtt)) => {
-                match port_scan_ret.results.get_mut(&dst_ipv6.into()) {
+                match port_scan_ret.ports.get_mut(&dst_ipv6.into()) {
                     Some(ps) => {
                         ps.status.insert(dst_port, scan_ret);
                         match ps.rtt {
@@ -591,7 +591,7 @@ pub fn scan6(
                             Some(_) => (),
                             None => ps.rtt = rtt,
                         }
-                        port_scan_ret.results.insert(dst_ipv6.into(), ps);
+                        port_scan_ret.ports.insert(dst_ipv6.into(), ps);
                     }
                 }
             }

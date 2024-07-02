@@ -36,7 +36,7 @@ use super::rr::TECNRR6;
 use super::rr::TXRR6;
 use super::rr::U1RR6;
 use super::Linear;
-use super::NmapOsDetectRet6;
+use super::NmapOsDetect6;
 
 // EXAMPLE
 // SCAN(V=5.61TEST1%E=6%D=9/27%OT=22%CT=443%CU=42192%PV=N%DS=5%DC=T%G=Y%TM=4E82908D%P=x86_64-unknown-linux-gnu)
@@ -1068,8 +1068,8 @@ fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
     sum.sqrt()
 }
 
-fn isort(input: &[NmapOsDetectRet6]) -> Vec<NmapOsDetectRet6> {
-    let find_max_prob = |x: &[NmapOsDetectRet6]| -> usize {
+fn isort(input: &[NmapOsDetect6]) -> Vec<NmapOsDetect6> {
+    let find_max_prob = |x: &[NmapOsDetect6]| -> usize {
         let mut max_value = 0.0;
         for a in x {
             if a.score > max_value {
@@ -1107,7 +1107,7 @@ pub fn os_probe6(
     top_k: usize,
     linear: Linear,
     timeout: Duration,
-) -> Result<(PistolFingerprint6, Vec<NmapOsDetectRet6>)> {
+) -> Result<(PistolFingerprint6, Vec<NmapOsDetect6>)> {
     // Check target.
     let dst_mac = match find_interface_by_ip(src_ipv6.into()) {
         Some(interface) => match interface.mac {
@@ -1147,9 +1147,9 @@ pub fn os_probe6(
     let predict = predict_value(&features, &linear.w);
     // println!("{:?}", predict);
 
-    let mut detect_rets: Vec<NmapOsDetectRet6> = Vec::new();
+    let mut detect_rets: Vec<NmapOsDetect6> = Vec::new();
     for (i, (name, score)) in zip(&linear.namelist, &predict).into_iter().enumerate() {
-        let dr = NmapOsDetectRet6 {
+        let dr = NmapOsDetect6 {
             name: name.to_string(),
             osclass: linear.cpe[i].osclass.to_vec(),
             cpe: linear.cpe[i].cpe.to_vec(),

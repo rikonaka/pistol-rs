@@ -33,13 +33,13 @@ pub mod packet6;
 pub mod rr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsDetectRet {
+pub struct NmapOsDetect {
     pub score: usize,
     pub total: usize,
     pub db: NmapOsDb,
 }
 
-impl fmt::Display for NmapOsDetectRet {
+impl fmt::Display for NmapOsDetect {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
         let s = format!(">>> Score:\n{}/{}\n", self.score, self.total);
@@ -91,7 +91,7 @@ impl fmt::Display for NmapOsDetectRet {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsDetectRet6 {
+pub struct NmapOsDetect6 {
     pub name: String,
     pub osclass: Vec<Vec<String>>,
     pub cpe: Vec<String>,
@@ -99,7 +99,7 @@ pub struct NmapOsDetectRet6 {
     pub label: usize,
 }
 
-impl fmt::Display for NmapOsDetectRet6 {
+impl fmt::Display for NmapOsDetect6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!(">>> Score:\n{:.2}%\n", self.score * 100.0);
         output += &format!(">>> Fingerprint:\n{}\n", self.name);
@@ -127,14 +127,11 @@ impl fmt::Display for NmapOsDetectRet6 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostOsDetectStatus {
     pub fingerprint: PistolFingerprint,
-    pub detects: Vec<NmapOsDetectRet>,
+    pub detects: Vec<NmapOsDetect>,
 }
 
 impl HostOsDetectStatus {
-    pub fn new(
-        fingerprint: PistolFingerprint,
-        detects: Vec<NmapOsDetectRet>,
-    ) -> HostOsDetectStatus {
+    pub fn new(fingerprint: PistolFingerprint, detects: Vec<NmapOsDetect>) -> HostOsDetectStatus {
         HostOsDetectStatus {
             fingerprint,
             detects,
@@ -144,24 +141,24 @@ impl HostOsDetectStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResults {
-    pub results: HashMap<Ipv4Addr, HostOsDetectStatus>,
+    pub oss: HashMap<Ipv4Addr, HostOsDetectStatus>,
 }
 
 impl OsDetectResults {
     pub fn new() -> OsDetectResults {
         OsDetectResults {
-            results: HashMap::new(),
+            oss: HashMap::new(),
         }
     }
     pub fn get(&self, k: &Ipv4Addr) -> Option<&HostOsDetectStatus> {
-        self.results.get(k)
+        self.oss.get(k)
     }
 }
 
 impl fmt::Display for OsDetectResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
-        for (ipv4, oss) in &self.results {
+        for (ipv4, oss) in &self.oss {
             let fingerprint = &oss.fingerprint;
             let detect_ret = &oss.detects;
             output += &format!(">>> IP:\n{ipv4}\n");
@@ -178,13 +175,13 @@ impl fmt::Display for OsDetectResults {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostOsDetectStatus6 {
     pub fingerprint: PistolFingerprint6,
-    pub detects: Vec<NmapOsDetectRet6>,
+    pub detects: Vec<NmapOsDetect6>,
 }
 
 impl HostOsDetectStatus6 {
     pub fn new(
         fingerprint: PistolFingerprint6,
-        detects: Vec<NmapOsDetectRet6>,
+        detects: Vec<NmapOsDetect6>,
     ) -> HostOsDetectStatus6 {
         HostOsDetectStatus6 {
             fingerprint,
@@ -195,24 +192,24 @@ impl HostOsDetectStatus6 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResults6 {
-    pub results: HashMap<Ipv6Addr, HostOsDetectStatus6>,
+    pub oss: HashMap<Ipv6Addr, HostOsDetectStatus6>,
 }
 
 impl OsDetectResults6 {
     pub fn new() -> OsDetectResults6 {
         OsDetectResults6 {
-            results: HashMap::new(),
+            oss: HashMap::new(),
         }
     }
     pub fn get(&self, k: &Ipv6Addr) -> Option<&HostOsDetectStatus6> {
-        self.results.get(k)
+        self.oss.get(k)
     }
 }
 
 impl fmt::Display for OsDetectResults6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = String::new();
-        for (ipv6, oss) in &self.results {
+        for (ipv6, oss) in &self.oss {
             let fingerprint = &oss.fingerprint;
             let detect_ret = &oss.detects;
             output += &format!(">>> IP:\n{ipv6}\n");
@@ -309,7 +306,7 @@ pub fn os_detect(
         match r {
             Ok((fingerprint, detect_ret)) => {
                 let oss = HostOsDetectStatus::new(fingerprint, detect_ret);
-                ret.results.insert(ipv4, oss);
+                ret.oss.insert(ipv4, oss);
             }
             Err(e) => return Err(e),
         }
@@ -432,7 +429,7 @@ pub fn os_detect6(
         match r {
             Ok((fingerprint, detect_ret)) => {
                 let oss = HostOsDetectStatus6::new(fingerprint, detect_ret);
-                ret.results.insert(ipv6, oss);
+                ret.oss.insert(ipv6, oss);
             }
             Err(e) => return Err(e),
         }

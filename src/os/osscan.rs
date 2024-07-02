@@ -21,7 +21,7 @@ use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::os::NmapOsDetectRet;
+use crate::os::NmapOsDetect;
 use crate::utils::find_interface_by_ip;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
@@ -1626,7 +1626,7 @@ pub fn os_probe(
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
-) -> Result<(PistolFingerprint, Vec<NmapOsDetectRet>)> {
+) -> Result<(PistolFingerprint, Vec<NmapOsDetect>)> {
     // Check target.
     let dst_mac = match find_interface_by_ip(src_ipv4.into()) {
         Some(interface) => match interface.mac {
@@ -1704,7 +1704,7 @@ pub fn os_probe(
 
             let mut dr_vec = Vec::new();
             for i in top_k_index_vec {
-                let dr = NmapOsDetectRet {
+                let dr = NmapOsDetect {
                     score: score_vec[i],
                     total: total_vec[i],
                     db: nmap_os_db[i].clone(),
