@@ -539,7 +539,7 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(DST_IPV4, Some(vec![22]));
         let target: Target = Target::new(vec![host]);
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout)?;
         println!("{}", ret);
         Ok(())
     }
@@ -552,7 +552,7 @@ mod tests {
         let timeout = Some(Duration::new(3, 0));
         let host = Host6::new(DST_IPV6, Some(vec![22]));
         let target: Target = Target::new6(vec![host]);
-        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout)?;
         println!("{}", ret);
         Ok(())
     }
@@ -565,7 +565,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let host = Host::new(DST_IPV4, Some(vec![]));
         let target: Target = Target::new(vec![host]);
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();
+        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout)?;
         println!("{}", ret);
         Ok(())
     }
@@ -578,7 +578,7 @@ mod tests {
         let target: Target = Target::new6(vec![host]);
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout).unwrap();
+        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout)?;
         println!("{}", ret);
         Ok(())
     }

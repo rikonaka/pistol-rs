@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::debug;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::ipnetwork::IpNetwork;
@@ -475,10 +476,12 @@ impl SystemCache {
         self.neighbor_cache.insert(ipaddr, mac);
     }
     pub fn search_route(&self, ipaddr: IpAddr) -> Result<Option<NetworkInterface>> {
+        debug!("search route: {}", ipaddr);
         let route_table = &self.route_table;
         for route in &route_table.routes {
             let ipn = IpNetwork::from_str(&route.dst)?;
             if ipn.contains(ipaddr) {
+                debug!("found route interface: {}", route.dev.name);
                 return Ok(Some(route.dev.clone()));
             }
         }
