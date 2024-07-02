@@ -532,6 +532,7 @@ mod tests {
     use crate::DST_IPV6;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
+        Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
@@ -557,10 +558,11 @@ mod tests {
     }
     #[test]
     fn test_icmp_ping() -> Result<()> {
+        Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let threads_num: usize = 8;
-        let timeout = Some(Duration::new(3, 0));
+        let timeout = Some(Duration::new(1, 0));
         let host = Host::new(DST_IPV4, Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout).unwrap();

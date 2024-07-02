@@ -1,7 +1,6 @@
 use anyhow::Result;
 use dns_lookup::lookup_host;
 use log::debug;
-use log::warn;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::DataLinkReceiver;
@@ -37,11 +36,9 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
-use std::process::Command;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
@@ -49,15 +46,14 @@ use subnetwork::Ipv6;
 
 use crate::errors::CanNotFoundInterface;
 use crate::errors::CanNotFoundMacAddress;
+use crate::errors::CanNotFoundRouteMacAddress;
 use crate::errors::CanNotFoundRouterAddress;
 use crate::errors::CreateDatalinkChannelFailed;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
-use crate::utils::find_interface_loopback;
-use crate::utils::find_interface_loopback6;
 use crate::utils::get_threads_pool;
-use crate::NETWORK;
+use crate::SYSTEM_CACHE;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -608,487 +604,6 @@ pub fn layer2_send(
     }
 }
 
-fn unix_get_default_shell() -> String {
-    let shell_name = if cfg!(target_os = "freebsd") || cfg!(target_os = "netbsd") {
-        "sh"
-    } else if cfg!(target_os = "openbsd") {
-        "ksh"
-    } else if cfg!(target_os = "macos") {
-        "zsh"
-    } else {
-        "sh"
-    };
-    shell_name.to_string()
-}
-
-pub fn system_route() -> Result<Option<Ipv4Addr>> {
-    if cfg!(target_os = "linux") {
-        // ip route (default)
-        let c = Command::new("bash").args(["-c", "ip route"]).output()?;
-        // default via 192.168.72.2 dev ens33
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        for line in lines {
-            if line.contains("default") {
-                let l_split: Vec<&str> = line
-                    .split(" ")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
-                if l_split.len() > 2 {
-                    let route_ipv4_str = l_split[2];
-                    match route_ipv4_str.parse() {
-                        Ok(route_ipv4) => return Ok(Some(route_ipv4)),
-                        Err(_) => (), // ignore the error
-                    }
-                }
-            }
-        }
-    } else if cfg!(target_os = "windows") {
-        // route print
-        let c = Command::new("powershell")
-            .args(["route", "print"])
-            .output()?;
-        // 0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.30    281
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        for line in lines {
-            if line.contains("0.0.0.0") {
-                let l_split: Vec<&str> = line
-                    .split(" ")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
-                if l_split.len() > 2 {
-                    let route_ipv4_str = l_split[2];
-                    match route_ipv4_str.parse() {
-                        Ok(route_ipv4) => return Ok(Some(route_ipv4)),
-                        Err(_) => (), // ignore the error
-                    }
-                }
-            }
-        }
-    } else if cfg!(target_os = "freebsd")
-        || cfg!(target_os = "openbsd")
-        || cfg!(target_os = "netbsd")
-        || cfg!(target_os = "macos")
-    {
-        let shell_name = unix_get_default_shell();
-        // route -n get default
-        let c = Command::new(shell_name)
-            .args(["-c", "route -n get default"])
-            .output()?;
-        //    route to: 0.0.0.0
-        // destination: 0.0.0.0
-        //        mask: 0.0.0.0
-        //     gateway: 192.168.72.2
-        //         fib: 0
-        //   interface: em0
-        //       flags: <UP,GATEWAY,DONE,STATIC>
-        //   recvpipe  sendpipe  ssthresh  rtt,msec    mtu        weight    expire
-        //     0         0         0         0      1500         1         0
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        for line in lines {
-            if line.contains("gateway") {
-                let l_split: Vec<&str> = line
-                    .split(":")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
-                if l_split.len() > 1 {
-                    let route_ipv4_str = l_split[1];
-                    match route_ipv4_str.parse() {
-                        Ok(route_ipv4) => return Ok(Some(route_ipv4)),
-                        Err(_) => (), // ignore the error
-                    }
-                }
-            }
-        }
-    }
-    Ok(None)
-}
-
-pub fn system_route6() -> Result<Option<Ipv6Addr>> {
-    if cfg!(target_os = "linux") {
-        // ip route (default)
-        let c = Command::new("bash").args(["-c", "ip -6 route"]).output()?;
-        // 240e:34c:85:e4d0::/64 dev ens36 proto kernel metric 256 expires 86372sec pref medium
-        // fe80::/64 dev ens33 proto kernel metric 256 pref medium
-        // fe80::/64 dev ens36 proto kernel metric 256 pref medium
-        // default via fe80::4a5f:8ff:fee0:1394 dev ens36 proto ra metric 1024 expires 1772sec hoplimit 64 pref medium
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        for line in lines {
-            if line.contains("default") {
-                let l_split: Vec<&str> = line
-                    .split(" ")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
-                if l_split.len() > 2 {
-                    let route_ipv6_str = l_split[2];
-                    match route_ipv6_str.parse() {
-                        Ok(route_ipv6) => return Ok(Some(route_ipv6)),
-                        Err(_) => (), // ignore the error
-                    }
-                }
-            }
-        }
-    } else if cfg!(target_os = "windows") {
-        // route print
-        let c = Command::new("powershell")
-            .args(["route", "print"])
-            .output()?;
-        // 16    281 ::/0                     fe80::4a5f:8ff:fee0:1394
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\r\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        for line in lines {
-            if line.contains("::/0") {
-                let l_split: Vec<&str> = line
-                    .split(" ")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
-                if l_split.len() > 3 {
-                    let route_ipv6_str = l_split[3];
-                    match route_ipv6_str.parse() {
-                        Ok(route_ipv6) => return Ok(Some(route_ipv6)),
-                        Err(_) => (), // ignore the error
-                    }
-                }
-            }
-        }
-    } else if cfg!(target_os = "freebsd")
-        || cfg!(target_os = "openbsd")
-        || cfg!(target_os = "netbsd")
-        || cfg!(target_os = "macos")
-    {
-        let shell_name = unix_get_default_shell();
-        // route -n get default
-        let c = Command::new(shell_name)
-            .args(["-c", "route -n get -inet6 default"])
-            .output()?;
-        //    route to: 0.0.0.0
-        // destination: 0.0.0.0
-        //        mask: 0.0.0.0
-        //     gateway: 192.168.72.2
-        //         fib: 0
-        //   interface: em0
-        //       flags: <UP,GATEWAY,DONE,STATIC>
-        //   recvpipe  sendpipe  ssthresh  rtt,msec    mtu        weight    expire
-        //     0         0         0         0      1500         1         0
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        for line in lines {
-            if line.contains("gateway:") {
-                let l_split: Vec<&str> = line
-                    .split(":")
-                    .filter(|v| v.len() > 0)
-                    .map(|x| x.trim())
-                    .collect();
-                if l_split.len() > 1 {
-                    let route_ipv6_str = l_split[1];
-                    match route_ipv6_str.parse() {
-                        Ok(route_ipv6) => return Ok(Some(route_ipv6)),
-                        Err(_) => (), // ignore the error
-                    }
-                }
-            }
-        }
-    }
-    Ok(None)
-}
-
-pub fn system_neighbour_cache() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
-    if cfg!(target_os = "linux") {
-        // ip neighbour
-        let c = Command::new("bash").args(["-c", "ip neighbour"]).output()?;
-        // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
-        // 192.168.72.254 dev ens33 lladdr 00:50:56:fa:d4:85 STALE
-        // 192.168.72.2 dev ens33 lladdr 00:50:56:ff:8c:06 STALE
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines {
-            let l_split: Vec<&str> = line
-                .split(" ")
-                .filter(|v| v.len() > 0)
-                .map(|x| x.trim())
-                .collect();
-            if l_split.len() > 4 {
-                let ip_str = l_split[0];
-                // let device = l_split[2];
-                let mac_str = l_split[4];
-                match ip_str.parse() {
-                    Ok(ip) => match mac_str.parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(_) => (),
-                    },
-                    Err(_) => (),
-                }
-            }
-        }
-        return Ok(Some(ret));
-    } else if cfg!(target_os = "windows") {
-        // Get-NetNeighbor
-        let c = Command::new("powershell")
-            .args(["Get-NetNeighbor"])
-            .output()?;
-        // ifIndex IPAddress                                          LinkLayerAddress      State       PolicyStore
-        // ------- ---------                                          ----------------      -----       -----------
-        // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
-        // 17      ff02::1:ffd0:8c47                                  33-33-FF-D0-8C-47     Permanent   ActiveStore
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\r\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines[2..].to_vec() {
-            let l_split: Vec<&str> = line
-                .split(" ")
-                .filter(|v| v.len() > 0)
-                .map(|x| x.trim())
-                .collect();
-            if l_split.len() > 2 {
-                let ip_str = l_split[1];
-                let mac_str = l_split[2].replace("-", ":");
-                match ip_str.parse() {
-                    Ok(ip) => match mac_str.parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(_) => (),
-                    },
-                    Err(_) => (),
-                }
-            }
-        }
-        return Ok(Some(ret));
-    } else if cfg!(target_os = "freebsd")
-        || cfg!(target_os = "openbsd")
-        || cfg!(target_os = "netbsd")
-        || cfg!(target_os = "macos")
-    {
-        let shell_name = unix_get_default_shell();
-        // route -n get default
-        let c = Command::new(shell_name).args(["-c", "arp -a"]).output()?;
-        // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1198 seconds [ethernet]
-        // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
-        // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 817 seconds [ethernet]
-        // ? (192.168.72.254) at 00:50:56:e4:a4:32 on em0 expires in 982 seconds [ethernet]
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines {
-            let l_split: Vec<&str> = line
-                .split(" ")
-                .filter(|v| v.len() > 0)
-                .map(|x| x.trim())
-                .collect();
-            if l_split.len() > 3 {
-                let ip_str = l_split[1].replace("(", "").replace(")", "");
-                let mac_str = l_split[3];
-                match ip_str.parse() {
-                    Ok(ip) => match mac_str.parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(_) => (),
-                    },
-                    Err(_) => (),
-                }
-            }
-        }
-        return Ok(Some(ret));
-    }
-    Ok(None)
-}
-
-pub fn system_neighbour_cache6() -> Result<Option<HashMap<IpAddr, MacAddr>>> {
-    if cfg!(target_os = "linux") {
-        // ip neighbour
-        let c = Command::new("bash")
-            .args(["-c", "ip -6 neighbour"])
-            .output()?;
-        // fe80::4a5f:8ff:fee0:1394 dev ens33 FAILED
-        // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines {
-            let l_split: Vec<&str> = line
-                .split(" ")
-                .filter(|v| v.len() > 0)
-                .map(|x| x.trim())
-                .collect();
-            if l_split.len() > 4 {
-                let ip_str = l_split[0];
-                // let device = l_split[2];
-                let mac_str = l_split[4];
-                match ip_str.parse() {
-                    Ok(ip) => match mac_str.parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(_) => (),
-                    },
-                    Err(_) => (),
-                }
-            }
-        }
-        return Ok(Some(ret));
-    } else if cfg!(target_os = "windows") {
-        // Get-NetNeighbor
-        let c = Command::new("powershell")
-            .args(["Get-NetNeighbor"])
-            .output()?;
-        // ifIndex IPAddress                                          LinkLayerAddress      State       PolicyStore
-        // ------- ---------                                          ----------------      -----       -----------
-        // 17      ff15::efc0:988f                                    33-33-EF-C0-98-8F     Permanent   ActiveStore
-        // 17      ff02::1:ffd0:8c47                                  33-33-FF-D0-8C-47     Permanent   ActiveStore
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines {
-            let l_split: Vec<&str> = line
-                .split(" ")
-                .filter(|v| v.len() > 0)
-                .map(|x| x.trim())
-                .collect();
-            if l_split.len() > 2 {
-                let ip_str = l_split[1];
-                let mac_str = l_split[2].replace("-", ":");
-                match ip_str.parse() {
-                    Ok(ip) => match mac_str.parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(_) => (),
-                    },
-                    Err(_) => (),
-                }
-            }
-        }
-        return Ok(Some(ret));
-    } else if cfg!(target_os = "freebsd")
-        || cfg!(target_os = "openbsd")
-        || cfg!(target_os = "netbsd")
-        || cfg!(target_os = "macos")
-    {
-        let shell_name = unix_get_default_shell();
-        // route -n get default
-        let c = Command::new(shell_name).args(["-c", "ndp -a"]).output()?;
-        // Neighbor                             Linklayer Address  Netif Expire    1s 5s
-        // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .split("\n")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines {
-            let l_split: Vec<&str> = line
-                .split(" ")
-                .filter(|v| v.len() > 0)
-                .map(|x| x.trim())
-                .collect();
-            if l_split.len() > 1 {
-                let ip_str_split: Vec<&str> = l_split[0].split("%").map(|x| x.trim()).collect();
-                let ip_str = ip_str_split[0];
-                let mac_str = l_split[1];
-                match ip_str.parse() {
-                    Ok(ip) => match mac_str.parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(_) => (),
-                    },
-                    Err(_) => (),
-                }
-            }
-        }
-        return Ok(Some(ret));
-    }
-    Ok(None)
-}
-
-pub fn search_system_neighbour_cache(ip: IpAddr) -> Result<Option<MacAddr>> {
-    let ret = system_neighbour_cache()?;
-    match ret {
-        Some(r) => {
-            for (i, m) in r {
-                if i == ip {
-                    return Ok(Some(m));
-                }
-            }
-            Ok(None)
-        }
-        None => Ok(None),
-    }
-}
-
-pub fn search_system_neighbour_cache6(ip: IpAddr) -> Result<Option<MacAddr>> {
-    let ret = system_neighbour_cache6()?;
-    match ret {
-        Some(r) => {
-            for (i, m) in r {
-                if i == ip {
-                    return Ok(Some(m));
-                }
-            }
-            Ok(None)
-        }
-        None => Ok(None),
-    }
-}
-
 pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
     debug!("get mac from arp");
     let re = EthernetPacket::new(ethernet_buff).unwrap();
@@ -1153,32 +668,61 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Optio
     }
 }
 
-fn network_search_mac(ipaddr: IpAddr) -> Result<Option<MacAddr>> {
-    let mac = if cfg!(target_os = "windows") {
-        None
-    } else if cfg!(target_os = "linux") {
-        let ln = NETWORK.lock().expect("lock linux table failed");
-        ln.search_mac(ipaddr)
-    } else if cfg!(target_os = "freebsd")
-        || cfg!(target_os = "openbsd")
-        || cfg!(target_os = "netbsd")
-        || cfg!(target_os = "macos")
-    {
-        None
-    } else {
-        None
+fn layer3_ipv4_system_route(
+    src_ipv4: Ipv4Addr,
+    dst_ipv4: Ipv4Addr,
+) -> Result<(MacAddr, NetworkInterface)> {
+    let mut sc = SYSTEM_CACHE.lock().expect("can not local network cache");
+    let dst_mac = match sc.search_mac(dst_ipv4.into()) {
+        Some(m) => m,
+        None => {
+            if dst_ipv4_in_local(dst_ipv4) {
+                let dst_mac = match arp(src_ipv4, dst_ipv4)? {
+                    (Some(m), Some(_rtt)) => m,
+                    (_, _) => return Err(CanNotFoundMacAddress::new().into()),
+                };
+                sc.update_neighbor_cache(dst_ipv4.into(), dst_mac);
+                dst_mac
+            } else {
+                let default_route = match sc.default_ipv4_route() {
+                    Some(r) => r,
+                    None => return Err(CanNotFoundRouterAddress::new().into()),
+                };
+                let dst_mac = match default_route.via {
+                    IpAddr::V4(default_route_ipv4) => {
+                        let dst_mac = match sc.search_mac(default_route_ipv4.into()) {
+                            Some(m) => m,
+                            None => match arp(src_ipv4, default_route_ipv4)? {
+                                (Some(m), Some(_rtt)) => {
+                                    sc.update_neighbor_cache(default_route_ipv4.into(), m);
+                                    m
+                                }
+                                (_, _) => return Err(CanNotFoundRouteMacAddress::new().into()),
+                            },
+                        };
+                        dst_mac
+                    }
+                    _ => return Err(CanNotFoundRouterAddress::new().into()),
+                };
+                dst_mac
+            }
+        }
     };
-    Ok(mac)
-}
 
-fn network_get_route_ip() -> Result<Option<IpAddr>> {
-    Ok(None)
-}
+    let interface = match sc.search_route(dst_ipv4.into())? {
+        Some(i) => i,
+        None => {
+            // The system route table not contain this ipaddr,
+            // so send it to the default route.
+            let default_route = match sc.default_ipv4_route() {
+                Some(d) => d,
+                None => return Err(CanNotFoundRouterAddress::new().into()),
+            };
+            default_route.dev
+        }
+    };
 
-fn layer2_ipv4_to_mac(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(MacAddr, bool)> {
-    let mac = MacAddr::new(0, 0, 0, 0, 0, 0);
-    let dst_is_loopback = false;
-    Ok((mac, dst_is_loopback))
+    Ok((dst_mac, interface))
 }
 
 pub fn layer3_ipv4_send(
@@ -1188,21 +732,10 @@ pub fn layer3_ipv4_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
-    let (dst_mac, dst_is_loopback) = layer2_ipv4_to_mac(src_ipv4, dst_ipv4)?;
-
-    let interface = if dst_is_loopback {
-        warn!("found dst is loopback");
-        match find_interface_loopback() {
-            Some(i) => i,
-            None => return Err(CanNotFoundInterface::new().into()),
-        }
-    } else {
-        match find_interface_by_ip(src_ipv4.into()) {
-            Some(i) => i,
-            None => return Err(CanNotFoundInterface::new().into()),
-        }
-    };
-
+    debug!("src: {}, dst: {}", src_ipv4, dst_ipv4);
+    let (dst_mac, interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4)?;
+    debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
+    debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
@@ -1417,10 +950,61 @@ fn layer2_payload(buff: &[u8]) -> Vec<u8> {
     ethernet_packet.payload().to_vec()
 }
 
-fn layer2_ipv6_to_mac(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(MacAddr, bool)> {
-    let mac = MacAddr::new(0, 0, 0, 0, 0, 0);
-    let dst_is_loopback = false;
-    Ok((mac, dst_is_loopback))
+fn layer3_ipv6_system_route(
+    src_ipv6: Ipv6Addr,
+    dst_ipv6: Ipv6Addr,
+) -> Result<(MacAddr, NetworkInterface)> {
+    let mut sc = SYSTEM_CACHE.lock().expect("can not local network cache");
+    let dst_mac = match sc.search_mac(dst_ipv6.into()) {
+        Some(m) => m,
+        None => {
+            if dst_ipv6_in_local(dst_ipv6) {
+                let dst_mac = match ndp_ns(src_ipv6, dst_ipv6)? {
+                    (Some(m), Some(_rtt)) => m,
+                    (_, _) => return Err(CanNotFoundMacAddress::new().into()),
+                };
+                sc.update_neighbor_cache(dst_ipv6.into(), dst_mac);
+                dst_mac
+            } else {
+                let default_route = match sc.default_ipv4_route() {
+                    Some(r) => r,
+                    None => return Err(CanNotFoundRouterAddress::new().into()),
+                };
+                let dst_mac = match default_route.via {
+                    IpAddr::V6(default_route_ipv6) => {
+                        let dst_mac = match sc.search_mac(default_route_ipv6.into()) {
+                            Some(m) => m,
+                            None => match ndp_rs(src_ipv6)? {
+                                (Some(m), Some(_rtt)) => {
+                                    sc.update_neighbor_cache(default_route_ipv6.into(), m);
+                                    m
+                                }
+                                (_, _) => return Err(CanNotFoundRouteMacAddress::new().into()),
+                            },
+                        };
+                        dst_mac
+                    }
+                    _ => return Err(CanNotFoundRouterAddress::new().into()),
+                };
+                dst_mac
+            }
+        }
+    };
+
+    let interface = match sc.search_route(dst_ipv6.into())? {
+        Some(i) => i,
+        None => {
+            // The system route table not contain this ipaddr,
+            // so send it to the default route.
+            let default_route = match sc.default_ipv4_route() {
+                Some(d) => d,
+                None => return Err(CanNotFoundRouterAddress::new().into()),
+            };
+            default_route.dev
+        }
+    };
+
+    Ok((dst_mac, interface))
 }
 
 pub fn layer3_ipv6_send(
@@ -1430,22 +1014,10 @@ pub fn layer3_ipv6_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
-    // println!("src_ipv6: {}", src_ipv6);
-    let (dst_mac, dst_is_loopback) = layer2_ipv6_to_mac(src_ipv6, dst_ipv6)?;
-    debug!("convert ipv6: {} to mac: {}", dst_ipv6, dst_mac);
-
-    let interface = if dst_is_loopback {
-        warn!("found dst is loopback");
-        match find_interface_loopback6() {
-            Some(i) => i,
-            None => return Err(CanNotFoundInterface::new().into()),
-        }
-    } else {
-        match find_interface_by_ip(src_ipv6.into()) {
-            Some(i) => i,
-            None => return Err(CanNotFoundInterface::new().into()),
-        }
-    };
+    debug!("src: {}, dst: {}", src_ipv6, dst_ipv6);
+    let (dst_mac, interface) = layer3_ipv6_system_route(src_ipv6, dst_ipv6)?;
+    debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
+    debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv6;
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
@@ -1470,6 +1042,7 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     #[test]
     fn test_dns_query() {
         let hostname = "ipv6.sjtu.edu.cn";
@@ -1502,13 +1075,6 @@ mod tests {
         match ndp_rs(src_ipv6).unwrap() {
             (Some(mac), Some(_rtt)) => println!("{}", mac),
             _ => println!("None"),
-        }
-    }
-    #[test]
-    fn test_system_arp_cache() {
-        let r = system_neighbour_cache().unwrap().unwrap();
-        for (i, m) in r {
-            println!("{} - {}", i, m);
         }
     }
     #[test]
@@ -1546,29 +1112,6 @@ mod tests {
         let s = "33-33-EF-C0-98-8F";
         let s = s.replace("-", ":");
         let _: MacAddr = s.parse()?;
-        Ok(())
-    }
-    #[test]
-    fn test_unix_arp() -> Result<()> {
-        let output =
-            "? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1198 seconds [ethernet]
-            ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
-            ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 817 seconds [ethernet]
-            ? (192.168.72.254) at 00:50:56:e4:a4:32 on em0 expires in 982 seconds [ethernet]";
-
-        let lines: Vec<&str> = output.split("\n").filter(|v| v.len() > 0).collect();
-        let mut ret: HashMap<IpAddr, MacAddr> = HashMap::new();
-        for line in lines {
-            let l_split: Vec<&str> = line.split(" ").filter(|v| v.len() > 0).collect();
-            let ip_str = l_split[1];
-            let ip_str = ip_str.replace("(", "");
-            let ip_str = ip_str.replace(")", "");
-            let mac_str = l_split[3].replace("-", ":");
-            let ip: IpAddr = ip_str.parse()?;
-            let mac: MacAddr = mac_str.parse()?;
-            ret.insert(ip, mac);
-        }
-        println!("{:?}", ret);
         Ok(())
     }
     #[test]

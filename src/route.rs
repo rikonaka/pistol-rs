@@ -1,9 +1,11 @@
 use anyhow::Result;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+use pnet::ipnetwork::IpNetwork;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::process::Command;
+use std::str::FromStr;
 
 use crate::errors::InvalidRouteFormat;
 #[cfg(target_os = "windows")]
@@ -26,13 +28,15 @@ use crate::utils::find_interface_by_subnetwork;
 // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
 #[derive(Debug, Clone)]
 pub struct DefaultRoute {
-    pub dst: String,           // Destination network or host address
     pub via: IpAddr,           // Next hop gateway address
     pub dev: NetworkInterface, // Device interface name
     pub raw: String,           // The raw output
 }
 
 impl DefaultRoute {
+    pub fn raw(&self) -> String {
+        self.raw.clone()
+    }
     #[cfg(target_os = "linux")]
     pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
         // default via 192.168.72.2 dev ens33
@@ -43,7 +47,6 @@ impl DefaultRoute {
             .collect();
         let max_iters = line_split.len();
         let mut i = 0;
-        let dst = String::from("default");
         let mut via = None;
         let mut dev = None;
         let mut is_ipv4 = true;
@@ -70,7 +73,6 @@ impl DefaultRoute {
             Some(via) => match dev {
                 Some(dev) => {
                     let dr = DefaultRoute {
-                        dst,
                         via,
                         dev,
                         raw: line.to_string(),
@@ -99,7 +101,6 @@ impl DefaultRoute {
             .collect();
 
         let mut is_ipv4 = true;
-        let dst = String::from("default");
         let via: IpAddr = line_split[1].parse()?;
         if line_split[1].contains(":") {
             is_ipv4 = false;
@@ -109,7 +110,6 @@ impl DefaultRoute {
         match dev {
             Some(dev) => {
                 let dr = DefaultRoute {
-                    dst,
                     via,
                     dev,
                     raw: line.to_string(),
@@ -137,6 +137,9 @@ pub struct Route {
 }
 
 impl Route {
+    pub fn raw(&self) -> String {
+        self.raw.clone()
+    }
     #[cfg(target_os = "linux")]
     pub fn parse(line: &str) -> Result<Route> {
         // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
@@ -344,12 +347,12 @@ impl RouteTable {
 }
 
 #[derive(Debug, Clone)]
-pub struct NetworkCache {
+pub struct SystemCache {
     pub route_table: RouteTable,
     pub neighbor_cache: HashMap<IpAddr, MacAddr>,
 }
 
-impl NetworkCache {
+impl SystemCache {
     #[cfg(target_os = "linux")]
     pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
@@ -452,10 +455,10 @@ impl NetworkCache {
         // The Windows is not supported now.
         Err(UnsupportedSystemDetected::new(String::from("windows")).into())
     }
-    pub fn init() -> Result<NetworkCache> {
+    pub fn init() -> Result<SystemCache> {
         let route_table = RouteTable::init()?;
-        let neighbor_cache = NetworkCache::neighbor_cache_init()?;
-        let lnc = NetworkCache {
+        let neighbor_cache = SystemCache::neighbor_cache_init()?;
+        let lnc = SystemCache {
             route_table,
             neighbor_cache,
         };
@@ -467,6 +470,19 @@ impl NetworkCache {
             None => None,
         };
         mac
+    }
+    pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
+        self.neighbor_cache.insert(ipaddr, mac);
+    }
+    pub fn search_route(&self, ipaddr: IpAddr) -> Result<Option<NetworkInterface>> {
+        let route_table = &self.route_table;
+        for route in &route_table.routes {
+            let ipn = IpNetwork::from_str(&route.dst)?;
+            if ipn.contains(ipaddr) {
+                return Ok(Some(route.dev.clone()));
+            }
+        }
+        Ok(None)
     }
     pub fn default_ipv4_route(&self) -> Option<DefaultRoute> {
         self.route_table.default_ipv4_route.clone()
@@ -490,7 +506,7 @@ mod tests {
     }
     #[test]
     fn test_network_cache() -> Result<()> {
-        let nc = NetworkCache::init()?;
+        let nc = SystemCache::init()?;
         // println!("{:?}", nc);
         println!("{:?}", nc.neighbor_cache);
         Ok(())
@@ -510,7 +526,7 @@ mod tests {
             .map(|x| x.trim())
             .filter(|v| v.len() > 0)
             .collect();
-        let ip: IpAddr = input_split[0].parse()?;
+        let _ip: IpAddr = input_split[0].parse()?;
         Ok(())
     }
 }

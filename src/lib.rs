@@ -20,21 +20,23 @@ pub mod vs;
 // inner use only
 mod errors;
 mod layers;
-mod network;
+mod route;
 mod utils;
 
-use crate::network::NetworkCache;
+use crate::route::SystemCache;
 
 // debug code
-#[cfg(test)]
-const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
 // #[cfg(test)]
-// const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfeb6, 0x8d99);
+// const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
 #[cfg(test)]
-const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0x240e, 0x34c, 0x8a, 0x7f60, 0x5054, 0xff, 0xfeb8, 0xb0ac);
+const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
+#[cfg(test)]
+const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfeb6, 0x8d99);
+// #[cfg(test)]
+// const DST_IPV6: Ipv6Addr = Ipv6Addr::new(0x240e, 0x34c, 0x84, 0x86a0, 0x5054, 0xff, 0xfeb8, 0xb0ac);
 
-static NETWORK: Lazy<Arc<Mutex<NetworkCache>>> = Lazy::new(|| {
-    let lnc = NetworkCache::init().expect("can not init the linux network cache");
+static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemCache>>> = Lazy::new(|| {
+    let lnc = SystemCache::init().expect("can not init the linux network cache");
     Arc::new(Mutex::new(lnc))
 });
 

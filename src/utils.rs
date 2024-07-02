@@ -12,9 +12,9 @@ use std::time::Duration;
 use threadpool::ThreadPool;
 
 use crate::errors::CanNotFoundRouterAddress;
-use crate::layers::system_route;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT_SEC;
+use crate::SYSTEM_CACHE;
 
 pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in interfaces() {
@@ -25,7 +25,7 @@ pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
             }
         }
     }
-    warn!("can not found the dst ipv4: {}", dst_ipv4);
+    warn!("can not found the dst ip in local net: {}", dst_ipv4);
     false
 }
 
@@ -38,7 +38,7 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
             }
         }
     }
-    warn!("can not found the dst ipv6: {}", dst_ipv6);
+    warn!("can not found the dst ip in local net: {}", dst_ipv6);
     false
 }
 
@@ -49,26 +49,41 @@ pub fn find_source_addr(
     match src_ipv4 {
         Some(s) => return Ok(Some(s)),
         None => {
-            let route_ipv4 = match system_route()? {
-                Some(r) => r,
-                None => return Err(CanNotFoundRouterAddress::new().into()),
-            };
-            for interface in interfaces() {
-                for ipnetwork in interface.ips {
-                    match ipnetwork.ip() {
-                        IpAddr::V4(ipv4) => {
-                            if ipnetwork.contains(dst_ipv4.into()) {
-                                debug!("found source ipv4: {}", ipv4);
-                                return Ok(Some(ipv4));
-                            } else if ipnetwork.contains(route_ipv4.into()) {
-                                debug!("found source ipv4: {}", ipv4);
-                                return Ok(Some(ipv4));
+            let sc = SYSTEM_CACHE.lock().expect("can not lock the network cache");
+            match sc.search_route(dst_ipv4.into())? {
+                Some(i) => {
+                    for ipnetwork in i.ips {
+                        match ipnetwork.ip() {
+                            IpAddr::V4(src_ipv4) => {
+                                if !src_ipv4.is_loopback() {
+                                    debug!("found source addr: {}", src_ipv4);
+                                    return Ok(Some(src_ipv4));
+                                }
                             }
+                            _ => (),
                         }
-                        _ => (),
                     }
                 }
-            }
+                None => {
+                    // return the route ip
+                    let route = match sc.default_ipv4_route() {
+                        Some(d) => d,
+                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                    };
+                    if let IpAddr::V4(route_ipv4) = route.via {
+                        for interface in interfaces() {
+                            for ipnetwork in interface.ips {
+                                if ipnetwork.contains(route_ipv4.into()) {
+                                    if let IpAddr::V4(src_ipv4) = ipnetwork.ip() {
+                                        debug!("can not found source addr, use addr which same subnet with route instead: {}", src_ipv4);
+                                        return Ok(Some(src_ipv4));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
         }
     }
     debug!("can not found source of the dst: {}", dst_ipv4);
@@ -82,41 +97,45 @@ pub fn find_source_addr6(
     match src_ipv6 {
         Some(s) => return Ok(Some(s)),
         None => {
-            for interface in interfaces() {
-                for ipnetwork in interface.ips {
-                    match ipnetwork.ip() {
-                        IpAddr::V6(ipv6) => {
-                            debug!(
-                                "dst_ipv6: {}, g: {}, l: {}, ipv6: {}, g: {}, l: {}",
-                                dst_ipv6,
-                                dst_ipv6.is_global_x(),
-                                dst_ipv6.is_loopback(),
-                                ipv6,
-                                ipv6.is_global_x(),
-                                ipv6.is_loopback(),
-                            );
-                            if !dst_ipv6.is_global_x()
-                                && !dst_ipv6.is_loopback()
-                                && !ipv6.is_global_x()
-                                && !ipv6.is_loopback()
-                            {
-                                // both is link-local address
-                                debug!("found source ipv6: {}", ipv6);
-                                return Ok(Some(ipv6));
-                            } else if dst_ipv6.is_global_x()
-                                && !dst_ipv6.is_loopback()
-                                && ipv6.is_global_x()
-                                && !ipv6.is_loopback()
-                            {
-                                // both is global address
-                                debug!("found source ipv6: {}", ipv6);
-                                return Ok(Some(ipv6));
+            let sc = SYSTEM_CACHE.lock().expect("can not lock the network cache");
+            match sc.search_route(dst_ipv6.into())? {
+                Some(i) => {
+                    for ipnetwork in i.ips {
+                        match ipnetwork.ip() {
+                            IpAddr::V6(src_ipv6) => {
+                                if !src_ipv6.is_loopback() {
+                                    if (dst_ipv6.is_global_x() && src_ipv6.is_global_x())
+                                        || (!dst_ipv6.is_global_x() && !src_ipv6.is_global_x())
+                                    {
+                                        debug!("found source addr: {}", src_ipv6);
+                                        return Ok(Some(src_ipv6));
+                                    }
+                                }
                             }
+                            _ => (),
                         }
-                        _ => (),
                     }
                 }
-            }
+                None => {
+                    // return the route ip
+                    let route = match sc.default_ipv6_route() {
+                        Some(d) => d,
+                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                    };
+                    if let IpAddr::V6(route_ipv6) = route.via {
+                        for interface in interfaces() {
+                            for ipnetwork in interface.ips {
+                                if ipnetwork.contains(route_ipv6.into()) {
+                                    if let IpAddr::V6(src_ipv6) = ipnetwork.ip() {
+                                        debug!("can not found source addr, use addr which same subnet with route instead: {}", src_ipv6);
+                                        return Ok(Some(src_ipv6));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
         }
     }
     debug!("can not found source of the dst: {}", dst_ipv6);
@@ -145,6 +164,12 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
     None
 }
 
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 pub fn find_interface_by_subnetwork(ipaddr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
@@ -155,42 +180,6 @@ pub fn find_interface_by_subnetwork(ipaddr: IpAddr) -> Option<NetworkInterface> 
         }
     }
     debug!("can not found interface of the ip: {}", ipaddr);
-    None
-}
-
-pub fn find_interface_loopback() -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V4(ipv4) => {
-                    if ipv4.is_loopback() {
-                        debug!("found loopback interface of ipv4: {}", interface.name);
-                        return Some(interface);
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    debug!("can not found the loopback address of ipv4");
-    None
-}
-
-pub fn find_interface_loopback6() -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            match ip.ip() {
-                IpAddr::V6(ipv6) => {
-                    if ipv6.is_loopback() {
-                        debug!("found loopback interface of ipv6: {}", interface.name);
-                        return Some(interface);
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    debug!("can not found the loopback address of ipv6");
     None
 }
 

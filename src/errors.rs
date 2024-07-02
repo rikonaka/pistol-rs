@@ -202,7 +202,7 @@ impl fmt::Display for CanNotFoundMacAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "can not found the mac address, please check the target is alive"
+            "can not found the target mac address, please make sure the target is alive"
         )
     }
 }
@@ -212,6 +212,20 @@ impl CanNotFoundMacAddress {
     }
 }
 impl Error for CanNotFoundMacAddress {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanNotFoundRouteMacAddress;
+impl fmt::Display for CanNotFoundRouteMacAddress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "can not found the route's mac address")
+    }
+}
+impl CanNotFoundRouteMacAddress {
+    pub fn new() -> CanNotFoundRouteMacAddress {
+        CanNotFoundRouteMacAddress {}
+    }
+}
+impl Error for CanNotFoundRouteMacAddress {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanNotFoundInterface;
