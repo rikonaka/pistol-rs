@@ -467,7 +467,10 @@ impl SystemCache {
         for route in &route_table.routes {
             let ipn = IpNetwork::from_str(&route.dst)?;
             if ipn.contains(ipaddr) {
-                debug!("found route interface: {}", route.dev.name);
+                debug!(
+                    "found route interface: {}, ip: {}, ipn: {}",
+                    route.dev.name, ipaddr, ipn
+                );
                 return Ok(Some(route.dev.clone()));
             }
         }
@@ -522,6 +525,9 @@ mod tests {
         let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
         println!("{}", ipnetwork.contains(test_ipv6));
         let ipnetwork = IpNetwork::from_str("fe80::/64")?;
+        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
+        println!("{}", ipnetwork.contains(test_ipv6));
+        let ipnetwork = IpNetwork::from_str("::/96")?;
         let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
         println!("{}", ipnetwork.contains(test_ipv6));
         Ok(())
