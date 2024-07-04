@@ -29,14 +29,14 @@ use crate::route::SystemCache;
 #[cfg(test)]
 const DST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
 #[cfg(test)]
-const DST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
+const DST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
 const DST_IPV6_REMOTE: Ipv6Addr = Ipv6Addr::new(
-    0x240e, 0x034c, 0x0084, 0x86a0, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
+    0x240e, 0x034c, 0x0087, 0xfca0, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
 );
 #[cfg(test)]
 const DST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
-    0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99,
+    0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfe2c, 0x09e4,
 );
 
 static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemCache>>> = Lazy::new(|| {

@@ -102,11 +102,80 @@ impl fmt::Display for OsDetectResults {
                 table.add_row(row![c -> ip, c -> number_str, c -> score_str, c -> os_str]);
             }
         }
-        let summary = format!("Summary");
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
+        // let summary = format!("Summary");
+        // table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
 
         write!(f, "{}", table)
     }
+}
+
+/// Detect target machine OS.
+pub fn os_detect(
+    target: Target,
+    src_ipv4: Option<Ipv4Addr>,
+    src_port: Option<u16>,
+    top_k: usize,
+    threads_num: usize,
+    timeout: Option<Duration>,
+) -> Result<OsDetectResults> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
+    let nmap_os_file = include_str!("./db/nmap-os-db");
+    let mut nmap_os_file_lines = Vec::new();
+    for l in nmap_os_file.lines() {
+        nmap_os_file_lines.push(l.to_string());
+    }
+    let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
+    let (tx, rx) = channel();
+    let pool = get_threads_pool(threads_num);
+    let mut recv_size = 0;
+    for t in target.hosts {
+        let dst_ipv4 = t.addr;
+        let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
+            Some(s) => s,
+            None => return Err(CanNotFoundSourceAddress::new().into()),
+        };
+        if t.ports.len() >= 3 {
+            recv_size += 1;
+            let dst_open_tcp_port = t.ports[0];
+            let dst_closed_tcp_port = t.ports[1];
+            let dst_closed_udp_port = t.ports[2];
+            let tx = tx.clone();
+            let nmap_os_db = nmap_os_db.to_vec();
+            pool.execute(move || {
+                let os_detect_ret = threads_os_probe(
+                    src_ipv4,
+                    src_port,
+                    dst_ipv4,
+                    dst_open_tcp_port,
+                    dst_closed_tcp_port,
+                    dst_closed_udp_port,
+                    nmap_os_db,
+                    top_k,
+                    timeout,
+                );
+                match tx.send((dst_ipv4, os_detect_ret)) {
+                    _ => (),
+                }
+            });
+        } else {
+            return Err(OsDetectPortError::new().into());
+        }
+    }
+    let mut ret = OsDetectResults::new();
+    let iter = rx.into_iter().take(recv_size);
+    for (ipv4, r) in iter {
+        match r {
+            Ok((fingerprint, detect_ret)) => {
+                let oss = HostOsDetect::new(fingerprint, detect_ret);
+                ret.oss.insert(ipv4, oss);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(ret)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,75 +255,6 @@ pub struct Linear {
     pub mean: Vec<Vec<f64>>,
     pub variance: Vec<Vec<f64>>,
     pub cpe: Vec<CPE>,
-}
-
-/// Detect target machine OS.
-pub fn os_detect(
-    target: Target,
-    src_ipv4: Option<Ipv4Addr>,
-    src_port: Option<u16>,
-    top_k: usize,
-    threads_num: usize,
-    timeout: Option<Duration>,
-) -> Result<OsDetectResults> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
-    let nmap_os_file = include_str!("./db/nmap-os-db");
-    let mut nmap_os_file_lines = Vec::new();
-    for l in nmap_os_file.lines() {
-        nmap_os_file_lines.push(l.to_string());
-    }
-    let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
-    let (tx, rx) = channel();
-    let pool = get_threads_pool(threads_num);
-    let mut recv_size = 0;
-    for t in target.hosts {
-        let dst_ipv4 = t.addr;
-        let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
-            Some(s) => s,
-            None => return Err(CanNotFoundSourceAddress::new().into()),
-        };
-        if t.ports.len() >= 3 {
-            recv_size += 1;
-            let dst_open_tcp_port = t.ports[0];
-            let dst_closed_tcp_port = t.ports[1];
-            let dst_closed_udp_port = t.ports[2];
-            let tx = tx.clone();
-            let nmap_os_db = nmap_os_db.to_vec();
-            pool.execute(move || {
-                let os_detect_ret = threads_os_probe(
-                    src_ipv4,
-                    src_port,
-                    dst_ipv4,
-                    dst_open_tcp_port,
-                    dst_closed_tcp_port,
-                    dst_closed_udp_port,
-                    nmap_os_db,
-                    top_k,
-                    timeout,
-                );
-                match tx.send((dst_ipv4, os_detect_ret)) {
-                    _ => (),
-                }
-            });
-        } else {
-            return Err(OsDetectPortError::new().into());
-        }
-    }
-    let mut ret = OsDetectResults::new();
-    let iter = rx.into_iter().take(recv_size);
-    for (ipv4, r) in iter {
-        match r {
-            Ok((fingerprint, detect_ret)) => {
-                let oss = HostOsDetect::new(fingerprint, detect_ret);
-                ret.oss.insert(ipv4, oss);
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(ret)
 }
 
 fn gen_linear() -> Result<Linear> {
