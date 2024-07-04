@@ -285,6 +285,20 @@ impl UnsupportedPingMethod {
 }
 impl Error for UnsupportedPingMethod {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OsDetectResultsNullError {}
+impl fmt::Display for OsDetectResultsNullError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "os detect results is null")
+    }
+}
+impl OsDetectResultsNullError {
+    pub fn new() -> OsDetectResultsNullError {
+        OsDetectResultsNullError {}
+    }
+}
+impl Error for OsDetectResultsNullError {}
+
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsupportedSystemDetected {

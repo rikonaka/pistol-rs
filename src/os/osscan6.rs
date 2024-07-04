@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::debug;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
@@ -10,15 +11,13 @@ use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
 
-use crate::errors::CanNotFoundInterface;
-use crate::errors::CanNotFoundMacAddress;
+use crate::hop::ipv6_get_hops;
 use crate::layers::layer3_ipv6_send;
+use crate::layers::layer3_ipv6_system_route;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-
-use crate::utils::find_interface_by_ip;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -36,7 +35,7 @@ use super::rr::TECNRR6;
 use super::rr::TXRR6;
 use super::rr::U1RR6;
 use super::Linear;
-use super::NmapOsInfo6;
+use super::OsInfo6;
 
 // EXAMPLE
 // SCAN(V=5.61TEST1%E=6%D=9/27%OT=22%CT=443%CU=42192%PV=N%DS=5%DC=T%G=Y%TM=4E82908D%P=x86_64-unknown-linux-gnu)
@@ -1068,8 +1067,8 @@ fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
     sum.sqrt()
 }
 
-fn isort(input: &[NmapOsInfo6]) -> Vec<NmapOsInfo6> {
-    let find_max_prob = |x: &[NmapOsInfo6]| -> usize {
+fn isort(input: &[OsInfo6]) -> Vec<OsInfo6> {
+    let find_max_prob = |x: &[OsInfo6]| -> usize {
         let mut max_value = 0.0;
         for a in x {
             if a.score > max_value {
@@ -1097,7 +1096,7 @@ fn isort(input: &[NmapOsInfo6]) -> Vec<NmapOsInfo6> {
     input_sort
 }
 
-pub fn os_probe6(
+pub fn threads_os_probe6(
     src_ipv6: Ipv6Addr,
     src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
@@ -1107,16 +1106,8 @@ pub fn os_probe6(
     top_k: usize,
     linear: Linear,
     timeout: Duration,
-) -> Result<(PistolFingerprint6, Vec<NmapOsInfo6>)> {
-    // Check target.
-    let dst_mac = match find_interface_by_ip(src_ipv6.into()) {
-        Some(interface) => match interface.mac {
-            Some(m) => m,
-            None => return Err(CanNotFoundMacAddress::new().into()),
-        },
-        None => return Err(CanNotFoundInterface::new().into()),
-    };
-
+) -> Result<(PistolFingerprint6, Vec<OsInfo6>)> {
+    debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv6,
         src_port,
@@ -1127,8 +1118,11 @@ pub fn os_probe6(
         timeout,
     )?;
 
-    let hops = None;
+    // let hops = Some(1);
+    let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
     let good_results = true;
+
+    let (dst_mac, _interface) = layer3_ipv6_system_route(src_ipv6, dst_ipv6)?;
     let scan = get_scan_line(
         Some(dst_mac),
         dst_open_tcp_port,
@@ -1140,23 +1134,26 @@ pub fn os_probe6(
     );
 
     let features = vectorize(&ap)?;
-    // println!("{:?}", features);
     let features = apply_scale(&features, &linear.scale);
-    // println!("{:?}", features[0..5].to_vec());
-    // println!("{:?}", features_scale[0..5].to_vec());
     let predict = predict_value(&features, &linear.w);
-    // println!("{:?}", predict);
 
-    let mut detect_rets: Vec<NmapOsInfo6> = Vec::new();
-    for (i, (name, score)) in zip(&linear.namelist, &predict).into_iter().enumerate() {
-        let dr = NmapOsInfo6 {
-            name: name.to_string(),
-            class: linear.cpe[i].osclass.to_vec(),
-            cpe: linear.cpe[i].cpe.to_vec(),
-            score: *score,
-            label: i,
-        };
-        detect_rets.push(dr);
+    let mut detect_rets = Vec::new();
+    for (i, (info, score)) in zip(&linear.infolist, &predict).into_iter().enumerate() {
+        let class = &linear.cpe[i].osclass;
+        if class.len() > 0 {
+            let class = class[0].join(" | ");
+            let cpe = linear.cpe[i].cpe.join(" ");
+            // debug!("linear cpe class: {}", class);
+            // debug!("linear cpe cpe: {}", cpe);
+            let dr = OsInfo6 {
+                info: info.to_string(),
+                class,
+                cpe,
+                score: *score,
+                label: i,
+            };
+            detect_rets.push(dr);
+        }
     }
 
     let detect_rets_sort = isort(&detect_rets);
@@ -1322,6 +1319,7 @@ pub fn os_probe6(
         let ret = vec![];
         ret
     };
+    debug!("fingerprint:\n{}", fingerprint.nmap_format());
     Ok((fingerprint, ret))
 }
 

@@ -2,8 +2,12 @@ use anyhow::Result;
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
+use log::debug;
 use pnet::datalink::MacAddr;
 use rand::Rng;
+use serde::Deserialize;
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -11,18 +15,16 @@ use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
-use serde::Deserialize;
-use serde::Serialize;
 
-use crate::errors::CanNotFoundInterface;
-use crate::errors::CanNotFoundMacAddress;
+use crate::errors::OsDetectResultsNullError;
+use crate::hop::ipv4_get_hops;
 use crate::layers::layer3_ipv4_send;
+use crate::layers::layer3_ipv4_system_route;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::os::NmapOsInfo;
-use crate::utils::find_interface_by_ip;
+use crate::os::OsInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
@@ -1572,50 +1574,6 @@ pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX> {
     Ok(IEX { r, dfi, t, tg, cd })
 }
 
-fn top_k_score(score_vec: &[usize], k: usize) -> Vec<usize> {
-    let find_position_one = |score_vec: &[usize], value: usize| -> Option<usize> {
-        for (i, s) in score_vec.iter().enumerate() {
-            if *s == value {
-                return Some(i);
-            }
-        }
-        None
-    };
-
-    let mut score_vec = score_vec.to_vec();
-    let mut top_k_vec = Vec::new();
-    for _ in 0..k {
-        let mut max_score = 0;
-        for s in &score_vec {
-            if *s > max_score {
-                max_score = *s;
-            }
-        }
-
-        loop {
-            match find_position_one(&score_vec, max_score) {
-                Some(p) => {
-                    score_vec.remove(p);
-                }
-                None => break,
-            }
-        }
-
-        top_k_vec.push(max_score);
-    }
-    top_k_vec
-}
-
-fn find_position_multi(score_vec: &[usize], value: usize) -> Vec<usize> {
-    let mut position = Vec::new();
-    for (i, s) in score_vec.iter().enumerate() {
-        if *s == value {
-            position.push(i)
-        }
-    }
-    position
-}
-
 pub fn threads_os_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
@@ -1626,16 +1584,8 @@ pub fn threads_os_probe(
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
-) -> Result<(PistolFingerprint, Vec<NmapOsInfo>)> {
-    // Check target.
-    let dst_mac = match find_interface_by_ip(src_ipv4.into()) {
-        Some(interface) => match interface.mac {
-            Some(m) => m,
-            None => return Err(CanNotFoundMacAddress::new().into()),
-        },
-        None => return Err(CanNotFoundInterface::new().into()),
-    };
-
+) -> Result<(PistolFingerprint, Vec<OsInfo>)> {
+    debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv4,
         src_port,
@@ -1646,8 +1596,11 @@ pub fn threads_os_probe(
         timeout,
     )?;
 
-    let hops = None;
+    // let hops = Some(1);
+    let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout)?;
     let good_results = true;
+
+    let (dst_mac, _interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4)?;
     let scan = get_scan_line(
         Some(dst_mac),
         dst_open_tcp_port,
@@ -1659,16 +1612,24 @@ pub fn threads_os_probe(
     );
 
     // Use seq to judge target is alive or not.
+    debug!("parse seqx");
     let seqx = seq_fingerprint(&ap);
     match seqx {
         Ok(seqx) => {
+            debug!("parse opsx");
             let opsx = ops_fingerprint(&ap)?;
+            debug!("parse winx");
             let winx = win_fingerprint(&ap)?;
+            debug!("parse ecnx");
             let ecnx = ecn_fingerprint(&ap)?;
+            debug!("parse t1x-t7x");
             let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap)?;
+            debug!("parse u1x");
             let u1x = u1_fingerprint(&ap)?;
+            debug!("parse iex");
             let iex = ie_fingerprint(&ap)?;
 
+            debug!("generate the fingerprint");
             let fingerprint = PistolFingerprint {
                 scan,
                 seqx,
@@ -1686,32 +1647,44 @@ pub fn threads_os_probe(
                 iex,
             };
 
-            let mut score_vec = Vec::new();
-            let mut total_vec = Vec::new();
-            for n in &nmap_os_db {
-                let (score, total) = n.check(&fingerprint);
-                score_vec.push(score);
-                total_vec.push(total);
-            }
-
-            let top_k_score_vec = top_k_score(&score_vec, top_k);
-            let mut top_k_index_vec = Vec::new();
-            for k in top_k_score_vec {
-                for p in find_position_multi(&score_vec, k) {
-                    top_k_index_vec.push(p);
-                }
-            }
-
-            let mut dr_vec = Vec::new();
-            for i in top_k_index_vec {
-                let dr = NmapOsInfo {
-                    score: score_vec[i],
-                    total: total_vec[i],
-                    db: nmap_os_db[i].clone(),
+            let mut bm = BTreeMap::new();
+            for db in &nmap_os_db {
+                let (score, total) = db.check(&fingerprint);
+                let os_info = OsInfo {
+                    info: db.info.clone(),
+                    class: db.class.clone(),
+                    score,
+                    total,
+                    db: db.clone(),
+                    cpe: db.cpe.clone(),
                 };
-                dr_vec.push(dr);
+                bm.insert(score, os_info);
             }
-            Ok((fingerprint, dr_vec))
+
+            let mut detect_rets = Vec::new();
+            let bm_keys: Vec<&usize> = bm.keys().rev().collect();
+            if bm_keys.len() > 0 {
+                let mut last_score = *bm_keys[0];
+                let mut top_k_count = 0;
+                for (score, os_info) in bm.into_iter().rev() {
+                    debug!("score: {}, cpe: {}", score, os_info.db.class);
+                    debug!("last_score: {}, score: {}", last_score, score);
+                    if last_score != score {
+                        top_k_count += 1;
+                        last_score = score;
+                    }
+                    if top_k_count == top_k {
+                        break;
+                    }
+                    detect_rets.push(os_info);
+                }
+
+                debug!("ret len: {}", detect_rets.len());
+                debug!("fingerprint:\n{}", fingerprint.nmap_format());
+                Ok((fingerprint, detect_rets))
+            } else {
+                Err(OsDetectResultsNullError::new().into())
+            }
         }
         Err(e) => Err(e),
     }
@@ -1720,6 +1693,19 @@ pub fn threads_os_probe(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+    #[test]
+    fn test_bt() {
+        let mut bt = BTreeMap::new();
+        for i in (0..9).into_iter().rev() {
+            println!("{}", i);
+            bt.insert(i, "test");
+        }
+        println!("{:?}", bt);
+        for (i, _) in bt.into_iter().rev() {
+            println!("{}", i);
+        }
+    }
     #[test]
     fn test_w() {
         let a = 7;

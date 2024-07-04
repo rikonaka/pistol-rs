@@ -668,7 +668,7 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Optio
     }
 }
 
-fn layer3_ipv4_system_route(
+pub fn layer3_ipv4_system_route(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
 ) -> Result<(MacAddr, NetworkInterface)> {
@@ -957,7 +957,7 @@ fn layer2_payload(buff: &[u8]) -> Vec<u8> {
     ethernet_packet.payload().to_vec()
 }
 
-fn layer3_ipv6_system_route(
+pub fn layer3_ipv6_system_route(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
 ) -> Result<(MacAddr, NetworkInterface)> {

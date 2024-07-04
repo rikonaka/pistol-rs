@@ -1,13 +1,11 @@
 use anyhow::Result;
 use chrono::Utc;
+use log::debug;
 use pnet::packet::icmp;
-use pnet::packet::icmp::destination_unreachable;
-use pnet::packet::icmp::echo_reply;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpType;
-use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::icmp::MutableIcmpPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
@@ -26,15 +24,13 @@ use crate::layers::Layer4MatchIcmp;
 use crate::layers::LayersMatch;
 use crate::layers::ICMP_HEADER_SIZE;
 use crate::layers::IPV4_HEADER_SIZE;
-use crate::ping::PingStatus;
-
-const TTL: u8 = 64;
 
 pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
+    ttl: u8,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<bool> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ip header
@@ -48,7 +44,7 @@ pub fn send_icmp_ping_packet(
     let id = rng.gen();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(TTL);
+    ip_header.set_ttl(ttl);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
@@ -72,15 +68,6 @@ pub fn send_icmp_ping_packet(
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
-    let codes_1 = vec![
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable,     // 1
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable,     // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
@@ -93,7 +80,8 @@ pub fn send_icmp_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let (ret, rtt) = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
+    debug!("send icmp hop {} packet", ttl);
+    let (ret, _rtt) = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
     match ret {
         Some(r) => {
             match Ipv4Packet::new(&r) {
@@ -103,20 +91,9 @@ pub fn send_icmp_ping_packet(
                             match IcmpPacket::new(ipv4_packet.payload()) {
                                 Some(icmp_packet) => {
                                     let icmp_type = icmp_packet.get_icmp_type();
-                                    let icmp_code = icmp_packet.get_icmp_code();
-
-                                    let codes_2 = vec![
-                                        echo_reply::IcmpCodes::NoCode, // 0
-                                    ];
-                                    if icmp_type == IcmpTypes::DestinationUnreachable {
-                                        if codes_1.contains(&icmp_code) {
-                                            // icmp protocol unreachable error (type 3, code 2)
-                                            return Ok((PingStatus::Down, rtt));
-                                        }
-                                    } else if icmp_type == IcmpTypes::EchoReply {
-                                        if codes_2.contains(&icmp_code) {
-                                            return Ok((PingStatus::Up, rtt));
-                                        }
+                                    // let icmp_code = icmp_packet.get_icmp_code();
+                                    if icmp_type == IcmpType(0) {
+                                        return Ok(true);
                                     }
                                 }
                                 None => (),
@@ -130,19 +107,22 @@ pub fn send_icmp_ping_packet(
         }
         None => (),
     }
-    // no response received (even after retransmissions)
-    Ok((PingStatus::Down, rtt))
+    Ok(false)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Logger;
     #[test]
     fn test_icmp_ping_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 2);
+        Logger::init_debug_logging().unwrap();
+        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 34);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let timeout = Duration::new(3, 0);
-        let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout).unwrap();
-        println!("{:?}", ret);
+        for ttl in 1..30 {
+            let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, ttl, timeout).unwrap();
+            println!("ttl: {} = {}", ttl, ret);
+        }
     }
 }

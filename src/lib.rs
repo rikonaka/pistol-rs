@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use anyhow::Result;
+use log::debug;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
@@ -17,6 +18,7 @@ pub mod os;
 pub mod ping;
 pub mod scan;
 pub mod vs;
+pub mod hop;
 // inner use only
 mod errors;
 mod layers;
@@ -32,7 +34,7 @@ const DST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
 const DST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
 const DST_IPV6_REMOTE: Ipv6Addr = Ipv6Addr::new(
-    0x240e, 0x034c, 0x0087, 0xfca0, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
+    0x240e, 0x034c, 0x008b, 0x4390, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
 );
 #[cfg(test)]
 const DST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
@@ -44,7 +46,7 @@ static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemCache>>> = Lazy::new(|| {
     Arc::new(Mutex::new(lnc))
 });
 
-const DEFAULT_TIMEOUT_SEC: u64 = 3;
+const DEFAULT_TIMEOUT: u64 = 3;
 
 pub struct Logger {}
 
@@ -93,6 +95,7 @@ impl Ipv4CheckMethods for Ipv4Addr {
         } else {
             false
         };
+        debug!("ip: {}, is_global_x: {}", self, !is_private);
         !is_private
     }
 }
@@ -109,6 +112,7 @@ impl Ipv6CheckMethods for Ipv6Addr {
         } else {
             false
         };
+        debug!("ip: {}, is_global_x: {}", self, !is_local);
         !is_local
     }
 }

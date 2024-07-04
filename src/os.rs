@@ -1,5 +1,6 @@
 /* Remote OS Detection */
 use anyhow::Result;
+use log::debug;
 use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
@@ -17,16 +18,15 @@ use std::time::Duration;
 use crate::errors::CanNotFoundSourceAddress;
 use crate::errors::OsDetectPortError;
 use crate::os::dbparser::NmapOsDb;
+use crate::os::osscan::threads_os_probe;
 use crate::os::osscan::PistolFingerprint;
+use crate::os::osscan6::threads_os_probe6;
 use crate::os::osscan6::PistolFingerprint6;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::Target;
-
-use self::osscan::threads_os_probe;
-use self::osscan6::os_probe6;
 
 pub mod dbparser;
 pub mod operator;
@@ -38,29 +38,23 @@ pub mod packet6;
 pub mod rr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsInfo {
+pub struct OsInfo {
+    pub info: String,
+    pub class: String,
+    pub cpe: String,
     pub score: usize,
     pub total: usize,
     pub db: NmapOsDb,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsInfo6 {
-    pub name: String,
-    pub class: Vec<Vec<String>>,
-    pub cpe: Vec<String>,
-    pub score: f64,
-    pub label: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostOsDetect {
     pub fingerprint: PistolFingerprint,
-    pub detects: Vec<NmapOsInfo>,
+    pub detects: Vec<OsInfo>,
 }
 
 impl HostOsDetect {
-    pub fn new(fingerprint: PistolFingerprint, detects: Vec<NmapOsInfo>) -> HostOsDetect {
+    pub fn new(fingerprint: PistolFingerprint, detects: Vec<OsInfo>) -> HostOsDetect {
         HostOsDetect {
             fingerprint,
             detects,
@@ -128,6 +122,8 @@ pub fn os_detect(
         nmap_os_file_lines.push(l.to_string());
     }
     let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
+    debug!("nmap os db parse finish");
+
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -179,13 +175,22 @@ pub fn os_detect(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OsInfo6 {
+    pub info: String,
+    pub class: String,
+    pub cpe: String,
+    pub score: f64,
+    pub label: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostOsDetect6 {
     pub fingerprint: PistolFingerprint6,
-    pub detects: Vec<NmapOsInfo6>,
+    pub detects: Vec<OsInfo6>,
 }
 
 impl HostOsDetect6 {
-    pub fn new(fingerprint: PistolFingerprint6, detects: Vec<NmapOsInfo6>) -> HostOsDetect6 {
+    pub fn new(fingerprint: PistolFingerprint6, detects: Vec<OsInfo6>) -> HostOsDetect6 {
         HostOsDetect6 {
             fingerprint,
             detects,
@@ -220,15 +225,15 @@ impl fmt::Display for OsDetectResults6 {
         let oss: BTreeMap<Ipv6Addr, &HostOsDetect6> =
             oss.into_iter().map(|(i, h)| (*i, h)).collect();
         for (ip, o) in oss {
-            for (i, ni) in o.detects.iter().enumerate() {
-                let number_str = format!("#{}", i);
-                let score_str = format!("{:.1}", ni.score);
-                let os_str = ni.class[0].join(",");
+            for (i, os_info6) in o.detects.iter().enumerate() {
+                let number_str = format!("#{}", i + 1);
+                let score_str = format!("{:.1}", os_info6.score);
+                let os_str = &os_info6.info;
                 table.add_row(row![c -> ip, c -> number_str, c -> score_str, c -> os_str]);
             }
         }
-        let summary = format!("Summary");
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
+        // let summary = format!("Summary");
+        // table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
 
         write!(f, "{}", table)
     }
@@ -249,7 +254,7 @@ pub struct CPE {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Linear {
-    pub namelist: Vec<String>,
+    pub infolist: Vec<String>,
     pub w: Vec<Vec<f64>>,
     pub scale: Vec<Vec<f64>>,
     pub mean: Vec<Vec<f64>>,
@@ -261,13 +266,13 @@ fn gen_linear() -> Result<Linear> {
     let variance_json_data = include_str!("./db/nmap-os-db-ipv6/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
 
-    let mut namelist = Vec::new();
+    let mut infolist = Vec::new();
     let mut variance = Vec::new();
     for v in variance_json {
         variance.push(v.value);
-        namelist.push(v.name);
+        infolist.push(v.name);
     }
-    assert_eq!(namelist.len(), 92);
+    assert_eq!(infolist.len(), 92);
     assert_eq!(variance.len(), 92);
 
     let mean_json_data = include_str!("./db/nmap-os-db-ipv6/mean.json");
@@ -305,7 +310,7 @@ fn gen_linear() -> Result<Linear> {
     assert_eq!(cpe.len(), 92);
 
     let linear = Linear {
-        namelist,
+        infolist,
         scale,
         w,
         mean,
@@ -332,6 +337,7 @@ pub fn os_detect6(
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
     let linear = gen_linear()?;
+    debug!("gen linear parse finish");
     for t in target.hosts6 {
         let dst_ipv6 = t.addr;
         let src_ipv6 = match find_source_addr6(src_ipv6, dst_ipv6)? {
@@ -346,7 +352,7 @@ pub fn os_detect6(
             let tx = tx.clone();
             let linear = linear.clone();
             pool.execute(move || {
-                let os_detect_ret = os_probe6(
+                let os_detect_ret = threads_os_probe6(
                     src_ipv6,
                     src_port,
                     dst_ipv6,
@@ -387,11 +393,13 @@ mod tests {
     use crate::nmap_os_db_parser;
     use crate::Host;
     use crate::Host6;
+    use crate::Logger;
     use crate::DST_IPV4_REMOTE;
     use crate::DST_IPV6_REMOTE;
     use std::time::SystemTime;
     #[test]
     fn test_os_detect6() -> Result<()> {
+        Logger::init_debug_logging()?;
         let src_ipv6 = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
@@ -416,6 +424,7 @@ mod tests {
     }
     #[test]
     fn test_os_detect() -> Result<()> {
+        Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let dst_open_tcp_port = 22;
@@ -431,7 +440,7 @@ mod tests {
         );
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
-        let top_k = 1;
+        let top_k = 2;
         let threads_num = 8;
 
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
