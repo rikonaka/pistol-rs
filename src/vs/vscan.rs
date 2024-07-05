@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::debug;
 use std::io::Read;
 use std::io::Write;
 use std::net::IpAddr;
@@ -80,7 +81,7 @@ fn tcp_continue_probe(
         }
         if recv_all_buff.len() > 0 {
             let recv_str = String::from_utf8_lossy(&recv_all_buff);
-            println!("{}", recv_str);
+            // println!("{}", recv_str);
             let r = sp.check(&recv_str);
             Ok(r)
         } else {
@@ -211,7 +212,7 @@ fn udp_probe(
     Ok(ret)
 }
 
-pub fn vs_probe(
+pub fn threads_vs_probe(
     dst_addr: IpAddr,
     dst_port: u16,
     only_null_probe: bool,
@@ -232,16 +233,25 @@ pub fn vs_probe(
             let five_seconds = Duration::from_secs(5);
             stream.set_read_timeout(Some(five_seconds))?;
             stream.set_write_timeout(Some(timeout))?;
+            stream.set_nodelay(true).expect("set stream nodelay failed");
+            stream
+                .set_nonblocking(false)
+                .expect("set noblocking failed");
 
             // If the connection succeeds and the port had been in the open|filtered state, it is changed to open.
             // Ignore this step here.
+            debug!("send null probe");
             let null_probe_ret = tcp_null_probe(&mut stream, service_probes)?;
             if null_probe_ret.len() > 0 {
+                debug!("null probe work, exit");
                 Ok((null_probe_ret, start_time.elapsed()))
             } else {
+                stream.set_read_timeout(Some(timeout))?;
+                stream.set_write_timeout(Some(timeout))?;
                 if !only_null_probe {
                     // Start TCP continue probe.
                     // println!("TCP CONTINUE PROBE");
+                    debug!("send tcp continue probe");
                     let tcp_ret = tcp_continue_probe(
                         &mut stream,
                         dst_port,
@@ -250,10 +260,12 @@ pub fn vs_probe(
                         service_probes,
                     )?;
                     if tcp_ret.len() > 0 {
+                        debug!("tcp continue probe work, exit");
                         Ok((tcp_ret, start_time.elapsed()))
                     } else {
                         // This point is where Nmap starts for UDP probes,
                         // and TCP connections continue here if the NULL probe described above fails or soft-matches.
+                        debug!("send udp probe");
                         let udp_ret = udp_probe(
                             dst_addr,
                             dst_port,
@@ -287,89 +299,5 @@ mod tests {
         println!("{}", n);
         let nstr = String::from_utf8_lossy(&buff);
         println!("{}", nstr);
-    }
-    #[test]
-    fn test_tls() {
-        // use rustls;
-        // use rustls::client::danger::HandshakeSignatureValid;
-        // use rustls::client::danger::ServerCertVerified;
-        // use rustls::client::danger::ServerCertVerifier;
-        // use rustls::pki_types::CertificateDer;
-        // use rustls::pki_types::ServerName;
-        // use rustls::pki_types::UnixTime;
-        // use rustls::DigitallySignedStruct;
-        // use rustls::SignatureScheme;
-        // use std::sync::Arc;
-        // #[derive(Debug)]
-        // struct SkipServerVerification;
-
-        // impl SkipServerVerification {
-        //     fn new() -> std::sync::Arc<Self> {
-        //         std::sync::Arc::new(Self)
-        //     }
-        // }
-
-        // impl ServerCertVerifier for SkipServerVerification {
-        //     fn verify_server_cert(
-        //         &self,
-        //         _end_entity: &CertificateDer,
-        //         _intermediates: &[CertificateDer],
-        //         _server_name: &ServerName,
-        //         _ocsp_response: &[u8],
-        //         _now: UnixTime,
-        //     ) -> Result<ServerCertVerified, rustls::Error> {
-        //         Ok(ServerCertVerified::assertion())
-        //     }
-        //     fn verify_tls12_signature(
-        //         &self,
-        //         _message: &[u8],
-        //         _cert: &CertificateDer,
-        //         _dss: &DigitallySignedStruct,
-        //     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        //         Ok(HandshakeSignatureValid::assertion())
-        //     }
-        //     fn verify_tls13_signature(
-        //         &self,
-        //         _message: &[u8],
-        //         _cert: &CertificateDer,
-        //         _dss: &DigitallySignedStruct,
-        //     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        //         Ok(HandshakeSignatureValid::assertion())
-        //     }
-        //     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        //         vec![]
-        //     }
-        // }
-
-        // let config = rustls::ClientConfig::builder()
-        //     .dangerous()
-        //     .with_custom_certificate_verifier(SkipServerVerification::new())
-        //     .with_no_client_auth();
-
-        // let server_name = "www.rust-lang.org".try_into().unwrap();
-        // let mut conn = rustls::ClientConnection::new(Arc::new(config), server_name).unwrap();
-        // let mut sock = TcpStream::connect("www.rust-lang.org:443").unwrap();
-        // let mut tls = rustls::Stream::new(&mut conn, &mut sock);
-        // tls.write_all(
-        //     concat!(
-        //         "GET / HTTP/1.1\r\n",
-        //         "Host: www.rust-lang.org\r\n",
-        //         "Connection: close\r\n",
-        //         "Accept-Encoding: identity\r\n",
-        //         "\r\n"
-        //     )
-        //     .as_bytes(),
-        // )
-        // .unwrap();
-        // let ciphersuite = tls.conn.negotiated_cipher_suite().unwrap();
-        // writeln!(
-        //     &mut std::io::stderr(),
-        //     "Current ciphersuite: {:?}",
-        //     ciphersuite.suite()
-        // )
-        // .unwrap();
-        // let mut plaintext = Vec::new();
-        // tls.read_to_end(&mut plaintext).unwrap();
-        // println!("{:?}", String::from_utf8_lossy(&plaintext));
     }
 }

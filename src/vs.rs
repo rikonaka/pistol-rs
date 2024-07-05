@@ -1,3 +1,4 @@
+use log::debug;
 use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
@@ -19,7 +20,7 @@ use crate::utils::get_threads_pool;
 use crate::vs::dbparser::nsp_exclued_parser;
 use crate::vs::dbparser::nsp_parser;
 use crate::vs::dbparser::Match;
-use crate::vs::vscan::vs_probe;
+use crate::vs::vscan::threads_vs_probe;
 use crate::Target;
 use crate::TargetType;
 
@@ -137,6 +138,7 @@ pub fn vs_scan(
     for l in nsp_str.lines() {
         nsp_lines.push(l.to_string());
     }
+    debug!("nmap service db load finish");
 
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
@@ -161,6 +163,7 @@ pub fn vs_scan(
         None => nsp_exclued_parser(&nsp_lines)?,
     };
     let service_probes = nsp_parser(&nsp_lines)?;
+    debug!("nmap service db parse finish");
 
     let mut recv_size = 0;
     for (dst_addr, ports) in vs_target {
@@ -170,7 +173,7 @@ pub fn vs_scan(
                 let tx = tx.clone();
                 let service_probes = service_probes.clone();
                 pool.execute(move || {
-                    let ret = vs_probe(
+                    let ret = threads_vs_probe(
                         dst_addr,
                         dst_port,
                         only_null_probe,
@@ -219,12 +222,14 @@ pub fn vs_scan(
 mod tests {
     use super::*;
     use crate::Host;
+    use crate::Logger;
     use crate::DST_IPV4_REMOTE;
     use fancy_regex::Regex;
     use std::fs::File;
     use std::io::Read;
     #[test]
     fn test_vs_detect() -> Result<()> {
+        Logger::init_debug_logging()?;
         let host = Host::new(DST_IPV4_REMOTE, Some(vec![22, 80]));
         let target = Target::new(vec![host]);
         let threads_num = 8;

@@ -212,16 +212,21 @@ impl ArpScanResults {
 
 impl fmt::Display for ArpScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut result_str = String::new();
-        let s = format!("Alive hosts: {}", self.alive_hosts.len());
-        result_str += &s;
-        result_str += "\n";
-        for (ip, aah) in &self.alive_hosts {
-            let s = format!("{}: {} ({})", ip, aah.mac_addr, aah.ouis);
-            result_str += &s;
-            result_str += "\n";
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![Cell::new("ARP Scan Results")
+            .style_spec("c")
+            .with_hspan(3)]));
+
+        let ah = &self.alive_hosts;
+        let ah: BTreeMap<Ipv4Addr, &ArpAliveHost> = ah.into_iter().map(|(i, a)| (*i, a)).collect();
+        for (ip, aah) in ah {
+            table.add_row(row![c -> ip, c -> aah.mac_addr, c -> aah.ouis]);
         }
-        write!(f, "{}", result_str)
+
+        let summary = format!("Summary:\nalive hosts: {}", self.alive_host_num);
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
+
+        write!(f, "{}", table)
     }
 }
 
@@ -1102,7 +1107,7 @@ mod tests {
         }
         let target: Target = Target::new(hosts);
         let threads_num = 300;
-        let timeout = Some(Duration::new(1, 5));
+        let timeout = Some(Duration::new(1, 0));
         // let print_result = false;
         let src_ipv4 = None;
         let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
@@ -1113,7 +1118,7 @@ mod tests {
     fn test_arp_scan_subnet_new() -> Result<()> {
         let target: Target = Target::from_subnet("192.168.1.1/24", None)?;
         let threads_num = 300;
-        let timeout = Some(Duration::new(1, 5));
+        let timeout = Some(Duration::new(1, 0));
         // let print_result = false;
         let src_ipv4 = None;
         let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
