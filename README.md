@@ -123,13 +123,13 @@ fn main() -> Result<()> {
     // When using scanning, please use a real local address to get the return packet.
     // And for flood attacks, please consider using a fake address.
     // If the value here is None, the programme will automatically look up the available addresses from the existing interfaces on the device.
-    let src_ipv4 = Some(Ipv4Addr::new(192, 168, 72, 128));
+    let src_ipv4 = None;
     // If the value of `source port` is `None`, the program will generate the source port randomly.
     let src_port = None;
     // The destination address is required.
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 136);
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
     let threads_num = 8;
-    let timeout = Some(Duration::new(3, 0));
+    let timeout = Some(Duration::new(1, 0));
     // Test with an open port `22` and a closed port `99`.
     let host = Host::new(dst_ipv4, Some(vec![22, 99]));
     // Users should build the `target` themselves.
@@ -149,14 +149,20 @@ fn main() -> Result<()> {
 ### Output
 
 ```bash
-192.168.72.136 99 closed
-192.168.72.136 22 open
++--------------+------+--------+
+|         Scan Results         |
++--------------+------+--------+
+| 192.168.1.51 |  22  |  open  |
++--------------+------+--------+
+| 192.168.1.51 |  99  | closed |
++--------------+------+--------+
+| Summary:                     |
+| avg rtt 0.004                |
+| open ports: 1                |
++--------------+------+--------+
 ```
 
 ### 2. Remote OS Detect Example
-
-* 192.168.72.129 - CentOS 7
-* 192.168.72.136 - Ubuntu 22.04
 
 ```rust
 use pistol::os::os_detect;
@@ -171,31 +177,19 @@ fn main() -> Result<()> {
     let src_ipv4 = None;
     // If the value of `src_port` is `None`, the program will generate it randomly.
     let src_port = None;
-    let dst_ipv4_1 = Ipv4Addr::new(192, 168, 72, 129);
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 129);
     // `dst_open_tcp_port` must be a certain open tcp port.
-    let dst_open_tcp_port_1 = 22;
+    let dst_open_tcp_port = 22;
     // `dst_closed_tcp_port` must be a certain closed tcp port.
-    let dst_closed_tcp_port_1 = 8765;
+    let dst_closed_tcp_port = 8765;
     // `dst_closed_udp_port` must be a certain closed udp port.
-    let dst_closed_udp_port_1 = 9876;
+    let dst_closed_udp_port = 9876;
     let host1 = Host::new(
-        dst_ipv4_1,
+        dst_ipv4,
         Some(vec![
-            dst_open_tcp_port_1,   // The order of these three ports cannot be disrupted.
-            dst_closed_tcp_port_1,
-            dst_closed_udp_port_1,
-        ]),
-    );
-    let dst_ipv4_2 = Ipv4Addr::new(192, 168, 72, 136);
-    let dst_open_tcp_port_2 = 22;
-    let dst_closed_tcp_port_2 = 8765;
-    let dst_closed_udp_port_2 = 9876;
-    let host2 = Host::new(
-        dst_ipv4_2,
-        Some(vec![
-            dst_open_tcp_port_2,
-            dst_closed_tcp_port_2,
-            dst_closed_udp_port_2,
+            dst_open_tcp_port,   // The order of these three ports cannot be disrupted.
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
         ]),
     );
     let target = Target::new(vec![host1, host2]);
@@ -216,110 +210,32 @@ fn main() -> Result<()> {
     println!("{}", ret);
     Ok(())
 }
-```
 
-### Output
-
-#### Ubuntu 22.04
+### output
 
 ```
->>> IP:
-192.168.72.136
->>> Pistol fingerprint:
-SCAN(V=PISTOL%D=12/14%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=657B21AA%P=RUST)
-SEQ(SP=107%GCD=1%ISR=105%TI=Z%CI=Z%II=I%TS=A)
-OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
-WIN(W1=FE88%W2=FE88%W3=FE88%W4=FE88%W5=FE88%W6=FE88)
-ECN(R=Y%DF=Y%TG=40%W=FAF0%O=M5B4NNSNW7%CC=Y%Q=)
-T1(R=Y%DF=Y%TG=40%S=O%A=S+%F=AS%RD=0%Q=)
-T2(R=N)
-T3(R=N)
-T4(R=Y%DF=Y%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
-T5(R=Y%DF=Y%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
-T6(R=Y%DF=Y%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
-T7(R=Y%DF=Y%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
-U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
-IE(R=Y%DFI=N%TG=40%CD=S)
->>> Details:
->>> Score:
-83/101
->>> Info:
-Linux 4.15.0-88-generic #88~16.04.1-Ubuntu SMP Wed Feb 12 04:19:15 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
-Linux 4.19.0-9-amd64 #1 SMP Debian 4.19.118-2 (2020-04-29) x86_64 GNU/Linux
-Linux 5.0.0-32-generic #34~18.04.2-Ubuntu SMP Thu Oct 10 10:36:02 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
-Linux 5.2.10-yocto-standard #1 SMP PREEMPT Fri Oct 4 11:58:01 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
-Linux 5.3.0-kali3-amd64
-Linux 5.3.16-200.fc30.x86_64 #1 SMP Fri Dec 13 17:48:38 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
-Linux 5.4.6-amd64.gbcm #3 SMP Thu Dec 26 13:55:41 -03 2019 x86_64 GNU/Linux
-Linux 5.6.15-arch1-1 #1 SMP PREEMPT Wed, 27 May 2020 23:42:26 +0000 x86_64 GNU/Linux
-Linux 5.2.11-arch1-1-ARCH
-Linux 5.4.0-1012-raspi #12-Ubuntu SMP Wed May 27 04:08:35 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux
->>> Fingerprint:
-Linux 4.15 - 5.6
->>> Class:
-Linux | Linux | 4.X | general purpose
-Linux | Linux | 5.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4 auto
-cpe:/o:linux:linux_kernel:5 auto
-...
++--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
+|                                                                         OS Detect Results                                                                          |
++--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
+| 192.168.1.51 |  #1  | 81/101 |                 # Linux 5.0.0-23-generic #24-Ubuntu SMP Mon Jul 29 15:36:44 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux                 |
+|              |      |        |                                            # Linux 5.3.0-24-generic x86_64 Ubuntu 19.10                                             |
+|              |      |        |                         # Linux 5.3.9-sunxi (root@builder) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02                          |
++--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
+| 192.168.1.51 |  #2  | 80/101 |                # Linux 5.4.0-1008-raspi #8-Ubuntu SMP Wed Apr 8 11:13:06 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux                 |
++--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
+| 192.168.1.51 |  #3  | 75/101 |             # Atmel Network Gateway Kit (NGW100) running Linux 2.6.22.atmel.4 kernel (compiled myself; not default one)             |
+|              |      |        |  # Linux 2.6.22.9-aldebaran-rt #1 PREEMPT RT Mon Nov 3 16:21:22 CET 2008 i586 unknown (Nao robot produced by Aldebaran Robotics).   |
+|              |      |        |                                       # Linux version 2.6.22-XR100-v1.1.6 (rdiouskine@ubuntu)                                       |
+|              |      |        |                        # Belkin Router Model F9K1103 v1 (01A) Firmware Version 1.00.37 (2011/5/24 11:55:14)                         |
+|              |      |        |                                   # CentOS release 5.7 (Final) 2.6.18-274.17.1.el5 i386 GNU/Linux                                   |
+|              |      |        |                     # Debian Linux 5.0 - 2.6.26-2-686-bigmem #1 SMP Wed Sep 21 05:29:18 UTC 2011 i686 GNU/Linux                     |
+|              |      |        | # 2.6.32.54-0.3-default #1 SMP 2012-01-27 17:38:56 +0100 x86_64 x86_64 x86_64 GNU/Linux, SUSE Linux Enterprise Server 11 SP1 x86_64 |
+|              |      |        |                                                # TufinOS (TSS); accessed VM console                                                 |
++--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
-#### CentOS 7
-
-```
->>> IP:
-192.168.72.129
->>> Pistol fingerprint:
-SCAN(V=PISTOL%D=12/14%OT=22%CT=54532%CU=34098PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=657B21AA%P=RUST)
-SEQ(SP=103%GCD=1%ISR=101%TI=Z%II=I%TS=A)
-OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
-WIN(W1=7120%W2=7120%W3=7120%W4=7120%W5=7120%W6=7120)
-ECN(R=Y%DF=Y%TG=40%W=7210%O=M5B4NNSNW7%CC=Y%Q=)
-T1(R=Y%DF=Y%TG=40%S=O%A=S+%F=AS%RD=0%Q=)
-T2(R=N)
-T3(R=N)
-T4(R=Y%DF=Y%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
-T5(R=N)
-T6(R=N)
-T7(R=N)
-U1(R=Y%DF=N%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
-IE(R=Y%DFI=N%TG=40%CD=S)
->>> Details:
->>> Score:
-55/101
->>> Info:
-Linux 3.10.0-327.13.1.el7.x86_64
-Linux 3.12.5-200.fc19.i686 #1 SMP Tue Dec 17 22:46:33 UTC 2013 i686 i686 i386 GNU/Linux
-Linux 3.13.5-200.fc20.x86_64 #1 SMP Mon Feb 24 16:51:35 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.11.0-17-generic #31-Ubuntu SMP Mon Feb 3 21:52:43 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.13.0-19-generic #40-Ubuntu SMP Mon Mar 24 02:36:06 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
-Linux 3.14.3-1-ARCH #1 SMP PREEMPT Tue May 6 22:44:19 CEST 2014 x86_64 GNU/Linux
-Linux 3.12.21-gentoo-r1 #1 SMP PREEMPT x86_64
-Linux 3.12.28-1-ARCH #1 PREEMPT Tue Sep 9 12:57:11 MDT 2014 armv6l GNU/Linux
-Linux 3.19.2-1-ARCH #1 SMP PREEMPT Wed Mar 18 16:36:01 CET 2015 i686 GNU/Linux
-Linux 3.10.72 #10878 Thu Mar 19 04:41:15 CET 2015 mips GNU/Linux
-Linux raspberrypi 4.1.7+ #817 PREEMPT Sat Sep 19 15:25:36 BST 2015 armv6l GNU/Linux
-Linux 3.18.26 #8771 Fri Feb 5 03:08:28 CET 2016 mips
-Linux 3.18.31 DD-WRT
-Linux  4.2.0-27-generic #32~14.04.1-Ubuntu SMP Fri Jan 22 15:32:26 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
-4.8.6-201.fc24.x86_64 #1 SMP Thu Nov 3 14:38:57 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
-Linux 4.11.6-3-ARCH #1 SMP PREEMPT Thu Jun 22 12:21:46 CEST 2017 x86_64 GNU/Linux
->>> Fingerprint:
-Linux 3.10 - 4.11
->>> Class:
-Linux | Linux | 3.X | general purpose
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3 auto
-cpe:/o:linux:linux_kernel:4 auto
-...
-```
 
 ### 3. Remote OS Detect Example on IPv6
-
-* fe80::6445:b9f8:cc82:3015 - CentOS 7
-* fe80::20c:29ff:feb6:8d99 - Ubuntu 22.04
 
 ```rust
 use pistol::os_detect6;
@@ -332,86 +248,44 @@ use anyhow::Result;
 fn main() -> Result<()> {
     let src_ipv6 = None;
     let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
-    let dst_open_tcp_port_1 = 22;
-    let dst_closed_tcp_port_1 = 8765;
-    let dst_closed_udp_port_1 = 9876;
-    let host1 = Host6::new(
+    let dst_open_tcp_port = 22;
+    let dst_closed_tcp_port = 8765;
+    let dst_closed_udp_port = 9876;
+    let host = Host6::new(
         dst_ipv6,
         Some(vec![
-            dst_open_tcp_port_1,
-            dst_closed_tcp_port_1,
-            dst_closed_udp_port_1,
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
         ]),
     );
 
-    let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
-    let dst_open_tcp_port_2 = 22;
-    let dst_closed_tcp_port_2 = 8765;
-    let dst_closed_udp_port_2 = 9876;
-    let host2 = Host6::new(
-        dst_ipv6,
-        Some(vec![
-            dst_open_tcp_port_2,
-            dst_closed_tcp_port_2,
-            dst_closed_udp_port_2,
-        ]),
-    );
-
-    let target = Target::new6(vec![host1, host2]);
-
-    // let dst_ipv6: Ipv6Addr = "fe80::6445:b9f8:cc82:3015".parse().unwrap();
+    let target = Target::new6(vec![host]);
     let src_port = None;
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
     let threads_num = 8;
-
     let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout)?;
     println!("{}", ret);
     Ok(())
 }
 ```
 
-
 ### Output
 
-#### CentOS 7
-
 ```
->>> IP:
-fe80::6445:b9f8:cc82:3015
->>> Novelty:
-18.900423183803554
++---------------- ---------+------+------+--------------------------+
+|                    OS Detect Results                              |
++--------------------------+------+------+--------------------------+
+| fe80::20c:29ff:feb6:8d99 |  #1  | 0.9  |        Linux 4.19        |
++--------------------------+------+------+--------------------------+
+| fe80::20c:29ff:feb6:8d99 |  #2  | 0.7  |     Linux 3.13 - 4.6     |
++--------------------------+------+------+--------------------------+
+| fe80::20c:29ff:feb6:8d99 |  #3  | 0.0  | Android 7.1 (Linux 3.18) |
++--------------------------+------+------+--------------------------+
 ```
 
 According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
-
-#### Ubuntu 22.04
-
-```
->>> IP:
-fe80::20c:29ff:feb6:8d99
->>> Novelty:
-8.970839832634503
->>> Score:
-92.00%
->>> Fingerprint:
-Linux 4.19
->>> Class:
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:4.19
->>> Score:
-71.04%
->>> Fingerprint:
-Linux 3.13 - 4.6
->>> Class:
-Linux | Linux | 3.X | general purpose
-Linux | Linux | 4.X | general purpose
->>> CPE:
-cpe:/o:linux:linux_kernel:3
-cpe:/o:linux:linux_kernel:4
-...
-```
 
 
 ### 3. Remote Service Detect Example
@@ -457,16 +331,14 @@ fn main() -> Result<()> {
 ### Output
 
 ```
->>> port:
-22
->>> services:
-ssh
->>> versioninfo:
-p/OpenSSH/ v/8.9p1 Ubuntu 3ubuntu0.7/ i/Ubuntu Linux; protocol 2.0/ o/Linux/ cpe:/a:openbsd:openssh:8.9p1/ cpe:/o:canonical:ubuntu_linux/ cpe:/o:linux:linux_kernel/
->>> port:
-80
->>> services:
-http
->>> versioninfo:
-p/Apache httpd/ v/2.4.52/ i/(Ubuntu)/ cpe:/a:apache:http_server:2.4.52/
++--------------+--------+--------+
+|      Service Scan Results      |
++--------------+--------+--------+
+| 192.168.1.51 |   22   |  ssh   |
++--------------+--------+--------+
+| 192.168.1.51 |   80   |  http  |
++--------------+--------+--------+
+| Summary:                       |
+| avg rtt: 20.973s               |
++--------------+--------+--------+
 ```

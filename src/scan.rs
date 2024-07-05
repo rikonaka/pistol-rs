@@ -1147,7 +1147,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4, Some(vec![22]));
+        let host = Host::new(DST_IPV4, Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         println!("{}", ret);

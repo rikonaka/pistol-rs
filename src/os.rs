@@ -440,7 +440,7 @@ mod tests {
         );
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
-        let top_k = 2;
+        let top_k = 3;
         let threads_num = 8;
 
         let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
