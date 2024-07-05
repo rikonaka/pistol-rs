@@ -148,7 +148,7 @@ fn main() -> Result<()> {
 
 ### Output
 
-```bash
+```
 +--------------+------+--------+
 |         Scan Results         |
 +--------------+------+--------+
@@ -286,7 +286,7 @@ fn main() -> Result<()> {
 +--------------------------+------+------+--------------------------+
 ```
 
-According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
+According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value (third column in the table) must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
 
 
 ### 3. Remote Service Detect Example
