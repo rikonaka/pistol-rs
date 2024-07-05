@@ -161,7 +161,7 @@ pub fn get_scan_line(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     dst_addr: IpAddr,
-    hops: Option<u8>,
+    hops: u8,
     good_results: bool,
 ) -> String {
     // Nmap version number (V).
@@ -186,7 +186,7 @@ pub fn get_scan_line(
     } else if !dst_addr.is_global_x() {
         ("Y", 1, "D")
     } else {
-        ("N", hops.unwrap(), "I")
+        ("N", hops, "I")
     };
     // Good results (G) is Y if conditions and results seem good enough to submit this fingerprint to Nmap.Org.
     // It is N otherwise. Unless you force them by enabling debugging (-d) or extreme verbosity (-vv), G=N fingerprints aren't printed by Nmap.
@@ -1597,19 +1597,46 @@ pub fn threads_os_probe(
     )?;
 
     // let hops = Some(1);
-    let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout)?;
-    let good_results = true;
-
     let (dst_mac, _interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4)?;
-    let scan = get_scan_line(
-        Some(dst_mac),
-        dst_open_tcp_port,
-        dst_closed_tcp_port,
-        dst_closed_udp_port,
-        dst_ipv4.into(),
-        hops,
-        good_results,
-    );
+
+    let good_results = true;
+    // form get_scan_line function
+    let need_cal_hops = |dst_addr: IpAddr| -> bool {
+        if dst_addr.is_loopback() {
+            false
+        } else if !dst_addr.is_global_x() {
+            false
+        } else {
+            true
+        }
+    };
+
+    let scan = match need_cal_hops(dst_ipv4.into()) {
+        true => {
+            let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout)?;
+            get_scan_line(
+                Some(dst_mac),
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+                dst_ipv4.into(),
+                hops,
+                good_results,
+            )
+        }
+        false => {
+            let hops = 0;
+            get_scan_line(
+                Some(dst_mac),
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+                dst_ipv4.into(),
+                hops,
+                good_results,
+            )
+        }
+    };
 
     // Use seq to judge target is alive or not.
     debug!("parse seqx");
@@ -1726,7 +1753,7 @@ mod tests {
             dst_closed_tcp_port,
             dst_closed_udp_port,
             dst_ipv4.into(),
-            None,
+            0,
             true,
         );
         println!("{}", ret);

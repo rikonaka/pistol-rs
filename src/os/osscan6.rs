@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 use std::iter::zip;
+use std::net::IpAddr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
@@ -21,6 +22,7 @@ use crate::layers::LayersMatch;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
+use crate::IpCheckMethods;
 
 use super::operator6::apply_scale;
 use super::operator6::vectorize;
@@ -1118,20 +1120,46 @@ pub fn threads_os_probe6(
         timeout,
     )?;
 
-    // let hops = Some(1);
-    let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
-    let good_results = true;
-
     let (dst_mac, _interface) = layer3_ipv6_system_route(src_ipv6, dst_ipv6)?;
-    let scan = get_scan_line(
-        Some(dst_mac),
-        dst_open_tcp_port,
-        dst_closed_tcp_port,
-        dst_closed_udp_port,
-        dst_ipv6.into(),
-        hops,
-        good_results,
-    );
+
+    let good_results = true;
+    // form get_scan_line function
+    let need_cal_hops = |dst_addr: IpAddr| -> bool {
+        if dst_addr.is_loopback() {
+            false
+        } else if !dst_addr.is_global_x() {
+            false
+        } else {
+            true
+        }
+    };
+
+    let scan = match need_cal_hops(dst_ipv6.into()) {
+        true => {
+            let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
+            get_scan_line(
+                Some(dst_mac),
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+                dst_ipv6.into(),
+                hops,
+                good_results,
+            )
+        }
+        false => {
+            let hops = 0;
+            get_scan_line(
+                Some(dst_mac),
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+                dst_ipv6.into(),
+                hops,
+                good_results,
+            )
+        }
+    };
 
     let features = vectorize(&ap)?;
     let features = apply_scale(&features, &linear.scale);
