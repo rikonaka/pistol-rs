@@ -35,3 +35,18 @@ pub fn ipv6_get_hops(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) 
     }
     Ok(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DST_IPV6_REMOTE;
+    #[test]
+    fn test_get_hops() -> Result<()> {
+        let src_ipv6: Ipv6Addr = "240e:34c:8e:3ae0:5054:ff:fe6b:1338".parse()?;
+        let dst_ipv6 = DST_IPV6_REMOTE;
+        let timeout = Duration::new(1, 0);
+        let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
+        println!("{}", hops);
+        Ok(())
+    }
+}

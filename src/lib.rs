@@ -14,11 +14,11 @@ use std::sync::Mutex;
 use subnetwork::Ipv4Pool;
 
 pub mod flood;
+pub mod hop;
 pub mod os;
 pub mod ping;
 pub mod scan;
 pub mod vs;
-pub mod hop;
 // inner use only
 mod errors;
 mod layers;
@@ -34,7 +34,7 @@ const DST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 51);
 const DST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
 const DST_IPV6_REMOTE: Ipv6Addr = Ipv6Addr::new(
-    0x240e, 0x034c, 0x008b, 0x4390, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
+    0x240e, 0x34c, 0x008e, 0x3ae0, 0x5054, 0x00ff, 0xfeb8, 0xb0ac,
 );
 #[cfg(test)]
 const DST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
