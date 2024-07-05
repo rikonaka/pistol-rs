@@ -164,6 +164,8 @@ fn main() -> Result<()> {
 
 ### 2. Remote OS Detect Example
 
+The test target server is ubuntu 22.04 server.
+
 ```rust
 use pistol::os::os_detect;
 use pistol::Target;
@@ -238,6 +240,8 @@ fn main() -> Result<()> {
 
 ### 3. Remote OS Detect Example on IPv6
 
+The test target server is ubuntu 22.04 server.
+
 ```rust
 use pistol::os_detect6;
 use pistol::Target;
@@ -276,7 +280,7 @@ fn main() -> Result<()> {
 
 ```
 +---------------- ---------+------+------+--------------------------+
-|                    OS Detect Results                              |
+|                       OS Detect Results                           |
 +--------------------------+------+------+--------------------------+
 | fe80::20c:29ff:feb6:8d99 |  #1  | 0.9  |        Linux 4.19        |
 +--------------------------+------+------+--------------------------+
