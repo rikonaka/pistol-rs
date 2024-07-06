@@ -1,5 +1,6 @@
 use anyhow::Result;
 use log::debug;
+use log::warn;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::ipnetwork::IpNetwork;
@@ -263,15 +264,21 @@ impl RouteTable {
                 .collect();
             let dst = line_split[0];
             if dst == "default" {
-                let (d, is_ipv4) = DefaultRoute::parse(line)?;
-                if is_ipv4 {
-                    default_ipv4_route = Some(d);
-                } else {
-                    default_ipv6_route = Some(d);
+                match DefaultRoute::parse(line) {
+                    Ok((d, is_ipv4)) => {
+                        if is_ipv4 {
+                            default_ipv4_route = Some(d);
+                        } else {
+                            default_ipv6_route = Some(d);
+                        }
+                    }
+                    Err(e) => warn!("default route parse error: {}", e),
                 }
             } else {
-                let r = Route::parse(line)?;
-                routes.push(r);
+                match Route::parse(line) {
+                    Ok(r) => routes.push(r),
+                    Err(e) => warn!("route parse error: {}", e),
+                };
             }
         }
 
@@ -309,16 +316,22 @@ impl RouteTable {
                 .collect();
             let dst = line_split[0];
             if dst == "default" {
-                let (d, is_ipv4) = DefaultRoute::parse(line)?;
-                if is_ipv4 {
-                    default_ipv4_route = Some(d);
-                } else {
-                    default_ipv6_route = Some(d);
+                match DefaultRoute::parse(line) {
+                    Ok((d, is_ipv4)) => {
+                        if is_ipv4 {
+                            default_ipv4_route = Some(d);
+                        } else {
+                            default_ipv6_route = Some(d);
+                        }
+                    }
+                    Err(e) => warn!("default route parse error: {}", e),
                 }
             } else {
                 if line_split.len() >= 4 && (dst.contains(".") || dst.contains(":")) {
-                    let r = Route::parse(line)?;
-                    routes.push(r);
+                    match Route::parse(line) {
+                        Ok(r) => routes.push(r),
+                        Err(e) => warn!("route parse error: {}", e),
+                    };
                 }
             }
         }
