@@ -392,17 +392,24 @@ impl SystemCache {
                 .collect();
             let max_iters = line_split.len();
             let mut i = 0;
-            let ipaddr: IpAddr = line_split[0].parse()?;
-
-            while i < max_iters {
-                let item = line_split[i];
-                if item == "lladdr" {
-                    i += 1;
-                    let mac: MacAddr = line_split[i].parse()?;
-                    ret.insert(ipaddr, mac);
-                    break;
+            match line_split[0].parse() {
+                Ok(ipaddr) => {
+                    while i < max_iters {
+                        let item = line_split[i];
+                        if item == "lladdr" {
+                            i += 1;
+                            match line_split[i].parse() {
+                                Ok(mac) => {
+                                    ret.insert(ipaddr, mac);
+                                    break;
+                                }
+                                Err(e) => warn!("neighbor cache parse mac error: {}", e),
+                            }
+                        }
+                        i += 1;
+                    }
                 }
-                i += 1;
+                Err(e) => warn!("neighbor cache parse ip error: {}", e),
             }
         }
         Ok(ret)
