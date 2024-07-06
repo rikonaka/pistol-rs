@@ -439,27 +439,33 @@ impl SystemCache {
                 .map(|x| x.trim())
                 .filter(|v| v.len() > 0)
                 .collect();
-            if line_split[0].contains("?") {
-                // ipv4 cache
-                let ip_str = line_split[1].replace("(", "").replace(")", "");
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = line_split[3].parse()?;
-                ret.insert(ip, mac);
-            } else if line_split[0].contains(":") {
-                // ipv6 cache
-                let ip_str = if line_split[0].contains("%") {
-                    let ip_split: Vec<&str> = line_split[0]
-                        .split("%")
-                        .map(|x| x.trim())
-                        .filter(|v| v.len() > 0)
-                        .collect();
-                    ip_split[0]
-                } else {
-                    line_split[0]
-                };
-                let ip: IpAddr = ip_str.parse()?;
-                let mac: MacAddr = line_split[1].parse()?;
-                ret.insert(ip, mac);
+            if line_split.len() > 3 {
+                if line_split[0].contains("?") {
+                    // ipv4 cache
+                    let ip_str = line_split[1].replace("(", "").replace(")", "");
+                    let ip: IpAddr = ip_str.parse()?;
+                    let mac: MacAddr = line_split[3].parse()?;
+                    ret.insert(ip, mac);
+                } else if line_split[0].contains(":") {
+                    // ipv6 cache
+                    let ip_str = if line_split[0].contains("%") {
+                        let ip_split: Vec<&str> = line_split[0]
+                            .split("%")
+                            .map(|x| x.trim())
+                            .filter(|v| v.len() > 0)
+                            .collect();
+                        ip_split[0]
+                    } else {
+                        line_split[0]
+                    };
+                    match ip_str.parse() {
+                        Ok(ip) => match line_split[1].parse() {
+                            Ok(mac) => ret.insert(ip, mac),
+                            Err(e) => warn!("neighbor cache parse mac error: {}", e),
+                        },
+                        Err(e) => warn!("neighbor cache parse ip error: {}", e),
+                    }
+                }
             }
         }
         Ok(ret)
