@@ -460,7 +460,9 @@ impl SystemCache {
                     };
                     match ip_str.parse() {
                         Ok(ip) => match line_split[1].parse() {
-                            Ok(mac) => ret.insert(ip, mac),
+                            Ok(mac) => {
+                                ret.insert(ip, mac);
+                            }
                             Err(e) => warn!("neighbor cache parse mac error: {}", e),
                         },
                         Err(e) => warn!("neighbor cache parse ip error: {}", e),
