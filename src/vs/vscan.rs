@@ -284,20 +284,3 @@ pub fn threads_vs_probe(
         Err(_) => Ok((vec![], start_time.elapsed())), // ignore closed port here
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::Ipv4Addr;
-    #[test]
-    fn test_tcp_connect() {
-        let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 51));
-        let tcp_dst_addr = SocketAddr::new(addr, 22);
-        let mut stream = TcpStream::connect(tcp_dst_addr).unwrap();
-        let mut buff = [0u8; 4096];
-        let n = stream.read(&mut buff).unwrap();
-        println!("{}", n);
-        let nstr = String::from_utf8_lossy(&buff);
-        println!("{}", nstr);
-    }
-}

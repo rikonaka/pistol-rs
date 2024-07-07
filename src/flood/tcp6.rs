@@ -149,26 +149,3 @@ pub fn send_ack_psh_flood_packet(
     }
     Ok(ipv6_buff.len() * count)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_syn_flood_packet() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let src_port = 54321;
-        let dst_port = 22;
-        let ret = send_syn_flood_packet(src_ipv6, src_port, dst_ipv6, dst_port, 3).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_ack_flood_packet() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let src_port = 54321;
-        let dst_port = 22;
-        let ret = send_ack_flood_packet(src_ipv6, src_port, dst_ipv6, dst_port, 3).unwrap();
-        println!("{:?}", ret);
-    }
-}

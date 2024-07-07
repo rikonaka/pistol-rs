@@ -393,19 +393,19 @@ mod tests {
     use crate::nmap_os_db_parser;
     use crate::Host;
     use crate::Host6;
-    use crate::Logger;
+    // use crate::Logger;
     use crate::DST_IPV4_REMOTE;
-    use crate::DST_IPV6_REMOTE;
+    use crate::DST_IPV6_LOCAL;
     use std::time::SystemTime;
     #[test]
     fn test_os_detect6() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let src_ipv6 = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
         let host = Host6::new(
-            DST_IPV6_REMOTE,
+            DST_IPV6_LOCAL,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -424,7 +424,7 @@ mod tests {
     }
     #[test]
     fn test_os_detect() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let dst_open_tcp_port = 22;

@@ -570,15 +570,14 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::Host6;
-    use crate::Logger;
+    // use crate::Logger;
     use crate::Target;
     use crate::DST_IPV4_LOCAL;
     use crate::DST_IPV4_REMOTE;
     use crate::DST_IPV6_LOCAL;
-    use crate::DST_IPV6_REMOTE;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
@@ -598,12 +597,12 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_ping6() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host6::new(DST_IPV6_REMOTE, Some(vec![22]));
+        let host = Host6::new(DST_IPV6_LOCAL, Some(vec![22]));
         let target: Target = Target::new6(vec![host]);
         let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout)?;
         println!("{}", ret);
@@ -611,7 +610,7 @@ mod tests {
     }
     #[test]
     fn test_icmp_ping() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let threads_num: usize = 8;
@@ -627,7 +626,7 @@ mod tests {
     }
     #[test]
     fn test_icmpv6_ping() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let src_port: Option<u16> = None;
         #[cfg(target_os = "linux")]
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse()?;

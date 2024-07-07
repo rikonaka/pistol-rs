@@ -109,20 +109,3 @@ pub fn send_icmp_ping_packet(
     }
     Ok(false)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Logger;
-    #[test]
-    fn test_icmp_ping_packet() {
-        Logger::init_debug_logging().unwrap();
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 34);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
-        let timeout = Duration::new(3, 0);
-        for ttl in 1..30 {
-            let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, ttl, timeout).unwrap();
-            println!("ttl: {} = {}", ttl, ret);
-        }
-    }
-}

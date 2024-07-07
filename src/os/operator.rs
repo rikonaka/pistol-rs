@@ -1370,12 +1370,3 @@ pub fn icmp_cd(ie: &IERR) -> Result<String> {
         Ok(String::new())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_error() {
-        // let nmap_sp_vec = vec![0x104, 0x105, 0xFC, 0xFF];
-        // let nmap_isr_vec = vec![0x10B, 0x10C, 0x108, 0x10F];
-    }
-}

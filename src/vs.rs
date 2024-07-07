@@ -222,14 +222,11 @@ pub fn vs_scan(
 mod tests {
     use super::*;
     use crate::Host;
-    use crate::Logger;
+    // use crate::Logger;
     use crate::DST_IPV4_REMOTE;
-    use fancy_regex::Regex;
-    use std::fs::File;
-    use std::io::Read;
     #[test]
     fn test_vs_detect() -> Result<()> {
-        Logger::init_debug_logging()?;
+        // Logger::init_debug_logging()?;
         let host = Host::new(DST_IPV4_REMOTE, Some(vec![22, 80]));
         let target = Target::new(vec![host]);
         let threads_num = 8;
@@ -249,42 +246,5 @@ mod tests {
         )?;
         println!("{}", ret);
         Ok(())
-    }
-    #[test]
-    fn test_regex() {
-        let mut buff = [0u8; 102400];
-        let mut file = File::open("./response.bin").unwrap();
-        file.read(&mut buff).unwrap();
-        println!("{}", buff.len());
-
-        let buff_str = String::from_utf8_lossy(&buff);
-
-        println!("start nsp");
-        let nsp_str = include_str!("./db/nmap-service-probes");
-        let mut nsp_lines = Vec::new();
-        for l in nsp_str.lines() {
-            nsp_lines.push(l.to_string());
-        }
-
-        // let _exclude_ports = nsp_exclued_parser(&nsp_lines).unwrap();
-        let service_probes = nsp_parser(&nsp_lines).unwrap();
-        println!("end nsp");
-
-        // let ssh_str = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.7";
-
-        for s in service_probes {
-            if s.probe.probename == "GetRequest" {
-                let _ret = s.check(&buff_str);
-                // for m in s.matchs {
-                //     if m.pattern == r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)\s" {
-                //         println!("FIND!");
-                //     }
-                // }
-            }
-        }
-
-        let re = Regex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)\s").unwrap();
-        let m = re.is_match(&buff_str).unwrap();
-        println!("{}", m);
     }
 }

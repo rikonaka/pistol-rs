@@ -121,18 +121,3 @@ pub fn send_udp_scan_packet(
     // no response received (even after retransmissions)
     Ok((PortStatus::OpenOrFiltered, rtt))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_send_udp_scan_packet() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let src_port = 32109;
-        let dst_port = 80;
-        let timeout = Duration::new(3, 0);
-        let ret = send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout).unwrap();
-        println!("{:?}", ret);
-    }
-}

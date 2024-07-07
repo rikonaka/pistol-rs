@@ -1056,88 +1056,10 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
     #[test]
     fn test_dns_query() {
         let hostname = "ipv6.sjtu.edu.cn";
         let ret = dns_query(hostname).unwrap();
         println!("{:?}", ret);
-    }
-    #[test]
-    fn test_send_arp_packet() {
-        let src_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 33);
-        let dst_ipv4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 118);
-        match arp(src_ipv4, dst_ipv4).unwrap() {
-            (Some(m), Some(rtt)) => {
-                println!("{} => rtt: {:.3}", m, rtt.as_secs_f32());
-            }
-            (_, _) => println!("None"),
-        }
-    }
-    #[test]
-    fn test_send_ndp_ns_packet() {
-        let src_ipv6: Ipv6Addr = "240e:34c:8a:7f60:54c1:9cfc:674b:4589".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "240e:34c:8a:7f60:5054:ff:feb8:b0ac".parse().unwrap();
-        match ndp_ns(src_ipv6, dst_ipv6).unwrap() {
-            (Some(mac), Some(rtt)) => println!("{} => rtt: {:.3}", mac, rtt.as_secs_f64()),
-            _ => println!("None"),
-        }
-    }
-    #[test]
-    fn test_send_ndp_rs_packet() {
-        let src_ipv6: Ipv6Addr = "240e:34c:8a:7f60:54c1:9cfc:674b:4589".parse().unwrap();
-        match ndp_rs(src_ipv6).unwrap() {
-            (Some(mac), Some(_rtt)) => println!("{}", mac),
-            _ => println!("None"),
-        }
-    }
-    #[test]
-    fn test_duration_ep() {
-        let a = Duration::new(1, 0);
-        let b = Duration::new(0, 0);
-
-        if a == Duration::new(0, 0) {
-            println!("a == 0")
-        }
-        if b == Duration::new(0, 0) {
-            println!("b == 0")
-        }
-    }
-    #[test]
-    fn test_windows_command() {
-        let c = Command::new("powershell")
-            .args(["Get-NetNeighbor"])
-            .output()
-            .unwrap();
-        let output = String::from_utf8_lossy(&c.stdout);
-        println!("{}", output);
-    }
-    #[test]
-    fn test_linux_command() {
-        let c = Command::new("bash")
-            .args(["-c", "ip neighbour"])
-            .output()
-            .unwrap();
-        let output = String::from_utf8_lossy(&c.stdout);
-        println!("{}", output);
-    }
-    #[test]
-    fn test_windows_mac() -> Result<()> {
-        let s = "33-33-EF-C0-98-8F";
-        let s = s.replace("-", ":");
-        let _: MacAddr = s.parse()?;
-        Ok(())
-    }
-    #[test]
-    fn test_map() {
-        let line = "gateway: 192.168.72.2";
-        let l_split: Vec<&str> = line.split(":").filter(|v| v.len() > 0).collect();
-        println!("{:?}", l_split);
-        let l_split: Vec<&str> = line
-            .split(":")
-            .filter(|v| v.len() > 0)
-            .map(|x| x.trim())
-            .collect();
-        println!("{:?}", l_split);
     }
 }

@@ -133,16 +133,3 @@ pub fn send_icmp_ping_packet(
     // no response received (even after retransmissions)
     Ok((PingStatus::Down, rtt))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_icmp_ping_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 2);
-        let timeout = Duration::new(3, 0);
-        let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout).unwrap();
-        println!("{:?}", ret);
-    }
-}

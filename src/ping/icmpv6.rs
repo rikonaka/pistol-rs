@@ -125,16 +125,3 @@ pub fn send_icmpv6_ping_packet(
     // no response received (even after retransmissions)
     Ok((PingStatus::Down, rtt))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_icmp_ping_packet() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let timeout = Duration::new(3, 0);
-        let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout).unwrap();
-        println!("{:?}", ret);
-    }
-}

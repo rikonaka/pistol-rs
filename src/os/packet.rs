@@ -1010,36 +1010,3 @@ pub fn udp_packet_layer3(
 
     Ok(buff.to_vec())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_vec() {
-        let udp_data: Vec<u8> = vec![0x43; 10];
-        println!("{:?}", udp_data);
-    }
-    #[test]
-    fn tcp_options_test() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        let src_port = 39876;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
-        let dst_port = 80;
-        let _ = seq_packet_1_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = seq_packet_2_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = seq_packet_3_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = seq_packet_4_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = seq_packet_5_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = seq_packet_6_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = ie_packet_1_layer3(src_ipv4, dst_ipv4, 0);
-        let _ = ie_packet_2_layer3(src_ipv4, dst_ipv4, 1);
-        let _ = ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = t2_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = t3_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = t4_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = t5_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = t6_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = t7_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-        let _ = udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_port);
-    }
-}

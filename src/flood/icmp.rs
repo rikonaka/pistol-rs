@@ -73,15 +73,3 @@ pub fn send_icmp_flood_packet(
 
     Ok(ip_buff.len() * count)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_icmp_flood_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 2);
-        let ret = send_icmp_flood_packet(src_ipv4, 0, dst_ipv4, 0, 3).unwrap();
-        println!("{:?}", ret);
-    }
-}

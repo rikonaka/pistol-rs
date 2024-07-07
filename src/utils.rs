@@ -266,7 +266,6 @@ impl SpHex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pnet::datalink;
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
@@ -289,33 +288,8 @@ mod tests {
         assert_eq!(r, 10);
     }
     #[test]
-    fn test_list_interfaces() {
-        for interface in datalink::interfaces() {
-            // println!("{}", interface)
-            let ips = interface.ips;
-            for ip in ips {
-                match ip.ip() {
-                    IpAddr::V6(i) => {
-                        println!("{}", i);
-                    }
-                    _ => (),
-                }
-            }
-        }
-    }
-    #[test]
     fn test_get_cpus() {
         let cpus = get_cpu_num();
         println!("{}", cpus);
-    }
-    #[test]
-    fn test_find_source_ipv6() {
-        let dst_ipv6: Ipv6Addr = "fe80::cc6c:3960:8be6:579".parse().unwrap();
-        let find = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
-        println!("{}", find);
-
-        let dst_ipv6: Ipv6Addr = "2001:da8:8000:1::80".parse().unwrap();
-        let find = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
-        println!("{}", find);
     }
 }

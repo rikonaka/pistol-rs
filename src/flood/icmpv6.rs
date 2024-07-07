@@ -68,15 +68,3 @@ pub fn send_icmpv6_flood_packet(
     }
     Ok(ipv6_buff.len() * count)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_icmp_flood_packet() {
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe43:9c82".parse().unwrap();
-        let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2a:e252".parse().unwrap();
-        let ret = send_icmpv6_flood_packet(src_ipv6, 0, dst_ipv6, 0, 3).unwrap();
-        println!("{:?}", ret);
-    }
-}

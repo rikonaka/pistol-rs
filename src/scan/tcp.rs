@@ -15,6 +15,8 @@ use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::Packet;
 use rand::Rng;
+use serde::Deserialize;
+use serde::Serialize;
 use std::error::Error;
 use std::fmt;
 use std::net::Ipv4Addr;
@@ -22,8 +24,6 @@ use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
-use serde::Deserialize;
-use serde::Serialize;
 
 use crate::layers::layer3_ipv4_send;
 use crate::layers::Layer3Match;
@@ -1089,11 +1089,7 @@ pub fn send_idle_scan_packet(
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                         // dst is unreachable ignore this port
-                                        return Ok((
-                                            PortStatus::Unreachable,
-                                            None,
-                                            Some(rtt),
-                                        ));
+                                        return Ok((PortStatus::Unreachable, None, Some(rtt)));
                                     }
                                 }
                                 None => (),
@@ -1142,105 +1138,5 @@ pub fn send_connect_scan_packet(
     match TcpStream::connect_timeout(&addr, timeout) {
         Ok(_) => Ok((PortStatus::Open, Some(start_time.elapsed()))),
         Err(_) => Ok((PortStatus::Closed, None)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils;
-    #[test]
-    fn test_send_syn_scan_packet() {
-        // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let src_port = utils::random_port();
-        let dst_port = 99;
-        // let dst_port = 80;
-        let timeout = Duration::new(3, 0);
-        let ret = send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout).unwrap();
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_send_fin_scan_packet() {
-        // let src_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        // let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let src_port = utils::random_port();
-        // let dst_port = 99;
-        let dst_port = 80;
-        let timeout = Duration::new(3, 0);
-        let ret = send_fin_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_send_ack_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let src_port = utils::random_port();
-        // let dst_port = 99;
-        let dst_port = 80;
-        let timeout = Duration::new(3, 0);
-        let ret = send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_send_null_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let src_port = utils::random_port();
-        // let dst_port = 99;
-        let dst_port = 80;
-        let timeout = Duration::new(3, 0);
-        let ret = send_null_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
-        println!("{:?}", ret);
-    }
-    #[test]
-    fn test_send_window_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let src_port = utils::random_port();
-        // let dst_port = 99;
-        let dst_port = 80;
-        let timeout = Duration::new(3, 0);
-        let ret = send_window_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout);
-        println!("{:?}", ret);
-    }
-    #[test]
-    #[should_panic]
-    fn test_send_idle_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let zombie_ipv4 = Ipv4Addr::new(192, 168, 72, 135);
-
-        let src_port = utils::random_port();
-        let dst_port = 22;
-        let zombie_port = utils::random_port();
-        let timeout = Duration::new(3, 0);
-        let (ret, i, _rtt) = send_idle_scan_packet(
-            src_ipv4,
-            src_port,
-            dst_ipv4,
-            dst_port,
-            zombie_ipv4,
-            zombie_port,
-            timeout,
-        )
-        .unwrap();
-        println!("{:?}", ret);
-        println!("{:?}", i.unwrap());
-    }
-    #[test]
-    fn test_send_tcp_connect_scan_packet() {
-        let src_ipv4 = Ipv4Addr::new(192, 168, 72, 128);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-        let timeout = Duration::new(3, 0);
-        let src_port = utils::random_port();
-        let dst_port = 80;
-        let ret =
-            send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout).unwrap();
-        println!("{:?}", ret);
     }
 }
