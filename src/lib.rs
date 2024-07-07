@@ -343,16 +343,3 @@ pub use vs::vs_scan;
 
 /* DNS */
 pub use layers::dns_query;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_target_print() {
-        let host1 = Host::new(Ipv4Addr::new(192, 168, 1, 135), Some(vec![22, 23]));
-        let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]));
-        let _target = Target::new(vec![host1, host2]);
-        // println!("{}", target);
-        assert_eq!(1, 1);
-    }
-}
