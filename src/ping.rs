@@ -44,8 +44,8 @@ pub enum PingStatus {
 
 #[derive(Debug, Clone)]
 pub struct PingResults {
-    pub pings: HashMap<IpAddr, PingStatus>,
-    pub rtts: HashMap<IpAddr, Option<Duration>>,
+    pub pings: HashMap<IpAddr, Vec<PingStatus>>,
+    pub rtts: HashMap<IpAddr, Vec<Duration>>,
     pub avg_rtt: Option<Duration>,
     pub alive_hosts: usize,
 }
@@ -59,20 +59,20 @@ impl PingResults {
             alive_hosts: 0,
         }
     }
-    pub fn get_status(&self, k: &IpAddr) -> Option<&PingStatus> {
+    pub fn get_ping_status(&self, k: &IpAddr) -> Option<&Vec<PingStatus>> {
         self.pings.get(k)
+    }
+    pub fn get_rtts(&self, k: &IpAddr) -> Option<&Vec<Duration>> {
+        self.rtts.get(k)
     }
     pub fn enrichment(&mut self) {
         // avg rtt
         let mut total_rtt = 0.0;
         let mut total_num = 0;
-        for (_ip, r) in &self.rtts {
-            match r {
-                Some(r) => {
-                    total_rtt += r.as_secs_f64();
-                    total_num += 1;
-                }
-                None => (),
+        for (_ip, rtts) in &self.rtts {
+            for r in rtts {
+                total_rtt += r.as_secs_f64();
+                total_num += 1;
             }
         }
         let avg_rtt = if total_num != 0 {
@@ -87,9 +87,14 @@ impl PingResults {
         // alive hosts
         let mut alive_hosts = 0;
         for (_ip, ps) in &self.pings {
-            match ps {
-                PingStatus::Up => alive_hosts += 1,
-                _ => (),
+            for p in ps {
+                match p {
+                    PingStatus::Up => {
+                        alive_hosts += 1;
+                        break;
+                    }
+                    _ => (),
+                }
             }
         }
         self.alive_hosts = alive_hosts;
@@ -104,23 +109,25 @@ impl fmt::Display for PingResults {
             .with_hspan(2)]));
 
         let pings = &self.pings;
-        let pings: BTreeMap<IpAddr, &PingStatus> =
+        let pings: BTreeMap<IpAddr, &Vec<PingStatus>> =
             pings.into_iter().map(|(i, p)| (*i, p)).collect();
         for (ip, status) in pings {
-            let status_str = match status {
-                PingStatus::Up => String::from("up"),
-                PingStatus::Down => String::from("down"),
-                PingStatus::Error => String::from("error"),
+            let status_str = if status.contains(&PingStatus::Up) {
+                String::from("up")
+            } else if status.contains(&PingStatus::Error) {
+                String::from("error")
+            } else {
+                String::from("down")
             };
             table.add_row(row![c -> ip, c -> status_str]);
         }
         let summary = match self.avg_rtt {
             Some(avg_rtt) => format!(
-                "Summary:\navg rtt: {:.3}s\nalive: {}",
-                avg_rtt.as_secs_f32(),
+                "Summary:\navg rtt: {:.1}ms\nalive: {}",
+                avg_rtt.as_secs_f64() * 1000.0,
                 self.alive_hosts
             ),
-            None => format!("Summary:\navg rtt: 0.00s\nalive: {}", self.alive_hosts),
+            None => format!("Summary:\navg rtt: 0.0ms\nalive: {}", self.alive_hosts),
         };
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(2)]));
 
@@ -145,6 +152,10 @@ fn threads_ping(
     dst_port: Option<u16>,
     timeout: Duration,
 ) -> Result<(PingStatus, Option<Duration>)> {
+    match dst_port {
+        None => debug!("can not found dst port on method: {:?}", method),
+        _ => (),
+    }
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -207,6 +218,10 @@ fn threads_ping6(
     dst_port: Option<u16>,
     timeout: Duration,
 ) -> Result<(PingStatus, Option<Duration>)> {
+    match dst_port {
+        None => debug!("can not found dst port on method: {:?}", method),
+        _ => (),
+    }
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -261,6 +276,7 @@ pub fn ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     let src_port = match src_port {
         Some(p) => p,
@@ -281,28 +297,20 @@ pub fn ping(
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
-        if host.ports.len() > 0 && method != PingMethods::Icmpv6 {
-            let dst_port = host.ports[0];
+
+        let dst_port =
+            if host.ports.len() > 0 && method != PingMethods::Icmp && method != PingMethods::Icmpv6
+            {
+                Some(host.ports[0])
+            } else {
+                None
+            };
+
+        for _ in 0..tested {
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
-                let ret = threads_ping(
-                    method,
-                    src_ipv4,
-                    src_port,
-                    dst_ipv4,
-                    Some(dst_port),
-                    timeout,
-                );
-                match tx.send((dst_ipv4, ret)) {
-                    _ => (),
-                }
-            });
-        } else {
-            let tx = tx.clone();
-            recv_size += 1;
-            pool.execute(move || {
-                let ret = threads_ping(method, src_ipv4, src_port, dst_ipv4, None, timeout);
+                let ret = threads_ping(method, src_ipv4, src_port, dst_ipv4, dst_port, timeout);
                 match tx.send((dst_ipv4, ret)) {
                     _ => (),
                 }
@@ -318,15 +326,39 @@ pub fn ping(
         match pr {
             Ok((p, rtt)) => {
                 debug!("ip: {}, port status: {:?}, rtt: {:?}", dst_ipv4, p, rtt);
-                ping_results.pings.insert(dst_ipv4.into(), p);
-                ping_results.rtts.insert(dst_ipv4.into(), rtt);
+                match ping_results.pings.get_mut(&dst_ipv4.into()) {
+                    Some(d) => {
+                        d.push(p);
+                    }
+                    None => {
+                        let v = vec![p];
+                        ping_results.pings.insert(dst_ipv4.into(), v);
+                    }
+                }
+                match rtt {
+                    Some(rtt) => match ping_results.rtts.get_mut(&dst_ipv4.into()) {
+                        Some(r) => {
+                            r.push(rtt);
+                        }
+                        None => {
+                            let v = vec![rtt];
+                            ping_results.rtts.insert(dst_ipv4.into(), v);
+                        }
+                    },
+                    None => (),
+                }
             }
             Err(e) => {
                 warn!("ping error: {}", e);
-                ping_results
-                    .pings
-                    .insert(dst_ipv4.into(), PingStatus::Error);
-                ping_results.rtts.insert(dst_ipv4.into(), None);
+                match ping_results.pings.get_mut(&dst_ipv4.into()) {
+                    Some(d) => {
+                        d.push(PingStatus::Error);
+                    }
+                    None => {
+                        let v = vec![PingStatus::Error];
+                        ping_results.pings.insert(dst_ipv4.into(), v);
+                    }
+                }
             }
         }
     }
@@ -342,6 +374,7 @@ pub fn ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     let src_port = match src_port {
         Some(p) => p,
@@ -361,28 +394,20 @@ pub fn ping6(
             Some(s) => s,
             None => return Err(CanNotFoundSourceAddress::new().into()),
         };
-        if host.ports.len() > 0 && method != PingMethods::Icmpv6 {
-            let dst_port = host.ports[0];
+
+        let dst_port =
+            if host.ports.len() > 0 && method != PingMethods::Icmp && method != PingMethods::Icmpv6
+            {
+                Some(host.ports[0])
+            } else {
+                None
+            };
+
+        for _ in 0..tested {
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
-                let ret = threads_ping6(
-                    method,
-                    src_ipv6,
-                    src_port,
-                    dst_ipv6,
-                    Some(dst_port),
-                    timeout,
-                );
-                match tx.send((dst_ipv6, ret)) {
-                    _ => (),
-                }
-            });
-        } else {
-            let tx = tx.clone();
-            recv_size += 1;
-            pool.execute(move || {
-                let ret = threads_ping6(method, src_ipv6, src_port, dst_ipv6, None, timeout);
+                let ret = threads_ping6(method, src_ipv6, src_port, dst_ipv6, dst_port, timeout);
                 match tx.send((dst_ipv6, ret)) {
                     _ => (),
                 }
@@ -396,18 +421,43 @@ pub fn ping6(
     for (dst_ipv6, pr) in iter {
         match pr {
             Ok((p, rtt)) => {
-                ping_results.pings.insert(dst_ipv6.into(), p);
-                ping_results.rtts.insert(dst_ipv6.into(), rtt);
+                match ping_results.pings.get_mut(&dst_ipv6.into()) {
+                    Some(d) => {
+                        d.push(p);
+                    }
+                    None => {
+                        let v = vec![p];
+                        ping_results.pings.insert(dst_ipv6.into(), v);
+                    }
+                }
+                match rtt {
+                    Some(rtt) => match ping_results.rtts.get_mut(&dst_ipv6.into()) {
+                        Some(r) => {
+                            r.push(rtt);
+                        }
+                        None => {
+                            let v = vec![rtt];
+                            ping_results.rtts.insert(dst_ipv6.into(), v);
+                        }
+                    },
+                    None => (),
+                }
             }
             Err(e) => {
                 warn!("ping error: {}", e);
-                ping_results
-                    .pings
-                    .insert(dst_ipv6.into(), PingStatus::Error);
-                ping_results.rtts.insert(dst_ipv6.into(), None);
+                match ping_results.pings.get_mut(&dst_ipv6.into()) {
+                    Some(d) => {
+                        d.push(PingStatus::Error);
+                    }
+                    None => {
+                        let v = vec![PingStatus::Error];
+                        ping_results.pings.insert(dst_ipv6.into(), v);
+                    }
+                }
             }
         }
     }
+
     ping_results.enrichment();
     Ok(ping_results)
 }
@@ -421,6 +471,7 @@ pub fn tcp_syn_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -429,6 +480,7 @@ pub fn tcp_syn_ping(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -438,6 +490,7 @@ pub fn tcp_syn_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -446,6 +499,7 @@ pub fn tcp_syn_ping6(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -458,6 +512,7 @@ pub fn tcp_ack_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -466,6 +521,7 @@ pub fn tcp_ack_ping(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -475,6 +531,7 @@ pub fn tcp_ack_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -483,6 +540,7 @@ pub fn tcp_ack_ping6(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -495,6 +553,7 @@ pub fn udp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -503,6 +562,7 @@ pub fn udp_ping(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -512,6 +572,7 @@ pub fn udp_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -520,6 +581,7 @@ pub fn udp_ping6(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -536,6 +598,7 @@ pub fn icmp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -544,6 +607,7 @@ pub fn icmp_ping(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -554,6 +618,7 @@ pub fn icmpv6_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
+    tested: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -562,6 +627,7 @@ pub fn icmpv6_ping(
         src_port,
         threads_num,
         timeout,
+        tested,
     )
 }
 
@@ -570,29 +636,25 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::Host6;
-    // use crate::Logger;
+    use crate::Logger;
     use crate::Target;
     use crate::DST_IPV4_LOCAL;
     use crate::DST_IPV4_REMOTE;
     use crate::DST_IPV6_LOCAL;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
-        // Logger::init_debug_logging()?;
+        Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
-        let timeout = Some(Duration::new(1, 500));
+        let timeout = Some(Duration::new(1, 0));
 
         let host_1 = Host::new(DST_IPV4_REMOTE, Some(vec![22]));
         let host_2 = Host::new(DST_IPV4_LOCAL, Some(vec![22]));
         let target: Target = Target::new(vec![host_1, host_2]);
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout)?;
-        println!("len: {}", ret.pings.len());
+        let tested = 4;
+        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tested)?;
         println!("{}", ret);
-
-        // let target: Target = Target::from_subnet("192.168.1.1/29", Some(vec![22]))?;
-        // let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout)?;
-        // println!("{}", ret);
         Ok(())
     }
     #[test]
@@ -601,10 +663,11 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
-        let timeout = Some(Duration::new(3, 0));
+        let timeout = Some(Duration::new(1, 0));
         let host = Host6::new(DST_IPV6_LOCAL, Some(vec![22]));
         let target: Target = Target::new6(vec![host]);
-        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout)?;
+        let tested = 4;
+        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout, tested)?;
         println!("{}", ret);
         Ok(())
     }
@@ -617,10 +680,11 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let host = Host::new(DST_IPV4_REMOTE, Some(vec![]));
         let target: Target = Target::new(vec![host]);
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout)?;
+        let tested = 4;
+        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tested)?;
         println!("{}", ret);
         let target: Target = Target::from_subnet("192.168.1.1/29", None)?;
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout)?;
+        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tested)?;
         println!("{}", ret);
         Ok(())
     }
@@ -636,8 +700,9 @@ mod tests {
         let host = Host6::new(DST_IPV6_LOCAL, Some(vec![]));
         let target: Target = Target::new6(vec![host]);
         let threads_num: usize = 8;
+        let tested = 4;
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout)?;
+        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout, tested)?;
         println!("{}", ret);
         Ok(())
     }

@@ -164,11 +164,11 @@ impl fmt::Display for PortScanResults {
 
         let summary = match self.avg_rtt {
             Some(avg_rtt) => format!(
-                "Summary:\navg rtt {:.3}\nopen ports: {}",
-                avg_rtt.as_secs_f32(),
+                "Summary:\navg rtt {:.1}ms\nopen ports: {}",
+                avg_rtt.as_secs_f32() * 1000.0,
                 self.open_ports
             ),
-            None => format!("Summary:\navg rtt 0.00s\nopen ports {}", self.open_ports),
+            None => format!("Summary:\navg rtt 0.0ms\nopen ports {}", self.open_ports),
         };
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
 
