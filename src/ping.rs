@@ -276,7 +276,7 @@ pub fn ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     let src_port = match src_port {
         Some(p) => p,
@@ -306,7 +306,7 @@ pub fn ping(
                 None
             };
 
-        for _ in 0..tested {
+        for _ in 0..tests {
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
@@ -374,7 +374,7 @@ pub fn ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     let src_port = match src_port {
         Some(p) => p,
@@ -403,7 +403,7 @@ pub fn ping6(
                 None
             };
 
-        for _ in 0..tested {
+        for _ in 0..tests {
             let tx = tx.clone();
             recv_size += 1;
             pool.execute(move || {
@@ -471,7 +471,7 @@ pub fn tcp_syn_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -480,7 +480,7 @@ pub fn tcp_syn_ping(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -490,7 +490,7 @@ pub fn tcp_syn_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -499,7 +499,7 @@ pub fn tcp_syn_ping6(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -512,7 +512,7 @@ pub fn tcp_ack_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -521,7 +521,7 @@ pub fn tcp_ack_ping(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -531,7 +531,7 @@ pub fn tcp_ack_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -540,7 +540,7 @@ pub fn tcp_ack_ping6(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -553,7 +553,7 @@ pub fn udp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -562,7 +562,7 @@ pub fn udp_ping(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -572,7 +572,7 @@ pub fn udp_ping6(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -581,7 +581,7 @@ pub fn udp_ping6(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -598,7 +598,7 @@ pub fn icmp_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping(
         target,
@@ -607,7 +607,7 @@ pub fn icmp_ping(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -618,7 +618,7 @@ pub fn icmpv6_ping(
     src_port: Option<u16>,
     threads_num: usize,
     timeout: Option<Duration>,
-    tested: usize,
+    tests: usize,
 ) -> Result<PingResults> {
     ping6(
         target,
@@ -627,7 +627,7 @@ pub fn icmpv6_ping(
         src_port,
         threads_num,
         timeout,
-        tested,
+        tests,
     )
 }
 
@@ -652,8 +652,8 @@ mod tests {
         let host_1 = Host::new(DST_IPV4_REMOTE, Some(vec![22]));
         let host_2 = Host::new(DST_IPV4_LOCAL, Some(vec![22]));
         let target: Target = Target::new(vec![host_1, host_2]);
-        let tested = 4;
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tested)?;
+        let tests = 4;
+        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }
@@ -666,8 +666,8 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let host = Host6::new(DST_IPV6_LOCAL, Some(vec![22]));
         let target: Target = Target::new6(vec![host]);
-        let tested = 4;
-        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout, tested)?;
+        let tests = 4;
+        let ret = tcp_syn_ping6(target, src_ipv4, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }
@@ -680,11 +680,11 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let host = Host::new(DST_IPV4_REMOTE, Some(vec![]));
         let target: Target = Target::new(vec![host]);
-        let tested = 4;
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tested)?;
+        let tests = 4;
+        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         let target: Target = Target::from_subnet("192.168.1.1/29", None)?;
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tested)?;
+        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }
@@ -700,9 +700,9 @@ mod tests {
         let host = Host6::new(DST_IPV6_LOCAL, Some(vec![]));
         let target: Target = Target::new6(vec![host]);
         let threads_num: usize = 8;
-        let tested = 4;
+        let tests = 4;
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout, tested)?;
+        let ret = icmpv6_ping(target, src_ipv6, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }

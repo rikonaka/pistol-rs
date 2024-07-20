@@ -138,21 +138,19 @@ fn run_flood(
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
 
-    if max_flood_packet > 0 {
-        for _ in 0..max_flood_packet {
-            recv_size += 1;
-            let tx = tx.clone();
-            pool.execute(move || {
-                let send_buff_size =
-                    match func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet) {
-                        Ok(s) => s + 14, // Ethernet frame header length.
-                        Err(_) => 0,
-                    };
-                match tx.send(send_buff_size) {
-                    _ => (),
-                }
-            });
-        }
+    for _ in 0..max_flood_packet {
+        recv_size += 1;
+        let tx = tx.clone();
+        pool.execute(move || {
+            let send_buff_size = match func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet)
+            {
+                Ok(s) => s + 14, // Ethernet frame header length.
+                Err(_) => 0,
+            };
+            match tx.send(send_buff_size) {
+                _ => (),
+            }
+        });
     }
     let iter = rx.into_iter().take(recv_size);
     for send_buff_size in iter {
@@ -190,21 +188,19 @@ fn run_flood6(
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
 
-    if max_flood_packet > 0 {
-        for _ in 0..max_flood_packet {
-            recv_size += 1;
-            let tx = tx.clone();
-            pool.execute(move || {
-                let send_buff_size =
-                    match func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet) {
-                        Ok(s) => s + 14, // Ethernet frame header length.
-                        Err(_) => 0,
-                    };
-                match tx.send(send_buff_size) {
-                    _ => (),
-                }
-            });
-        }
+    for _ in 0..max_flood_packet {
+        recv_size += 1;
+        let tx = tx.clone();
+        pool.execute(move || {
+            let send_buff_size = match func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet)
+            {
+                Ok(s) => s + 14, // Ethernet frame header length.
+                Err(_) => 0,
+            };
+            match tx.send(send_buff_size) {
+                _ => (),
+            }
+        });
     }
     let iter = rx.into_iter().take(recv_size);
     for send_buff_size in iter {
