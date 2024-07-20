@@ -99,6 +99,29 @@ impl PingResults {
         }
         self.alive_hosts = alive_hosts;
     }
+    fn insert(&mut self, dst_ipv4: Ipv4Addr, ping_status: PingStatus, rtt: Option<Duration>) {
+        match self.pings.get_mut(&dst_ipv4.into()) {
+            Some(p) => {
+                p.push(ping_status);
+            }
+            None => {
+                let v = vec![ping_status];
+                self.pings.insert(dst_ipv4.into(), v);
+            }
+        }
+        match rtt {
+            Some(rtt) => match self.rtts.get_mut(&dst_ipv4.into()) {
+                Some(r) => {
+                    r.push(rtt);
+                }
+                None => {
+                    let v = vec![rtt];
+                    self.rtts.insert(dst_ipv4.into(), v);
+                }
+            },
+            None => (),
+        }
+    }
 }
 
 impl fmt::Display for PingResults {
@@ -112,13 +135,16 @@ impl fmt::Display for PingResults {
         let pings: BTreeMap<IpAddr, &Vec<PingStatus>> =
             pings.into_iter().map(|(i, p)| (*i, p)).collect();
         for (ip, status) in pings {
-            let status_str = if status.contains(&PingStatus::Up) {
-                String::from("up")
-            } else if status.contains(&PingStatus::Error) {
-                String::from("error")
-            } else {
-                String::from("down")
-            };
+            let mut status_str_vec = Vec::new();
+            for s in status {
+                let s_str = match s {
+                    PingStatus::Up => String::from("up"),
+                    PingStatus::Down => String::from("down"),
+                    PingStatus::Error => String::from("error"),
+                };
+                status_str_vec.push(s_str);
+            }
+            let status_str = status_str_vec.join("|");
             table.add_row(row![c -> ip, c -> status_str]);
         }
         let summary = match self.avg_rtt {
@@ -324,41 +350,16 @@ pub fn ping(
 
     for (dst_ipv4, pr) in iter {
         match pr {
-            Ok((p, rtt)) => {
-                debug!("ip: {}, port status: {:?}, rtt: {:?}", dst_ipv4, p, rtt);
-                match ping_results.pings.get_mut(&dst_ipv4.into()) {
-                    Some(d) => {
-                        d.push(p);
-                    }
-                    None => {
-                        let v = vec![p];
-                        ping_results.pings.insert(dst_ipv4.into(), v);
-                    }
-                }
-                match rtt {
-                    Some(rtt) => match ping_results.rtts.get_mut(&dst_ipv4.into()) {
-                        Some(r) => {
-                            r.push(rtt);
-                        }
-                        None => {
-                            let v = vec![rtt];
-                            ping_results.rtts.insert(dst_ipv4.into(), v);
-                        }
-                    },
-                    None => (),
-                }
+            Ok((ping_status, rtt)) => {
+                debug!(
+                    "ip: {}, port status: {:?}, rtt: {:?}",
+                    dst_ipv4, ping_status, rtt
+                );
+                ping_results.insert(dst_ipv4, ping_status, rtt);
             }
             Err(e) => {
                 warn!("ping error: {}", e);
-                match ping_results.pings.get_mut(&dst_ipv4.into()) {
-                    Some(d) => {
-                        d.push(PingStatus::Error);
-                    }
-                    None => {
-                        let v = vec![PingStatus::Error];
-                        ping_results.pings.insert(dst_ipv4.into(), v);
-                    }
-                }
+                ping_results.insert(dst_ipv4, PingStatus::Error, None);
             }
         }
     }
@@ -648,7 +649,6 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(1, 0));
-
         let host_1 = Host::new(DST_IPV4_REMOTE, Some(vec![22]));
         let host_2 = Host::new(DST_IPV4_LOCAL, Some(vec![22]));
         let target: Target = Target::new(vec![host_1, host_2]);
@@ -681,9 +681,6 @@ mod tests {
         let host = Host::new(DST_IPV4_REMOTE, Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
-        println!("{}", ret);
-        let target: Target = Target::from_subnet("192.168.1.1/29", None)?;
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         Ok(())

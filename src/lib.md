@@ -1,4 +1,4 @@
-A rust implemented nmap library.
+A Rust Library about Cybersecurity.
 
 ## SYN Port Scan Example
 
@@ -23,14 +23,17 @@ fn main() -> Result<()> {
     let timeout = Some(Duration::new(3, 0));
     // Test with an open port `22` and a closed port `99`.
     let host = Host::new(dst_ipv4, Some(vec![22, 99]));
-    /// Users should build the `target` themselves.
+    // Users should build the `target` themselves.
     let target = Target::new(vec![host]);
+    // Number of tests
+    let tests = 4;
     let ret = tcp_syn_scan(
         target,
         src_ipv4,
         src_port,
         threads_num,
         timeout,
+        tests
     ).unwrap();
     println!("{}", ret);
     Ok(())

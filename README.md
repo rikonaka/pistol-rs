@@ -102,6 +102,7 @@ use pistol::Logger;
 
 fn main() -> Result<()> {
     Logger::init_debug_logging()?;
+    // Logger::init_warn_logging()?;
     // your code below
     ...
 }
@@ -127,19 +128,22 @@ fn main() -> Result<()> {
     // If the value of `source port` is `None`, the program will generate the source port randomly.
     let src_port = None;
     // The destination address is required.
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 51);
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
     let threads_num = 8;
     let timeout = Some(Duration::new(1, 0));
     // Test with an open port `22` and a closed port `99`.
     let host = Host::new(dst_ipv4, Some(vec![22, 99]));
     // Users should build the `target` themselves.
     let target = Target::new(vec![host]);
+    // Number of tests
+    let tests = 4;
     let ret = tcp_syn_scan(
         target,
         src_ipv4,
         src_port,
         threads_num,
         timeout,
+        tests
     ).unwrap();
     println!("{}", ret);
     Ok(())
@@ -149,17 +153,17 @@ fn main() -> Result<()> {
 ### Output
 
 ```
-+--------------+------+--------+
-|         Scan Results         |
-+--------------+------+--------+
-| 192.168.1.51 |  22  |  open  |
-+--------------+------+--------+
-| 192.168.1.51 |  99  | closed |
-+--------------+------+--------+
-| Summary:                     |
-| avg rtt 0.004                |
-| open ports: 1                |
-+--------------+------+--------+
++----------------+------+-----------------------------+
+|                    Scan Results                     |
++----------------+------+-----------------------------+
+| 192.168.72.134 |  22  |     open|open|open|open     |
++----------------+------+-----------------------------+
+| 192.168.72.134 |  99  | closed|closed|closed|closed |
++----------------+------+-----------------------------+
+| Summary:                                            |
+| avg rtt 51.5ms                                      |
+| open ports: 1                                       |
++----------------+------+-----------------------------+
 ```
 
 ### 2. Remote OS Detect Example

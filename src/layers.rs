@@ -73,7 +73,7 @@ pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layer2Match {
     pub src_mac: Option<MacAddr>,         // response packet src mac
-    pub dst_mac: Option<MacAddr>,         // response packet src mac
+    pub dst_mac: Option<MacAddr>,         // response packet dst mac
     pub ethernet_type: Option<EtherType>, // reponse packet ethernet type
 }
 
