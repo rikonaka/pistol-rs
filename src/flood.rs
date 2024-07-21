@@ -214,10 +214,90 @@ fn run_flood6(
     ))
 }
 
+fn ipv4_flood(
+    method: FloodMethods,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: u16,
+    threads_num: usize,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<(usize, usize, Duration)> {
+    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+        Some(s) => s,
+        None => return Err(CanNotFoundSourceAddress::new().into()),
+    };
+    let ret = if method == FloodMethods::Icmp {
+        run_flood(
+            method,
+            src_ipv4,
+            src_port,
+            dst_ipv4,
+            0,
+            threads_num,
+            max_same_packet,
+            max_flood_packet,
+        )
+    } else {
+        run_flood(
+            method,
+            src_ipv4,
+            src_port,
+            dst_ipv4,
+            dst_port,
+            threads_num,
+            max_same_packet,
+            max_flood_packet,
+        )
+    };
+    ret
+}
+
+fn ipv6_flood(
+    method: FloodMethods,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: u16,
+    threads_num: usize,
+    max_same_packet: usize,
+    max_flood_packet: usize,
+) -> Result<(usize, usize, Duration)> {
+    let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
+        Some(s) => s,
+        None => return Err(CanNotFoundSourceAddress::new().into()),
+    };
+    let ret = if method == FloodMethods::Icmp {
+        run_flood6(
+            method,
+            src_ipv6,
+            src_port,
+            dst_ipv6,
+            0,
+            threads_num,
+            max_same_packet,
+            max_flood_packet,
+        )
+    } else {
+        run_flood6(
+            method,
+            src_ipv6,
+            src_port,
+            dst_ipv6,
+            dst_port,
+            threads_num,
+            max_same_packet,
+            max_flood_packet,
+        )
+    };
+    ret
+}
+
 pub fn flood(
     target: Target,
     method: FloodMethods,
-    src_ipv4: Option<Ipv4Addr>,
+    src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
     max_same_packet: usize,
@@ -231,51 +311,54 @@ pub fn flood(
         Some(p) => p,
         None => random_port(),
     };
+
     for host in target.hosts {
-        let dst_ipv4 = host.addr;
-        let src_ipv4 = match find_source_addr(src_ipv4, dst_ipv4)? {
-            Some(s) => s,
-            None => return Err(CanNotFoundSourceAddress::new().into()),
-        };
-        if host.ports.len() > 0 && method != FloodMethods::Icmp {
-            for dst_port in host.ports {
-                let dst_port = dst_port.clone();
-                let tx = tx.clone();
-                recv_size += 1;
-                pool.execute(move || {
-                    let ret = run_flood(
-                        method,
-                        src_ipv4,
-                        src_port,
-                        dst_ipv4,
-                        dst_port,
-                        threads_num,
-                        max_same_packet,
-                        max_flood_packet,
-                    );
-                    match tx.send((dst_ipv4, dst_port, ret)) {
-                        _ => (),
-                    }
-                });
-            }
-        } else if method == FloodMethods::Icmp {
-            let tx = tx.clone();
-            recv_size += 1;
-            pool.execute(move || {
-                let ret = run_flood(
-                    method,
-                    src_ipv4,
-                    src_port,
-                    dst_ipv4,
-                    0,
-                    threads_num,
-                    max_same_packet,
-                    max_flood_packet,
-                );
-                match tx.send((dst_ipv4, 0, ret)) {
-                    _ => (),
+        let dst_addr = host.addr;
+        match dst_addr {
+            IpAddr::V4(dst_ipv4) => {
+                for dst_port in host.ports {
+                    let dst_port = dst_port.clone();
+                    let tx = tx.clone();
+                    recv_size += 1;
+                    pool.execute(move || {
+                        let ret = ipv4_flood(
+                            method,
+                            dst_ipv4,
+                            dst_port,
+                            src_addr,
+                            src_port,
+                            threads_num,
+                            max_same_packet,
+                            max_flood_packet,
+                        );
+                        match tx.send((dst_addr, 0, ret)) {
+                            _ => (),
+                        }
+                    });
                 }
-            });
+            }
+            IpAddr::V6(dst_ipv6) => {
+                for dst_port in host.ports {
+                    let dst_port = dst_port.clone();
+                    let tx = tx.clone();
+                    recv_size += 1;
+                    pool.execute(move || {
+                        let ret = ipv6_flood(
+                            method,
+                            dst_ipv6,
+                            dst_port,
+                            src_addr,
+                            src_port,
+                            threads_num,
+                            max_same_packet,
+                            max_flood_packet,
+                        );
+                        match tx.send((dst_addr, 0, ret)) {
+                            _ => (),
+                        }
+                    });
+                }
+            }
         }
     }
 
@@ -307,98 +390,6 @@ pub fn flood(
     s.enrichment();
     Ok(s)
 }
-pub fn flood6(
-    target: Target,
-    method: FloodMethods,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<FloodAttackSummary> {
-    let (tx, rx) = channel();
-    let mut recv_size = 0;
-
-    let src_port = match src_port {
-        Some(p) => p,
-        None => random_port(),
-    };
-    let pool = get_threads_pool(threads_num);
-    for host in target.hosts6 {
-        let dst_ipv6 = host.addr;
-        let src_ipv6 = match find_source_addr6(src_ipv6, dst_ipv6)? {
-            Some(s) => s,
-            None => return Err(CanNotFoundSourceAddress::new().into()),
-        };
-        if host.ports.len() > 0 && method != FloodMethods::Icmp {
-            for dst_port in host.ports {
-                let dst_port = dst_port.clone();
-                let tx = tx.clone();
-                recv_size += 1;
-                pool.execute(move || {
-                    let ret = run_flood6(
-                        method,
-                        src_ipv6,
-                        src_port,
-                        dst_ipv6,
-                        dst_port,
-                        threads_num,
-                        max_same_packet,
-                        max_flood_packet,
-                    );
-                    match tx.send((dst_ipv6, dst_port, ret)) {
-                        _ => (),
-                    }
-                });
-            }
-        } else if method == FloodMethods::Icmp {
-            let tx = tx.clone();
-            recv_size += 1;
-            pool.execute(move || {
-                let ret = run_flood6(
-                    method,
-                    src_ipv6,
-                    src_port,
-                    dst_ipv6,
-                    0,
-                    threads_num,
-                    max_same_packet,
-                    max_flood_packet,
-                );
-                match tx.send((dst_ipv6, 0, ret)) {
-                    _ => (),
-                }
-            });
-        }
-    }
-
-    let mut s = FloodAttackSummary::new();
-    let iter = rx.into_iter().take(recv_size);
-    for (ip, port, ret) in iter {
-        let mut detail = FloodAttackDetail::new();
-        match ret {
-            Ok((packets, traffic, elapsed)) => {
-                detail.send_packets = packets;
-                detail.send_traffic = traffic as f64;
-                detail.elapsed_time = elapsed;
-            }
-            Err(e) => return Err(e),
-        }
-
-        match s.summary.get_mut(&ip.into()) {
-            Some(hm) => {
-                hm.insert(port, detail);
-            }
-            None => {
-                let mut hm = HashMap::new();
-                hm.insert(port, detail);
-                s.summary.insert(ip.into(), hm);
-            }
-        }
-    }
-    s.enrichment();
-    Ok(s)
-}
 
 /// An Internet Control Message Protocol (ICMP) flood DDoS attack, also known as a Ping flood attack,
 /// is a common Denial-of-Service (DoS) attack in which an attacker attempts to overwhelm a targeted device with ICMP echo-requests (pings).
@@ -407,7 +398,7 @@ pub fn flood6(
 /// This causes the target to become inaccessible to normal traffic.
 pub fn icmp_flood(
     target: Target,
-    src_ipv4: Option<Ipv4Addr>,
+    src_addr: Option<IpAddr>,
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
@@ -415,25 +406,7 @@ pub fn icmp_flood(
     flood(
         target,
         FloodMethods::Icmp,
-        src_ipv4,
-        Some(0),
-        threads_num,
-        max_same_packet,
-        max_flood_packet,
-    )
-}
-
-pub fn icmp_flood6(
-    target: Target,
-    src_ipv6: Option<Ipv6Addr>,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<FloodAttackSummary> {
-    flood6(
-        target,
-        FloodMethods::Icmp,
-        src_ipv6,
+        src_addr,
         Some(0),
         threads_num,
         max_same_packet,
@@ -445,7 +418,7 @@ pub fn icmp_flood6(
 /// This leaves the server waiting for a response that never comes, consuming resources for each of these half-open connections.
 pub fn tcp_syn_flood(
     target: Target,
-    src_ipv4: Option<Ipv4Addr>,
+    src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
     max_same_packet: usize,
@@ -454,26 +427,7 @@ pub fn tcp_syn_flood(
     flood(
         target,
         FloodMethods::Syn,
-        src_ipv4,
-        src_port,
-        threads_num,
-        max_same_packet,
-        max_flood_packet,
-    )
-}
-
-pub fn tcp_syn_flood6(
-    target: Target,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<FloodAttackSummary> {
-    flood6(
-        target,
-        FloodMethods::Syn,
-        src_ipv6,
+        src_addr,
         src_port,
         threads_num,
         max_same_packet,
@@ -491,7 +445,7 @@ pub fn tcp_syn_flood6(
 /// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK, as they look the same.
 pub fn tcp_ack_flood(
     target: Target,
-    src_ipv4: Option<Ipv4Addr>,
+    src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
     max_same_packet: usize,
@@ -500,26 +454,7 @@ pub fn tcp_ack_flood(
     flood(
         target,
         FloodMethods::Ack,
-        src_ipv4,
-        src_port,
-        threads_num,
-        max_same_packet,
-        max_flood_packet,
-    )
-}
-
-pub fn tcp_ack_flood6(
-    target: Target,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<FloodAttackSummary> {
-    flood6(
-        target,
-        FloodMethods::Ack,
-        src_ipv6,
+        src_addr,
         src_port,
         threads_num,
         max_same_packet,
@@ -530,7 +465,7 @@ pub fn tcp_ack_flood6(
 /// TCP ACK flood with PSH flag set.
 pub fn tcp_ack_psh_flood(
     target: Target,
-    src_ipv4: Option<Ipv4Addr>,
+    src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
     max_same_packet: usize,
@@ -539,26 +474,7 @@ pub fn tcp_ack_psh_flood(
     flood(
         target,
         FloodMethods::AckPsh,
-        src_ipv4,
-        src_port,
-        threads_num,
-        max_same_packet,
-        max_flood_packet,
-    )
-}
-
-pub fn tcp_ack_psh_flood6(
-    target: Target,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<FloodAttackSummary> {
-    flood6(
-        target,
-        FloodMethods::AckPsh,
-        src_ipv6,
+        src_addr,
         src_port,
         threads_num,
         max_same_packet,
@@ -573,7 +489,7 @@ pub fn tcp_ack_psh_flood6(
 /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
 pub fn udp_flood(
     target: Target,
-    src_ipv4: Option<Ipv4Addr>,
+    src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
     max_same_packet: usize,
@@ -582,26 +498,7 @@ pub fn udp_flood(
     flood(
         target,
         FloodMethods::Udp,
-        src_ipv4,
-        src_port,
-        threads_num,
-        max_same_packet,
-        max_flood_packet,
-    )
-}
-
-pub fn udp_flood6(
-    target: Target,
-    src_ipv6: Option<Ipv6Addr>,
-    src_port: Option<u16>,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<FloodAttackSummary> {
-    flood6(
-        target,
-        FloodMethods::Udp,
-        src_ipv6,
+        src_addr,
         src_port,
         threads_num,
         max_same_packet,
@@ -614,13 +511,13 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::Target;
-    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 122, 248);
+    use crate::DST_IPV4_LOCAL;
     #[test]
     fn test_flood() {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let threads_num: usize = 128;
-        let host = Host::new(DST_IPV4, Some(vec![22]));
+        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 3, 3).unwrap();
         println!("{}", ret);

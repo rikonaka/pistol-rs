@@ -6,7 +6,7 @@ The library must be run as root (Linux, *BSD) or administrator (Windows), the `s
 
 ```toml
 [dependencies]
-pistol = "^1"
+pistol = "^2"
 ```
 
 On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then place `Packet.lib` from the x64 folder in your root of code. The other lib like `npcap` did not test by libpnet.
@@ -183,22 +183,22 @@ fn main() -> Result<()> {
     let src_ipv4 = None;
     // If the value of `src_port` is `None`, the program will generate it randomly.
     let src_port = None;
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 129);
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
     // `dst_open_tcp_port` must be a certain open tcp port.
     let dst_open_tcp_port = 22;
     // `dst_closed_tcp_port` must be a certain closed tcp port.
     let dst_closed_tcp_port = 8765;
     // `dst_closed_udp_port` must be a certain closed udp port.
     let dst_closed_udp_port = 9876;
-    let host1 = Host::new(
-        dst_ipv4,
+    let host = Host::new(
+        dst_ipv4.into(),
         Some(vec![
             dst_open_tcp_port,   // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port,
             dst_closed_udp_port,
         ]),
     );
-    let target = Target::new(vec![host1, host2]);
+    let target = Target::new(vec![host]);
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
     let threads_num = 8;
@@ -221,24 +221,26 @@ fn main() -> Result<()> {
 ### output
 
 ```
-+--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
-|                                                                         OS Detect Results                                                                          |
-+--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
-| 192.168.1.51 |  #1  | 81/101 |                 # Linux 5.0.0-23-generic #24-Ubuntu SMP Mon Jul 29 15:36:44 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux                 |
-|              |      |        |                                            # Linux 5.3.0-24-generic x86_64 Ubuntu 19.10                                             |
-|              |      |        |                         # Linux 5.3.9-sunxi (root@builder) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02                          |
-+--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
-| 192.168.1.51 |  #2  | 80/101 |                # Linux 5.4.0-1008-raspi #8-Ubuntu SMP Wed Apr 8 11:13:06 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux                 |
-+--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
-| 192.168.1.51 |  #3  | 75/101 |             # Atmel Network Gateway Kit (NGW100) running Linux 2.6.22.atmel.4 kernel (compiled myself; not default one)             |
-|              |      |        |  # Linux 2.6.22.9-aldebaran-rt #1 PREEMPT RT Mon Nov 3 16:21:22 CET 2008 i586 unknown (Nao robot produced by Aldebaran Robotics).   |
-|              |      |        |                                       # Linux version 2.6.22-XR100-v1.1.6 (rdiouskine@ubuntu)                                       |
-|              |      |        |                        # Belkin Router Model F9K1103 v1 (01A) Firmware Version 1.00.37 (2011/5/24 11:55:14)                         |
-|              |      |        |                                   # CentOS release 5.7 (Final) 2.6.18-274.17.1.el5 i386 GNU/Linux                                   |
-|              |      |        |                     # Debian Linux 5.0 - 2.6.26-2-686-bigmem #1 SMP Wed Sep 21 05:29:18 UTC 2011 i686 GNU/Linux                     |
-|              |      |        | # 2.6.32.54-0.3-default #1 SMP 2012-01-27 17:38:56 +0100 x86_64 x86_64 x86_64 GNU/Linux, SUSE Linux Enterprise Server 11 SP1 x86_64 |
-|              |      |        |                                                # TufinOS (TSS); accessed VM console                                                 |
-+--------------+------+--------+-------------------------------------------------------------------------------------------------------------------------------------+
++----------------+------+--------+--------------------------------------------------------------------------------------------------------------+
+|                                                               OS Detect Results                                                               |
++----------------+------+--------+--------------------------------------------------------------------------------------------------------------+
+| 192.168.72.134 |  #1  | 82/101 | # Linux 4.15.0-88-generic #88~16.04.1-Ubuntu SMP Wed Feb 12 04:19:15 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux |
+|                |      |        |                # Linux 4.19.0-9-amd64 #1 SMP Debian 4.19.118-2 (2020-04-29) x86_64 GNU/Linux                 |
+|                |      |        | # Linux 5.0.0-32-generic #34~18.04.2-Ubuntu SMP Thu Oct 10 10:36:02 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux  |
+|                |      |        |   # Linux 5.2.10-yocto-standard #1 SMP PREEMPT Fri Oct 4 11:58:01 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux    |
+|                |      |        |                                          # Linux 5.3.0-kali3-amd64                                           |
+|                |      |        |      # Linux 5.3.16-200.fc30.x86_64 #1 SMP Fri Dec 13 17:48:38 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux       |
+|                |      |        |                # Linux 5.4.6-amd64.gbcm #3 SMP Thu Dec 26 13:55:41 -03 2019 x86_64 GNU/Linux                 |
+|                |      |        |            # Linux 5.6.15-arch1-1 #1 SMP PREEMPT Wed, 27 May 2020 23:42:26 +0000 x86_64 GNU/Linux            |
+|                |      |        |                                         # Linux 5.2.11-arch1-1-ARCH                                          |
+|                |      |        |    # Linux 5.4.0-1012-raspi #12-Ubuntu SMP Wed May 27 04:08:35 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux    |
++----------------+------+--------+--------------------------------------------------------------------------------------------------------------+
+| 192.168.72.134 |  #2  | 81/101 |     # Linux 5.0.0-23-generic #24-Ubuntu SMP Mon Jul 29 15:36:44 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux      |
+|                |      |        |                                 # Linux 5.3.0-24-generic x86_64 Ubuntu 19.10                                 |
+|                |      |        |              # Linux 5.3.9-sunxi (root@builder) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02              |
++----------------+------+--------+--------------------------------------------------------------------------------------------------------------+
+| 192.168.72.134 |  #3  | 80/101 |     # Linux 5.4.0-1008-raspi #8-Ubuntu SMP Wed Apr 8 11:13:06 UTC 2020 aarch64 aarch64 aarch64 GNU/Linux     |
++----------------+------+--------+--------------------------------------------------------------------------------------------------------------+
 ```
 
 
@@ -247,7 +249,7 @@ fn main() -> Result<()> {
 The test target server is ubuntu 22.04 server.
 
 ```rust
-use pistol::os::os_detect6;
+use pistol::os::os_detect;
 use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;
@@ -260,8 +262,8 @@ fn main() -> Result<()> {
     let dst_open_tcp_port = 22;
     let dst_closed_tcp_port = 8765;
     let dst_closed_udp_port = 9876;
-    let host = Host6::new(
-        dst_ipv6,
+    let host = Host::new(
+        dst_ipv6.into(),
         Some(vec![
             dst_open_tcp_port,
             dst_closed_tcp_port,
@@ -269,12 +271,12 @@ fn main() -> Result<()> {
         ]),
     );
 
-    let target = Target::new6(vec![host]);
+    let target = Target::new(vec![host]);
     let src_port = None;
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
     let threads_num = 8;
-    let ret = os_detect6(target, src_ipv6, src_port, top_k, threads_num, timeout)?;
+    let ret = os_detect(target, src_ipv6, src_port, top_k, threads_num, timeout)?;
     println!("{}", ret);
     Ok(())
 }
@@ -312,7 +314,7 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
-    let host = Host::new(dst_addr, Some(vec![22, 80]));
+    let host = Host::new(dst_addr.into(), Some(vec![22, 80]));
     let target = Target::new(vec![host]);
     let threads_num = 8;
     let timeout = Some(Duration::new(1, 0));
@@ -346,8 +348,5 @@ fn main() -> Result<()> {
 | 192.168.1.51 |   22   |  ssh   |
 +--------------+--------+--------+
 | 192.168.1.51 |   80   |  http  |
-+--------------+--------+--------+
-| Summary:                       |
-| avg rtt: 20.973s               |
 +--------------+--------+--------+
 ```

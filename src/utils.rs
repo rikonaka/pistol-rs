@@ -42,12 +42,12 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     false
 }
 
-pub fn find_source_addr(
-    src_ipv4: Option<Ipv4Addr>,
-    dst_ipv4: Ipv4Addr,
-) -> Result<Option<Ipv4Addr>> {
+pub fn find_source_addr(src_ipv4: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<Option<Ipv4Addr>> {
     match src_ipv4 {
-        Some(s) => return Ok(Some(s)),
+        Some(s) => match s {
+            IpAddr::V6(_) => (),
+            IpAddr::V4(s) => return Ok(Some(s)),
+        },
         None => {
             let sc = SYSTEM_CACHE.lock().expect("can not lock the network cache");
             match sc.search_route(dst_ipv4.into())? {
@@ -90,12 +90,12 @@ pub fn find_source_addr(
     Ok(None)
 }
 
-pub fn find_source_addr6(
-    src_ipv6: Option<Ipv6Addr>,
-    dst_ipv6: Ipv6Addr,
-) -> Result<Option<Ipv6Addr>> {
+pub fn find_source_addr6(src_ipv6: Option<IpAddr>, dst_ipv6: Ipv6Addr) -> Result<Option<Ipv6Addr>> {
     match src_ipv6 {
-        Some(s) => return Ok(Some(s)),
+        Some(s) => match s {
+            IpAddr::V4(_) => (),
+            IpAddr::V6(s) => return Ok(Some(s)),
+        },
         None => {
             let sc = SYSTEM_CACHE.lock().expect("can not lock the network cache");
             match sc.search_route(dst_ipv6.into())? {

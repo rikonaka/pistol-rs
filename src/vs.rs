@@ -22,7 +22,6 @@ use crate::vs::dbparser::nsp_parser;
 use crate::vs::dbparser::Match;
 use crate::vs::vscan::threads_vs_probe;
 use crate::Target;
-use crate::TargetType;
 
 pub mod dbparser;
 pub mod vscan;
@@ -30,14 +29,14 @@ pub mod vscan;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Services {
     pub matchs: Vec<Match>,
-    pub rtt: Option<Duration>,
+    pub elapsed: Option<Duration>,
 }
 
 impl Services {
     pub fn new() -> Services {
         Services {
             matchs: Vec::new(),
-            rtt: None,
+            elapsed: None,
         }
     }
 }
@@ -45,42 +44,16 @@ impl Services {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VsScanResults {
     pub vss: HashMap<IpAddr, HashMap<u16, Services>>,
-    pub avg_rtt: Option<Duration>,
 }
 
 impl VsScanResults {
     pub fn new() -> VsScanResults {
         VsScanResults {
             vss: HashMap::new(),
-            avg_rtt: None,
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Services>> {
         self.vss.get(k)
-    }
-    pub fn enrichment(&mut self) {
-        // avg rtt
-        let mut total_rtt = 0.0;
-        let mut total_num = 0;
-        for (_ip, ports_service) in &self.vss {
-            for (_port, services) in ports_service {
-                match services.rtt {
-                    Some(rtt) => {
-                        total_rtt += rtt.as_secs_f64();
-                        total_num += 1;
-                    }
-                    None => (),
-                };
-            }
-        }
-        let avg_rtt = if total_num != 0 {
-            let avg_rtt = total_rtt / total_num as f64;
-            let avg_rtt = Duration::from_secs_f64(avg_rtt);
-            Some(avg_rtt)
-        } else {
-            None
-        };
-        self.avg_rtt = avg_rtt;
     }
 }
 
@@ -108,12 +81,6 @@ impl fmt::Display for VsScanResults {
                 table.add_row(row![c -> ip, c -> port, c -> services_str]);
             }
         }
-        let summary = match self.avg_rtt {
-            Some(avg_rtt) => format!("Summary:\navg rtt: {:.3}s", avg_rtt.as_secs_f32(),),
-            None => format!("Summary:\navg rtt: 0.00s"),
-        };
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
-
         write!(f, "{}", table)
     }
 }
@@ -143,19 +110,9 @@ pub fn vs_scan(
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut vs_target = HashMap::new();
-    match target.target_type {
-        TargetType::Ipv4 => {
-            for h in target.hosts {
-                let addr = IpAddr::V4(h.addr);
-                vs_target.insert(addr, h.ports);
-            }
-        }
-        TargetType::Ipv6 => {
-            for h in target.hosts6 {
-                let addr = IpAddr::V6(h.addr);
-                vs_target.insert(addr, h.ports);
-            }
-        }
+
+    for h in target.hosts {
+        vs_target.insert(h.addr, h.ports);
     }
 
     let exclude_ports = match exclude_ports {
@@ -199,7 +156,7 @@ pub fn vs_scan(
             Ok((r, rtt)) => {
                 let mut service_status = Services::new();
                 service_status.matchs = r;
-                service_status.rtt = Some(rtt);
+                service_status.elapsed = Some(rtt);
                 match ret.vss.get_mut(&addr) {
                     Some(services) => {
                         services.insert(port, service_status);
@@ -214,7 +171,6 @@ pub fn vs_scan(
             Err(e) => return Err(e),
         }
     }
-    ret.enrichment();
     Ok(ret)
 }
 
@@ -223,11 +179,11 @@ mod tests {
     use super::*;
     use crate::Host;
     // use crate::Logger;
-    use crate::DST_IPV4_REMOTE;
+    use crate::DST_IPV4_LOCAL;
     #[test]
     fn test_vs_detect() -> Result<()> {
         // Logger::init_debug_logging()?;
-        let host = Host::new(DST_IPV4_REMOTE, Some(vec![22, 80]));
+        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 80]));
         let target = Target::new(vec![host]);
         let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));

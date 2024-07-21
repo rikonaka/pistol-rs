@@ -3,24 +3,6 @@ use serde::Serialize;
 use std::error::Error;
 use std::fmt;
 
-use crate::TargetType;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotSupportIpTypeForArpScan {
-    target_type: TargetType,
-}
-impl fmt::Display for NotSupportIpTypeForArpScan {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "arp scan not support {:?}", self.target_type)
-    }
-}
-impl NotSupportIpTypeForArpScan {
-    pub fn new(target_type: TargetType) -> NotSupportIpTypeForArpScan {
-        NotSupportIpTypeForArpScan { target_type }
-    }
-}
-impl Error for NotSupportIpTypeForArpScan {}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanNotFoundRouterAddress;
 impl fmt::Display for CanNotFoundRouterAddress {
@@ -270,20 +252,6 @@ impl InvalidRouteFormat {
     }
 }
 impl Error for InvalidRouteFormat {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnsupportedPingMethod {}
-impl fmt::Display for UnsupportedPingMethod {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "unsupported ping method")
-    }
-}
-impl UnsupportedPingMethod {
-    pub fn new() -> UnsupportedPingMethod {
-        UnsupportedPingMethod {}
-    }
-}
-impl Error for UnsupportedPingMethod {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsDetectResultsNullError {}
