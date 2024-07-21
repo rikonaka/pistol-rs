@@ -29,12 +29,12 @@ use crate::route::SystemCache;
 
 // debug code
 #[cfg(test)]
-const DST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 31, 1);
+const TEST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 31, 1);
 #[cfg(test)]
-const DST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
+const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 134);
 #[cfg(test)]
-const DST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
-    0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfe2c, 0x09e4,
+const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
+    0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99,
 );
 
 static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemCache>>> = Lazy::new(|| {
@@ -178,8 +178,8 @@ impl Target {
     /// use std::net::Ipv4Addr;
     ///
     /// fn test() {
-    ///     let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 135), Some(vec![22, 23]));
-    ///     let host2 = Host::new(Ipv4Addr::new(192, 168, 1, 2), Some(vec![80, 81]));
+    ///     let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 135).into(), Some(vec![22, 23]));
+    ///     let host2 = Host::new(Ipv6Addr::new(0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99).into(), Some(vec![80, 81]));
     ///     let target = Target::new(vec![host1, host2]);
     /// }
     /// ```
@@ -199,8 +199,8 @@ impl Target {
     pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target> {
         let ipv4_pool = Ipv4Pool::from(subnet)?;
         let mut hosts = Vec::new();
-        for addr in ipv4_pool {
-            let h = Host::new(addr.into(), ports.clone());
+        for ipv4_addr in ipv4_pool {
+            let h = Host::new(ipv4_addr.into(), ports.clone());
             hosts.push(h);
         }
         let target = Target { hosts };

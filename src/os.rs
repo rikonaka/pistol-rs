@@ -390,18 +390,26 @@ mod tests {
     use crate::os::dbparser::nmap_os_db_parser;
     use crate::Host;
     // use crate::Logger;
-    use crate::DST_IPV4_LOCAL;
-    use crate::DST_IPV6_LOCAL;
+    use crate::TEST_IPV4_LOCAL;
+    use crate::TEST_IPV6_LOCAL;
     use std::time::SystemTime;
     #[test]
-    fn test_os_detect6() -> Result<()> {
+    fn test_os_detect() -> Result<()> {
         // Logger::init_debug_logging()?;
         let src_ipv6 = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let host = Host::new(
-            DST_IPV6_LOCAL.into(),
+        let host1 = Host::new(
+            TEST_IPV6_LOCAL.into(),
+            Some(vec![
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+        let host2 = Host::new(
+            TEST_IPV4_LOCAL.into(),
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -409,37 +417,12 @@ mod tests {
             ]),
         );
 
-        let target = Target::new(vec![host]);
+        let target = Target::new(vec![host1, host2]);
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let threads_num = 8;
         let ret = os_detect(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
-        println!("{}", ret);
-        Ok(())
-    }
-    #[test]
-    fn test_os_detect() -> Result<()> {
-        // Logger::init_debug_logging()?;
-        let src_ipv4 = None;
-        let src_port = None;
-        let dst_open_tcp_port = 22;
-        let dst_closed_tcp_port = 8765;
-        let dst_closed_udp_port = 9876;
-        let host = Host::new(
-            DST_IPV4_LOCAL.into(),
-            Some(vec![
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
-        );
-        let target = Target::new(vec![host]);
-        let timeout = Some(Duration::new(1, 0));
-        let top_k = 3;
-        let threads_num = 8;
-
-        let ret = os_detect(target, src_ipv4, src_port, top_k, threads_num, timeout).unwrap();
         println!("{}", ret);
         Ok(())
     }

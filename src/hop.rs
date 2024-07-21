@@ -40,13 +40,13 @@ pub fn ipv6_get_hops(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) 
 mod tests {
     use super::*;
     use crate::utils::find_source_addr6;
-    use crate::DST_IPV6_LOCAL;
+    use crate::TEST_IPV6_LOCAL;
     #[test]
     fn test_get_hops() -> Result<()> {
-        let src_ipv6 = find_source_addr6(None, DST_IPV6_LOCAL)?;
+        let src_ipv6 = find_source_addr6(None, TEST_IPV6_LOCAL)?;
         match src_ipv6 {
             Some(src_ipv6) => {
-                let dst_ipv6 = DST_IPV6_LOCAL;
+                let dst_ipv6 = TEST_IPV6_LOCAL;
                 let timeout = Duration::new(1, 0);
                 let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
                 println!("{}", hops);

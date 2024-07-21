@@ -179,11 +179,11 @@ mod tests {
     use super::*;
     use crate::Host;
     // use crate::Logger;
-    use crate::DST_IPV4_LOCAL;
+    use crate::TEST_IPV4_LOCAL;
     #[test]
     fn test_vs_detect() -> Result<()> {
         // Logger::init_debug_logging()?;
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 80]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
         let target = Target::new(vec![host]);
         let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));

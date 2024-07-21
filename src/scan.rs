@@ -944,7 +944,7 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::Target;
-    use crate::DST_IPV4_LOCAL;
+    use crate::TEST_IPV4_LOCAL;
     use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() -> Result<()> {
@@ -980,7 +980,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(0, 500));
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let ret =
@@ -998,7 +998,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
@@ -1012,7 +1012,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let ret = tcp_fin_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
@@ -1025,7 +1025,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let ret = tcp_ack_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
@@ -1038,7 +1038,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let ret = tcp_null_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
@@ -1051,7 +1051,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let ret = udp_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();

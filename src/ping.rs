@@ -524,9 +524,9 @@ mod tests {
     use crate::Host;
     use crate::Logger;
     use crate::Target;
-    use crate::DST_IPV4_LOCAL;
-    use crate::DST_IPV4_REMOTE;
-    use crate::DST_IPV6_LOCAL;
+    use crate::TEST_IPV4_LOCAL;
+    use crate::TEST_IPV4_REMOTE;
+    use crate::TEST_IPV6_LOCAL;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
         Logger::init_debug_logging()?;
@@ -534,8 +534,8 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(1, 0));
-        let host_1 = Host::new(DST_IPV4_REMOTE.into(), Some(vec![22]));
-        let host_2 = Host::new(DST_IPV4_LOCAL.into(), Some(vec![22]));
+        let host_1 = Host::new(TEST_IPV4_REMOTE.into(), Some(vec![22]));
+        let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host_1, host_2]);
         let tests = 4;
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
@@ -549,7 +549,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(1, 0));
-        let host = Host::new(DST_IPV6_LOCAL.into(), Some(vec![22]));
+        let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
@@ -563,7 +563,7 @@ mod tests {
         let src_port: Option<u16> = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(1, 0));
-        let host = Host::new(DST_IPV4_REMOTE.into(), Some(vec![]));
+        let host = Host::new(TEST_IPV4_REMOTE.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
@@ -576,7 +576,7 @@ mod tests {
         let src_port: Option<u16> = None;
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse()?;
         let src_ipv6 = Some(src_ipv6.into());
-        let host = Host::new(DST_IPV6_LOCAL.into(), Some(vec![]));
+        let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let threads_num: usize = 8;
         let tests = 4;
