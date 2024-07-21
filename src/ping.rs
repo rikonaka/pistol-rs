@@ -152,7 +152,7 @@ impl fmt::Display for PingResults {
                 avg_rtt.as_secs_f64() * 1000.0,
                 self.alive_hosts
             ),
-            None => format!("Summary:\navg rtt: 0.0ms\nalive: {}", self.alive_hosts),
+            None => format!("Summary:\navg rtt: 0.0ms\nalive hosts: {}", self.alive_hosts),
         };
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(2)]));
 
