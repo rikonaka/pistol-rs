@@ -176,6 +176,7 @@ impl Target {
     /// use pistol::Target;
     /// use pistol::Host;
     /// use std::net::Ipv4Addr;
+    /// use std::net::Ipv6Addr;
     ///
     /// fn test() {
     ///     let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 135).into(), Some(vec![22, 23]));

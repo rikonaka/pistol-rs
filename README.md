@@ -125,9 +125,9 @@ fn main() -> Result<()> {
     // However, please note that some algorithms can only work with certain protocols,
     // e.g. Idel scan can only be used with ipv4, if it is used with ipv6 it will return an error.
     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-    let host1 = Host::new(dst_ipv4, Some(vec![22, 99]));
+    let host1 = Host::new(dst_ipv4.into(), Some(vec![22, 99]));
     let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x020c, 0x29ff, 0xfeb6, 0x8d99);
-    let host2 = Host::new(dst_ipv4, Some(vec![443, 8080]));
+    let host2 = Host::new(dst_ipv6.into(0), Some(vec![443, 8080]));
     let target = Target::new(vec![host1, host2]);
     // your code below
     ...
