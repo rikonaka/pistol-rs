@@ -337,7 +337,7 @@ pub fn os_detect(
                             Ok(oss)
                         }
                         Err(e) => {
-                            warn!("ipv6 os detect error: {}", e);
+                            warn!("ipv4 os detect error: {}", e);
                             Err(e)
                         }
                     };

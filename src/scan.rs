@@ -197,17 +197,16 @@ impl fmt::Display for PortScanResults {
                 table.add_row(row![c -> ip, c-> port, c -> status_str]);
             }
         }
-
-        let summary = match self.avg_rtt {
-            Some(avg_rtt) => format!(
-                "Summary:\navg rtt {:.1}ms\nopen ports: {}",
-                avg_rtt.as_secs_f32() * 1000.0,
-                self.open_ports
-            ),
-            None => format!("Summary:\navg rtt 0.0ms\nopen ports {}", self.open_ports),
+        let avg_rtt = match self.avg_rtt {
+            Some(avg_rtt) => avg_rtt,
+            None => Duration::new(0, 0),
         };
+        let summary = format!(
+            "avg rtt: {:.1}ms\nopen ports: {}",
+            avg_rtt.as_secs_f32() * 1000.0,
+            self.open_ports
+        );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
-
         write!(f, "{}", table)
     }
 }

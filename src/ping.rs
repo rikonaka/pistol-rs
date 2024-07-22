@@ -146,16 +146,16 @@ impl fmt::Display for PingResults {
             let status_str = status_str_vec.join("|");
             table.add_row(row![c -> ip, c -> status_str]);
         }
-        let summary = match self.avg_rtt {
-            Some(avg_rtt) => format!(
-                "avg rtt: {:.1}ms\nalive: {}",
-                avg_rtt.as_secs_f64() * 1000.0,
-                self.alive_hosts
-            ),
-            None => format!("Summary:\navg rtt: 0.0ms\nalive hosts: {}", self.alive_hosts),
+        let avg_rtt = match self.avg_rtt {
+            Some(avg_rtt) => avg_rtt,
+            None => Duration::new(0, 0),
         };
+        let summary = format!(
+            "avg rtt: {:.1}ms\nalive hosts: {}",
+            avg_rtt.as_secs_f64() * 1000.0,
+            self.alive_hosts
+        );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(2)]));
-
         write!(f, "{}", table)
     }
 }
