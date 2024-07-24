@@ -133,7 +133,9 @@ fn main() -> Result<()> {
 }
 ```
 
-> If you don't want to use `Target`, you can also use the `_raw` functions we provide, for example, the corresponding raw function for `tcp_syn_scan` is `tcp_syn_scan_raw`.
+#### Note
+
+If you don't want to use `Target`, you can also use the `_raw` functions we provide, for example, the corresponding raw function for `tcp_syn_scan` is `tcp_syn_scan_raw`.
 
 ### 1. SYN Port Scan Example
 
