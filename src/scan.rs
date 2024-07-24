@@ -709,7 +709,7 @@ pub fn tcp_connect_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Connect,
@@ -762,7 +762,7 @@ pub fn tcp_syn_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Syn,
@@ -816,7 +816,7 @@ pub fn tcp_fin_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Fin,
@@ -863,7 +863,7 @@ pub fn tcp_ack_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Ack,
@@ -909,7 +909,7 @@ pub fn tcp_null_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Null,
@@ -955,7 +955,7 @@ pub fn tcp_xmas_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Xmas,
@@ -1002,7 +1002,7 @@ pub fn tcp_window_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Window,
@@ -1049,7 +1049,7 @@ pub fn tcp_maimon_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Maimon,
@@ -1102,7 +1102,7 @@ pub fn tcp_idle_scan_raw(
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Idle,
@@ -1151,7 +1151,7 @@ pub fn udp_scan_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
         ScanMethod::Udp,
@@ -1173,11 +1173,15 @@ pub fn scan_raw(
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<Duration>)> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {

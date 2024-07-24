@@ -391,9 +391,13 @@ pub fn os_detect_raw(
     dst_closed_udp_port: u16,
     src_addr: Option<IpAddr>,
     top_k: usize,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<OsDetectResults> {
     let src_port = None;
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {

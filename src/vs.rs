@@ -181,7 +181,7 @@ pub fn vs_scan_raw(
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
     intensity: usize,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<Services> {
     let nsp_str = include_str!("./db/nmap-service-probes");
     let mut nsp_lines = Vec::new();
@@ -192,6 +192,11 @@ pub fn vs_scan_raw(
 
     let service_probes = nsp_parser(&nsp_lines)?;
     debug!("nmap service db parse finish");
+
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
 
     match threads_vs_probe(
         dst_addr,

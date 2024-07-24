@@ -453,11 +453,15 @@ pub fn tcp_syn_ping_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Option<Duration>)> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
@@ -517,11 +521,15 @@ pub fn tcp_ack_ping_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Option<Duration>)> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
@@ -581,11 +589,15 @@ pub fn udp_ping_raw(
     dst_port: u16,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Option<Duration>)> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
@@ -650,8 +662,12 @@ pub fn icmp_ping(
 pub fn icmp_ping_raw(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Option<Duration>)> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => get_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
@@ -701,7 +717,7 @@ mod tests {
     fn test_tcp_syn_ping_raw() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Duration::new(3, 0);
+        let timeout = Some(Duration::new(3, 0));
         let (ret, _rtt) =
             tcp_syn_ping_raw(TEST_IPV4_REMOTE.into(), 80, src_ipv4, src_port, timeout)?;
         println!("{:?}", ret);
