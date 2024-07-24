@@ -20,9 +20,9 @@ use crate::layers::IPV4_HEADER_SIZE;
 
 const TTL: u8 = 64;
 pub fn send_icmp_flood_packet(
-    src_ipv4: Ipv4Addr,
-    _: u16, // unified interface
     dst_ipv4: Ipv4Addr,
+    _: u16, // unified interface
+    src_ipv4: Ipv4Addr,
     _: u16, // unified interface
     max_same_packet: usize,
 ) -> Result<usize> {

@@ -16,10 +16,10 @@ const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub fn send_syn_flood_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize> {
     let mut rng = rand::thread_rng();
@@ -61,10 +61,10 @@ pub fn send_syn_flood_packet(
 }
 
 pub fn send_ack_flood_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize> {
     let mut rng = rand::thread_rng();
@@ -106,10 +106,10 @@ pub fn send_ack_flood_packet(
 }
 
 pub fn send_ack_psh_flood_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize> {
     let mut rng = rand::thread_rng();

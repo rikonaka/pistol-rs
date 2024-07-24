@@ -212,39 +212,63 @@ impl Target {
 /* Scan */
 
 pub use scan::arp_scan;
+pub use scan::arp_scan_raw;
 pub use scan::scan;
+pub use scan::scan_raw;
 pub use scan::tcp_ack_scan;
+pub use scan::tcp_ack_scan_raw;
 pub use scan::tcp_connect_scan;
+pub use scan::tcp_connect_scan_raw;
 pub use scan::tcp_fin_scan;
+pub use scan::tcp_fin_scan_raw;
 pub use scan::tcp_idle_scan;
+pub use scan::tcp_idle_scan_raw;
 pub use scan::tcp_maimon_scan;
+pub use scan::tcp_maimon_scan_raw;
 pub use scan::tcp_null_scan;
+pub use scan::tcp_null_scan_raw;
 pub use scan::tcp_syn_scan;
+pub use scan::tcp_syn_scan_raw;
 pub use scan::tcp_window_scan;
+pub use scan::tcp_window_scan_raw;
 pub use scan::tcp_xmas_scan;
+pub use scan::tcp_xmas_scan_raw;
 pub use scan::udp_scan;
+pub use scan::udp_scan_raw;
 
 /* Ping */
 
 pub use ping::icmp_ping;
+pub use ping::icmp_ping_raw;
 pub use ping::ping;
 pub use ping::tcp_ack_ping;
+pub use ping::tcp_ack_ping_raw;
 pub use ping::tcp_syn_ping;
+pub use ping::tcp_syn_ping_raw;
 pub use ping::udp_ping;
+pub use ping::udp_ping_raw;
 
 /* Flood */
 
 pub use flood::flood;
+pub use flood::flood_raw;
 pub use flood::icmp_flood;
+pub use flood::icmp_flood_raw;
 pub use flood::tcp_ack_flood;
+pub use flood::tcp_ack_flood_raw;
 pub use flood::tcp_ack_psh_flood;
+pub use flood::tcp_ack_psh_flood_raw;
 pub use flood::tcp_syn_flood;
+pub use flood::tcp_syn_flood_raw;
 pub use flood::udp_flood;
+pub use flood::udp_flood_raw;
 
 /* Finger Printing */
 
 pub use os::os_detect;
+pub use os::os_detect_raw;
 pub use vs::vs_scan;
+pub use vs::vs_scan_raw;
 
 /* DNS */
 pub use layers::dns_query;

@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-use self::dbparser::ExcludePorts;
+pub use self::dbparser::ExcludePorts;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::vs::dbparser::nsp_exclued_parser;
@@ -172,6 +172,45 @@ pub fn vs_scan(
         }
     }
     Ok(ret)
+}
+
+pub fn vs_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    only_null_probe: bool,
+    only_tcp_recommended: bool,
+    only_udp_recommended: bool,
+    intensity: usize,
+    timeout: Duration,
+) -> Result<Services> {
+    let nsp_str = include_str!("./db/nmap-service-probes");
+    let mut nsp_lines = Vec::new();
+    for l in nsp_str.lines() {
+        nsp_lines.push(l.to_string());
+    }
+    debug!("nmap service db load finish");
+
+    let service_probes = nsp_parser(&nsp_lines)?;
+    debug!("nmap service db parse finish");
+
+    match threads_vs_probe(
+        dst_addr,
+        dst_port,
+        only_null_probe,
+        only_tcp_recommended,
+        only_udp_recommended,
+        intensity,
+        &service_probes,
+        timeout,
+    ) {
+        Ok((r, rtt)) => {
+            let mut service_status = Services::new();
+            service_status.matchs = r;
+            service_status.elapsed = Some(rtt);
+            Ok(service_status)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]

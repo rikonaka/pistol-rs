@@ -116,10 +116,10 @@ pub enum FloodMethods {
 
 fn run_flood(
     method: FloodMethods,
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
@@ -142,7 +142,7 @@ fn run_flood(
         recv_size += 1;
         let tx = tx.clone();
         pool.execute(move || {
-            let send_buff_size = match func(src_ipv4, src_port, dst_ipv4, dst_port, max_same_packet)
+            let send_buff_size = match func(dst_ipv4, dst_port, src_ipv4, src_port, max_same_packet)
             {
                 Ok(s) => s + 14, // Ethernet frame header length.
                 Err(_) => 0,
@@ -166,10 +166,10 @@ fn run_flood(
 
 fn run_flood6(
     method: FloodMethods,
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
@@ -192,7 +192,7 @@ fn run_flood6(
         recv_size += 1;
         let tx = tx.clone();
         pool.execute(move || {
-            let send_buff_size = match func(src_ipv6, src_port, dst_ipv6, dst_port, max_same_packet)
+            let send_buff_size = match func(dst_ipv6, dst_port, src_ipv6, src_port, max_same_packet)
             {
                 Ok(s) => s + 14, // Ethernet frame header length.
                 Err(_) => 0,
@@ -231,10 +231,10 @@ fn ipv4_flood(
     let ret = if method == FloodMethods::Icmp {
         run_flood(
             method,
-            src_ipv4,
-            src_port,
             dst_ipv4,
             0,
+            src_ipv4,
+            src_port,
             threads_num,
             max_same_packet,
             max_flood_packet,
@@ -242,10 +242,10 @@ fn ipv4_flood(
     } else {
         run_flood(
             method,
-            src_ipv4,
-            src_port,
             dst_ipv4,
             dst_port,
+            src_ipv4,
+            src_port,
             threads_num,
             max_same_packet,
             max_flood_packet,
@@ -271,10 +271,10 @@ fn ipv6_flood(
     let ret = if method == FloodMethods::Icmp {
         run_flood6(
             method,
-            src_ipv6,
-            src_port,
             dst_ipv6,
             0,
+            src_ipv6,
+            src_port,
             threads_num,
             max_same_packet,
             max_flood_packet,
@@ -282,10 +282,10 @@ fn ipv6_flood(
     } else {
         run_flood6(
             method,
-            src_ipv6,
-            src_port,
             dst_ipv6,
             dst_port,
+            src_ipv6,
+            src_port,
             threads_num,
             max_same_packet,
             max_flood_packet,
@@ -414,6 +414,23 @@ pub fn icmp_flood(
     )
 }
 
+pub fn icmp_flood_raw(
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    max_same_packet: usize,
+) -> Result<usize> {
+    let dst_port = 0;
+    let src_port = None;
+    flood_raw(
+        FloodMethods::Icmp,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        max_same_packet,
+    )
+}
+
 /// In a TCP SYN Flood attack, the malicious entity sends a barrage of SYN requests to a target server but intentionally avoids sending the final ACK.
 /// This leaves the server waiting for a response that never comes, consuming resources for each of these half-open connections.
 pub fn tcp_syn_flood(
@@ -432,6 +449,23 @@ pub fn tcp_syn_flood(
         threads_num,
         max_same_packet,
         max_flood_packet,
+    )
+}
+
+pub fn tcp_syn_flood_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    max_same_packet: usize,
+) -> Result<usize> {
+    flood_raw(
+        FloodMethods::Syn,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        max_same_packet,
     )
 }
 
@@ -462,6 +496,23 @@ pub fn tcp_ack_flood(
     )
 }
 
+pub fn tcp_ack_flood_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    max_same_packet: usize,
+) -> Result<usize> {
+    flood_raw(
+        FloodMethods::Ack,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        max_same_packet,
+    )
+}
+
 /// TCP ACK flood with PSH flag set.
 pub fn tcp_ack_psh_flood(
     target: Target,
@@ -479,6 +530,23 @@ pub fn tcp_ack_psh_flood(
         threads_num,
         max_same_packet,
         max_flood_packet,
+    )
+}
+
+pub fn tcp_ack_psh_flood_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    max_same_packet: usize,
+) -> Result<usize> {
+    flood_raw(
+        FloodMethods::AckPsh,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        max_same_packet,
     )
 }
 
@@ -504,6 +572,79 @@ pub fn udp_flood(
         max_same_packet,
         max_flood_packet,
     )
+}
+
+pub fn udp_flood_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    max_same_packet: usize,
+) -> Result<usize> {
+    flood_raw(
+        FloodMethods::Udp,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        max_same_packet,
+    )
+}
+
+pub fn flood_raw(
+    method: FloodMethods,
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    max_same_packet: usize,
+) -> Result<usize> {
+    let func = match method {
+        FloodMethods::Icmp => icmp::send_icmp_flood_packet,
+        FloodMethods::Syn => tcp::send_syn_flood_packet,
+        FloodMethods::Ack => tcp::send_ack_flood_packet,
+        FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet,
+        FloodMethods::Udp => udp::send_udp_flood_packet,
+    };
+    let func6 = match method {
+        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet,
+        FloodMethods::Syn => tcp6::send_syn_flood_packet,
+        FloodMethods::Ack => tcp6::send_ack_flood_packet,
+        FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet,
+        FloodMethods::Udp => udp6::send_udp_flood_packet,
+    };
+    let src_port = match src_port {
+        Some(p) => p,
+        None => random_port(),
+    };
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => {
+            match find_source_addr(src_addr, dst_ipv4)? {
+                Some(src_ipv4) => {
+                    let send_buff_size =
+                        match func(dst_ipv4, dst_port, src_ipv4, src_port, max_same_packet) {
+                            Ok(s) => s + 14, // Ethernet frame header length.
+                            Err(_) => 0,
+                        };
+                    Ok(send_buff_size)
+                }
+                None => Err(CanNotFoundSourceAddress::new().into()),
+            }
+        }
+        IpAddr::V6(dst_ipv6) => {
+            match find_source_addr6(src_addr, dst_ipv6)? {
+                Some(src_ipv6) => {
+                    let send_buff_size =
+                        match func6(dst_ipv6, dst_port, src_ipv6, src_port, max_same_packet) {
+                            Ok(s) => s + 14, // Ethernet frame header length.
+                            Err(_) => 0,
+                        };
+                    Ok(send_buff_size)
+                }
+                None => Err(CanNotFoundSourceAddress::new().into()),
+            }
+        }
+    }
 }
 
 #[cfg(test)]

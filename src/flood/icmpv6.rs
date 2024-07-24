@@ -18,9 +18,9 @@ use crate::layers::IPV6_HEADER_SIZE;
 const TTL: u8 = 255;
 
 pub fn send_icmpv6_flood_packet(
-    src_ipv6: Ipv6Addr,
-    _: u16, // unified interface
     dst_ipv6: Ipv6Addr,
+    _: u16, // unified interface
+    src_ipv6: Ipv6Addr,
     _: u16, // unified interface
     max_same_packet: usize,
 ) -> Result<usize> {

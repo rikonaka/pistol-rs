@@ -384,6 +384,82 @@ pub fn os_detect(
     Ok(ret)
 }
 
+pub fn os_detect_raw(
+    dst_addr: IpAddr,
+    dst_open_tcp_port: u16,
+    dst_closed_tcp_port: u16,
+    dst_closed_udp_port: u16,
+    src_addr: Option<IpAddr>,
+    top_k: usize,
+    timeout: Duration,
+) -> Result<OsDetectResults> {
+    let src_port = None;
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+            Some(src_ipv4) => {
+                let nmap_os_file = include_str!("./db/nmap-os-db");
+                let mut nmap_os_file_lines = Vec::new();
+                for l in nmap_os_file.lines() {
+                    nmap_os_file_lines.push(l.to_string());
+                }
+                let nmap_os_db = dbparser::nmap_os_db_parser(nmap_os_file_lines)?;
+                debug!("ipv4 nmap os db parse finish");
+
+                let nmap_os_db = nmap_os_db.to_vec();
+                match threads_os_probe(
+                    src_ipv4,
+                    src_port,
+                    dst_ipv4,
+                    dst_open_tcp_port,
+                    dst_closed_tcp_port,
+                    dst_closed_udp_port,
+                    nmap_os_db,
+                    top_k,
+                    timeout,
+                ) {
+                    Ok((fingerprint, ret)) => {
+                        let oss = HostOsDetect4::new(fingerprint, ret);
+                        let oss = HostOsDetect::V4(oss);
+                        let mut ret = OsDetectResults::new();
+                        ret.oss.insert(dst_addr, oss);
+                        Ok(ret)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+        IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
+            Some(src_ipv6) => {
+                let linear = gen_linear()?;
+                debug!("ipv6 gen linear parse finish");
+
+                match threads_os_probe6(
+                    src_ipv6,
+                    src_port,
+                    dst_ipv6,
+                    dst_open_tcp_port,
+                    dst_closed_tcp_port,
+                    dst_closed_udp_port,
+                    top_k,
+                    linear,
+                    timeout,
+                ) {
+                    Ok((fingerprint, ret)) => {
+                        let oss = HostOsDetect6::new(fingerprint, ret);
+                        let oss = HostOsDetect::V6(oss);
+                        let mut ret = OsDetectResults::new();
+                        ret.oss.insert(dst_addr, oss);
+                        Ok(ret)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -447,6 +447,48 @@ pub fn tcp_syn_ping(
     )
 }
 
+/// TCP SYN Ping, raw version.
+pub fn tcp_syn_ping_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PingStatus, Option<Duration>)> {
+    let src_port = match src_port {
+        Some(p) => p,
+        None => random_port(),
+    };
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+            Some(src_ipv4) => {
+                let (ret, rtt) =
+                    tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+                debug!("syn ret: {:?}", ret);
+                let (s, rtt) = match ret {
+                    PortStatus::Open => (PingStatus::Up, rtt),
+                    _ => (PingStatus::Down, rtt),
+                };
+                Ok((s, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+        IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
+            Some(src_ipv6) => {
+                let (ret, rtt) =
+                    tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
+                debug!("syn ret: {:?}", ret);
+                let (s, rtt) = match ret {
+                    PortStatus::Open => (PingStatus::Up, rtt),
+                    _ => (PingStatus::Down, rtt),
+                };
+                Ok((s, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+    }
+}
+
 /// TCP ACK Ping.
 /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
@@ -469,6 +511,48 @@ pub fn tcp_ack_ping(
     )
 }
 
+/// TCP ACK Ping, raw version.
+pub fn tcp_ack_ping_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PingStatus, Option<Duration>)> {
+    let src_port = match src_port {
+        Some(p) => p,
+        None => random_port(),
+    };
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+            Some(src_ipv4) => {
+                let (ret, rtt) =
+                    tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+                debug!("ack ret: {:?}", ret);
+                let (s, rtt) = match ret {
+                    PortStatus::Unfiltered => (PingStatus::Up, rtt),
+                    _ => (PingStatus::Down, rtt),
+                };
+                Ok((s, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+        IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
+            Some(src_ipv6) => {
+                let (ret, rtt) =
+                    tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
+                debug!("ack ret: {:?}", ret);
+                let (s, rtt) = match ret {
+                    PortStatus::Unfiltered => (PingStatus::Up, rtt),
+                    _ => (PingStatus::Down, rtt),
+                };
+                Ok((s, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+    }
+}
+
 /// UDP Ping.
 /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
@@ -489,6 +573,50 @@ pub fn udp_ping(
         timeout,
         tests,
     )
+}
+
+/// UDP Ping, raw version.
+pub fn udp_ping_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PingStatus, Option<Duration>)> {
+    let src_port = match src_port {
+        Some(p) => p,
+        None => random_port(),
+    };
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+            Some(src_ipv4) => {
+                let (ret, rtt) =
+                    udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
+                debug!("udp ret: {:?}", ret);
+                let (s, rtt) = match ret {
+                    PortStatus::Open => (PingStatus::Up, rtt),
+                    // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                    _ => (PingStatus::Down, rtt),
+                };
+                Ok((s, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+        IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
+            Some(src_ipv6) => {
+                let (ret, rtt) =
+                    udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
+                debug!("udp ret: {:?}", ret);
+                let (s, rtt) = match ret {
+                    PortStatus::Open => (PingStatus::Up, rtt),
+                    // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
+                    _ => (PingStatus::Down, rtt),
+                };
+                Ok((s, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+    }
 }
 
 /// ICMP Ping.
@@ -516,6 +644,32 @@ pub fn icmp_ping(
         timeout,
         tests,
     )
+}
+
+/// ICMP ping, raw version.
+pub fn icmp_ping_raw(
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    timeout: Duration,
+) -> Result<(PingStatus, Option<Duration>)> {
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+            Some(src_ipv4) => {
+                let (ret, rtt) = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?;
+                debug!("icmp ret: {:?}", ret);
+                Ok((ret, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+        IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
+            Some(src_ipv6) => {
+                let (ret, rtt) = icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?;
+                debug!("icmpv6 ret: {:?}", ret);
+                Ok((ret, rtt))
+            }
+            None => Err(CanNotFoundSourceAddress::new().into()),
+        },
+    }
 }
 
 #[cfg(test)]

@@ -42,8 +42,8 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     false
 }
 
-pub fn find_source_addr(src_ipv4: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<Option<Ipv4Addr>> {
-    match src_ipv4 {
+pub fn find_source_addr(src_addr: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<Option<Ipv4Addr>> {
+    match src_addr {
         Some(s) => match s {
             IpAddr::V6(_) => (),
             IpAddr::V4(s) => return Ok(Some(s)),
@@ -90,8 +90,8 @@ pub fn find_source_addr(src_ipv4: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<
     Ok(None)
 }
 
-pub fn find_source_addr6(src_ipv6: Option<IpAddr>, dst_ipv6: Ipv6Addr) -> Result<Option<Ipv6Addr>> {
-    match src_ipv6 {
+pub fn find_source_addr6(src_addr: Option<IpAddr>, dst_ipv6: Ipv6Addr) -> Result<Option<Ipv6Addr>> {
+    match src_addr {
         Some(s) => match s {
             IpAddr::V4(_) => (),
             IpAddr::V6(s) => return Ok(Some(s)),

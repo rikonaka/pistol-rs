@@ -17,10 +17,10 @@ const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
 
 pub fn send_udp_flood_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize> {
     let mut rng = rand::thread_rng();

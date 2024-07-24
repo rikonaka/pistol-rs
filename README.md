@@ -133,6 +133,8 @@ fn main() -> Result<()> {
 }
 ```
 
+If you don't want to use `Target`, you can also use the `_raw` functions we provide, for example, the corresponding raw function for `tcp_syn_scan` is `tcp_syn_scan_raw`.
+
 ### 1. SYN Port Scan Example
 
 ```rust
@@ -327,7 +329,7 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 
 ```rust
 use pistol::vs::vs_scan;
-use pistol::vs::dbparser::ExcludePorts;
+use pistol::vs::ExcludePorts;
 use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;

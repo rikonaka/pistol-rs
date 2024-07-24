@@ -318,6 +318,30 @@ fn ipv4_arp_scan(
     scan_ret
 }
 
+pub fn arp_scan_raw(
+    dst_ipv4: Ipv4Addr,
+    src_addr: Option<IpAddr>,
+    timeout: Duration,
+) -> Result<Option<MacAddr>> {
+    let dst_mac = MacAddr::broadcast();
+    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+        Some(s) => s,
+        None => return Err(CanNotFoundSourceAddress::new().into()),
+    };
+    let interface = match find_interface_by_ip(src_ipv4.into()) {
+        Some(i) => i,
+        None => return Err(CanNotFoundInterface::new().into()),
+    };
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(CanNotFoundMacAddress::new().into()),
+    };
+    match arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
+        Ok((mac, _)) => Ok(mac),
+        Err(e) => Err(e),
+    }
+}
+
 /// ARP Scan.
 /// This will sends ARP packets to hosts on the local network and displays any responses that are received.
 pub fn arp_scan(
@@ -679,6 +703,26 @@ pub fn tcp_connect_scan(
     )
 }
 
+/// TCP connect() Scan, raw version.
+pub fn tcp_connect_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Connect,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
+    )
+}
+
 /// TCP SYN Scan.
 /// This technique is often referred to as "half-open" scanning, because you don't open a full TCP connection.
 /// You send a SYN packet, as if you are going to open a real connection and wait for a response.
@@ -709,6 +753,26 @@ pub fn tcp_syn_scan(
         threads_num,
         timeout,
         tests,
+    )
+}
+
+/// TCP SYN Scan, raw version.
+pub fn tcp_syn_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Syn,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
     )
 }
 
@@ -746,6 +810,26 @@ pub fn tcp_fin_scan(
     )
 }
 
+/// TCP FIN Scan, raw version.
+pub fn tcp_fin_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Fin,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
+    )
+}
+
 /// TCP ACK Scan.
 /// This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports.
 /// It is used to map out firewall rulesets, determining whether they are stateful or not and which ports are filtered.
@@ -770,6 +854,26 @@ pub fn tcp_ack_scan(
         threads_num,
         timeout,
         tests,
+    )
+}
+
+/// TCP ACK Scan, raw version.
+pub fn tcp_ack_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Ack,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
     )
 }
 
@@ -799,6 +903,26 @@ pub fn tcp_null_scan(
     )
 }
 
+/// TCP Null Scan, raw version.
+pub fn tcp_null_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Null,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
+    )
+}
+
 /// TCP Xmas Scan.
 /// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
 /// When scanning systems compliant with this RFC text,
@@ -822,6 +946,26 @@ pub fn tcp_xmas_scan(
         threads_num,
         timeout,
         tests,
+    )
+}
+
+/// TCP Xmas Scan, raw version.
+pub fn tcp_xmas_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Xmas,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
     )
 }
 
@@ -852,6 +996,26 @@ pub fn tcp_window_scan(
     )
 }
 
+/// TCP Window Scan, raw version.
+pub fn tcp_window_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Window,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
+    )
+}
+
 /// TCP Maimon Scan.
 /// The Maimon scan is named after its discoverer, Uriel Maimon.
 /// He described the technique in Phrack Magazine issue #49 (November 1996).
@@ -879,8 +1043,29 @@ pub fn tcp_maimon_scan(
     )
 }
 
+/// TCP Maimon Scan, raw version.
+pub fn tcp_maimon_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Maimon,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
+    )
+}
+
 /// TCP Idle Scan.
-/// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book) posted to the Bugtraq mailing list an ingenious new port scanning technique.
+/// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book)
+/// posted to the Bugtraq mailing list an ingenious new port scanning technique.
 /// Idle scan, as it has become known, allows for completely blind port scanning.
 /// Attackers can actually scan a target without sending a single packet to the target from their own IP address!
 /// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
@@ -906,6 +1091,28 @@ pub fn tcp_idle_scan(
         threads_num,
         timeout,
         tests,
+    )
+}
+
+/// TCP Idle Scan, raw version.
+pub fn tcp_idle_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Udp,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        zombie_ipv4,
+        zombie_port,
+        timeout,
     )
 }
 
@@ -936,6 +1143,67 @@ pub fn udp_scan(
         timeout,
         tests,
     )
+}
+
+/// UDP Scan, raw version.
+pub fn udp_scan_raw(
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    scan_raw(
+        ScanMethod::Udp,
+        dst_addr,
+        dst_port,
+        src_addr,
+        src_port,
+        None,
+        None,
+        timeout,
+    )
+}
+
+pub fn scan_raw(
+    method: ScanMethod,
+    dst_addr: IpAddr,
+    dst_port: u16,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
+    timeout: Duration,
+) -> Result<(PortStatus, Option<Duration>)> {
+    let src_port = match src_port {
+        Some(s) => s,
+        None => random_port(),
+    };
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => {
+            let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+                Some(s) => s,
+                None => return Err(CanNotFoundSourceAddress::new().into()),
+            };
+            threads_scan(
+                method,
+                dst_ipv4,
+                dst_port,
+                src_ipv4,
+                src_port,
+                zombie_ipv4,
+                zombie_port,
+                timeout,
+            )
+        }
+        IpAddr::V6(dst_ipv6) => {
+            let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
+                Some(s) => s,
+                None => return Err(CanNotFoundSourceAddress::new().into()),
+            };
+            threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
+        }
+    }
 }
 
 #[cfg(test)]
