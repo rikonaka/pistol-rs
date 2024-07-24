@@ -191,7 +191,7 @@ fn main() -> Result<()> {
     let src_ipv4 = None;
     let src_port = None;
     let timeout = Duration::new(3, 0);
-    let (ret, _rrt) =
+    let (ret, _rtt) =
         tcp_syn_ping_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
     println!("{:?}", ret);
     Ok(())

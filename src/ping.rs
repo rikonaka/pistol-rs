@@ -702,7 +702,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Duration::new(3, 0);
-        let (ret, _rrt) =
+        let (ret, _rtt) =
             tcp_syn_ping_raw(TEST_IPV4_REMOTE.into(), 80, src_ipv4, src_port, timeout)?;
         println!("{:?}", ret);
         Ok(())
