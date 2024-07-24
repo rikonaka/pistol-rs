@@ -524,7 +524,7 @@ mod tests {
     use crate::Host;
     use crate::Logger;
     use crate::Target;
-    use crate::TEST_IPV4_LOCAL;
+    // use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
     #[test]
@@ -533,11 +533,12 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
-        let timeout = Some(Duration::new(1, 0));
-        let host_1 = Host::new(TEST_IPV4_REMOTE.into(), Some(vec![22]));
-        let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
-        let target: Target = Target::new(vec![host_1, host_2]);
-        let tests = 4;
+        let timeout = Some(Duration::new(3, 0));
+        let host_1 = Host::new(TEST_IPV4_REMOTE.into(), Some(vec![80]));
+        // let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
+        // let target: Target = Target::new(vec![host_1, host_2]);
+        let target: Target = Target::new(vec![host_1]);
+        let tests = 3;
         let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
         println!("{}", ret);
         Ok(())

@@ -266,23 +266,3 @@ impl OsDetectResultsNullError {
     }
 }
 impl Error for OsDetectResultsNullError {}
-
-#[cfg(target_os = "windows")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnsupportedSystemDetected {
-    system: String,
-}
-#[cfg(target_os = "windows")]
-impl fmt::Display for UnsupportedSystemDetected {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "unsupported system detected: {}", self.system)
-    }
-}
-#[cfg(target_os = "windows")]
-impl UnsupportedSystemDetected {
-    pub fn new(system: String) -> UnsupportedSystemDetected {
-        UnsupportedSystemDetected { system }
-    }
-}
-#[cfg(target_os = "windows")]
-impl Error for UnsupportedSystemDetected {}

@@ -1,6 +1,8 @@
 use anyhow::Result;
 use log::debug;
 use log::warn;
+#[cfg(target_os = "windows")]
+use pnet::datalink::interfaces;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::ipnetwork::IpNetwork;
@@ -10,9 +12,6 @@ use std::process::Command;
 use std::str::FromStr;
 
 use crate::errors::InvalidRouteFormat;
-#[cfg(target_os = "windows")]
-use crate::errors::UnsupportedSystemDetected;
-use crate::utils::find_interface_by_name;
 #[cfg(any(
     target_os = "macos",
     target_os = "freebsd",
@@ -21,13 +20,6 @@ use crate::utils::find_interface_by_name;
 ))]
 use crate::utils::find_interface_by_subnetwork;
 
-// ubuntu22.04 output:
-// default via 192.168.72.2 dev ens33
-// 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-// 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-// centos7 output:
-// default via 192.168.72.2 dev ens33 proto dhcp metric 100
-// 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
 #[derive(Debug, Clone)]
 pub struct DefaultRoute {
     pub via: IpAddr,           // Next hop gateway address
@@ -37,7 +29,13 @@ pub struct DefaultRoute {
 impl DefaultRoute {
     #[cfg(target_os = "linux")]
     pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
+        // ubuntu22.04 output:
         // default via 192.168.72.2 dev ens33
+        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+        // centos7 output:
+        // default via 192.168.72.2 dev ens33 proto dhcp metric 100
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
         let line_split: Vec<&str> = line
             .split(" ")
             .map(|x| x.trim())
@@ -126,9 +124,33 @@ impl DefaultRoute {
         Err(InvalidRouteFormat::new(line.to_string()).into())
     }
     #[cfg(target_os = "windows")]
-    pub fn parse(_line: &str) -> Result<DefaultRoute> {
-        // The Windows is not supported now.
-        Err(UnsupportedSystemDetected::new(String::from("windows")).into())
+    pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
+        let line_split: Vec<&str> = line
+            .split(" ")
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+
+        if line_split.len() > 5 {
+            let mut is_ipv4 = true;
+            debug!("default route parse (windows): {}", line_split[2]);
+            let via: IpAddr = line_split[2].parse()?;
+            if line_split[2].contains(":") {
+                is_ipv4 = false;
+            }
+            let if_index: u32 = line_split[0].parse()?;
+            for interface in interfaces() {
+                if if_index == interface.index {
+                    let dr = DefaultRoute {
+                        via,
+                        dev: interface,
+                    };
+                    return Ok((dr, is_ipv4));
+                }
+            }
+        }
+
+        Err(InvalidRouteFormat::new(line.to_string()).into())
     }
 }
 
@@ -225,9 +247,37 @@ impl Route {
         Err(InvalidRouteFormat::new(line.to_string()).into())
     }
     #[cfg(target_os = "windows")]
-    pub fn parse(_line: &str) -> Result<Route> {
-        // The Windows is not supported now.
-        Err(UnsupportedSystemDetected::new(String::from("windows")).into())
+    pub fn parse(line: &str) -> Result<Route> {
+        // 10 fe80::e186:d8c7:b82:159f/128 :: 256 25 ActiveStore
+        let line_split: Vec<&str> = line
+            .split(" ")
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+
+        let find_interface = |if_index: u32| -> Option<NetworkInterface> {
+            for interface in interfaces() {
+                if if_index == interface.index {
+                    return Some(interface);
+                }
+            }
+            None
+        };
+
+        if line_split.len() > 5 {
+            let if_index: u32 = line_split[0].parse()?;
+            let dst = line_split[1];
+            let dst = IpNetwork::from_str(dst)?;
+            let dev = find_interface(if_index);
+            match dev {
+                Some(dev) => {
+                    let route = Route { dst, dev };
+                    return Ok(route);
+                }
+                None => (),
+            }
+        }
+        Err(InvalidRouteFormat::new(line.to_string()).into())
     }
 }
 
@@ -345,18 +395,38 @@ impl RouteTable {
     }
     #[cfg(target_os = "windows")]
     pub fn init() -> Result<RouteTable> {
-        // let c = Command::new("powershell")
-        //     .args(["route", "print"])
-        //     .output()?;
-        // let output = String::from_utf8_lossy(&c.stdout);
-        // let lines: Vec<&str> = output
-        //     .lines()
-        //     .map(|x| x.trim())
-        //     .filter(|v| v.len() > 0)
-        //     .collect();
+        let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+        let output = String::from_utf8_lossy(&c.stdout);
+        let route_lines: Vec<&str> = output
+            .lines()
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
 
-        // The Windows is not supported now.
-        Err(UnsupportedSystemDetected::new(String::from("windows")).into())
+        let mut default_ipv4_route = None;
+        let mut default_ipv6_route = None;
+        let mut routes = Vec::new();
+
+        for line in route_lines {
+            match Route::parse(line) {
+                Ok(r) => routes.push(r),
+                Err(e) => warn!("route parse error: {}", e),
+            };
+            if line.contains("::/0") {
+                let (r, _) = DefaultRoute::parse(line)?;
+                default_ipv6_route = Some(r);
+            } else if line.contains("0.0.0.0/0") {
+                let (r, _) = DefaultRoute::parse(line)?;
+                default_ipv4_route = Some(r);
+            }
+        }
+
+        let rt = RouteTable {
+            default_ipv4_route,
+            default_ipv6_route,
+            routes,
+        };
+        Ok(rt)
     }
 }
 
@@ -481,8 +551,37 @@ impl SystemCache {
     }
     #[cfg(target_os = "windows")]
     pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
-        // The Windows is not supported now.
-        Err(UnsupportedSystemDetected::new(String::from("windows")).into())
+        let c = Command::new("powershell")
+            .args(["Get-NetNeighbor"])
+            .output()?;
+        let output = String::from_utf8_lossy(&c.stdout);
+        let nei_lines: Vec<&str> = output
+            .lines()
+            .map(|x| x.trim())
+            .filter(|v| v.len() > 0)
+            .collect();
+
+        let mut ret = HashMap::new();
+        for line in nei_lines {
+            let line_split: Vec<&str> = line
+                .split(" ")
+                .map(|x| x.trim())
+                .filter(|v| v.len() > 0)
+                .collect();
+
+            if line_split.len() > 4 {
+                match line_split[1].parse() {
+                    Ok(ip) => match line_split[2].parse() {
+                        Ok(mac) => {
+                            ret.insert(ip, mac);
+                        }
+                        Err(e) => warn!("neighbor cache parse mac error: {}", e),
+                    },
+                    Err(e) => warn!("neighbor cache parse ip error: {}", e),
+                }
+            }
+        }
+        Ok(ret)
     }
     pub fn init() -> Result<SystemCache> {
         let route_table = RouteTable::init()?;
@@ -531,6 +630,7 @@ impl SystemCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // use crate::Logger;
     use pnet::datalink::interfaces;
     #[test]
     fn test_route_table() -> Result<()> {
@@ -550,10 +650,11 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_windows() {
+    fn test_windows_interface() {
         for interface in interfaces() {
             // can not found ipv6 address in windows
             println!("{}", interface);
+            println!("{}", interface.index);
         }
     }
     #[test]
