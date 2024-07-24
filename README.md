@@ -9,7 +9,7 @@ The library must be run as root (Linux, *BSD) or administrator (Windows), the `s
 pistol = "^2"
 ```
 
-On Windows, download `winpcap` [here](https://www.winpcap.org/install/), then place `Packet.lib` from the x64 folder in your root of code. The other lib like `npcap` did not test by libpnet.
+On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npcap` [here](https://npcap.com/#download), then place `Packet.lib` from the x64 folder in your root of code (Note: the `npcap` did not test by libpnet according to the doc of libpnet).
 
 ## Cross Platform Support
 
