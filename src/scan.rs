@@ -1105,7 +1105,7 @@ pub fn tcp_idle_scan_raw(
     timeout: Duration,
 ) -> Result<(PortStatus, Option<Duration>)> {
     scan_raw(
-        ScanMethod::Udp,
+        ScanMethod::Idle,
         dst_addr,
         dst_port,
         src_addr,
