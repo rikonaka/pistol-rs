@@ -698,6 +698,16 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn test_tcp_syn_ping_raw() -> Result<()> {
+        let src_ipv4 = None;
+        let src_port = None;
+        let timeout = Duration::new(3, 0);
+        let (ret, _rrt) =
+            tcp_syn_ping_raw(TEST_IPV4_REMOTE.into(), 80, src_ipv4, src_port, timeout)?;
+        println!("{:?}", ret);
+        Ok(())
+    }
+    #[test]
     fn test_tcp_syn_ping6() -> Result<()> {
         // Logger::init_debug_logging()?;
         let src_ipv4 = None;
