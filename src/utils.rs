@@ -142,7 +142,13 @@ pub fn find_source_addr6(src_ipv6: Option<IpAddr>, dst_ipv6: Ipv6Addr) -> Result
     Ok(None)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "linux"
+))]
 pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
         if interface.name == name {
