@@ -645,9 +645,12 @@ mod tests {
         let rt = RouteTable::init()?;
         println!("{:?}", rt.default_ipv4_route);
         println!("{:?}", rt.default_ipv6_route);
-        for route in rt.routes {
-            println!("{:?}", route);
-        }
+        // for route in rt.routes {
+        //     println!("{:?}", route);
+        // }
+        let sc = SystemCache::init()?;
+        let m = sc.neighbor_cache;
+        println!("{:?}", m);
         Ok(())
     }
     #[test]
