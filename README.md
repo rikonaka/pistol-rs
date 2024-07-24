@@ -177,6 +177,27 @@ fn main() -> Result<()> {
 }
 ```
 
+Or
+
+```rust
+use pistol::scan::tcp_syn_scan_raw;
+use std::net::Ipv4Addr;
+use std::time::Duration;
+use anyhow::Result;
+
+fn main() -> Result<()> {
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+    let dst_port = 80;
+    let src_ipv4 = None;
+    let src_port = None;
+    let timeout = Duration::new(3, 0);
+    let (ret, _rrt) =
+        tcp_syn_ping_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
+    println!("{:?}", ret);
+    Ok(())
+}
+```
+
 ### Output
 
 ```
