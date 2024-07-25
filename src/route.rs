@@ -638,25 +638,26 @@ impl SystemCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
     // use crate::Logger;
     use pnet::datalink::interfaces;
     #[test]
     fn test_route_table() -> Result<()> {
-        let rt = RouteTable::init()?;
-        println!("{:?}", rt.default_ipv4_route);
-        println!("{:?}", rt.default_ipv6_route);
+        // let rt = RouteTable::init()?;
+        // println!("{:?}", rt.default_ipv4_route);
+        // println!("{:?}", rt.default_ipv6_route);
 
-        let routes = rt.routes;
-        for r in routes {
-            let r_str = r.dst.to_string();
-            println!("{}", r_str);
-        }
+        // let routes = rt.routes;
+        // for r in routes {
+        //     let r_str = r.dst.to_string();
+        //     println!("{}", r_str);
+        // }
         // for route in rt.routes {
         //     println!("{:?}", route);
         // }
-        let sc = SystemCache::init()?;
-        let m = sc.neighbor_cache;
-        println!("{:?}", m);
+        let start = Instant::now();
+        let _sc = SystemCache::init()?;
+        println!("{:.3}s", start.elapsed().as_secs_f32());
         Ok(())
     }
     #[test]
