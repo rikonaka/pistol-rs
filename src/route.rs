@@ -645,6 +645,12 @@ mod tests {
         let rt = RouteTable::init()?;
         println!("{:?}", rt.default_ipv4_route);
         println!("{:?}", rt.default_ipv6_route);
+
+        let routes = rt.routes;
+        for r in routes {
+            let r_str = r.dst.to_string();
+            println!("{}", r_str);
+        }
         // for route in rt.routes {
         //     println!("{:?}", route);
         // }
