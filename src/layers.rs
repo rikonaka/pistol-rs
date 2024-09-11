@@ -672,7 +672,7 @@ pub fn layer3_ipv4_system_route(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
 ) -> Result<(MacAddr, NetworkInterface)> {
-    let mut sc = SYSTEM_CACHE.lock().expect("can not local network cache");
+    let mut sc = SYSTEM_CACHE.lock().expect("can not get local network cache");
 
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
