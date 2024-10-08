@@ -15,3 +15,6 @@ Cargo.lock
 
 # npcap lib
 *.lib
+
+# My libc raw socket test
+pistol-libc/

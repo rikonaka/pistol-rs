@@ -6,12 +6,13 @@ use pnet::datalink::interfaces;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::ipnetwork::IpNetwork;
+use regex::Regex;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::process::Command;
 use std::str::FromStr;
 
-use crate::errors::InvalidRouteFormat;
+// use crate::errors::InvalidRouteFormat;
 #[cfg(any(
     target_os = "macos",
     target_os = "freebsd",
@@ -35,58 +36,6 @@ pub struct DefaultRoute {
 }
 
 impl DefaultRoute {
-    #[cfg(target_os = "linux")]
-    pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
-        // ubuntu22.04 output:
-        // default via 192.168.72.2 dev ens33
-        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-        // centos7 output:
-        // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
-        let line_split: Vec<&str> = line
-            .split(" ")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-        let max_iters = line_split.len();
-        let mut i = 0;
-        let mut via = None;
-        let mut dev = None;
-        let mut is_ipv4 = true;
-
-        while i < max_iters {
-            let item = line_split[i];
-            if item == "via" {
-                i += 1;
-                debug!("default route parse: {}", line_split[i]);
-                let v: IpAddr = line_split[i].parse()?;
-                via = Some(v);
-                if line_split[i].contains(":") {
-                    is_ipv4 = false;
-                }
-            } else if item == "dev" {
-                i += 1;
-                let dev_name = line_split[i];
-                let d = find_interface_by_name(dev_name);
-                dev = d;
-            }
-            i += 1;
-        }
-
-        match via {
-            Some(via) => match dev {
-                Some(dev) => {
-                    let dr = DefaultRoute { via, dev };
-                    return Ok((dr, is_ipv4));
-                }
-                None => (),
-            },
-            None => (),
-        }
-
-        Err(InvalidRouteFormat::new(line.to_string()).into())
-    }
     #[cfg(any(
         target_os = "macos",
         target_os = "freebsd",
@@ -163,97 +112,18 @@ impl DefaultRoute {
 }
 
 #[derive(Debug, Clone)]
+pub enum RouteAddr {
+    IpNetwork(IpNetwork),
+    IpAddr(IpAddr),
+}
+
+#[derive(Debug, Clone)]
 pub struct Route {
-    pub dst: IpNetwork,        // Destination network or host address
+    pub dst: RouteAddr,        // Destination network or host address
     pub dev: NetworkInterface, // Device interface name
 }
 
 impl Route {
-    #[cfg(target_os = "linux")]
-    pub fn parse(line: &str) -> Result<Route> {
-        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-        let line_split: Vec<&str> = line
-            .split(" ")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-        let max_iters = line_split.len();
-        let mut i = 0;
-        let dst = IpNetwork::from_str(line_split[0])?;
-        let mut dev = None;
-
-        while i < max_iters {
-            let item = line_split[i];
-            if item == "dev" {
-                i += 1;
-                let dev_name = line_split[i];
-                let d = find_interface_by_name(dev_name);
-                dev = d;
-            }
-            i += 1;
-        }
-
-        match dev {
-            Some(dev) => {
-                let r = Route { dst, dev };
-                return Ok(r);
-            }
-            None => (),
-        }
-
-        Err(InvalidRouteFormat::new(line.to_string()).into())
-    }
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    pub fn parse(line: &str) -> Result<Route> {
-        // 127.0.0.1          link#2             UH          lo0
-        // println!("line: {}", line);
-        let line_split: Vec<&str> = line
-            .split(" ")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-        let dst = line_split[0].to_string();
-        let dst = if dst.contains("%") {
-            let dst_split: Vec<&str> = dst
-                .split("%")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            let mut ret = dst_split[0].to_string();
-            if dst_split[1].contains("/") {
-                let i_split: Vec<&str> = dst_split[1]
-                    .split("/")
-                    .map(|x| x.trim())
-                    .filter(|v| v.len() > 0)
-                    .collect();
-                ret += "/";
-                ret += i_split[1];
-            }
-            ret
-        } else {
-            dst
-        };
-
-        let dst = IpNetwork::from_str(&dst)?;
-        let dev_name = line_split[3];
-        let dev = find_interface_by_name(dev_name);
-
-        match dev {
-            Some(dev) => {
-                let r = Route { dst, dev };
-                // println!("{:?}", r);
-                return Ok(r);
-            }
-            None => (),
-        }
-
-        Err(InvalidRouteFormat::new(line.to_string()).into())
-    }
     #[cfg(target_os = "windows")]
     pub fn parse(line: &str) -> Result<Route> {
         // 10 fe80::e186:d8c7:b82:159f/128 :: 256 25 ActiveStore
@@ -299,44 +169,96 @@ pub struct RouteTable {
 impl RouteTable {
     #[cfg(target_os = "linux")]
     pub fn init() -> Result<RouteTable> {
-        let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
-        let ipv4_output = String::from_utf8_lossy(&c.stdout);
-        let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
-        let ipv6_output = String::from_utf8_lossy(&c.stdout);
-        let output = ipv4_output.to_string() + &ipv6_output;
-        let lines: Vec<&str> = output
-            .lines()
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
+        let system_route_lines = || -> Result<Vec<String>> {
+            // Linux
+            // ubuntu22.04 output:
+            // default via 192.168.72.2 dev ens33
+            // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
+            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+            // centos7 output:
+            // default via 192.168.72.2 dev ens33 proto dhcp metric 100
+            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
+            let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
+            let ipv4_output = String::from_utf8_lossy(&c.stdout);
+            let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
+            let ipv6_output = String::from_utf8_lossy(&c.stdout);
+            let output = ipv4_output.to_string() + &ipv6_output;
+            let lines: Vec<String> = output
+                .lines()
+                .map(|x| x.trim().to_string())
+                .filter(|v| v.len() > 0)
+                .collect();
+            Ok(lines)
+        };
 
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = Vec::new();
 
-        for line in lines {
-            let line_split: Vec<&str> = line
-                .split(" ")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            let dst = line_split[0];
-            if dst == "default" {
-                match DefaultRoute::parse(line) {
-                    Ok((d, is_ipv4)) => {
+        // regex
+        let default_route_re =
+            Regex::new(r"default\s+via\s+(?P<via>.+)\s+dev\s+(?P<dev>\w+)\s+.+")?;
+        let route_re = Regex::new(r"(?P<subnet>.+/\d{1,2})\s+dev\s+(?P<dev>\w+)\s+.+")?;
+
+        for line in system_route_lines()? {
+            let default_route_judge = |line: &str| -> bool { line.contains("default") };
+            if default_route_judge(&line) {
+                match default_route_re.captures(&line) {
+                    Some(caps) => {
+                        let via_str = &caps["via"];
+                        let via: IpAddr = via_str.parse()?;
+                        let dev_str = &caps["dev"];
+                        let dev = match find_interface_by_name(dev_str) {
+                            Some(i) => i,
+                            None => {
+                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
+                                warn!("invaild default route string: [{}]", line);
+                                continue; // not raise error here
+                            }
+                        };
+
+                        let mut is_ipv4 = true;
+                        if via_str.contains(":") {
+                            is_ipv4 = false;
+                        }
+
+                        let default_route = DefaultRoute { via, dev };
+
                         if is_ipv4 {
-                            default_ipv4_route = Some(d);
+                            default_ipv4_route = Some(default_route);
                         } else {
-                            default_ipv6_route = Some(d);
+                            default_ipv6_route = Some(default_route);
                         }
                     }
-                    Err(e) => warn!("default route parse error: {}", e),
+                    None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
-                match Route::parse(line) {
-                    Ok(r) => routes.push(r),
-                    Err(e) => warn!("route parse error: {}", e),
-                };
+                match route_re.captures(&line) {
+                    Some(caps) => {
+                        let dst_str = &caps["subnet"];
+                        let dst = if dst_str.contains("/") {
+                            let dst = IpNetwork::from_str(dst_str)?;
+                            let dst = RouteAddr::IpNetwork(dst);
+                            dst
+                        } else {
+                            let dst: IpAddr = dst_str.parse()?;
+                            let dst = RouteAddr::IpAddr(dst);
+                            dst
+                        };
+                        let dev_str = &caps["dev"];
+                        let dev = match find_interface_by_name(dev_str) {
+                            Some(i) => i,
+                            None => {
+                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
+                                warn!("invaild route string: [{}]", line);
+                                continue; // not raise error here
+                            }
+                        };
+                        let route = Route { dst, dev };
+                        routes.push(route);
+                    }
+                    None => warn!("line: [{}] route_re no match", line),
+                }
             }
         }
 
@@ -354,42 +276,115 @@ impl RouteTable {
         target_os = "netbsd"
     ))]
     pub fn init() -> Result<RouteTable> {
-        let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .lines()
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
+        let system_route_lines = || -> Result<Vec<String>> {
+            // default 192.168.72.2 UGS em0
+            // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
+            // 127.0.0.1          link#2             UH          lo0
+            let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
+            let output = String::from_utf8_lossy(&c.stdout);
+            let lines: Vec<String> = output
+                .lines()
+                .map(|x| x.trim().to_string())
+                .filter(|v| {
+                    v.len() > 0
+                        && !v.contains("Destination")
+                        && !v.contains("Routing tables")
+                        && !v.contains("Internet")
+                })
+                .collect();
+            Ok(lines)
+        };
 
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = Vec::new();
 
-        for line in lines {
-            let line_split: Vec<&str> = line
-                .split(" ")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            let dst = line_split[0];
-            if dst == "default" {
-                match DefaultRoute::parse(line) {
-                    Ok((d, is_ipv4)) => {
+        // regex
+        let default_route_re = Regex::new(r"default\s+(?P<addr>.+)\s+\w+\s+(?P<dev>\w+).+")?;
+        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)")?;
+
+        for line in system_route_lines()? {
+            let default_route_judge = |line: &str| -> bool { line.contains("default") };
+            if default_route_judge(&line) {
+                match default_route_re.captures(&line) {
+                    Some(caps) => {
+                        let via_str = &caps["via"];
+                        let via: IpAddr = via_str.parse()?;
+                        let dev_str = &caps["dev"];
+                        let dev = match find_interface_by_name(dev_str) {
+                            Some(i) => i,
+                            None => {
+                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
+                                warn!("invaild default route string: [{}]", line);
+                                continue; // not raise error here
+                            }
+                        };
+
+                        let mut is_ipv4 = true;
+                        if via_str.contains(":") {
+                            is_ipv4 = false;
+                        }
+
+                        let default_route = DefaultRoute { via, dev };
+
                         if is_ipv4 {
-                            default_ipv4_route = Some(d);
+                            default_ipv4_route = Some(default_route);
                         } else {
-                            default_ipv6_route = Some(d);
+                            default_ipv6_route = Some(default_route);
                         }
                     }
-                    Err(e) => warn!("default route parse error: {}", e),
+                    None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
-                if line_split.len() >= 4 && (dst.contains(".") || dst.contains(":")) {
-                    match Route::parse(line) {
-                        Ok(r) => routes.push(r),
-                        Err(e) => warn!("route parse error: {}", e),
-                    };
+                match route_re.captures(&line) {
+                    Some(caps) => {
+                        let dst_str = &caps["subnet"];
+                        let bsd_fix = |dst_str: &str| -> String {
+                            // Remove the %em0 .etc
+                            if dst_str.contains("%") {
+                                let bsd_fix_re = Regex::new(
+                                    r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?",
+                                )?;
+                                match bsd_fix_re.captures(dst_str) {
+                                    Some(caps) => {
+                                        let addr = caps["subnet"];
+                                        if dst_str.contains("/") {
+                                            let mask = caps["mask"];
+                                            let output = addr + "/" + mask;
+                                            return output.to_string();
+                                        } else {
+                                            return addr.to_string();
+                                        }
+                                    }
+                                    None => warn!("line: [{}] bsd_fix_re no match", line),
+                                }
+                            } else {
+                                dst_str.to_string()
+                            }
+                        };
+                        let dst_str = bsd_fix(dst_str);
+                        let dst = if dst_str.contains("/") {
+                            let dst = IpNetwork::from_str(dst_str)?;
+                            let dst = RouteAddr::IpNetwork(dst);
+                            dst
+                        } else {
+                            let dst: IpAddr = dst_str.parse()?;
+                            let dst = RouteAddr::IpAddr(dst);
+                            dst
+                        };
+                        let dev_str = &caps["dev"];
+                        let dev = match find_interface_by_name(dev_str) {
+                            Some(i) => i,
+                            None => {
+                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
+                                warn!("invaild route string: [{}]", line);
+                                continue; // not raise error here
+                            }
+                        };
+                        let route = Route { dst, dev };
+                        routes.push(route);
+                    }
+                    None => warn!("line: [{}] route_re no match", line),
                 }
             }
         }
@@ -403,29 +398,104 @@ impl RouteTable {
     }
     #[cfg(target_os = "windows")]
     pub fn init() -> Result<RouteTable> {
-        let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
-        let output = String::from_utf8_lossy(&c.stdout);
-        let route_lines: Vec<&str> = output
-            .lines()
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
+        let system_route_lines = || -> Result<Vec<String>> {
+            // 1 ::1/128 :: 256 75 ActiveStore
+            // 15 ::/0 fe80::ecb5:83ff:fec3:6a6 16 45 ActiveStore
+            let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+            let output = String::from_utf8_lossy(&c.stdout);
+            let route_lines: Vec<&str> = output
+                .lines()
+                .map(|x| x.trim().to_string())
+                .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("-"))
+                .collect();
+            route_lines
+        };
 
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = Vec::new();
 
+        // regex
+        let default_route_re =
+            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./]+)\s+.+")?;
+        let route_re =
+            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./]+)\s+.+")?;
+
         for line in route_lines {
-            match Route::parse(line) {
-                Ok(r) => routes.push(r),
-                Err(e) => warn!("route parse error: {}", e),
-            };
-            if line.contains("::/0") {
-                let (r, _) = DefaultRoute::parse(line)?;
-                default_ipv6_route = Some(r);
-            } else if line.contains("0.0.0.0/0") {
-                let (r, _) = DefaultRoute::parse(line)?;
-                default_ipv4_route = Some(r);
+            let default_route_judge =
+                |line: &str| -> bool { line.contains("0.0.0.0/0") || line.contains("::/0") };
+            if default_route_judge(&line) {
+                match default_route_re.captures(&line) {
+                    Some(caps) => {
+                        let if_index: u32 = caps["index"].parse()?;
+                        let find_interface = |if_index: u32| -> Option<NetworkInterface> {
+                            for interface in interfaces() {
+                                if if_index == interface.index {
+                                    return Some(interface);
+                                }
+                            }
+                            None
+                        };
+
+                        // let dst = &caps["dst"];
+                        // let dst = IpNetwork::from_str(dst)?;
+                        let via: IpAddr = caps["via"].parse()?;
+                        let dev = find_interface(if_index);
+                        match dev {
+                            Some(dev) => {
+                                let mut is_ipv4 = true;
+                                if via_str.contains(":") {
+                                    is_ipv4 = false;
+                                }
+
+                                let default_route = DefaultRoute { via, dev };
+
+                                if is_ipv4 {
+                                    default_ipv4_route = Some(default_route);
+                                } else {
+                                    default_ipv6_route = Some(default_route);
+                                }
+                            }
+                            None => {
+                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
+                                warn!("invaild default route string: [{}]", line);
+                                continue; // not raise error here
+                            }
+                        }
+                    }
+                    None => warn!("line: [{}] default_route_re no match", line),
+                }
+            } else {
+                match default_route_re.captures(&line) {
+                    Some(caps) => {
+                        let if_index: u32 = caps["index"].parse()?;
+                        let find_interface = |if_index: u32| -> Option<NetworkInterface> {
+                            for interface in interfaces() {
+                                if if_index == interface.index {
+                                    return Some(interface);
+                                }
+                            }
+                            None
+                        };
+
+                        let dst = &caps["dst"];
+                        let dst = IpNetwork::from_str(dst)?;
+                        // let via: IpAddr = caps["via"].parse()?;
+                        let dev = find_interface(if_index);
+                        match dev {
+                            Some(dev) => {
+                                let route = Route { dst, dev };
+                                routes.push(route);
+                            }
+                            None => {
+                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
+                                warn!("invaild default route string: [{}]", line);
+                                continue; // not raise error here
+                            }
+                        }
+                    }
+                    None => warn!("line: [{}] default_route_re no match", line),
+                }
             }
         }
 
@@ -461,33 +531,21 @@ impl SystemCache {
             .filter(|v| v.len() > 0)
             .collect();
 
+        // regex
+        let neighbor_re =
+            Regex::new(r"(?P<addr>[\d\w\.:]+)\s+dev[\w\s]+lladdr\s+(?P<mac>[\d\w:]+).+")?;
+
         let mut ret = HashMap::new();
         for line in lines {
-            let line_split: Vec<&str> = line
-                .split(" ")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            let max_iters = line_split.len();
-            let mut i = 0;
-            match line_split[0].parse() {
-                Ok(ipaddr) => {
-                    while i < max_iters {
-                        let item = line_split[i];
-                        if item == "lladdr" {
-                            i += 1;
-                            match line_split[i].parse() {
-                                Ok(mac) => {
-                                    ret.insert(ipaddr, mac);
-                                    break;
-                                }
-                                Err(e) => warn!("neighbor cache parse mac error: {}", e),
-                            }
-                        }
-                        i += 1;
-                    }
+            match neighbor_re.captures(line) {
+                Some(caps) => {
+                    debug!("neighbor captures addr: {}", &caps["addr"]);
+                    debug!("neighbor captures mac: {}", &caps["mac"]);
+                    let addr: IpAddr = caps["addr"].parse()?;
+                    let mac: MacAddr = caps["mac"].parse()?;
+                    ret.insert(addr, mac);
                 }
-                Err(e) => warn!("neighbor cache parse ip error: {}", e),
+                None => warn!("line: [{}] neighbor_re no match", line),
             }
         }
         Ok(ret)
@@ -503,6 +561,7 @@ impl SystemCache {
         // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
         // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
         // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 1168 seconds [ethernet]
+        // ? (192.168.50.2) at (incomplete) on en0 ifscope [ethernet]
         // # ndp -a
         // Neighbor                             Linklayer Address  Netif Expire    1s 5s
         // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
@@ -517,48 +576,28 @@ impl SystemCache {
             .filter(|v| v.len() > 0)
             .collect();
 
+        // regex
+        let neighbor_re = Regex::new(r"\?\s+\((?P<addr>[\w\d\.:]+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
+
         let mut ret = HashMap::new();
         for line in lines {
-            let line_split: Vec<&str> = line
-                .split(" ")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            if line_split.len() > 3 {
-                if line_split[0].contains("?") {
-                    // ipv4 cache
-                    let ip_str = line_split[1].replace("(", "").replace(")", "");
-                    let ip: IpAddr = ip_str.parse()?;
-                    let mac: MacAddr = line_split[3].parse()?;
-                    ret.insert(ip, mac);
-                } else if line_split[0].contains(":") {
-                    // ipv6 cache
-                    let ip_str = if line_split[0].contains("%") {
-                        let ip_split: Vec<&str> = line_split[0]
-                            .split("%")
-                            .map(|x| x.trim())
-                            .filter(|v| v.len() > 0)
-                            .collect();
-                        ip_split[0]
-                    } else {
-                        line_split[0]
-                    };
-                    match ip_str.parse() {
-                        Ok(ip) => match line_split[1].parse() {
-                            Ok(mac) => {
-                                ret.insert(ip, mac);
-                            }
-                            Err(e) => warn!("neighbor cache parse mac error: {}", e),
-                        },
-                        Err(e) => warn!("neighbor cache parse ip error: {}", e),
-                    }
+            match neighbor_re.captures(line) {
+                Some(caps) => {
+                    debug!("neighbor captures addr: {}", &caps["addr"]);
+                    debug!("neighbor captures mac: {}", &caps["mac"]);
+                    let addr: IpAddr = caps["addr"].parse()?;
+                    let mac: MacAddr = caps["mac"].parse()?;
+                    ret.insert(addr, mac);
                 }
+                None => warn!("line: [{}] neighbor_re no match", line),
             }
         }
         Ok(ret)
     }
     #[cfg(target_os = "windows")]
     pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+        // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
+        // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
         let c = Command::new("powershell")
             .args(["Get-NetNeighbor"])
             .output()?;
@@ -566,27 +605,25 @@ impl SystemCache {
         let nei_lines: Vec<&str> = output
             .lines()
             .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
+            .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("-"))
             .collect();
 
         let mut ret = HashMap::new();
-        for line in nei_lines {
-            let line_split: Vec<&str> = line
-                .split(" ")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
 
-            if line_split.len() > 4 {
-                match line_split[1].parse() {
-                    Ok(ip) => match line_split[2].parse() {
-                        Ok(mac) => {
-                            ret.insert(ip, mac);
-                        }
-                        Err(e) => warn!("neighbor cache parse mac error: {}", e),
-                    },
-                    Err(e) => warn!("neighbor cache parse ip error: {}", e),
+        // regex
+        let neighbor_re = Regex::new(r"\d+\s+(?P<addr>[\w\d\.:]+)\s+(?P<mac>[\w\d\-]+).+")?;
+
+        let mut ret = HashMap::new();
+        for line in lines {
+            match neighbor_re.captures(line) {
+                Some(caps) => {
+                    debug!("neighbor captures addr: {}", &caps["addr"]);
+                    debug!("neighbor captures mac: {}", &caps["mac"]);
+                    let addr: IpAddr = caps["addr"].parse()?;
+                    let mac: MacAddr = caps["mac"].parse()?;
+                    ret.insert(addr, mac);
                 }
+                None => warn!("line: [{}] neighbor_re no match", line),
             }
         }
         Ok(ret)
@@ -616,13 +653,26 @@ impl SystemCache {
         debug!("search route: {}", ipaddr);
         let route_table = &self.route_table;
         for route in &route_table.routes {
-            let ipn = route.dst;
-            if ipn.contains(ipaddr) {
-                debug!(
-                    "found route interface: {}, ip: {}, ipn: {}",
-                    route.dev.name, ipaddr, ipn
-                );
-                return Ok(Some(route.dev.clone()));
+            let dst = &route.dst;
+            match dst {
+                RouteAddr::IpAddr(dst) => {
+                    if *dst == ipaddr {
+                        debug!(
+                            "found route interface: {}, ip: {}, ipn: {}",
+                            route.dev.name, ipaddr, dst
+                        );
+                        return Ok(Some(route.dev.clone()));
+                    }
+                }
+                RouteAddr::IpNetwork(dst) => {
+                    if dst.contains(ipaddr) {
+                        debug!(
+                            "found route interface: {}, ip: {}, ipn: {}",
+                            route.dev.name, ipaddr, dst
+                        );
+                        return Ok(Some(route.dev.clone()));
+                    }
+                }
             }
         }
         Ok(None)
@@ -638,33 +688,23 @@ impl SystemCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
-    // use crate::Logger;
+    // use std::time::Instant;
+    use crate::Logger;
     use pnet::datalink::interfaces;
     #[test]
-    fn test_route_table() -> Result<()> {
-        // let rt = RouteTable::init()?;
-        // println!("{:?}", rt.default_ipv4_route);
-        // println!("{:?}", rt.default_ipv6_route);
-
-        // let routes = rt.routes;
-        // for r in routes {
-        //     let r_str = r.dst.to_string();
-        //     println!("{}", r_str);
-        // }
-        // for route in rt.routes {
-        //     println!("{:?}", route);
-        // }
-        let start = Instant::now();
-        let _sc = SystemCache::init()?;
-        println!("{:.3}s", start.elapsed().as_secs_f32());
-        Ok(())
-    }
-    #[test]
     fn test_network_cache() -> Result<()> {
+        Logger::init_debug_logging()?;
         let nc = SystemCache::init()?;
+        println!(
+            "default ipv4 route: {:?}",
+            nc.route_table.default_ipv4_route
+        );
+        println!(
+            "default ipv6 route: {:?}",
+            nc.route_table.default_ipv6_route
+        );
+        println!("neighbor cache: {:?}", nc.neighbor_cache);
         // println!("{:?}", nc);
-        println!("{:?}", nc.neighbor_cache);
         Ok(())
     }
     #[test]
