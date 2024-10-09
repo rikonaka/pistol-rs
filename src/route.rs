@@ -258,7 +258,7 @@ impl RouteTable {
                         };
                         let dst_str = bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
-                            let dst = IpNetwork::from_str(dst_str)?;
+                            let dst = IpNetwork::from_str(&dst_str)?;
                             let dst = RouteAddr::IpNetwork(dst);
                             dst
                         } else {
