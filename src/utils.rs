@@ -172,28 +172,6 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
     None
 }
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-))]
-pub fn find_interface_by_subnetwork(ipaddr: IpAddr) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            if ip.contains(ipaddr) {
-                debug!(
-                    "found the interface (unix): {}, by {}",
-                    interface.name, ipaddr
-                );
-                return Some(interface);
-            }
-        }
-    }
-    debug!("can not found interface of the ip: {}", ipaddr);
-    None
-}
-
 /// Returns the random port.
 pub fn random_port() -> u16 {
     let mut rng = rand::thread_rng();

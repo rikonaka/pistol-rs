@@ -190,8 +190,35 @@ impl RouteTable {
         let mut routes = Vec::new();
 
         // regex
-        let default_route_re = Regex::new(r"default\s+(?P<addr>.+)\s+\w+\s+(?P<dev>\w+).+")?;
+        let default_route_re =
+            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>\w+).+")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)")?;
+
+        let bsd_fix = |dst_str: &str| -> Result<String> {
+            // Remove the %em0 .etc
+            if dst_str.contains("%") {
+                let bsd_fix_re =
+                    Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
+                match bsd_fix_re.captures(dst_str) {
+                    Some(caps) => {
+                        let addr = &caps["subnet"];
+                        if dst_str.contains("/") {
+                            let mask = &caps["mask"];
+                            let output = addr.to_string() + "/" + mask;
+                            return Ok(output);
+                        } else {
+                            return Ok(addr.to_string());
+                        }
+                    }
+                    None => {
+                        warn!("line: [{}] bsd_fix_re no match", line);
+                        Ok(String::new())
+                    }
+                }
+            } else {
+                Ok(dst_str.to_string())
+            }
+        };
 
         for line in system_route_lines()? {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
@@ -199,6 +226,7 @@ impl RouteTable {
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let via_str = &caps["via"];
+                        let via_str = bsd_fix(via_str)?;
                         let via: IpAddr = via_str.parse()?;
                         let dev_str = &caps["dev"];
                         let dev = match find_interface_by_name(dev_str) {
@@ -229,32 +257,7 @@ impl RouteTable {
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let dst_str = &caps["subnet"];
-                        let bsd_fix = |dst_str: &str| -> Result<String> {
-                            // Remove the %em0 .etc
-                            if dst_str.contains("%") {
-                                let bsd_fix_re = Regex::new(
-                                    r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?",
-                                )?;
-                                match bsd_fix_re.captures(dst_str) {
-                                    Some(caps) => {
-                                        let addr = &caps["subnet"];
-                                        if dst_str.contains("/") {
-                                            let mask = &caps["mask"];
-                                            let output = addr.to_string() + "/" + mask;
-                                            return Ok(output);
-                                        } else {
-                                            return Ok(addr.to_string());
-                                        }
-                                    }
-                                    None => {
-                                        warn!("line: [{}] bsd_fix_re no match", line);
-                                        Ok(String::new())
-                                    }
-                                }
-                            } else {
-                                Ok(dst_str.to_string())
-                            }
-                        };
+
                         let dst_str = bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
                             let dst = IpNetwork::from_str(&dst_str)?;
