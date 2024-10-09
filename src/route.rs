@@ -31,6 +31,37 @@ use std::str::FromStr;
 ))]
 use crate::utils::find_interface_by_name;
 
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+))]
+fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String> {
+    // Remove the %em0 .etc
+    if dst_str.contains("%") {
+        let bsd_fix_re = Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
+        match bsd_fix_re.captures(dst_str) {
+            Some(caps) => {
+                let addr = &caps["subnet"];
+                if dst_str.contains("/") {
+                    let mask = &caps["mask"];
+                    let output = addr.to_string() + "/" + mask;
+                    return Ok(output);
+                } else {
+                    return Ok(addr.to_string());
+                }
+            }
+            None => {
+                warn!("line: [{}] bsd_fix_re no match", dst_str);
+                Ok(String::new())
+            }
+        }
+    } else {
+        Ok(dst_str.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultRoute {
     pub via: IpAddr,           // Next hop gateway address
@@ -190,34 +221,9 @@ impl RouteTable {
         let mut routes = Vec::new();
 
         // regex
-        let default_route_re = Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>\w+).+")?;
+        let default_route_re =
+            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([\s\w]+)?")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)")?;
-
-        let bsd_fix = |dst_str: &str| -> Result<String> {
-            // Remove the %em0 .etc
-            if dst_str.contains("%") {
-                let bsd_fix_re =
-                    Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
-                match bsd_fix_re.captures(dst_str) {
-                    Some(caps) => {
-                        let addr = &caps["subnet"];
-                        if dst_str.contains("/") {
-                            let mask = &caps["mask"];
-                            let output = addr.to_string() + "/" + mask;
-                            return Ok(output);
-                        } else {
-                            return Ok(addr.to_string());
-                        }
-                    }
-                    None => {
-                        warn!("line: [{}] bsd_fix_re no match", dst_str);
-                        Ok(String::new())
-                    }
-                }
-            } else {
-                Ok(dst_str.to_string())
-            }
-        };
 
         for line in system_route_lines()? {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
@@ -225,7 +231,7 @@ impl RouteTable {
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let via_str = &caps["via"];
-                        let via_str = bsd_fix(via_str)?;
+                        let via_str = ipv6_addr_bsd_fix(via_str)?;
                         let via: IpAddr = via_str.parse()?;
                         let dev_str = &caps["dev"];
                         let dev = match find_interface_by_name(dev_str) {
@@ -257,7 +263,7 @@ impl RouteTable {
                     Some(caps) => {
                         let dst_str = &caps["subnet"];
 
-                        let dst_str = bsd_fix(dst_str)?;
+                        let dst_str = ipv6_addr_bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
                             let dst = IpNetwork::from_str(&dst_str)?;
                             let dst = RouteAddr::IpNetwork(dst);
@@ -466,11 +472,11 @@ impl NeighborCache {
         let lines: Vec<&str> = output
             .lines()
             .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
+            .filter(|v| v.len() > 0 && !v.contains("Neighbor"))
             .collect();
 
         // regex
-        let neighbor_re = Regex::new(r"\?\s+\((?P<addr>[\w\d\.:]+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
+        let neighbor_re = Regex::new(r"\?\s+\((?P<addr>[^\s]+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
 
         let mut ret = HashMap::new();
         for line in lines {
@@ -478,7 +484,9 @@ impl NeighborCache {
                 Some(caps) => {
                     debug!("neighbor captures addr: {}", &caps["addr"]);
                     debug!("neighbor captures mac: {}", &caps["mac"]);
-                    let addr: IpAddr = caps["addr"].parse()?;
+                    let addr_str = &caps["addr"];
+                    let addr_str = ipv6_addr_bsd_fix(addr_str)?;
+                    let addr: IpAddr = addr_str.parse()?;
                     let mac: MacAddr = caps["mac"].parse()?;
                     ret.insert(addr, mac);
                 }
