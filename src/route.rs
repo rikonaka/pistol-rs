@@ -7,8 +7,17 @@ use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::ipnetwork::IpNetwork;
 use regex::Regex;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
+use std::fs::metadata;
+use std::fs::remove_file;
+use std::fs::File;
+use std::io::Read;
+use std::io::Write;
 use std::net::IpAddr;
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 
@@ -29,7 +38,7 @@ use crate::utils::find_interface_by_name;
 ))]
 use crate::utils::find_interface_by_subnetwork;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultRoute {
     pub via: IpAddr,           // Next hop gateway address
     pub dev: NetworkInterface, // Device interface name
@@ -111,13 +120,13 @@ impl DefaultRoute {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RouteAddr {
     IpNetwork(IpNetwork),
     IpAddr(IpAddr),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Route {
     pub dst: RouteAddr,        // Destination network or host address
     pub dev: NetworkInterface, // Device interface name
@@ -159,7 +168,7 @@ impl Route {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteTable {
     pub default_ipv4_route: Option<DefaultRoute>,
     pub default_ipv6_route: Option<DefaultRoute>,
@@ -509,14 +518,11 @@ impl RouteTable {
 }
 
 #[derive(Debug, Clone)]
-pub struct SystemCache {
-    pub route_table: RouteTable,
-    pub neighbor_cache: HashMap<IpAddr, MacAddr>,
-}
+pub struct NeighborCache {}
 
-impl SystemCache {
+impl NeighborCache {
     #[cfg(target_os = "linux")]
-    pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>> {
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
         // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
         // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
@@ -556,11 +562,12 @@ impl SystemCache {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>> {
         // # arp -a
         // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
         // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
         // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 1168 seconds [ethernet]
+        // MacOS
         // ? (192.168.50.2) at (incomplete) on en0 ifscope [ethernet]
         // # ndp -a
         // Neighbor                             Linklayer Address  Netif Expire    1s 5s
@@ -595,7 +602,7 @@ impl SystemCache {
         Ok(ret)
     }
     #[cfg(target_os = "windows")]
-    pub fn neighbor_cache_init() -> Result<HashMap<IpAddr, MacAddr>> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>> {
         // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
         // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
         let c = Command::new("powershell")
@@ -628,16 +635,62 @@ impl SystemCache {
         }
         Ok(ret)
     }
-    pub fn init() -> Result<SystemCache> {
-        let route_table = RouteTable::init()?;
-        debug!("route table done");
-        let neighbor_cache = SystemCache::neighbor_cache_init()?;
-        debug!("neighbor cache done");
-        let lnc = SystemCache {
-            route_table,
-            neighbor_cache,
-        };
-        Ok(lnc)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemNetCache {
+    pub route_table: RouteTable,
+    pub neighbor_cache: HashMap<IpAddr, MacAddr>,
+}
+
+const NET_CACHE_FILE: &str = ".pistol_net_cache";
+
+impl Drop for SystemNetCache {
+    fn drop(&mut self) {
+        // Write the newest config file to disk
+        let net_cache_path = Path::new(NET_CACHE_FILE);
+        if net_cache_path.exists() {
+            let mt =
+                metadata(NET_CACHE_FILE).expect("can not get the file metadata: {NET_CACHE_FILE}");
+            debug!("net cache config file exists [{}], delete it", mt.size());
+            remove_file(NET_CACHE_FILE).expect("remove file {NET_CACHE_FILE} failed");
+        }
+
+        let mut file =
+            File::create(NET_CACHE_FILE).expect("create config file {NET_CACHE_FILE} failed");
+        let snc_string = serde_json::to_string(self).expect("serde config to string failed");
+        file.write_all(snc_string.as_bytes())
+            .expect("write serde to disk failed");
+        debug!("write config file to disk {NET_CACHE_FILE} done");
+    }
+}
+
+impl SystemNetCache {
+    pub fn init() -> Result<SystemNetCache> {
+        let net_cache_path = Path::new(NET_CACHE_FILE);
+        if net_cache_path.exists() {
+            let mt = metadata(NET_CACHE_FILE)?;
+            debug!("net cache config file exists [{}]", mt.size());
+            let mut file = File::open(NET_CACHE_FILE)?;
+            let mut snc_string = String::new();
+            file.read_to_string(&mut snc_string)?;
+            let snc: SystemNetCache = serde_json::from_str(&snc_string)?;
+            Ok(snc)
+        } else {
+            let route_table = RouteTable::init()?;
+            debug!("route table [{}] done", route_table.routes.len());
+            let neighbor_cache = NeighborCache::init()?;
+            debug!("neighbor cache [{}] done", neighbor_cache.len());
+            let snc = SystemNetCache {
+                route_table,
+                neighbor_cache,
+            };
+
+            let mut file = File::create(NET_CACHE_FILE)?;
+            let snc_string = serde_json::to_string(&snc)?;
+            file.write_all(snc_string.as_bytes())?;
+            Ok(snc)
+        }
     }
     pub fn search_mac(&self, ipaddr: IpAddr) -> Option<MacAddr> {
         let mac = match self.neighbor_cache.get(&ipaddr) {
@@ -694,7 +747,7 @@ mod tests {
     #[test]
     fn test_network_cache() -> Result<()> {
         Logger::init_debug_logging()?;
-        let nc = SystemCache::init()?;
+        let nc = SystemNetCache::init()?;
         println!(
             "default ipv4 route: {:?}",
             nc.route_table.default_ipv4_route

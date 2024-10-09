@@ -25,7 +25,7 @@ mod layers;
 mod route;
 mod utils;
 
-use crate::route::SystemCache;
+use crate::route::SystemNetCache;
 
 // debug code
 #[cfg(test)]
@@ -37,8 +37,8 @@ const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
     0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99,
 );
 
-static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemCache>>> = Lazy::new(|| {
-    let lnc = SystemCache::init().expect("can not init the system cache");
+static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
+    let lnc = SystemNetCache::init().expect("can not init the system cache");
     Arc::new(Mutex::new(lnc))
 });
 
