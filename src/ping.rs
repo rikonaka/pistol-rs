@@ -694,8 +694,8 @@ mod tests {
     use crate::Host;
     use crate::Logger;
     use crate::Target;
-    // use crate::TEST_IPV4_LOCAL;
-    use crate::TEST_IPV4_REMOTE;
+    use crate::TEST_IPV4_LOCAL;
+    // use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
     #[test]
     fn test_tcp_syn_ping() -> Result<()> {
@@ -704,7 +704,7 @@ mod tests {
         let src_port = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
-        let host_1 = Host::new(TEST_IPV4_REMOTE.into(), Some(vec![80]));
+        let host_1 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         // let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         // let target: Target = Target::new(vec![host_1, host_2]);
         let target: Target = Target::new(vec![host_1]);
@@ -719,7 +719,7 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let (ret, _rtt) =
-            tcp_syn_ping_raw(TEST_IPV4_REMOTE.into(), 80, src_ipv4, src_port, timeout)?;
+            tcp_syn_ping_raw(TEST_IPV4_LOCAL.into(), 80, src_ipv4, src_port, timeout)?;
         println!("{:?}", ret);
         Ok(())
     }
@@ -744,7 +744,7 @@ mod tests {
         let src_port: Option<u16> = None;
         let threads_num: usize = 8;
         let timeout = Some(Duration::new(1, 0));
-        let host = Host::new(TEST_IPV4_REMOTE.into(), Some(vec![]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
