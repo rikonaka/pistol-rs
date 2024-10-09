@@ -22,15 +22,14 @@ use std::process::Command;
 use std::str::FromStr;
 
 // use crate::errors::InvalidRouteFormat;
-#[cfg(target_os = "linux")]
-use crate::utils::find_interface_by_name;
 #[cfg(any(
     target_os = "macos",
     target_os = "freebsd",
     target_os = "openbsd",
-    target_os = "netbsd"
+    target_os = "netbsd",
+    target_os = "linux"
 ))]
-use crate::utils::find_interface_by_subnetwork;
+use crate::utils::find_interface_by_name;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultRoute {
