@@ -190,8 +190,7 @@ impl RouteTable {
         let mut routes = Vec::new();
 
         // regex
-        let default_route_re =
-            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>\w+).+")?;
+        let default_route_re = Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>\w+).+")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)")?;
 
         let bsd_fix = |dst_str: &str| -> Result<String> {
@@ -211,7 +210,7 @@ impl RouteTable {
                         }
                     }
                     None => {
-                        warn!("line: [{}] bsd_fix_re no match", line);
+                        warn!("line: [{}] bsd_fix_re no match", dst_str);
                         Ok(String::new())
                     }
                 }
