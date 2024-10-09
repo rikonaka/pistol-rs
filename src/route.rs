@@ -39,6 +39,8 @@ use crate::utils::find_interface_by_name;
 ))]
 fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String> {
     // Remove the %em0 .etc
+    // fe80::%lo0/10 => fe80::/10
+    // fe80::20c:29ff:fe1f:6f71%lo0 => fe80::20c:29ff:fe1f:6f71
     if dst_str.contains("%") {
         let bsd_fix_re = Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
         match bsd_fix_re.captures(dst_str) {
