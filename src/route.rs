@@ -22,13 +22,7 @@ use std::process::Command;
 use std::str::FromStr;
 
 // use crate::errors::InvalidRouteFormat;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-    target_os = "linux"
-))]
+#[cfg(target_os = "linux")]
 use crate::utils::find_interface_by_name;
 #[cfg(any(
     target_os = "macos",
@@ -244,16 +238,19 @@ impl RouteTable {
                                 )?;
                                 match bsd_fix_re.captures(dst_str) {
                                     Some(caps) => {
-                                        let addr = caps["subnet"];
+                                        let addr = &caps["subnet"];
                                         if dst_str.contains("/") {
-                                            let mask = caps["mask"];
-                                            let output = addr + "/" + mask;
-                                            return Ok(output.to_string());
+                                            let mask = &caps["mask"];
+                                            let output = addr.to_string() + "/" + mask;
+                                            return Ok(output);
                                         } else {
                                             return Ok(addr.to_string());
                                         }
                                     }
-                                    None => warn!("line: [{}] bsd_fix_re no match", line),
+                                    None => {
+                                        warn!("line: [{}] bsd_fix_re no match", line);
+                                        Ok(String::new())
+                                    }
                                 }
                             } else {
                                 Ok(dst_str.to_string())
