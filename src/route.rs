@@ -44,82 +44,6 @@ pub struct DefaultRoute {
     pub dev: NetworkInterface, // Device interface name
 }
 
-impl DefaultRoute {
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
-        // default 192.168.72.2 UGS em0
-        // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-        let line_split: Vec<&str> = line
-            .split(" ")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-
-        let mut is_ipv4 = true;
-        debug!("default route parse (unix): {}", line_split[1]);
-        let via_str = if line_split[1].contains("%") {
-            let via_split: Vec<&str> = line_split[1]
-                .split("%")
-                .map(|x| x.trim())
-                .filter(|v| v.len() > 0)
-                .collect();
-            via_split[0]
-        } else {
-            line_split[1]
-        };
-        let via: IpAddr = via_str.parse()?;
-        if line_split[1].contains(":") {
-            is_ipv4 = false;
-        }
-        let dev = find_interface_by_subnetwork(via);
-
-        match dev {
-            Some(dev) => {
-                let dr = DefaultRoute { via, dev };
-                // println!("{:?}", dr);
-                return Ok((dr, is_ipv4));
-            }
-            None => (),
-        }
-
-        Err(InvalidRouteFormat::new(line.to_string()).into())
-    }
-    #[cfg(target_os = "windows")]
-    pub fn parse(line: &str) -> Result<(DefaultRoute, bool)> {
-        let line_split: Vec<&str> = line
-            .split(" ")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-
-        if line_split.len() > 5 {
-            let mut is_ipv4 = true;
-            debug!("default route parse (windows): {}", line_split[2]);
-            let via: IpAddr = line_split[2].parse()?;
-            if line_split[2].contains(":") {
-                is_ipv4 = false;
-            }
-            let if_index: u32 = line_split[0].parse()?;
-            for interface in interfaces() {
-                if if_index == interface.index {
-                    let dr = DefaultRoute {
-                        via,
-                        dev: interface,
-                    };
-                    return Ok((dr, is_ipv4));
-                }
-            }
-        }
-
-        Err(InvalidRouteFormat::new(line.to_string()).into())
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RouteAddr {
     IpNetwork(IpNetwork),
@@ -130,42 +54,6 @@ pub enum RouteAddr {
 pub struct Route {
     pub dst: RouteAddr,        // Destination network or host address
     pub dev: NetworkInterface, // Device interface name
-}
-
-impl Route {
-    #[cfg(target_os = "windows")]
-    pub fn parse(line: &str) -> Result<Route> {
-        // 10 fe80::e186:d8c7:b82:159f/128 :: 256 25 ActiveStore
-        let line_split: Vec<&str> = line
-            .split(" ")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-
-        let find_interface = |if_index: u32| -> Option<NetworkInterface> {
-            for interface in interfaces() {
-                if if_index == interface.index {
-                    return Some(interface);
-                }
-            }
-            None
-        };
-
-        if line_split.len() > 5 {
-            let if_index: u32 = line_split[0].parse()?;
-            let dst = line_split[1];
-            let dst = IpNetwork::from_str(dst)?;
-            let dev = find_interface(if_index);
-            match dev {
-                Some(dev) => {
-                    let route = Route { dst, dev };
-                    return Ok(route);
-                }
-                None => (),
-            }
-        }
-        Err(InvalidRouteFormat::new(line.to_string()).into())
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,7 +236,7 @@ impl RouteTable {
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let dst_str = &caps["subnet"];
-                        let bsd_fix = |dst_str: &str| -> String {
+                        let bsd_fix = |dst_str: &str| -> Result<String> {
                             // Remove the %em0 .etc
                             if dst_str.contains("%") {
                                 let bsd_fix_re = Regex::new(
@@ -360,18 +248,18 @@ impl RouteTable {
                                         if dst_str.contains("/") {
                                             let mask = caps["mask"];
                                             let output = addr + "/" + mask;
-                                            return output.to_string();
+                                            return Ok(output.to_string());
                                         } else {
-                                            return addr.to_string();
+                                            return Ok(addr.to_string());
                                         }
                                     }
                                     None => warn!("line: [{}] bsd_fix_re no match", line),
                                 }
                             } else {
-                                dst_str.to_string()
+                                Ok(dst_str.to_string())
                             }
                         };
-                        let dst_str = bsd_fix(dst_str);
+                        let dst_str = bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
                             let dst = IpNetwork::from_str(dst_str)?;
                             let dst = RouteAddr::IpNetwork(dst);
