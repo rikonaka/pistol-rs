@@ -16,7 +16,6 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 use std::net::IpAddr;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
@@ -306,12 +305,12 @@ impl RouteTable {
             // 15 ::/0 fe80::ecb5:83ff:fec3:6a6 16 45 ActiveStore
             let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
             let output = String::from_utf8_lossy(&c.stdout);
-            let route_lines: Vec<&str> = output
+            let route_lines: Vec<String> = output
                 .lines()
                 .map(|x| x.trim().to_string())
                 .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("-"))
                 .collect();
-            route_lines
+            Ok(route_lines)
         };
 
         let mut default_ipv4_route = None;
@@ -324,7 +323,7 @@ impl RouteTable {
         let route_re =
             Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./]+)\s+.+")?;
 
-        for line in route_lines {
+        for line in system_route_lines()? {
             let default_route_judge =
                 |line: &str| -> bool { line.contains("0.0.0.0/0") || line.contains("::/0") };
             if default_route_judge(&line) {
@@ -342,7 +341,8 @@ impl RouteTable {
 
                         // let dst = &caps["dst"];
                         // let dst = IpNetwork::from_str(dst)?;
-                        let via: IpAddr = caps["via"].parse()?;
+                        let via_str = &caps["via"];
+                        let via: IpAddr = via_str.parse()?;
                         let dev = find_interface(if_index);
                         match dev {
                             Some(dev) => {
@@ -369,7 +369,7 @@ impl RouteTable {
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
-                match default_route_re.captures(&line) {
+                match route_re.captures(&line) {
                     Some(caps) => {
                         let if_index: u32 = caps["index"].parse()?;
                         let find_interface = |if_index: u32| -> Option<NetworkInterface> {
@@ -383,6 +383,7 @@ impl RouteTable {
 
                         let dst = &caps["dst"];
                         let dst = IpNetwork::from_str(dst)?;
+                        let dst = RouteAddr::IpNetwork(dst);
                         // let via: IpAddr = caps["via"].parse()?;
                         let dev = find_interface(if_index);
                         match dev {
@@ -505,13 +506,11 @@ impl NeighborCache {
             .args(["Get-NetNeighbor"])
             .output()?;
         let output = String::from_utf8_lossy(&c.stdout);
-        let nei_lines: Vec<&str> = output
+        let lines: Vec<&str> = output
             .lines()
             .map(|x| x.trim())
             .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("-"))
             .collect();
-
-        let mut ret = HashMap::new();
 
         // regex
         let neighbor_re = Regex::new(r"\d+\s+(?P<addr>[\w\d\.:]+)\s+(?P<mac>[\w\d\-]+).+")?;
@@ -548,7 +547,7 @@ impl Drop for SystemNetCache {
         if net_cache_path.exists() {
             let mt =
                 metadata(NET_CACHE_FILE).expect("can not get the file metadata: {NET_CACHE_FILE}");
-            debug!("net cache config file exists [{}], delete it", mt.size());
+            debug!("net cache config file exists [{}], delete it", mt.len());
             remove_file(NET_CACHE_FILE).expect("remove file {NET_CACHE_FILE} failed");
         }
 
@@ -566,7 +565,7 @@ impl SystemNetCache {
         let net_cache_path = Path::new(NET_CACHE_FILE);
         if net_cache_path.exists() {
             let mt = metadata(NET_CACHE_FILE)?;
-            debug!("net cache config file exists [{}]", mt.size());
+            debug!("net cache config file exists [{}]", mt.len());
             let mut file = File::open(NET_CACHE_FILE)?;
             let mut snc_string = String::new();
             file.read_to_string(&mut snc_string)?;
@@ -658,6 +657,7 @@ mod tests {
     }
     #[test]
     fn test_windows_interface() {
+        println!("TEST!!!!");
         for interface in interfaces() {
             // can not found ipv6 address in windows
             println!("{}", interface);
