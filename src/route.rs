@@ -319,9 +319,9 @@ impl RouteTable {
 
         // regex
         let default_route_re =
-            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./]+)\s+.+")?;
+            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./:]+)\s+.+")?;
         let route_re =
-            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./]+)\s+.+")?;
+            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./:]+)\s+.+")?;
 
         for line in system_route_lines()? {
             let default_route_judge =
@@ -513,7 +513,8 @@ impl NeighborCache {
             .collect();
 
         // regex
-        let neighbor_re = Regex::new(r"\d+\s+(?P<addr>[\w\d\.:]+)\s+(?P<mac>[\w\d\-]+).+")?;
+        let neighbor_re =
+            Regex::new(r"\d+\s+(?P<addr>[\w\d\.:]+)\s+(?P<mac>[\w\d-]+)\s+\w+\s+\w+")?;
 
         let mut ret = HashMap::new();
         for line in lines {
