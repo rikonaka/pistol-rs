@@ -31,7 +31,7 @@ use crate::route::SystemNetCache;
 // #[cfg(test)]
 // const TEST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
 #[cfg(test)]
-const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
+const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 1);
 #[cfg(test)]
 const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
     0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99,

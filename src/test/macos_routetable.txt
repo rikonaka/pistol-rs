@@ -1,0 +1,75 @@
+Routing tables
+
+Internet:
+Destination        Gateway            Flags               Netif Expire
+default            192.168.50.1       UGScg                 en0       
+127                127.0.0.1          UCS                   lo0       
+127.0.0.1          127.0.0.1          UH                    lo0       
+169.254            link#12            UCS                   en0      !
+169.254.169.254    link#12            UHLSW                 en0      !
+192.168.50         link#12            UCS                   en0      !
+192.168.50.1/32    link#12            UCS                   en0      !
+192.168.50.1       58:11:22:5d:1b:0   UHLWIir               en0   1198
+192.168.50.24      e2:ad:7f:c5:cd:fb  UHLWI                 en0    378
+192.168.50.35      80:60:b7:de:72:51  UHLWIi                en0   1122
+192.168.50.61      ee:c0:db:b4:73:dc  UHLWI                 en0    142
+192.168.50.108/32  link#12            UCS                   en0      !
+192.168.50.115     fe:c:d0:a:53:3f    UHLWI                 en0   1151
+192.168.50.165     ca:b5:38:f9:21:9a  UHLWIi                en0   1125
+192.168.50.179     f8:4f:ad:b3:5a:4c  UHLWIi                en0   1195
+192.168.50.201     5a:c5:db:ff:13:4d  UHLWI                 en0    317
+192.168.50.255     ff:ff:ff:ff:ff:ff  UHLWbI                en0      !
+224.0.0/4          link#12            UmCS                  en0      !
+224.0.0.251        1:0:5e:0:0:fb      UHmLWI                en0       
+239.255.255.250    1:0:5e:7f:ff:fa    UHmLWI                en0       
+255.255.255.255/32 link#12            UCS                   en0      !
+
+Internet6:
+Destination                             Gateway                                 Flags               Netif Expire
+default                                 fe80::%utun0                            UGcIg               utun0       
+default                                 fe80::%utun1                            UGcIg               utun1       
+default                                 fe80::%utun2                            UGcIg               utun2       
+default                                 fe80::%utun3                            UGcIg               utun3       
+::1                                     ::1                                     UHL                   lo0       
+fe80::%lo0/64                           fe80::1%lo0                             UcI                   lo0       
+fe80::1%lo0                             link#1                                  UHLI                  lo0       
+fe80::%ap1/64                           link#11                                 UCI                   ap1       
+fe80::a494:37ff:fedd:b48f%ap1           a6:94:37:dd:b4:8f                       UHLI                  lo0       
+fe80::%en0/64                           link#12                                 UCI                   en0       
+fe80::8a:4628:b188:5a9%en0              2:b9:20:cd:7b:cd                        UHLWI                 en0       
+fe80::85b:abc8:4ad9:6ccb%en0            ca:b5:38:f9:21:9a                       UHLWIi                en0       
+fe80::1432:d2fe:d3a:8a0a%en0            84:94:37:dd:b4:8f                       UHLI                  lo0       
+fe80::fa4f:adff:feb3:5a4c%en0           f8:4f:ad:b3:5a:4c                       UHLWIi                en0       
+fe80::a00c:1bff:fe0d:6a61%awdl0         a2:c:1b:d:6a:61                         UHLI                  lo0       
+fe80::a00c:1bff:fe0d:6a61%llw0          a2:c:1b:d:6a:61                         UHLI                  lo0       
+fe80::%utun0/64                         fe80::27a5:7220:507b:b2b1%utun0         UcI                 utun0       
+fe80::27a5:7220:507b:b2b1%utun0         link#15                                 UHLI                  lo0       
+fe80::%utun1/64                         fe80::9a55:83bb:1893:c3e3%utun1         UcI                 utun1       
+fe80::9a55:83bb:1893:c3e3%utun1         link#16                                 UHLI                  lo0       
+fe80::%utun2/64                         fe80::ce81:b1c:bd2c:69e%utun2           UcI                 utun2       
+fe80::ce81:b1c:bd2c:69e%utun2           link#17                                 UHLI                  lo0       
+fe80::%utun3/64                         fe80::f918:d594:abb5:de0e%utun3         UcI                 utun3       
+fe80::f918:d594:abb5:de0e%utun3         link#18                                 UHLI                  lo0       
+ff00::/8                                ::1                                     UmCI                  lo0       
+ff00::/8                                link#11                                 UmCI                  ap1       
+ff00::/8                                link#12                                 UmCI                  en0       
+ff00::/8                                link#13                                 UmCI                awdl0       
+ff00::/8                                link#14                                 UmCI                 llw0       
+ff00::/8                                fe80::27a5:7220:507b:b2b1%utun0         UmCI                utun0       
+ff00::/8                                fe80::9a55:83bb:1893:c3e3%utun1         UmCI                utun1       
+ff00::/8                                fe80::ce81:b1c:bd2c:69e%utun2           UmCI                utun2       
+ff00::/8                                fe80::f918:d594:abb5:de0e%utun3         UmCI                utun3       
+ff01::%lo0/32                           ::1                                     UmCI                  lo0       
+ff01::%ap1/32                           link#11                                 UmCI                  ap1       
+ff01::%en0/32                           link#12                                 UmCI                  en0       
+ff01::%utun0/32                         fe80::27a5:7220:507b:b2b1%utun0         UmCI                utun0       
+ff01::%utun1/32                         fe80::9a55:83bb:1893:c3e3%utun1         UmCI                utun1       
+ff01::%utun2/32                         fe80::ce81:b1c:bd2c:69e%utun2           UmCI                utun2       
+ff01::%utun3/32                         fe80::f918:d594:abb5:de0e%utun3         UmCI                utun3       
+ff02::%lo0/32                           ::1                                     UmCI                  lo0       
+ff02::%ap1/32                           link#11                                 UmCI                  ap1       
+ff02::%en0/32                           link#12                                 UmCI                  en0       
+ff02::%utun0/32                         fe80::27a5:7220:507b:b2b1%utun0         UmCI                utun0       
+ff02::%utun1/32                         fe80::9a55:83bb:1893:c3e3%utun1         UmCI                utun1       
+ff02::%utun2/32                         fe80::ce81:b1c:bd2c:69e%utun2           UmCI                utun2       
+ff02::%utun3/32                         fe80::f918:d594:abb5:de0e%utun3         UmCI                utun3
