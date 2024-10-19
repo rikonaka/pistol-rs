@@ -344,7 +344,7 @@ impl RouteTable {
             let route_lines: Vec<String> = output
                 .lines()
                 .map(|x| x.trim().to_string())
-                .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("-"))
+                .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
                 .collect();
             Ok(route_lines)
         };
@@ -593,7 +593,7 @@ impl NeighborCache {
         let lines: Vec<&str> = output
             .lines()
             .map(|x| x.trim())
-            .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("-"))
+            .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
             .collect();
 
         // regex
