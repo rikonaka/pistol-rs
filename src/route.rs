@@ -561,7 +561,7 @@ impl NeighborCache {
                     debug!("neighbor captures mac: {}", &caps["mac"]);
                     let addr_str = &caps["addr"];
                     let addr_str = ipv6_addr_bsd_fix(addr_str)?;
-                    let addr: IpAddr = match caps["addr"].parse() {
+                    let addr: IpAddr = match addr_str.parse() {
                         Ok(a) => a,
                         Err(e) => {
                             warn!("parse neighbor 'addr' error:  {e}");
