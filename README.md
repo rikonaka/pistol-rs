@@ -133,9 +133,34 @@ fn main() -> Result<()> {
 }
 ```
 
-#### Note
-
 If you don't want to use `Target`, you can also use the `_raw` functions we provide, for example, the corresponding raw function for `tcp_syn_scan` is `tcp_syn_scan_raw`.
+
+| Rich Functions    | Raw Functions         |
+| :---------------- | :-------------------- |
+| arp_scan          | arp_scan_raw          |
+| tcp_syn_scan      | tcp_syn_scan_raw      |
+| tcp_ack_scan      | tcp_ack_scan_raw      |
+| tcp_connect_scan  | tcp_connect_scan_raw  |
+| tcp_fin_scan      | tcp_fin_scan_raw      |
+| tcp_idle_scan     | tcp_idle_scan_raw     |
+| tcp_maimon_scan   | tcp_maimon_scan_raw   |
+| tcp_null_scan     | tcp_null_scan_raW     |
+| tcp_window_scan   | tcp_window_scan_raw   |
+| tcp_xmas_scan     | tcp_xmas_scan_raw     |
+| udp_scan          | udp_scan_raw          |
+| icmp_ping         | icmp_ping_raw         |
+| tcp_ack_ping      | tcp_ack_ping_raw      |
+| tcp_syn_ping      | tcp_syn_ping_raw      |
+| udp_ping          | udp_ping_raw          |
+| icmp_flood        | icmp_flood_raw        |
+| tcp_ack_flood     | tcp_ack_flood_raw     |
+| tcp_ack_psh_flood | tcp_ack_psh_flood_raw |
+| tcp_syn_flood     | tcp_syn_flood_raw     |
+| udp_flood         | udp_flood_raw         |
+| os_detect         | os_detect_raw         |
+| vs_scan           | vs_scan_raw           |
+
+**Note that the `_raw` function is blocking.**
 
 ### 1. SYN Port Scan Example
 
@@ -177,6 +202,21 @@ fn main() -> Result<()> {
 }
 ```
 
+### Output
+
+```
++----------------+------+-----------------------------+
+|                    Scan Results                     |
++----------------+------+-----------------------------+
+| 192.168.72.134 |  22  |     open|open|open|open     |
++----------------+------+-----------------------------+
+| 192.168.72.134 |  99  | closed|closed|closed|closed |
++----------------+------+-----------------------------+
+| avg rtt: 51.5ms                                     |
+| open ports: 1                                       |
++----------------+------+-----------------------------+
+```
+
 Or
 
 ```rust
@@ -191,26 +231,10 @@ fn main() -> Result<()> {
     let src_ipv4 = None;
     let src_port = None;
     let timeout = Some(Duration::new(1, 0));
-    let (ret, _rtt) =
-        tcp_syn_ping_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
-    println!("{:?}", ret);
+    let (port_status, _rtt) = tcp_syn_ping_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
+    println!("{:?}", port_status);
     Ok(())
 }
-```
-
-### Output
-
-```
-+----------------+------+-----------------------------+
-|                    Scan Results                     |
-+----------------+------+-----------------------------+
-| 192.168.72.134 |  22  |     open|open|open|open     |
-+----------------+------+-----------------------------+
-| 192.168.72.134 |  99  | closed|closed|closed|closed |
-+----------------+------+-----------------------------+
-| avg rtt: 51.5ms                                     |
-| open ports: 1                                       |
-+----------------+------+-----------------------------+
 ```
 
 ### 2. Remote OS Detect Example
