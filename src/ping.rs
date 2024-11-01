@@ -766,4 +766,8 @@ mod tests {
         println!("{}", ret);
         Ok(())
     }
+    #[test]
+    fn test_ping_timeout() -> Result<()> {
+        Ok(())
+    }
 }
