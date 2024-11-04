@@ -526,7 +526,7 @@ pub fn layer2_send(
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
+) -> Result<(Option<Vec<u8>>, Duration)> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
         Some((s, r)) => (s, r),
         None => return Err(CreateDatalinkChannelFailed::new().into()),
@@ -587,10 +587,11 @@ pub fn layer2_send(
         let (buff, rtt) = match rx.recv_timeout(timeout) {
             Ok(b) => {
                 let rtt = send_time.elapsed();
-                (b, Some(rtt))
+                (b, rtt)
             }
             Err(_) => {
-                (vec![], None) // read timeout
+                let rtt = send_time.elapsed();
+                (vec![], rtt) // read timeout
             }
         };
         if buff.len() > 0 {
@@ -600,7 +601,7 @@ pub fn layer2_send(
         }
     } else {
         // not recv any response for flood attack enffience
-        Ok((None, None))
+        Ok((None, Duration::new(0, 0)))
     }
 }
 
@@ -616,7 +617,7 @@ pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
     }
 }
 
-fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
+fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Duration)> {
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
         None => return Err(CanNotFoundInterface::new().into()),
@@ -664,7 +665,7 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Optio
     )?;
     match ret {
         Some(r) => Ok((get_mac_from_arp(&r), rtt)),
-        None => Ok((None, None)),
+        None => Ok((None, rtt)),
     }
 }
 
@@ -672,7 +673,9 @@ pub fn layer3_ipv4_system_route(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
 ) -> Result<(MacAddr, NetworkInterface)> {
-    let mut sc = SYSTEM_CACHE.lock().expect("can not get local network cache");
+    let mut sc = SYSTEM_CACHE
+        .lock()
+        .expect("can not get local network cache");
 
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
@@ -698,7 +701,7 @@ pub fn layer3_ipv4_system_route(
         None => {
             if dst_ipv4_in_local(dst_ipv4) {
                 let dst_mac = match arp(src_ipv4, dst_ipv4)? {
-                    (Some(m), Some(_rtt)) => m,
+                    (Some(m), _rtt) => m,
                     (_, _) => return Err(CanNotFoundMacAddress::new().into()),
                 };
                 sc.update_neighbor_cache(dst_ipv4.into(), dst_mac);
@@ -713,7 +716,7 @@ pub fn layer3_ipv4_system_route(
                         let dst_mac = match sc.search_mac(default_route_ipv4.into()) {
                             Some(m) => m,
                             None => match arp(src_ipv4, default_route_ipv4)? {
-                                (Some(m), Some(_rtt)) => {
+                                (Some(m), _rtt) => {
                                     sc.update_neighbor_cache(default_route_ipv4.into(), m);
                                     m
                                 }
@@ -738,7 +741,7 @@ pub fn layer3_ipv4_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
+) -> Result<(Option<Vec<u8>>, Duration)> {
     debug!("src: {}, dst: {}", src_ipv4, dst_ipv4);
     let (dst_mac, interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4)?;
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
@@ -754,7 +757,7 @@ pub fn layer3_ipv4_send(
     )?;
     match layer2_buff {
         Some(layer2_packet) => Ok((Some(layer2_payload(&layer2_packet)), rtt)),
-        None => Ok((None, None)),
+        None => Ok((None, rtt)),
     }
 }
 
@@ -780,7 +783,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Option<MacAddr> {
     None
 }
 
-fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
+fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Duration)> {
     // same as arp in ipv4
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
@@ -854,7 +857,7 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Op
     };
     match mac {
         Some(mac) => Ok((Some(mac), rtt)),
-        None => Ok((None, None)),
+        None => Ok((None, rtt)),
     }
 }
 
@@ -870,7 +873,7 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
     }
 }
 
-fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
+fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Duration)> {
     // router solicitation
     let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
@@ -948,7 +951,7 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Option<Duration>)> {
     };
     match mac {
         Some(mac) => Ok((Some(mac), rtt)),
-        None => Ok((None, None)),
+        None => Ok((None, rtt)),
     }
 }
 
@@ -987,7 +990,7 @@ pub fn layer3_ipv6_system_route(
         None => {
             if dst_ipv6_in_local(dst_ipv6) {
                 let dst_mac = match ndp_ns(src_ipv6, dst_ipv6)? {
-                    (Some(m), Some(_rtt)) => m,
+                    (Some(m), _rtt) => m,
                     (_, _) => return Err(CanNotFoundMacAddress::new().into()),
                 };
                 sc.update_neighbor_cache(dst_ipv6.into(), dst_mac);
@@ -1002,7 +1005,7 @@ pub fn layer3_ipv6_system_route(
                         let dst_mac = match sc.search_mac(default_route_ipv6.into()) {
                             Some(m) => m,
                             None => match ndp_rs(src_ipv6)? {
-                                (Some(m), Some(_rtt)) => {
+                                (Some(m), _rtt) => {
                                     sc.update_neighbor_cache(default_route_ipv6.into(), m);
                                     m
                                 }
@@ -1027,7 +1030,7 @@ pub fn layer3_ipv6_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Option<Duration>)> {
+) -> Result<(Option<Vec<u8>>, Duration)> {
     debug!("src: {}, dst: {}", src_ipv6, dst_ipv6);
     let (dst_mac, interface) = layer3_ipv6_system_route(src_ipv6, dst_ipv6)?;
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
@@ -1043,7 +1046,7 @@ pub fn layer3_ipv6_send(
     )?;
     match layer2_buff {
         Some(layer2_packet) => Ok((Some(layer2_payload(&layer2_packet)), rtt)),
-        None => Ok((None, None)),
+        None => Ok((None, rtt)),
     }
 }
 

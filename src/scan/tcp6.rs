@@ -46,7 +46,7 @@ pub fn send_syn_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -160,7 +160,7 @@ pub fn send_fin_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -274,7 +274,7 @@ pub fn send_ack_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -385,7 +385,7 @@ pub fn send_null_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -496,7 +496,7 @@ pub fn send_xmas_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -607,7 +607,7 @@ pub fn send_window_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -723,7 +723,7 @@ pub fn send_maimon_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -834,11 +834,11 @@ pub fn send_connect_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
     let start_time = Instant::now();
     match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(_) => Ok((PortStatus::Open, Some(start_time.elapsed()))),
-        Err(_) => Ok((PortStatus::Closed, None)),
+        Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
+        Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
     }
 }

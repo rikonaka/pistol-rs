@@ -1,5 +1,6 @@
 /* Scan */
 use anyhow::Result;
+use log::debug;
 use log::warn;
 use pnet::datalink::MacAddr;
 use prettytable::row;
@@ -16,6 +17,7 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
+use std::time::Instant;
 
 pub mod arp;
 pub mod tcp;
@@ -300,7 +302,7 @@ fn ipv4_arp_scan(
     dst_mac: MacAddr,
     src_addr: Option<IpAddr>,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Option<Duration>)> {
+) -> Result<(Option<MacAddr>, Duration)> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
         None => return Err(CanNotFoundSourceAddress::new().into()),
@@ -313,9 +315,7 @@ fn ipv4_arp_scan(
         Some(m) => m,
         None => return Err(CanNotFoundMacAddress::new().into()),
     };
-    let scan_ret =
-        arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout);
-    scan_ret
+    arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
 }
 
 pub fn arp_scan_raw(
@@ -384,7 +384,7 @@ pub fn arp_scan(
     for v in iter {
         match v {
             Ok((target_ipv4, target_mac)) => match target_mac? {
-                (Some(m), Some(_rtt)) => {
+                (Some(m), _rtt) => {
                     let mut ouis = String::new();
                     let mut mac_prefix = String::new();
                     let m0 = format!("{:X}", m.0);
@@ -441,7 +441,7 @@ fn threads_scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let (scan_ret, rtt) = match method {
         ScanMethod::Connect => {
             tcp::send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
@@ -498,7 +498,7 @@ fn threads_scan6(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let (scan_ret, rtt) = match method {
         ScanMethod::Connect => {
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
@@ -545,16 +545,28 @@ fn ipv4_scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
-        Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        Some(s) => {
+            debug!("find src addr: {}", s);
+            s
+        }
+        None => {
+            warn!("can not found src addr");
+            return Err(CanNotFoundSourceAddress::new().into());
+        }
     };
     let src_port = match src_port {
-        Some(s) => s,
-        None => random_port(),
+        Some(s) => {
+            debug!("find src port: {}", s);
+            s
+        }
+        None => {
+            warn!("can not found src port, use random port instead");
+            random_port()
+        }
     };
-    let scan_ret = threads_scan(
+    threads_scan(
         method,
         dst_ipv4,
         dst_port,
@@ -563,8 +575,7 @@ fn ipv4_scan(
         zombie_ipv4,
         zombie_port,
         timeout,
-    );
-    scan_ret
+    )
 }
 
 fn ipv6_scan(
@@ -574,7 +585,7 @@ fn ipv6_scan(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
         Some(s) => s,
         None => return Err(CanNotFoundSourceAddress::new().into()),
@@ -583,8 +594,7 @@ fn ipv6_scan(
         Some(s) => s,
         None => random_port(),
     };
-    let scan_ret = threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
-    scan_ret
+    threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
 }
 
 /// General scan function.
@@ -595,10 +605,14 @@ pub fn scan(
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
+    let mut threads_num = 0;
+    for host in &target.hosts {
+        threads_num += host.ports.len();
+    }
+
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -606,6 +620,8 @@ pub fn scan(
         Some(t) => t,
         None => get_default_timeout(),
     };
+
+    let mut timeout_hm: HashMap<IpAddr, HashMap<u16, Instant>> = HashMap::new();
 
     for host in target.hosts {
         let dst_addr = host.addr;
@@ -615,6 +631,17 @@ pub fn scan(
                     for _ in 0..tests {
                         let tx = tx.clone();
                         recv_size += 1;
+
+                        // debug codes
+                        debug!(
+                            "scan method {:?}, ip: {}, port: {}",
+                            method, dst_ipv4, dst_port
+                        );
+                        let start = Instant::now();
+                        let mut port_instant = HashMap::new();
+                        port_instant.insert(dst_port, start);
+                        timeout_hm.insert(dst_ipv4.into(), port_instant);
+
                         pool.execute(move || {
                             let scan_ret = ipv4_scan(
                                 method,
@@ -655,9 +682,29 @@ pub fn scan(
     let mut port_scan_ret = PortScanResults::new();
 
     for (dst_ipv4, dst_port, v) in iter {
+        match timeout_hm.get(&dst_ipv4) {
+            Some(port_instant) => match port_instant.get(&dst_port) {
+                Some(i) => {
+                    debug!(
+                        "ip: {}, port: {}, elapsed: {:.2}s",
+                        dst_ipv4,
+                        dst_port,
+                        i.elapsed().as_secs_f32()
+                    );
+                    println!(
+                        "ip: {}, port: {}, elapsed: {:.2}s",
+                        dst_ipv4,
+                        dst_port,
+                        i.elapsed().as_secs_f32()
+                    );
+                }
+                None => (),
+            },
+            None => (),
+        }
         match v {
             Ok((port_status, rtt)) => {
-                port_scan_ret.insert(dst_ipv4.into(), dst_port, port_status, rtt);
+                port_scan_ret.insert(dst_ipv4.into(), dst_port, port_status, Some(rtt));
             }
             Err(e) => {
                 warn!("scan error: {}", e);
@@ -686,7 +733,6 @@ pub fn tcp_connect_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -697,7 +743,6 @@ pub fn tcp_connect_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -710,7 +755,7 @@ pub fn tcp_connect_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Connect,
         dst_addr,
@@ -739,7 +784,6 @@ pub fn tcp_syn_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -750,7 +794,6 @@ pub fn tcp_syn_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -763,7 +806,7 @@ pub fn tcp_syn_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Syn,
         dst_addr,
@@ -793,7 +836,6 @@ pub fn tcp_fin_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -804,7 +846,6 @@ pub fn tcp_fin_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -817,7 +858,7 @@ pub fn tcp_fin_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Fin,
         dst_addr,
@@ -840,7 +881,6 @@ pub fn tcp_ack_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -851,7 +891,6 @@ pub fn tcp_ack_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -864,7 +903,7 @@ pub fn tcp_ack_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Ack,
         dst_addr,
@@ -886,7 +925,6 @@ pub fn tcp_null_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -897,7 +935,6 @@ pub fn tcp_null_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -910,7 +947,7 @@ pub fn tcp_null_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Null,
         dst_addr,
@@ -932,7 +969,6 @@ pub fn tcp_xmas_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -943,7 +979,6 @@ pub fn tcp_xmas_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -956,7 +991,7 @@ pub fn tcp_xmas_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Xmas,
         dst_addr,
@@ -979,7 +1014,6 @@ pub fn tcp_window_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -990,7 +1024,6 @@ pub fn tcp_window_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -1003,7 +1036,7 @@ pub fn tcp_window_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Window,
         dst_addr,
@@ -1026,7 +1059,6 @@ pub fn tcp_maimon_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -1037,7 +1069,6 @@ pub fn tcp_maimon_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -1050,7 +1081,7 @@ pub fn tcp_maimon_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Maimon,
         dst_addr,
@@ -1077,7 +1108,6 @@ pub fn tcp_idle_scan(
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -1088,7 +1118,6 @@ pub fn tcp_idle_scan(
         src_port,
         zombie_ipv4,
         zombie_port,
-        threads_num,
         timeout,
         tests,
     )
@@ -1103,7 +1132,7 @@ pub fn tcp_idle_scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Idle,
         dst_addr,
@@ -1128,7 +1157,6 @@ pub fn udp_scan(
     target: Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PortScanResults> {
@@ -1139,7 +1167,6 @@ pub fn udp_scan(
         src_port,
         None,
         None,
-        threads_num,
         timeout,
         tests,
     )
@@ -1152,7 +1179,7 @@ pub fn udp_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     scan_raw(
         ScanMethod::Udp,
         dst_addr,
@@ -1174,7 +1201,7 @@ pub fn scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -1214,12 +1241,14 @@ pub fn scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
+    // use crate::Logger;
     use crate::Target;
     use crate::TEST_IPV4_LOCAL;
+    use subnetwork::CrossIpv4Pool;
     use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() -> Result<()> {
-        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
+        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24")?;
         let mut hosts: Vec<Host> = vec![];
         for ip in subnet {
             let host = Host::new(ip.into(), None);
@@ -1230,7 +1259,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         // let print_result = false;
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout)?;
         println!("{}", ret);
         Ok(())
     }
@@ -1241,7 +1270,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         // let print_result = false;
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout)?;
         println!("{}", ret);
         Ok(())
     }
@@ -1249,13 +1278,11 @@ mod tests {
     fn test_tcp_connect_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let threads_num: usize = 8;
         let timeout = Some(Duration::new(0, 500));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret =
-            tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
+        let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests)?;
         println!("{}", ret);
 
         // let target: Target = Target::from_subnet("192.168.1.1/24", Some(vec![22]))?;
@@ -1267,12 +1294,11 @@ mod tests {
     fn test_tcp_syn_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = tcp_syn_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
+        let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests)?;
         println!("{}", ret);
         // println!("{:#?}", ret.get(&dst_ipv4.into()).unwrap().status);
         Ok(())
@@ -1281,12 +1307,11 @@ mod tests {
     fn test_tcp_fin_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_fin_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
+        let ret = tcp_fin_scan(target, src_ipv4, src_port, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }
@@ -1294,12 +1319,11 @@ mod tests {
     fn test_tcp_ack_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_ack_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
+        let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }
@@ -1307,12 +1331,11 @@ mod tests {
     fn test_tcp_null_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_null_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
+        let ret = tcp_null_scan(target, src_ipv4, src_port, timeout, tests)?;
         println!("{}", ret);
         Ok(())
     }
@@ -1320,13 +1343,60 @@ mod tests {
     fn test_udp_scan() -> Result<()> {
         let src_ipv4 = None;
         let src_port = None;
-        let threads_num: usize = 8;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = udp_scan(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
+        let ret = udp_scan(target, src_ipv4, src_port, timeout, tests)?;
         println!("{}", ret);
+        Ok(())
+    }
+    #[test]
+    fn test_scan_timeout() -> Result<()> {
+        // scanme.nmap.org
+        let dst_ip = Ipv4Addr::new(192, 168, 5, 4);
+        let timeout = Some(Duration::new(1, 0));
+        let start_time = Instant::now();
+        match tcp_syn_scan_raw(dst_ip.into(), 22, None, None, timeout) {
+            Ok((status, dura)) => {
+                println!(
+                    "status: {:?}, dura: {:?}, elapsed: {:.2}",
+                    status,
+                    dura,
+                    start_time.elapsed().as_secs_f32()
+                );
+            }
+            Err(e) => {
+                println!("{}", e);
+                println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
+            }
+        };
+        Ok(())
+    }
+    #[test]
+    fn test_scan_timeout2() -> Result<()> {
+        // Logger::init_debug_logging()?;
+
+        let src_ipv4 = None;
+        let src_port = None;
+        let timeout = Some(Duration::new(1, 0));
+
+        let start = Ipv4Addr::new(192, 168, 5, 1);
+        let end = Ipv4Addr::new(192, 168, 5, 5);
+        let subnet = CrossIpv4Pool::new(start, end)?;
+        // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
+        let mut hosts = vec![];
+        for ip in subnet {
+            let host = Host::new(ip.into(), Some(vec![22, 99]));
+            hosts.push(host);
+        }
+        let target = Target::new(hosts);
+        let tests = 1;
+
+        let start_time = Instant::now();
+        let _ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests)?;
+        // println!("{}", ret);
+        println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
         Ok(())
     }
 }

@@ -294,7 +294,7 @@ fn send_seq_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -365,7 +365,7 @@ fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, timeout: Duration) -> 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -418,7 +418,7 @@ fn send_ecn_probe(
     let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
 
     let response = match ret? {
-        (Some(r), Some(_rtt)) => r,
+        (Some(r), _rtt) => r,
         (_, _) => vec![],
     };
     let rr = RequestAndResponse {
@@ -534,7 +534,7 @@ fn send_tx_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -592,7 +592,7 @@ fn send_u1_probe(
     let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
 
     let response = match ret {
-        (Some(r), Some(_rtt)) => r,
+        (Some(r), _rtt) => r,
         (_, _) => vec![],
     };
     let rr = RequestAndResponse {

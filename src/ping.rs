@@ -175,7 +175,7 @@ fn threads_ping(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     match dst_port {
         None => debug!("can not found dst port on method: {:?}", method),
         _ => (),
@@ -240,7 +240,7 @@ fn threads_ping6(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     match dst_port {
         None => debug!("can not found dst port on method: {:?}", method),
         _ => (),
@@ -298,7 +298,7 @@ fn ipv4_ping(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
         None => return Err(CanNotFoundSourceAddress::new().into()),
@@ -321,7 +321,7 @@ fn ipv6_ping(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
         Some(s) => s,
         None => return Err(CanNotFoundSourceAddress::new().into()),
@@ -412,7 +412,7 @@ pub fn ping(
                     "ip: {}, port status: {:?}, rtt: {:?}",
                     dst_ipv4, ping_status, rtt
                 );
-                ping_results.insert(dst_ipv4, ping_status, rtt);
+                ping_results.insert(dst_ipv4, ping_status, Some(rtt));
             }
             Err(e) => {
                 warn!("ping error: {}", e);
@@ -454,7 +454,7 @@ pub fn tcp_syn_ping_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -522,7 +522,7 @@ pub fn tcp_ack_ping_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -590,7 +590,7 @@ pub fn udp_ping_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -663,7 +663,7 @@ pub fn icmp_ping_raw(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),

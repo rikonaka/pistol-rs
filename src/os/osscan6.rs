@@ -474,7 +474,7 @@ fn send_seq_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -588,7 +588,7 @@ fn send_ie_probes(
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -668,7 +668,7 @@ fn send_nx_probes(
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -732,7 +732,7 @@ fn send_u1_probe(
     let rt = start_time.elapsed();
 
     let response = match ret {
-        (Some(r), Some(_rtt)) => r,
+        (Some(r), _rtt) => r,
         (_, _) => vec![],
     };
     let rr = RequestAndResponse {
@@ -778,7 +778,7 @@ fn send_tecn_probe(
     let rt = start_time.elapsed();
 
     let response = match ret {
-        (Some(r), Some(_rtt)) => r,
+        (Some(r), _rtt) => r,
         (_, _) => vec![],
     };
     let rr = RequestAndResponse {
@@ -905,7 +905,7 @@ fn send_tx_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
         let response = match ret? {
-            (Some(r), Some(_rtt)) => r,
+            (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
         let rr = Some(RequestAndResponse { request, response });
@@ -1058,7 +1058,6 @@ fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
     let mut sum = 0.0;
     for i in 0..695 {
         let d = features[i] - mean[i];
-        // print!("{:.3}, ", d);
         let mut v = variance[i];
         if v == 0.0 {
             v = 0.01;

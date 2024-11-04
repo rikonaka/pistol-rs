@@ -78,7 +78,7 @@ pub fn send_syn_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -196,7 +196,7 @@ pub fn send_fin_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -314,7 +314,7 @@ pub fn send_ack_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -429,7 +429,7 @@ pub fn send_null_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -544,7 +544,7 @@ pub fn send_xmas_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -660,7 +660,7 @@ pub fn send_window_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -780,7 +780,7 @@ pub fn send_maimon_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -897,7 +897,7 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<IdleScanResults>, Option<Duration>)> {
+) -> Result<(PortStatus, Option<IdleScanResults>, Duration)> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
@@ -1052,7 +1052,7 @@ pub fn send_idle_scan_packet(
     )?;
 
     let mut zombie_ip_id_2 = 0;
-    let rtt = (rtt_1.unwrap() + rtt_2.unwrap()) / 2;
+    let rtt = (rtt_1 + rtt_2) / 2;
     match ret {
         Some(r) => {
             match Ipv4Packet::new(&r) {
@@ -1089,7 +1089,7 @@ pub fn send_idle_scan_packet(
                                     {
                                         // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                         // dst is unreachable ignore this port
-                                        return Ok((PortStatus::Unreachable, None, Some(rtt)));
+                                        return Ok((PortStatus::Unreachable, None, rtt));
                                     }
                                 }
                                 None => (),
@@ -1112,7 +1112,7 @@ pub fn send_idle_scan_packet(
                 zombie_ip_id_1,
                 zombie_ip_id_2,
             }),
-            Some(rtt),
+            rtt,
         ))
     } else {
         Ok((
@@ -1121,7 +1121,7 @@ pub fn send_idle_scan_packet(
                 zombie_ip_id_1,
                 zombie_ip_id_2,
             }),
-            Some(rtt),
+            rtt,
         ))
     }
 }
@@ -1132,11 +1132,11 @@ pub fn send_connect_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<Duration>)> {
+) -> Result<(PortStatus, Duration)> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
     let start_time = Instant::now();
     match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(_) => Ok((PortStatus::Open, Some(start_time.elapsed()))),
-        Err(_) => Ok((PortStatus::Closed, None)),
+        Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
+        Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
     }
 }

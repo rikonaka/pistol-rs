@@ -7,6 +7,7 @@ use pnet::packet::arp::MutableArpPacket;
 use pnet::packet::ethernet::EtherTypes;
 use std::net::Ipv4Addr;
 use std::time::Duration;
+use std::time::Instant;
 
 use crate::layers::get_mac_from_arp;
 use crate::layers::layer2_send;
@@ -21,7 +22,7 @@ pub fn send_arp_scan_packet(
     src_mac: MacAddr,
     interface: NetworkInterface,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Option<Duration>)> {
+) -> Result<(Option<MacAddr>, Duration)> {
     let mut arp_buffer = [0u8; 28];
     let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
 
@@ -47,6 +48,8 @@ pub fn send_arp_scan_packet(
         dst_addr: Some(src_ipv4.into()),
     };
     let layers_match = LayersMatch::Layer3Match(layer3);
+
+    let fake_rtt = Instant::now();
     match layer2_send(
         dst_mac,
         interface,
@@ -55,7 +58,7 @@ pub fn send_arp_scan_packet(
         vec![layers_match],
         timeout,
     )? {
-        (Some(r), Some(rtt)) => Ok((get_mac_from_arp(&r), Some(rtt))),
-        (_, _) => Ok((None, None)),
+        (Some(r), rtt) => Ok((get_mac_from_arp(&r), rtt)),
+        (_, _) => Ok((None, fake_rtt.elapsed())),
     }
 }

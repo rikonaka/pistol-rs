@@ -34,7 +34,7 @@ pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ip header

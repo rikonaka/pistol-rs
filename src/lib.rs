@@ -31,11 +31,9 @@ use crate::route::SystemNetCache;
 // #[cfg(test)]
 // const TEST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
 #[cfg(test)]
-const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 72, 1);
+const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
-const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(
-    0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99,
-);
+const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e4);
 
 static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
     let lnc = SystemNetCache::init().expect("can not init the system cache");
@@ -51,7 +49,7 @@ impl Logger {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Debug)
-            .is_test(true)
+            .is_test(false)
             .try_init()?;
         Ok(())
     }
@@ -59,7 +57,7 @@ impl Logger {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Warn)
-            .is_test(true)
+            .is_test(false)
             .try_init()?;
         Ok(())
     }
@@ -67,7 +65,7 @@ impl Logger {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Info)
-            .is_test(true)
+            .is_test(false)
             .try_init()?;
         Ok(())
     }

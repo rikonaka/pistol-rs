@@ -30,7 +30,7 @@ pub fn send_icmpv6_ping_packet(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
-) -> Result<(PingStatus, Option<Duration>)> {
+) -> Result<(PingStatus, Duration)> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ipv6 header
