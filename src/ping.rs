@@ -1,4 +1,3 @@
-use anyhow::Result;
 use log::debug;
 use log::warn;
 use prettytable::row;
@@ -17,7 +16,7 @@ use std::time::Duration;
 pub mod icmp;
 pub mod icmpv6;
 
-use crate::errors::CanNotFoundSourceAddress;
+use crate::errors::PistolErrors;
 use crate::scan::tcp;
 use crate::scan::tcp6;
 use crate::scan::udp;
@@ -175,7 +174,7 @@ fn threads_ping(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     match dst_port {
         None => debug!("can not found dst port on method: {:?}", method),
         _ => (),
@@ -240,7 +239,7 @@ fn threads_ping6(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     match dst_port {
         None => debug!("can not found dst port on method: {:?}", method),
         _ => (),
@@ -298,10 +297,10 @@ fn ipv4_ping(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
     };
 
     let dst_port = if method != PingMethods::Icmp {
@@ -321,10 +320,10 @@ fn ipv6_ping(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
     };
 
     let dst_port = if method != PingMethods::Icmp {
@@ -345,7 +344,7 @@ pub fn ping(
     threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults> {
+) -> Result<PingResults, PistolErrors> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -435,7 +434,7 @@ pub fn tcp_syn_ping(
     threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults> {
+) -> Result<PingResults, PistolErrors> {
     ping(
         target,
         PingMethods::Syn,
@@ -454,7 +453,7 @@ pub fn tcp_syn_ping_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -475,7 +474,7 @@ pub fn tcp_syn_ping_raw(
                 };
                 Ok((s, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
         IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
             Some(src_ipv6) => {
@@ -488,7 +487,7 @@ pub fn tcp_syn_ping_raw(
                 };
                 Ok((s, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
     }
 }
@@ -503,7 +502,7 @@ pub fn tcp_ack_ping(
     threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults> {
+) -> Result<PingResults, PistolErrors> {
     ping(
         target,
         PingMethods::Ack,
@@ -522,7 +521,7 @@ pub fn tcp_ack_ping_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -543,7 +542,7 @@ pub fn tcp_ack_ping_raw(
                 };
                 Ok((s, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
         IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
             Some(src_ipv6) => {
@@ -556,7 +555,7 @@ pub fn tcp_ack_ping_raw(
                 };
                 Ok((s, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
     }
 }
@@ -571,7 +570,7 @@ pub fn udp_ping(
     threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults> {
+) -> Result<PingResults, PistolErrors> {
     ping(
         target,
         PingMethods::Udp,
@@ -590,7 +589,7 @@ pub fn udp_ping_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -612,7 +611,7 @@ pub fn udp_ping_raw(
                 };
                 Ok((s, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
         IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
             Some(src_ipv6) => {
@@ -626,7 +625,7 @@ pub fn udp_ping_raw(
                 };
                 Ok((s, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
     }
 }
@@ -646,7 +645,7 @@ pub fn icmp_ping(
     threads_num: usize,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults> {
+) -> Result<PingResults, PistolErrors> {
     ping(
         target,
         PingMethods::Icmp,
@@ -663,7 +662,7 @@ pub fn icmp_ping_raw(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration)> {
+) -> Result<(PingStatus, Duration), PistolErrors> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
@@ -675,7 +674,7 @@ pub fn icmp_ping_raw(
                 debug!("icmp ret: {:?}", ret);
                 Ok((ret, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
         IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
             Some(src_ipv6) => {
@@ -683,7 +682,7 @@ pub fn icmp_ping_raw(
                 debug!("icmpv6 ret: {:?}", ret);
                 Ok((ret, rtt))
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
     }
 }
@@ -698,8 +697,8 @@ mod tests {
     // use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
     #[test]
-    fn test_tcp_syn_ping() -> Result<()> {
-        Logger::init_debug_logging()?;
+    fn test_tcp_syn_ping() {
+        Logger::init_debug_logging().unwrap();
         let src_ipv4 = None;
         let src_port = None;
         let threads_num: usize = 8;
@@ -709,22 +708,20 @@ mod tests {
         // let target: Target = Target::new(vec![host_1, host_2]);
         let target: Target = Target::new(vec![host_1]);
         let tests = 3;
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
+        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_tcp_syn_ping_raw() -> Result<()> {
+    fn test_tcp_syn_ping_raw() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let (ret, _rtt) =
-            tcp_syn_ping_raw(TEST_IPV4_LOCAL.into(), 80, src_ipv4, src_port, timeout)?;
+            tcp_syn_ping_raw(TEST_IPV4_LOCAL.into(), 80, src_ipv4, src_port, timeout).unwrap();
         println!("{:?}", ret);
-        Ok(())
     }
     #[test]
-    fn test_tcp_syn_ping6() -> Result<()> {
+    fn test_tcp_syn_ping6() {
         // Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port = None;
@@ -733,12 +730,11 @@ mod tests {
         let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
+        let ret = tcp_syn_ping(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_icmp_ping() -> Result<()> {
+    fn test_icmp_ping() {
         // Logger::init_debug_logging()?;
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
@@ -747,27 +743,23 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests)?;
+        let ret = icmp_ping(target, src_ipv4, src_port, threads_num, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_icmpv6_ping() -> Result<()> {
+    fn test_icmpv6_ping() {
         // Logger::init_debug_logging()?;
         let src_port: Option<u16> = None;
-        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse()?;
+        let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse().unwrap();
         let src_ipv6 = Some(src_ipv6.into());
         let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let threads_num: usize = 8;
         let tests = 4;
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmp_ping(target, src_ipv6, src_port, threads_num, timeout, tests)?;
+        let ret = icmp_ping(target, src_ipv6, src_port, threads_num, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_ping_timeout() -> Result<()> {
-        Ok(())
-    }
+    fn test_ping_timeout() {}
 }

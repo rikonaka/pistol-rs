@@ -1,4 +1,3 @@
-use anyhow::Result;
 use log::debug;
 use log::warn;
 #[cfg(target_os = "windows")]
@@ -11,8 +10,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::metadata;
-use std::fs::remove_file;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
 use std::net::IpAddr;
@@ -21,6 +20,7 @@ use std::process::Command;
 use std::str::FromStr;
 
 // use crate::errors::InvalidRouteFormat;
+use crate::errors::PistolErrors;
 #[cfg(any(
     target_os = "macos",
     target_os = "freebsd",
@@ -90,8 +90,8 @@ pub struct RouteTable {
 
 impl RouteTable {
     #[cfg(target_os = "linux")]
-    pub fn init() -> Result<RouteTable> {
-        let system_route_lines = || -> Result<Vec<String>> {
+    pub fn init() -> Result<RouteTable, PistolErrors> {
+        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
             // Linux
             // ubuntu22.04 output:
             // default via 192.168.72.2 dev ens33
@@ -477,7 +477,7 @@ pub struct NeighborCache {}
 
 impl NeighborCache {
     #[cfg(target_os = "linux")]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolErrors> {
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
         // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
         // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
@@ -635,21 +635,18 @@ pub struct SystemNetCache {
     pub neighbor_cache: HashMap<IpAddr, MacAddr>,
 }
 
-const NET_CACHE_FILE: &str = ".pistol_net_cache";
+pub const NET_CACHE_FILE: &str = ".pistol_net_cache";
 
 impl Drop for SystemNetCache {
     fn drop(&mut self) {
-        // Write the newest config file to disk
-        let net_cache_path = Path::new(NET_CACHE_FILE);
-        if net_cache_path.exists() {
-            let mt =
-                metadata(NET_CACHE_FILE).expect("can not get the file metadata: {NET_CACHE_FILE}");
-            debug!("net cache config file exists [{}], delete it", mt.len());
-            remove_file(NET_CACHE_FILE).expect("remove file {NET_CACHE_FILE} failed");
-        }
+        // write the newest config file to disk
+        let mut file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(NET_CACHE_FILE)
+            .expect("can not open file");
 
-        let mut file =
-            File::create(NET_CACHE_FILE).expect("create config file {NET_CACHE_FILE} failed");
         let snc_string = serde_json::to_string(self).expect("serde config to string failed");
         file.write_all(snc_string.as_bytes())
             .expect("write serde to disk failed");
@@ -658,7 +655,7 @@ impl Drop for SystemNetCache {
 }
 
 impl SystemNetCache {
-    pub fn init() -> Result<SystemNetCache> {
+    pub fn init() -> Result<SystemNetCache, PistolErrors> {
         let net_cache_path = Path::new(NET_CACHE_FILE);
         if net_cache_path.exists() {
             let mt = metadata(NET_CACHE_FILE)?;
@@ -694,7 +691,7 @@ impl SystemNetCache {
     pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
         self.neighbor_cache.insert(ipaddr, mac);
     }
-    pub fn search_route(&self, ipaddr: IpAddr) -> Result<Option<NetworkInterface>> {
+    pub fn search_route(&self, ipaddr: IpAddr) -> Result<Option<NetworkInterface>, PistolErrors> {
         debug!("search route: {}", ipaddr);
         let route_table = &self.route_table;
         for route in &route_table.routes {
@@ -738,8 +735,8 @@ mod tests {
     use pnet::datalink::interfaces;
     use std::fs;
     #[test]
-    fn test_macos_route_table() -> Result<()> {
-        let system_route_lines = || -> Result<Vec<String>> {
+    fn test_macos_route_table() {
+        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
             let file_path = "./src/test/macos_routetable.txt";
             let contents = fs::read_to_string(file_path)?;
             let ret = contents
@@ -750,7 +747,7 @@ mod tests {
             Ok(ret)
         };
 
-        let ipv6_addr_bsd_fix = |dst_str: &str| -> Result<String> {
+        let ipv6_addr_bsd_fix = |dst_str: &str| -> Result<String, PistolErrors> {
             // Remove the %em0 .etc
             // fe80::%lo0/10 => fe80::/10
             // fe80::20c:29ff:fe1f:6f71%lo0 => fe80::20c:29ff:fe1f:6f71
@@ -784,16 +781,16 @@ mod tests {
 
         // regex
         let default_route_re =
-            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([\s\w]+)?")?;
-        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)")?;
+            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([\s\w]+)?").unwrap();
+        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)").unwrap();
 
-        for line in system_route_lines()? {
+        for line in system_route_lines().unwrap() {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let via_str = &caps["via"];
-                        let via_str = ipv6_addr_bsd_fix(via_str)?;
+                        let via_str = ipv6_addr_bsd_fix(via_str).unwrap();
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
@@ -831,7 +828,7 @@ mod tests {
                     Some(caps) => {
                         let dst_str = &caps["subnet"];
 
-                        let dst_str = ipv6_addr_bsd_fix(dst_str)?;
+                        let dst_str = ipv6_addr_bsd_fix(dst_str).unwrap();
                         let dst = if dst_str.contains("/") {
                             let dst = match IpNetwork::from_str(&dst_str) {
                                 Ok(d) => d,
@@ -876,12 +873,11 @@ mod tests {
             routes,
         };
         println!("{:?}", rt);
-        Ok(())
     }
     #[test]
-    fn test_network_cache() -> Result<()> {
-        Logger::init_debug_logging()?;
-        let nc = SystemNetCache::init()?;
+    fn test_network_cache() {
+        Logger::init_debug_logging();
+        let nc = SystemNetCache::init().unwrap();
         println!(
             "default ipv4 route: {:?}",
             nc.route_table.default_ipv4_route
@@ -892,7 +888,6 @@ mod tests {
         );
         println!("neighbor cache: {:?}", nc.neighbor_cache);
         // println!("{:?}", nc);
-        Ok(())
     }
     #[test]
     fn test_windows_interface() {
@@ -904,23 +899,22 @@ mod tests {
         }
     }
     #[test]
-    fn test_unix() -> Result<()> {
+    fn test_unix() {
         let input = "fe80::%em0/64";
         let input_split: Vec<&str> = input
             .split("%")
             .map(|x| x.trim())
             .filter(|v| v.len() > 0)
             .collect();
-        let _ip: IpAddr = input_split[0].parse()?;
-        let ipnetwork = IpNetwork::from_str("fe80::")?;
-        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
+        let _ip: IpAddr = input_split[0].parse().unwrap();
+        let ipnetwork = IpNetwork::from_str("fe80::").unwrap();
+        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
         println!("{}", ipnetwork.contains(test_ipv6));
-        let ipnetwork = IpNetwork::from_str("fe80::/64")?;
-        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
+        let ipnetwork = IpNetwork::from_str("fe80::/64").unwrap();
+        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
         println!("{}", ipnetwork.contains(test_ipv6));
-        let ipnetwork = IpNetwork::from_str("::/96")?;
-        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse()?;
+        let ipnetwork = IpNetwork::from_str("::/96").unwrap();
+        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
         println!("{}", ipnetwork.contains(test_ipv6));
-        Ok(())
     }
 }

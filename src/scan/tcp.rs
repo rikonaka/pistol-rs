@@ -1,4 +1,3 @@
-use anyhow::Result;
 use pnet::packet::icmp::destination_unreachable;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
@@ -15,16 +14,13 @@ use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::Packet;
 use rand::Rng;
-use serde::Deserialize;
-use serde::Serialize;
-use std::error::Error;
-use std::fmt;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
+use crate::errors::PistolErrors;
 use crate::layers::layer3_ipv4_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
@@ -38,30 +34,6 @@ use super::PortStatus;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
-
-/* IdleScanAllZeroError */
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct IdleScanAllZeroError {
-    zombie_ipv4: Ipv4Addr,
-    zombie_port: u16,
-}
-
-impl fmt::Display for IdleScanAllZeroError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "idle scan zombie {} port {} cannot be used because IP ID sequence class is: all zeros, try another proxy", self.zombie_ipv4, self.zombie_port)
-    }
-}
-
-impl IdleScanAllZeroError {
-    pub fn new(zombie_ipv4: Ipv4Addr, zombie_port: u16) -> IdleScanAllZeroError {
-        IdleScanAllZeroError {
-            zombie_ipv4,
-            zombie_port,
-        }
-    }
-}
-
-impl Error for IdleScanAllZeroError {}
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
 // const TCP_FLAGS_ECE_MASK: u8 = 0b01000000;
@@ -78,7 +50,7 @@ pub fn send_syn_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -196,7 +168,7 @@ pub fn send_fin_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -314,7 +286,7 @@ pub fn send_ack_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -429,7 +401,7 @@ pub fn send_null_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -544,7 +516,7 @@ pub fn send_xmas_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -660,7 +632,7 @@ pub fn send_window_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -780,7 +752,7 @@ pub fn send_maimon_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let mut rng = rand::thread_rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -897,13 +869,13 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<IdleScanResults>, Duration)> {
+) -> Result<(PortStatus, Option<IdleScanResults>, Duration), PistolErrors> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
         src_port: u16,
         dst_port: u16,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Vec<u8>, PistolErrors> {
         let mut rng = rand::thread_rng();
         // ip header
         let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -1104,7 +1076,10 @@ pub fn send_idle_scan_packet(
         None => (),
     }
     if zombie_ip_id_1 == 0 && zombie_ip_id_2 == 0 {
-        return Err(IdleScanAllZeroError::new(zombie_ipv4, zombie_port).into());
+        return Err(PistolErrors::IdleScanAllZeroError {
+            zombie_ipv4,
+            zombie_port,
+        });
     } else if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
         Ok((
             PortStatus::Open,
@@ -1132,7 +1107,7 @@ pub fn send_connect_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
     let start_time = Instant::now();
     match TcpStream::connect_timeout(&addr, timeout) {

@@ -1,16 +1,20 @@
-use anyhow::Result;
 use log::debug;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
+use crate::errors::PistolErrors;
 use crate::hop::icmp::send_icmp_ping_packet;
 use crate::hop::icmpv6::send_icmpv6_ping_packet;
 
 pub mod icmp;
 pub mod icmpv6;
 
-pub fn ipv4_get_hops(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, timeout: Duration) -> Result<u8> {
+pub fn ipv4_get_hops(
+    src_ipv4: Ipv4Addr,
+    dst_ipv4: Ipv4Addr,
+    timeout: Duration,
+) -> Result<u8, PistolErrors> {
     debug!("30 hops max");
     for ttl in 1..=30 {
         let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, ttl, timeout)?;
@@ -23,7 +27,11 @@ pub fn ipv4_get_hops(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, timeout: Duration) 
     Ok(0)
 }
 
-pub fn ipv6_get_hops(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr, timeout: Duration) -> Result<u8> {
+pub fn ipv6_get_hops(
+    src_ipv6: Ipv6Addr,
+    dst_ipv6: Ipv6Addr,
+    timeout: Duration,
+) -> Result<u8, PistolErrors> {
     debug!("30 hops max");
     for ttl in 1..=30 {
         let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, ttl, timeout)?;
@@ -44,33 +52,29 @@ mod tests {
     // use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
     #[test]
-    fn test_get_hops() -> Result<()> {
+    fn test_get_hops() {
         let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
-        let src_ipv4 = find_source_addr(None, dst_ipv4)?;
+        let src_ipv4 = find_source_addr(None, dst_ipv4).unwrap();
         match src_ipv4 {
             Some(src_ipv4) => {
                 let timeout = Duration::new(1, 0);
-                let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout)?;
+                let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout).unwrap();
                 println!("{}", hops);
             }
             None => (),
         }
-
-        Ok(())
     }
     #[test]
-    fn test_get_hops6() -> Result<()> {
-        let src_ipv6 = find_source_addr6(None, TEST_IPV6_LOCAL)?;
+    fn test_get_hops6() {
+        let src_ipv6 = find_source_addr6(None, TEST_IPV6_LOCAL).unwrap();
         match src_ipv6 {
             Some(src_ipv6) => {
                 let dst_ipv6 = TEST_IPV6_LOCAL;
                 let timeout = Duration::new(1, 0);
-                let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
+                let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout).unwrap();
                 println!("{}", hops);
             }
             None => (),
         }
-
-        Ok(())
     }
 }

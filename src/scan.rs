@@ -1,5 +1,4 @@
 /* Scan */
-use anyhow::Result;
 use log::debug;
 use log::warn;
 use pnet::datalink::MacAddr;
@@ -25,9 +24,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::errors::CanNotFoundInterface;
-use crate::errors::CanNotFoundMacAddress;
-use crate::errors::CanNotFoundSourceAddress;
+use crate::errors::PistolErrors;
 use crate::utils::find_interface_by_ip;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
@@ -302,10 +299,10 @@ fn ipv4_arp_scan(
     dst_mac: MacAddr,
     src_addr: Option<IpAddr>,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Duration)> {
+) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        None => return Err(CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
@@ -536,67 +533,6 @@ fn threads_scan6(
     Ok((scan_ret, rtt))
 }
 
-fn ipv4_scan(
-    method: ScanMethod,
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
-    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
-        Some(s) => {
-            debug!("find src addr: {}", s);
-            s
-        }
-        None => {
-            warn!("can not found src addr");
-            return Err(CanNotFoundSourceAddress::new().into());
-        }
-    };
-    let src_port = match src_port {
-        Some(s) => {
-            debug!("find src port: {}", s);
-            s
-        }
-        None => {
-            warn!("can not found src port, use random port instead");
-            random_port()
-        }
-    };
-    threads_scan(
-        method,
-        dst_ipv4,
-        dst_port,
-        src_ipv4,
-        src_port,
-        zombie_ipv4,
-        zombie_port,
-        timeout,
-    )
-}
-
-fn ipv6_scan(
-    method: ScanMethod,
-    dst_ipv6: Ipv6Addr,
-    dst_port: u16,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
-    let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
-        Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
-    };
-    let src_port = match src_port {
-        Some(s) => s,
-        None => random_port(),
-    };
-    threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
-}
-
 /// General scan function.
 pub fn scan(
     target: Target,
@@ -620,6 +556,16 @@ pub fn scan(
         Some(t) => t,
         None => get_default_timeout(),
     };
+    let src_port = match src_port {
+        Some(s) => {
+            debug!("find src port: {}", s);
+            s
+        }
+        None => {
+            warn!("can not found src port, use random port instead");
+            random_port()
+        }
+    };
 
     let mut timeout_hm: HashMap<IpAddr, HashMap<u16, Instant>> = HashMap::new();
 
@@ -632,22 +578,41 @@ pub fn scan(
                         let tx = tx.clone();
                         recv_size += 1;
 
-                        // debug codes
+                        /* debug codes */
                         debug!(
                             "scan method {:?}, ip: {}, port: {}",
                             method, dst_ipv4, dst_port
                         );
                         let start = Instant::now();
-                        let mut port_instant = HashMap::new();
-                        port_instant.insert(dst_port, start);
-                        timeout_hm.insert(dst_ipv4.into(), port_instant);
+                        match timeout_hm.get_mut(&dst_ipv4.into()) {
+                            Some(hm) => {
+                                hm.insert(dst_port, start);
+                            }
+                            None => {
+                                let mut port_instant = HashMap::new();
+                                port_instant.insert(dst_port, start);
+                                timeout_hm.insert(dst_ipv4.into(), port_instant);
+                            }
+                        }
+                        /* debug codes */
+
+                        let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+                            Some(s) => {
+                                debug!("find src addr: {}", s);
+                                s
+                            }
+                            None => {
+                                warn!("can not found src addr");
+                                return Err(CanNotFoundSourceAddress::new().into());
+                            }
+                        };
 
                         pool.execute(move || {
-                            let scan_ret = ipv4_scan(
+                            let scan_ret = threads_scan(
                                 method,
                                 dst_ipv4,
                                 dst_port,
-                                src_addr,
+                                src_ipv4,
                                 src_port,
                                 zombie_ipv4,
                                 zombie_port,
@@ -665,9 +630,14 @@ pub fn scan(
                     for _ in 0..tests {
                         let tx = tx.clone();
                         recv_size += 1;
+                        let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
+                            Some(s) => s,
+                            None => return Err(CanNotFoundSourceAddress::new().into()),
+                        };
                         pool.execute(move || {
-                            let scan_ret =
-                                ipv6_scan(method, dst_ipv6, dst_port, src_addr, src_port, timeout);
+                            let scan_ret = threads_scan6(
+                                method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
+                            );
                             match tx.send((dst_addr, dst_port, scan_ret)) {
                                 _ => (),
                             }
@@ -691,12 +661,12 @@ pub fn scan(
                         dst_port,
                         i.elapsed().as_secs_f32()
                     );
-                    println!(
-                        "ip: {}, port: {}, elapsed: {:.2}s",
-                        dst_ipv4,
-                        dst_port,
-                        i.elapsed().as_secs_f32()
-                    );
+                    // println!(
+                    //     "ip: {}, port: {}, elapsed: {:.2}s",
+                    //     dst_ipv4,
+                    //     dst_port,
+                    //     i.elapsed().as_secs_f32()
+                    // );
                 }
                 None => (),
             },
@@ -704,6 +674,7 @@ pub fn scan(
         }
         match v {
             Ok((port_status, rtt)) => {
+                // println!("rtt: {:.2}", rtt.as_secs_f32());
                 port_scan_ret.insert(dst_ipv4.into(), dst_port, port_status, Some(rtt));
             }
             Err(e) => {
@@ -1381,13 +1352,13 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
 
-        let start = Ipv4Addr::new(192, 168, 5, 1);
+        let start = Ipv4Addr::new(192, 168, 5, 3);
         let end = Ipv4Addr::new(192, 168, 5, 5);
         let subnet = CrossIpv4Pool::new(start, end)?;
         // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
         let mut hosts = vec![];
         for ip in subnet {
-            let host = Host::new(ip.into(), Some(vec![22, 99]));
+            let host = Host::new(ip.into(), Some(vec![22]));
             hosts.push(host);
         }
         let target = Target::new(hosts);

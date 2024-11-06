@@ -13,7 +13,6 @@ keywords = ["penetration-test", "cybersecurity", "nmap"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "^1"
 num_cpus = "^1"
 rand = "^0"
 subnetwork = "^0"
@@ -32,3 +31,4 @@ prettytable-rs = "^0"
 log = "^0"
 env_logger = "^0"
 regex = "^1"
+thiserror = "^1"

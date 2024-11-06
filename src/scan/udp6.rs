@@ -1,4 +1,3 @@
-use anyhow::Result;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -10,6 +9,7 @@ use pnet::packet::Packet;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
+use crate::errors::PistolErrors;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
@@ -29,7 +29,7 @@ pub fn send_udp_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();

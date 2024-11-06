@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-use anyhow::Result;
 use log::debug;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
@@ -25,6 +24,7 @@ mod layers;
 mod route;
 mod utils;
 
+use crate::errors::PistolErrors;
 use crate::route::SystemNetCache;
 
 // debug code
@@ -35,9 +35,9 @@ const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
 const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e4);
 
-static SYSTEM_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
-    let lnc = SystemNetCache::init().expect("can not init the system cache");
-    Arc::new(Mutex::new(lnc))
+static SYSTEM_NET_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
+    let sncw = SystemNetCache::init().expect("can not init the system net cache");
+    Arc::new(Mutex::new(sncw))
 });
 
 const DEFAULT_TIMEOUT: u64 = 3;
@@ -45,7 +45,7 @@ const DEFAULT_TIMEOUT: u64 = 3;
 pub struct Logger {}
 
 impl Logger {
-    pub fn init_debug_logging() -> Result<()> {
+    pub fn init_debug_logging() -> Result<(), PistolErrors> {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Debug)
@@ -53,7 +53,7 @@ impl Logger {
             .try_init()?;
         Ok(())
     }
-    pub fn init_warn_logging() -> Result<()> {
+    pub fn init_warn_logging() -> Result<(), PistolErrors> {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Warn)
@@ -61,7 +61,7 @@ impl Logger {
             .try_init()?;
         Ok(())
     }
-    pub fn init_info_logging() -> Result<()> {
+    pub fn init_info_logging() -> Result<(), PistolErrors> {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Info)
@@ -195,7 +195,7 @@ impl Target {
     ///     let target = Target::from_subnet("192.168.1.0/24", Some(vec![22])).unwrap();
     /// }
     /// ```
-    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target> {
+    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target, PistolErrors> {
         let ipv4_pool = Ipv4Pool::from(subnet)?;
         let mut hosts = Vec::new();
         for ipv4_addr in ipv4_pool {

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use log::debug;
 use serde::Deserialize;
 use serde::Serialize;
@@ -12,9 +11,10 @@ use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
 
+use crate::errors::PistolErrors;
 use crate::hop::ipv6_get_hops;
 use crate::layers::layer3_ipv6_send;
-use crate::layers::layer3_ipv6_system_route;
+use crate::layers::system_route6;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
@@ -403,7 +403,7 @@ fn send_seq_probes(
     dst_open_port: u16,
     timeout: Duration,
     start_time: Instant,
-) -> Result<SEQRR6> {
+) -> Result<SEQRR6, PistolErrors> {
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
@@ -544,7 +544,7 @@ fn send_ie_probes(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
     start_time: Instant,
-) -> Result<IERR6> {
+) -> Result<IERR6, PistolErrors> {
     let (tx, rx) = channel();
 
     let buff_1 = packet6::ie_packet_1_layer3(src_ipv6, dst_ipv6).unwrap();
@@ -623,7 +623,7 @@ fn send_nx_probes(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
     start_time: Instant,
-) -> Result<NXRR6> {
+) -> Result<NXRR6, PistolErrors> {
     let (tx, rx) = channel();
 
     let buff_1 = packet6::ni_packet_layer3(src_ipv6, dst_ipv6).unwrap();
@@ -705,7 +705,7 @@ fn send_u1_probe(
     dst_closed_port: u16, //should be an closed udp port
     timeout: Duration,
     start_time: Instant,
-) -> Result<U1RR6> {
+) -> Result<U1RR6, PistolErrors> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -751,7 +751,7 @@ fn send_tecn_probe(
     dst_open_port: u16,
     timeout: Duration,
     start_time: Instant,
-) -> Result<TECNRR6> {
+) -> Result<TECNRR6, PistolErrors> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -798,7 +798,7 @@ fn send_tx_probes(
     dst_closed_port: u16,
     timeout: Duration,
     start_time: Instant,
-) -> Result<TXRR6> {
+) -> Result<TXRR6, PistolErrors> {
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
@@ -976,7 +976,7 @@ fn send_all_probes(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     timeout: Duration,
-) -> Result<AllPacketRR6> {
+) -> Result<AllPacketRR6, PistolErrors> {
     let start_time = Instant::now();
     let seq = send_seq_probes(
         src_ipv6,
@@ -1107,7 +1107,7 @@ pub fn threads_os_probe6(
     top_k: usize,
     linear: Linear,
     timeout: Duration,
-) -> Result<(PistolFingerprint6, Vec<OsInfo6>)> {
+) -> Result<(PistolFingerprint6, Vec<OsInfo6>), PistolErrors> {
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv6,
@@ -1119,7 +1119,7 @@ pub fn threads_os_probe6(
         timeout,
     )?;
 
-    let (dst_mac, _interface) = layer3_ipv6_system_route(src_ipv6, dst_ipv6)?;
+    let (dst_mac, _interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
 
     let good_results = true;
     // form get_scan_line function

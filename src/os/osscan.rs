@@ -1,4 +1,3 @@
-use anyhow::Result;
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
@@ -16,10 +15,10 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use crate::errors::OsDetectResultsNullError;
+use crate::errors::PistolErrors;
 use crate::hop::ipv4_get_hops;
 use crate::layers::layer3_ipv4_send;
-use crate::layers::layer3_ipv4_system_route;
+use crate::layers::system_route;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
@@ -237,7 +236,7 @@ fn send_seq_probes(
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     timeout: Duration,
-) -> Result<SEQRR> {
+) -> Result<SEQRR, PistolErrors> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
@@ -323,7 +322,11 @@ fn send_seq_probes(
     Ok(seqrr)
 }
 
-fn send_ie_probes(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, timeout: Duration) -> Result<IERR> {
+fn send_ie_probes(
+    src_ipv4: Ipv4Addr,
+    dst_ipv4: Ipv4Addr,
+    timeout: Duration,
+) -> Result<IERR, PistolErrors> {
     let (tx, rx) = channel();
 
     let mut rng = rand::thread_rng();
@@ -393,7 +396,7 @@ fn send_ecn_probe(
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     timeout: Duration,
-) -> Result<ECNRR> {
+) -> Result<ECNRR, PistolErrors> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -437,7 +440,7 @@ fn send_tx_probes(
     dst_open_port: u16,
     dst_closed_port: u16,
     timeout: Duration,
-) -> Result<TXRR> {
+) -> Result<TXRR, PistolErrors> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
@@ -567,7 +570,7 @@ fn send_u1_probe(
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
     timeout: Duration,
-) -> Result<U1RR> {
+) -> Result<U1RR, PistolErrors> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -612,7 +615,7 @@ fn send_all_probes(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     timeout: Duration,
-) -> Result<AllPacketRR> {
+) -> Result<AllPacketRR, PistolErrors> {
     let seq = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, timeout)?;
     let ie = send_ie_probes(src_ipv4, dst_ipv4, timeout)?;
     let ecn = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, timeout)?;
@@ -690,7 +693,7 @@ impl fmt::Display for SEQX {
     }
 }
 
-pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX> {
+pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolErrors> {
     let rynum = |rvec: Vec<String>| -> usize {
         let mut num = 0;
         for r in rvec {
@@ -828,7 +831,7 @@ impl fmt::Display for OPSX {
     }
 }
 
-pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX> {
+pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolErrors> {
     let rops = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
@@ -949,7 +952,7 @@ impl fmt::Display for WINX {
     }
 }
 
-pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX> {
+pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolErrors> {
     let rwin = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
@@ -1085,7 +1088,7 @@ impl fmt::Display for ECNX {
     }
 }
 
-pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX> {
+pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolErrors> {
     let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
     let (df, t, tg, w, o, cc, q) = match r.as_str() {
         "Y" => {
@@ -1254,7 +1257,7 @@ impl fmt::Display for TXX {
     }
 }
 
-fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<TXX> {
+fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolErrors> {
     let r = tcp_udp_icmp_r(&tx.response)?;
     let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
         "Y" => {
@@ -1302,7 +1305,9 @@ fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<T
     })
 }
 
-pub fn tx_fingerprint(ap: &AllPacketRR) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX)> {
+pub fn tx_fingerprint(
+    ap: &AllPacketRR,
+) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX), PistolErrors> {
     // The final line related to these probes, T1, contains various test values for packet #1.
     let t1 = _tx_fingerprint(&ap.seq.seq1, &ap.u1, "T1")?;
     let t2 = _tx_fingerprint(&ap.tx.t2, &ap.u1, "T2")?;
@@ -1437,7 +1442,7 @@ impl fmt::Display for U1X {
     }
 }
 
-pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X> {
+pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolErrors> {
     let r = tcp_udp_icmp_r(&ap.u1.u1.response)?;
     let (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud) = match r.as_str() {
         "Y" => {
@@ -1549,7 +1554,7 @@ impl fmt::Display for IEX {
     }
 }
 
-pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX> {
+pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolErrors> {
     let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response)?;
     let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response)?;
     let (r, dfi, t, tg, cd) = if r1 == "Y" && r2 == "Y" {
@@ -1584,7 +1589,7 @@ pub fn threads_os_probe(
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
-) -> Result<(PistolFingerprint, Vec<OsInfo>)> {
+) -> Result<(PistolFingerprint, Vec<OsInfo>), PistolErrors> {
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv4,
@@ -1597,7 +1602,7 @@ pub fn threads_os_probe(
     )?;
 
     // let hops = Some(1);
-    let (dst_mac, _interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4)?;
+    let (dst_mac, _interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
 
     let good_results = true;
     // form get_scan_line function
@@ -1710,7 +1715,7 @@ pub fn threads_os_probe(
                 debug!("fingerprint:\n{}", fingerprint.nmap_format());
                 Ok((fingerprint, detect_rets))
             } else {
-                Err(OsDetectResultsNullError::new().into())
+                Err(PistolErrors::OsDetectResultsNullError)
             }
         }
         Err(e) => Err(e),

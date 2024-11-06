@@ -1,4 +1,4 @@
-use anyhow::Result;
+use chrono::Local;
 use dns_lookup::lookup_host;
 use log::debug;
 use pnet::datalink;
@@ -44,16 +44,13 @@ use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6;
 
-use crate::errors::CanNotFoundInterface;
-use crate::errors::CanNotFoundMacAddress;
-use crate::errors::CanNotFoundRouteMacAddress;
-use crate::errors::CanNotFoundRouterAddress;
-use crate::errors::CreateDatalinkChannelFailed;
+use crate::errors::PistolErrors;
+use crate::route::SystemNetCache;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
 use crate::utils::get_threads_pool;
-use crate::SYSTEM_CACHE;
+use crate::SYSTEM_NET_CACHE;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -492,7 +489,7 @@ impl LayersMatch {
 
 fn datalink_channel(
     interface: &NetworkInterface,
-) -> Result<Option<(Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>)>> {
+) -> Result<Option<(Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>)>, PistolErrors> {
     match datalink::channel(&interface, Default::default()) {
         Ok(Ethernet(tx, rx)) => Ok(Some((tx, rx))),
         Ok(_) => Ok(None),
@@ -526,17 +523,17 @@ pub fn layer2_send(
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Duration)> {
+) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
         Some((s, r)) => (s, r),
-        None => return Err(CreateDatalinkChannelFailed::new().into()),
+        None => return Err(PistolErrors::CreateDatalinkChannelFailed),
     };
     let src_mac = if dst_mac == MacAddr::zero() {
         MacAddr::zero()
     } else {
         match interface.mac {
             Some(m) => m,
-            None => return Err(CanNotFoundMacAddress::new().into()),
+            None => return Err(PistolErrors::CanNotFoundMacAddress),
         }
     };
 
@@ -617,15 +614,19 @@ pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
     }
 }
 
-fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Duration)> {
+fn arp(
+    src_ipv4: Ipv4Addr,
+    dst_ipv4: Ipv4Addr,
+    timeout: Duration,
+) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+        None => return Err(PistolErrors::CanNotFoundInterface),
     };
 
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(CanNotFoundMacAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundMacAddress),
     };
 
     let mut arp_buff = [0u8; 28];
@@ -654,7 +655,6 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Durat
     };
     let layers_match = LayersMatch::Layer3Match(layer3);
 
-    let timeout = Duration::new(3, 0);
     let (ret, rtt) = layer2_send(
         MacAddr::broadcast(),
         interface,
@@ -669,25 +669,38 @@ fn arp(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr) -> Result<(Option<MacAddr>, Durat
     }
 }
 
-pub fn layer3_ipv4_system_route(
+fn get_system_net_cache() -> SystemNetCache {
+    let snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("lock SYSTEM_NET_CACHE failed");
+    snc.clone()
+}
+
+fn update_system_net_cache(dst_addr: IpAddr, dst_mac: MacAddr) {
+    let mut snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("lock SYSTEM_NET_CACHE failed");
+    snc.update_neighbor_cache(dst_addr, dst_mac);
+}
+
+pub fn system_route(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-) -> Result<(MacAddr, NetworkInterface)> {
-    let mut sc = SYSTEM_CACHE
-        .lock()
-        .expect("can not get local network cache");
+    timeout: Duration,
+) -> Result<(MacAddr, NetworkInterface), PistolErrors> {
+    let snc_read_only = get_system_net_cache();
 
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
         None => {
-            let interface = match sc.search_route(dst_ipv4.into())? {
+            let interface = match snc_read_only.search_route(dst_ipv4.into())? {
                 Some(i) => i,
                 None => {
                     // The system route table not contain this ipaddr,
                     // so send it to the default route.
-                    let default_route = match sc.default_ipv4_route() {
+                    let default_route = match snc_read_only.default_ipv4_route() {
                         Some(d) => d,
-                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                        None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
                     default_route.dev
                 }
@@ -696,36 +709,44 @@ pub fn layer3_ipv4_system_route(
         }
     };
 
-    let dst_mac = match sc.search_mac(dst_ipv4.into()) {
-        Some(m) => m,
+    let dst_mac = match snc_read_only.search_mac(dst_ipv4.into()) {
+        Some(m) => {
+            debug!("search dst mac locally success");
+            m
+        }
         None => {
+            debug!("search dst mac locally failed, using arp protocol now...");
             if dst_ipv4_in_local(dst_ipv4) {
-                let dst_mac = match arp(src_ipv4, dst_ipv4)? {
+                debug!("search dst mac via dst ip...");
+                let dst_mac = match arp(src_ipv4, dst_ipv4, timeout)? {
                     (Some(m), _rtt) => m,
-                    (_, _) => return Err(CanNotFoundMacAddress::new().into()),
+                    (_, _) => return Err(PistolErrors::CanNotFoundMacAddress),
                 };
-                sc.update_neighbor_cache(dst_ipv4.into(), dst_mac);
+                // snc_read_only.update_neighbor_cache(dst_ipv4.into(), dst_mac)?;
+                update_system_net_cache(dst_ipv4.into(), dst_mac);
                 dst_mac
             } else {
-                let default_route = match sc.default_ipv4_route() {
+                debug!("search dst mac via default route ip...");
+                let default_route = match snc_read_only.default_ipv4_route() {
                     Some(r) => r,
-                    None => return Err(CanNotFoundRouterAddress::new().into()),
+                    None => return Err(PistolErrors::CanNotFoundRouterAddress),
                 };
                 let dst_mac = match default_route.via {
                     IpAddr::V4(default_route_ipv4) => {
-                        let dst_mac = match sc.search_mac(default_route_ipv4.into()) {
+                        let dst_mac = match snc_read_only.search_mac(default_route_ipv4.into()) {
                             Some(m) => m,
-                            None => match arp(src_ipv4, default_route_ipv4)? {
+                            None => match arp(src_ipv4, default_route_ipv4, timeout)? {
                                 (Some(m), _rtt) => {
-                                    sc.update_neighbor_cache(default_route_ipv4.into(), m);
+                                    // snc_read_only.update_neighbor_cache(default_route_ipv4.into(), m)?;
+                                    update_system_net_cache(default_route_ipv4.into(), m);
                                     m
                                 }
-                                (_, _) => return Err(CanNotFoundRouteMacAddress::new().into()),
+                                (_, _) => return Err(PistolErrors::CanNotFoundRouteMacAddress),
                             },
                         };
                         dst_mac
                     }
-                    _ => return Err(CanNotFoundRouterAddress::new().into()),
+                    _ => return Err(PistolErrors::CanNotFoundRouterAddress),
                 };
                 dst_mac
             }
@@ -741,12 +762,29 @@ pub fn layer3_ipv4_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Duration)> {
+) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
+    let system_time = Local::now();
+    println!(
+        "layer3 {}, start: {}",
+        dst_ipv4,
+        system_time.timestamp_millis()
+    );
+
     debug!("src: {}, dst: {}", src_ipv4, dst_ipv4);
-    let (dst_mac, interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4)?;
+    // let (dst_mac, interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4, timeout)?;
+    let ret = system_route(src_ipv4, dst_ipv4, timeout);
+    let system_time2 = Local::now();
+    println!(
+        "layer3 {}, end: {}",
+        dst_ipv4,
+        system_time2.timestamp_millis()
+    );
+
+    let (dst_mac, interface) = ret?;
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
+
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
         interface,
@@ -783,15 +821,19 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Option<MacAddr> {
     None
 }
 
-fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Duration)> {
+fn ndp_ns(
+    src_ipv6: Ipv6Addr,
+    dst_ipv6: Ipv6Addr,
+    timeout: Duration,
+) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
     // same as arp in ipv4
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+        None => return Err(PistolErrors::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(CanNotFoundMacAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundMacAddress),
     };
 
     // ipv6
@@ -839,7 +881,6 @@ fn ndp_ns(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Du
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let ethernet_type = EtherTypes::Ipv6;
-    let timeout = Duration::new(3, 0);
     let (r, rtt) = layer2_send(
         multicast_mac(dst_ipv6),
         interface.clone(),
@@ -873,17 +914,20 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
     }
 }
 
-fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Duration)> {
+fn ndp_rs(
+    src_ipv6: Ipv6Addr,
+    timeout: Duration,
+) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
     // router solicitation
     let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+        None => return Err(PistolErrors::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(CanNotFoundMacAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundMacAddress),
     };
 
     // ipv6
@@ -933,7 +977,6 @@ fn ndp_rs(src_ipv6: Ipv6Addr) -> Result<(Option<MacAddr>, Duration)> {
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let timeout = Duration::new(3, 0);
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ethernet_type = EtherTypes::Ipv6;
     let (r, rtt) = layer2_send(
@@ -960,23 +1003,24 @@ fn layer2_payload(buff: &[u8]) -> Vec<u8> {
     ethernet_packet.payload().to_vec()
 }
 
-pub fn layer3_ipv6_system_route(
+pub fn system_route6(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
-) -> Result<(MacAddr, NetworkInterface)> {
-    let mut sc = SYSTEM_CACHE.lock().expect("can not local network cache");
+    timeout: Duration,
+) -> Result<(MacAddr, NetworkInterface), PistolErrors> {
+    let snc_read_only = get_system_net_cache();
 
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
         None => {
-            let interface = match sc.search_route(dst_ipv6.into())? {
+            let interface = match snc_read_only.search_route(dst_ipv6.into())? {
                 Some(i) => i,
                 None => {
                     // The system route table not contain this ipaddr,
                     // so send it to the default route.
-                    let default_route = match sc.default_ipv6_route() {
+                    let default_route = match snc_read_only.default_ipv6_route() {
                         Some(d) => d,
-                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                        None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
                     default_route.dev
                 }
@@ -985,36 +1029,38 @@ pub fn layer3_ipv6_system_route(
         }
     };
 
-    let dst_mac = match sc.search_mac(dst_ipv6.into()) {
+    let dst_mac = match snc_read_only.search_mac(dst_ipv6.into()) {
         Some(m) => m,
         None => {
             if dst_ipv6_in_local(dst_ipv6) {
-                let dst_mac = match ndp_ns(src_ipv6, dst_ipv6)? {
+                let dst_mac = match ndp_ns(src_ipv6, dst_ipv6, timeout)? {
                     (Some(m), _rtt) => m,
-                    (_, _) => return Err(CanNotFoundMacAddress::new().into()),
+                    (_, _) => return Err(PistolErrors::CanNotFoundMacAddress),
                 };
-                sc.update_neighbor_cache(dst_ipv6.into(), dst_mac);
+                // snc_read_only.update_neighbor_cache(dst_ipv6.into(), dst_mac)?;
+                update_system_net_cache(dst_ipv6.into(), dst_mac);
                 dst_mac
             } else {
-                let default_route = match sc.default_ipv6_route() {
+                let default_route = match snc_read_only.default_ipv6_route() {
                     Some(r) => r,
-                    None => return Err(CanNotFoundRouterAddress::new().into()),
+                    None => return Err(PistolErrors::CanNotFoundRouterAddress),
                 };
                 let dst_mac = match default_route.via {
                     IpAddr::V6(default_route_ipv6) => {
-                        let dst_mac = match sc.search_mac(default_route_ipv6.into()) {
+                        let dst_mac = match snc_read_only.search_mac(default_route_ipv6.into()) {
                             Some(m) => m,
-                            None => match ndp_rs(src_ipv6)? {
+                            None => match ndp_rs(src_ipv6, timeout)? {
                                 (Some(m), _rtt) => {
-                                    sc.update_neighbor_cache(default_route_ipv6.into(), m);
+                                    // snc_read_only.update_neighbor_cache(default_route_ipv6.into(), m)?;
+                                    update_system_net_cache(default_route_ipv6.into(), m);
                                     m
                                 }
-                                (_, _) => return Err(CanNotFoundRouteMacAddress::new().into()),
+                                (_, _) => return Err(PistolErrors::CanNotFoundRouteMacAddress),
                             },
                         };
                         dst_mac
                     }
-                    _ => return Err(CanNotFoundRouterAddress::new().into()),
+                    _ => return Err(PistolErrors::CanNotFoundRouterAddress),
                 };
                 dst_mac
             }
@@ -1030,9 +1076,9 @@ pub fn layer3_ipv6_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Duration)> {
+) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
     debug!("src: {}, dst: {}", src_ipv6, dst_ipv6);
-    let (dst_mac, interface) = layer3_ipv6_system_route(src_ipv6, dst_ipv6)?;
+    let (dst_mac, interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv6;
@@ -1051,7 +1097,7 @@ pub fn layer3_ipv6_send(
 }
 
 /// Queries the IP address of a domain name and returns.
-pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>> {
+pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolErrors> {
     let ips: Vec<IpAddr> = lookup_host(hostname)?;
     Ok(ips)
 }

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
@@ -7,9 +6,7 @@ use pnet::packet::Packet;
 use std::iter::zip;
 
 use super::rr::AllPacketRR6;
-use crate::errors::GetIcmpv6PacketFailed;
-use crate::errors::GetIpv6PacketFailed;
-use crate::errors::GetTcpPacketFailed;
+use crate::errors::PistolErrors;
 use crate::utils::SpHex;
 
 const CWR_MASK: u8 = 0b10000000;
@@ -45,75 +42,55 @@ fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Option<Vec<u8>> {
     }
 }
 
-fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Option<Ipv6Packet>> {
+fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolErrors> {
     if ipv6_buff.len() > 0 {
         match Ipv6Packet::new(ipv6_buff) {
-            Some(p) => Ok(Some(p)),
-            None => Err(GetIpv6PacketFailed::new().into()),
+            Some(p) => return Ok(p),
+            None => (),
         }
-    } else {
-        Ok(None)
     }
+    Err(PistolErrors::GetIpv6PacketFailed)
 }
 
-fn get_icmpv6_packet(icmpv6_buff: &[u8]) -> Result<Option<Icmpv6Packet>> {
+fn get_icmpv6_packet(icmpv6_buff: &[u8]) -> Result<Icmpv6Packet, PistolErrors> {
     if icmpv6_buff.len() > 0 {
         match Icmpv6Packet::new(icmpv6_buff) {
-            Some(p) => Ok(Some(p)),
-            None => Err(GetIcmpv6PacketFailed::new().into()),
+            Some(p) => return Ok(p),
+            None => (),
         }
-    } else {
-        Ok(None)
     }
+    Err(PistolErrors::GetIcmpv6PacketFailed)
 }
 
-fn get_tcp_packet(tcp_buff: &[u8]) -> Result<Option<TcpPacket>> {
+fn get_tcp_packet(tcp_buff: &[u8]) -> Result<TcpPacket, PistolErrors> {
     if tcp_buff.len() > 0 {
         match TcpPacket::new(tcp_buff) {
-            Some(p) => Ok(Some(p)),
-            None => Err(GetTcpPacketFailed::new().into()),
+            Some(p) => return Ok(p),
+            None => (),
         }
-    } else {
-        Ok(None)
     }
+    Err(PistolErrors::GetTcpPacketFailed)
 }
 
 /// IPv6 Payload Length field.
 /// IPv6 Traffic Class field.
-fn ipv6_plen_tc(ipv6_buff: &[u8]) -> Result<(f64, f64)> {
+fn ipv6_plen_tc(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    let (plen, tc) = match ipv6_packet {
-        Some(ipv6_packet) => (
-            ipv6_packet.get_payload_length() as f64,
-            ipv6_packet.get_traffic_class() as f64,
-        ),
-        None => (-1.0, -1.0),
-    };
-
+    let plen = ipv6_packet.get_payload_length() as f64;
+    let tc = ipv6_packet.get_traffic_class() as f64;
     Ok((plen, tc))
 }
 
 /// Get tcp sequence number.
-fn tcp_seq(ipv6_buff: &[u8]) -> Result<u32> {
+fn tcp_seq(ipv6_buff: &[u8]) -> Result<u32, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    return Ok(tcp_packet.get_sequence());
-                }
-                None => (),
-            }
-        }
-        None => (),
-    }
-    Ok(0)
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    Ok(tcp_packet.get_sequence())
 }
 
 /// TCP ISN counter rate. This is derived from the S1–S6 sequence probes, which are sent 100 ms apart.
 /// The differences between consecutive sequence responses are added up, then this sum is divided by the time elapsed between the first and last probe.
-fn tcp_isr(ap: &AllPacketRR6) -> Result<f64> {
+fn tcp_isr(ap: &AllPacketRR6) -> Result<f64, PistolErrors> {
     let mut seq_vec = Vec::new();
     let s1 = tcp_seq(&ap.seq.seq1.response)?;
     let s2 = tcp_seq(&ap.seq.seq2.response)?;
@@ -151,12 +128,9 @@ fn tcp_isr(ap: &AllPacketRR6) -> Result<f64> {
 }
 
 /// A guess at the original value of the IPv6 Hop Limit field.
-fn ipv6_hlim(ipv6_response: &[u8]) -> Result<f64> {
+fn ipv6_hlim(ipv6_response: &[u8]) -> Result<f64, PistolErrors> {
     let ipv6_response_packet = get_ipv6_packet(ipv6_response)?;
-    let hlim = match ipv6_response_packet {
-        Some(ipv6_packet) => ipv6_packet.get_hop_limit() as f64,
-        None => 0.0,
-    };
+    let hlim = ipv6_response_packet.get_hop_limit() as f64;
     let er_lim = 5;
     let hlim = if (32 - er_lim) as f64 <= hlim && hlim <= (32 + 5) as f64 {
         32
@@ -173,252 +147,156 @@ fn ipv6_hlim(ipv6_response: &[u8]) -> Result<f64> {
 }
 
 /// TCP window size.
-fn tcp_window(ipv6_buff: &[u8]) -> Result<f64> {
+fn tcp_window(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    return Ok(tcp_packet.get_window() as f64);
-                }
-                None => (),
-            }
-        }
-        None => (),
-    }
-    Ok(-1.0)
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    Ok(tcp_packet.get_window() as f64)
 }
 
 /// TCP flags. Each flag becomes a feature with the value 0 or 1.
 /// TCP_FLAG_F, TCP_FLAG_S, TCP_FLAG_R, TCP_FLAG_P, TCP_FLAG_A, TCP_FLAG_U, TCP_FLAG_E, TCP_FLAG_C.
-fn tcp_flags(ipv6_buff: &[u8]) -> Result<Vec<f64>> {
+fn tcp_flags(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let flags = tcp_packet.get_flags();
-                    let cwr = ((flags & CWR_MASK) >> 7) as f64;
-                    let ece = ((flags & ECE_MASK) >> 6) as f64;
-                    let urg = ((flags & URG_MASK) >> 5) as f64;
-                    let ack = ((flags & ACK_MASK) >> 4) as f64;
-                    let psh = ((flags & PSH_MASK) >> 3) as f64;
-                    let rst = ((flags & RST_MASK) >> 2) as f64;
-                    let syn = ((flags & SYN_MASK) >> 1) as f64;
-                    let fin = ((flags & FIN_MASK) >> 0) as f64;
-                    let ret = vec![fin, syn, rst, psh, ack, urg, ece, cwr];
-                    return Ok(ret);
-                }
-                None => (),
-            }
-        }
-        None => (),
-    }
-    Ok(vec![-1.0; 8])
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let flags = tcp_packet.get_flags();
+    let cwr = ((flags & CWR_MASK) >> 7) as f64;
+    let ece = ((flags & ECE_MASK) >> 6) as f64;
+    let urg = ((flags & URG_MASK) >> 5) as f64;
+    let ack = ((flags & ACK_MASK) >> 4) as f64;
+    let psh = ((flags & PSH_MASK) >> 3) as f64;
+    let rst = ((flags & RST_MASK) >> 2) as f64;
+    let syn = ((flags & SYN_MASK) >> 1) as f64;
+    let fin = ((flags & FIN_MASK) >> 0) as f64;
+    let ret = vec![fin, syn, rst, psh, ack, urg, ece, cwr];
+    Ok(ret)
 }
 
 /// These are the four bits of the reserved part of the TCP header.
 /// RFC 3540 defines TCP_FLAG_RES8 as the nonce sum (NS) bit.
 /// TCP_FLAG_RES8, TCP_FLAG_RES9, TCP_FLAG_RES10, TCP_FLAG_RES11.
-fn tcp_reserved(ipv6_buff: &[u8]) -> Result<Vec<f64>> {
+fn tcp_reserved(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let mask_1: u8 = 0b1000;
-                    let mask_2: u8 = 0b0100;
-                    let mask_3: u8 = 0b0010;
-                    let mask_4: u8 = 0b0001;
-                    let reserved = tcp_packet.get_reserved();
-                    let v1 = ((reserved & mask_1) >> 3) as f64;
-                    let v2 = ((reserved & mask_2) >> 2) as f64;
-                    let v3 = ((reserved & mask_3) >> 1) as f64;
-                    let v4 = ((reserved & mask_4) >> 0) as f64;
-                    let ret = vec![v4, v3, v2, v1];
-                    return Ok(ret);
-                }
-                None => (),
-            }
-        }
-        None => (),
-    }
-    Ok(vec![-1.0; 4])
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let mask_1: u8 = 0b1000;
+    let mask_2: u8 = 0b0100;
+    let mask_3: u8 = 0b0010;
+    let mask_4: u8 = 0b0001;
+    let reserved = tcp_packet.get_reserved();
+    let v1 = ((reserved & mask_1) >> 3) as f64;
+    let v2 = ((reserved & mask_2) >> 2) as f64;
+    let v3 = ((reserved & mask_3) >> 1) as f64;
+    let v4 = ((reserved & mask_4) >> 0) as f64;
+    let ret = vec![v4, v3, v2, v1];
+    Ok(ret)
 }
 
 /// Type codes for the first 16 TCP options.
-fn tcp_option_code(ipv6_buff: &[u8]) -> Result<Vec<f64>> {
+fn tcp_option_code(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let options = tcp_packet.get_options();
-                    let mut ret = Vec::new();
-                    for option in options {
-                        ret.push(option.number.0 as f64);
-                    }
-                    if ret.len() < 16 {
-                        for _ in 0..(16 - ret.len()) {
-                            ret.push(-1.0);
-                        }
-                    }
-                    if ret.len() > 16 {
-                        ret = ret[0..16].to_vec();
-                    }
-                    return Ok(ret);
-                }
-                None => (),
-            }
-        }
-        None => (),
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let options = tcp_packet.get_options();
+    let mut ret = Vec::new();
+    for option in options {
+        ret.push(option.number.0 as f64);
     }
-    Ok(vec![-1.0; 16])
+    if ret.len() < 16 {
+        for _ in 0..(16 - ret.len()) {
+            ret.push(-1.0);
+        }
+    }
+    if ret.len() > 16 {
+        ret = ret[0..16].to_vec();
+    }
+    Ok(ret)
 }
 
 /// Lengths of the first 16 TCP options.
-fn tcp_option_len(ipv6_buff: &[u8]) -> Result<Vec<f64>> {
+fn tcp_option_len(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let options = tcp_packet.get_options();
-                    let mut ret = Vec::new();
-                    for option in options {
-                        let t = &option.length;
-                        // println!("{:?}", t);
-                        if t.len() != 0 {
-                            ret.push(t[0] as f64);
-                        } else {
-                            ret.push(1.0); // only header
-                        }
-                    }
-                    if ret.len() < 16 {
-                        for _ in 0..(16 - ret.len()) {
-                            ret.push(-1.0);
-                        }
-                    }
-                    // println!("{}", ret.len());
-                    if ret.len() > 16 {
-                        ret = ret[0..16].to_vec();
-                    }
-                    return Ok(ret);
-                }
-                None => (),
-            }
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let options = tcp_packet.get_options();
+    let mut ret = Vec::new();
+    for option in options {
+        let t = &option.length;
+        // println!("{:?}", t);
+        if t.len() != 0 {
+            ret.push(t[0] as f64);
+        } else {
+            ret.push(1.0); // only header
         }
-        None => (),
     }
-    Ok(vec![-1.0; 16])
+    if ret.len() < 16 {
+        for _ in 0..(16 - ret.len()) {
+            ret.push(-1.0);
+        }
+    }
+    // println!("{}", ret.len());
+    if ret.len() > 16 {
+        ret = ret[0..16].to_vec();
+    }
+    Ok(ret)
 }
 
 /// Value of the first MSS option, if present.
-fn tcp_option_mss(ipv6_buff: &[u8]) -> Result<f64> {
+fn tcp_option_mss(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let options = tcp_packet.get_options();
-                    for option in options {
-                        match option.number {
-                            TcpOptionNumbers::MSS => {
-                                let mss = SpHex::vec_4u8_to_u32(&option.data);
-                                return Ok(mss as f64);
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None => (),
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let options = tcp_packet.get_options();
+    for option in options {
+        match option.number {
+            TcpOptionNumbers::MSS => {
+                let mss = SpHex::vec_4u8_to_u32(&option.data);
+                return Ok(mss as f64);
             }
+            _ => (),
         }
-        None => (),
     }
     Ok(-1.0)
 }
 
 /// 1 if the SACK-permitted option is present, 0 otherwise.
-fn tcp_option_sackok(ipv6_buff: &[u8]) -> Result<f64> {
+fn tcp_option_sackok(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let options = tcp_packet.get_options();
-                    for option in options {
-                        match option.number {
-                            TcpOptionNumbers::SACK_PERMITTED => {
-                                return Ok(1.0);
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None => (),
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let options = tcp_packet.get_options();
+    for option in options {
+        match option.number {
+            TcpOptionNumbers::SACK_PERMITTED => {
+                return Ok(1.0);
             }
+            _ => (),
         }
-        None => (),
     }
     Ok(-1.0)
 }
 
-fn tcp_option_wscale(ipv6_buff: &[u8]) -> Result<f64> {
+fn tcp_option_wscale(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
-            match tcp_packet {
-                Some(tcp_packet) => {
-                    let options = tcp_packet.get_options();
-                    for option in options {
-                        match option.number {
-                            TcpOptionNumbers::WSCALE => {
-                                if option.data.len() > 0 {
-                                    return Ok(option.data[0] as f64);
-                                }
-                            }
-                            _ => (),
-                        }
-                    }
+    let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
+    let options = tcp_packet.get_options();
+    for option in options {
+        match option.number {
+            TcpOptionNumbers::WSCALE => {
+                if option.data.len() > 0 {
+                    return Ok(option.data[0] as f64);
                 }
-                None => (),
             }
+            _ => (),
         }
-        None => (),
     }
     Ok(-1.0)
 }
 
-fn icmpv6_type_code(ipv6_buff: &[u8]) -> Result<(f64, f64)> {
+fn icmpv6_type_code(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolErrors> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
-    match ipv6_packet {
-        Some(ipv6_packet) => {
-            let icmpv6_packet = get_icmpv6_packet(ipv6_packet.payload())?;
-            match icmpv6_packet {
-                Some(icmpv6_packet) => {
-                    return Ok((
-                        icmpv6_packet.get_icmpv6_type().0 as f64,
-                        icmpv6_packet.get_icmpv6_code().0 as f64,
-                    ));
-                }
-                None => (),
-            }
-        }
-        None => (),
-    }
-    Ok((-1.0, -1.0))
+    let icmpv6_packet = get_icmpv6_packet(ipv6_packet.payload())?;
+    Ok((
+        icmpv6_packet.get_icmpv6_type().0 as f64,
+        icmpv6_packet.get_icmpv6_code().0 as f64,
+    ))
 }
 
-pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>> {
+pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolErrors> {
     let ipv6_probe_names: Vec<&str> = vec![
         "S1", "S2", "S3", "S4", "S5", "S6", "IE1", "IE2", "NS", "U1", "TECN", "T2", "T3", "T4",
         "T5", "T6", "T7",

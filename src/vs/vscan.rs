@@ -1,4 +1,3 @@
-use anyhow::Result;
 use log::debug;
 use std::io::Read;
 use std::io::Write;
@@ -15,6 +14,7 @@ use std::time::Instant;
 use super::dbparser::Match;
 use super::dbparser::ProbesProtocol;
 use super::dbparser::ServiceProbe;
+use crate::errors::PistolErrors;
 use crate::utils::random_port;
 
 const TCP_BUFF_SIZE: usize = 4096;
@@ -27,7 +27,10 @@ fn format_send(data: &str) -> String {
     new_data
 }
 
-fn tcp_null_probe(stream: &mut TcpStream, service_probes: &[ServiceProbe]) -> Result<Vec<Match>> {
+fn tcp_null_probe(
+    stream: &mut TcpStream,
+    service_probes: &[ServiceProbe],
+) -> Result<Vec<Match>, PistolErrors> {
     let mut recv_buff = [0u8; TCP_BUFF_SIZE];
     let mut recv_all_buff = Vec::new();
     loop {
@@ -62,8 +65,8 @@ fn tcp_continue_probe(
     only_tcp_recommended: bool,
     intensity: usize,
     service_probes: &[ServiceProbe],
-) -> Result<Vec<Match>> {
-    let mut run_probe = |sp: &ServiceProbe| -> Result<Vec<Match>> {
+) -> Result<Vec<Match>, PistolErrors> {
+    let mut run_probe = |sp: &ServiceProbe| -> Result<Vec<Match>, PistolErrors> {
         let probestring = format_send(&sp.probe.probestring);
         stream.write(probestring.as_bytes())?;
         let mut recv_buff = [0u8; TCP_BUFF_SIZE];
@@ -138,8 +141,8 @@ fn udp_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
-) -> Result<Vec<Match>> {
-    let run_probe = |socket: &UdpSocket, sp: &ServiceProbe| -> Result<Vec<Match>> {
+) -> Result<Vec<Match>, PistolErrors> {
+    let run_probe = |socket: &UdpSocket, sp: &ServiceProbe| -> Result<Vec<Match>, PistolErrors> {
         let mut ret = Vec::new();
         let probestring = sp.probe.probestring.as_bytes();
         socket.send(probestring)?;
@@ -221,7 +224,7 @@ pub fn threads_vs_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
-) -> Result<(Vec<Match>, Duration)> {
+) -> Result<(Vec<Match>, Duration), PistolErrors> {
     // If the port is TCP, Nmap starts by connecting to it.
     let start_time = Instant::now();
     let tcp_dst_addr = SocketAddr::new(dst_addr, dst_port);

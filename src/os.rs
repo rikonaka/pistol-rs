@@ -1,5 +1,4 @@
 /* Remote OS Detection */
-use anyhow::Result;
 use log::debug;
 use log::warn;
 use prettytable::row;
@@ -17,8 +16,7 @@ use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
-use crate::errors::CanNotFoundSourceAddress;
-use crate::errors::OsDetectPortError;
+use crate::errors::PistolErrors;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::threads_os_probe;
 use crate::os::osscan::PistolFingerprint;
@@ -168,7 +166,7 @@ pub struct Linear {
     pub cpe: Vec<CPE>,
 }
 
-fn gen_linear() -> Result<Linear> {
+fn gen_linear() -> Result<Linear, PistolErrors> {
     let variance_json_data = include_str!("./db/nmap-os-db-ipv6/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
 
@@ -233,10 +231,10 @@ fn ipv4_os_detect(
     src_port: Option<u16>,
     top_k: usize,
     timeout: Duration,
-) -> Result<(PistolFingerprint, Vec<OsInfo>)> {
+) -> Result<(PistolFingerprint, Vec<OsInfo>), PistolErrors> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
     };
     let nmap_os_file = include_str!("./db/nmap-os-db");
     let mut nmap_os_file_lines = Vec::new();
@@ -264,7 +262,7 @@ fn ipv4_os_detect(
         );
         os_detect_ret
     } else {
-        Err(OsDetectPortError::new().into())
+        Err(PistolErrors::OsDetectPortError)
     }
 }
 
@@ -275,10 +273,10 @@ fn ipv6_os_detect(
     src_port: Option<u16>,
     top_k: usize,
     timeout: Duration,
-) -> Result<(PistolFingerprint6, Vec<OsInfo6>)> {
+) -> Result<(PistolFingerprint6, Vec<OsInfo6>), PistolErrors> {
     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
     };
     let linear = gen_linear()?;
     debug!("ipv6 gen linear parse finish");
@@ -300,7 +298,7 @@ fn ipv6_os_detect(
         );
         os_detect_ret
     } else {
-        Err(OsDetectPortError::new().into())
+        Err(PistolErrors::OsDetectPortError)
     }
 }
 
@@ -312,7 +310,7 @@ pub fn os_detect(
     top_k: usize,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<OsDetectResults> {
+) -> Result<OsDetectResults, PistolErrors> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
@@ -392,7 +390,7 @@ pub fn os_detect_raw(
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
-) -> Result<OsDetectResults> {
+) -> Result<OsDetectResults, PistolErrors> {
     let src_port = None;
     let timeout = match timeout {
         Some(t) => t,
@@ -431,7 +429,7 @@ pub fn os_detect_raw(
                     Err(e) => Err(e),
                 }
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
         IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
             Some(src_ipv6) => {
@@ -459,7 +457,7 @@ pub fn os_detect_raw(
                     Err(e) => Err(e),
                 }
             }
-            None => Err(CanNotFoundSourceAddress::new().into()),
+            None => Err(PistolErrors::CanNotFoundSourceAddress),
         },
     }
 }
@@ -474,7 +472,7 @@ mod tests {
     use crate::TEST_IPV6_LOCAL;
     use std::time::SystemTime;
     #[test]
-    fn test_os_detect() -> Result<()> {
+    fn test_os_detect() {
         // Logger::init_debug_logging()?;
         let src_ipv6 = None;
         let dst_open_tcp_port = 22;
@@ -504,7 +502,6 @@ mod tests {
         let threads_num = 8;
         let ret = os_detect(target, src_ipv6, src_port, top_k, threads_num, timeout).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
     fn test_parser() {

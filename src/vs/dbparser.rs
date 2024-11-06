@@ -1,8 +1,9 @@
-use anyhow::Result;
 use fancy_regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
+
+use crate::errors::PistolErrors;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbesProtocol {
@@ -134,7 +135,7 @@ impl ServiceProbe {
     }
 }
 
-fn ports_parser(ports: &str) -> Result<Vec<u16>> {
+fn ports_parser(ports: &str) -> Result<Vec<u16>, PistolErrors> {
     let mut ret = Vec::new();
     let ports_split: Vec<&str> = ports.split(",").map(|s| s.trim()).collect();
     for ps in ports_split {
@@ -155,7 +156,7 @@ fn ports_parser(ports: &str) -> Result<Vec<u16>> {
 
 /// Instead of getting the `Exclude` port based on the `nmap-service-probes` file,
 /// we expect the user to provide a parameter to specify this value themselves.
-pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>> {
+pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>, PistolErrors> {
     let mut ret: Vec<ServiceProbe> = Vec::new();
     let mut probe_global: Option<Probe> = None;
     let mut matchs_global: Vec<Match> = Vec::new();
@@ -340,7 +341,7 @@ impl ExcludePorts {
     }
 }
 
-pub fn nsp_exclued_parser(lines: &[String]) -> Result<ExcludePorts> {
+pub fn nsp_exclued_parser(lines: &[String]) -> Result<ExcludePorts, PistolErrors> {
     let mut ports: Vec<u16> = Vec::new();
     let mut tcp_ports: Vec<u16> = Vec::new();
     let mut udp_ports: Vec<u16> = Vec::new();

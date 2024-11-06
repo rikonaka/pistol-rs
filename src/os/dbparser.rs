@@ -1,8 +1,8 @@
-use anyhow::Result;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 
+use crate::errors::PistolErrors;
 use crate::utils::SpHex;
 
 use super::osscan::PistolFingerprint;
@@ -286,7 +286,7 @@ impl SEQDB {
             r,
         }
     }
-    pub fn parser(line: String) -> Result<SEQDB> {
+    pub fn parser(line: String) -> Result<SEQDB, PistolErrors> {
         let split_1: Vec<&str> = line.split("(").collect();
         let split_2: Vec<&str> = split_1[1].split(")").collect();
         let many_info = split_2[0];
@@ -400,7 +400,7 @@ impl OPSDB {
             r,
         }
     }
-    pub fn parser(line: String) -> Result<OPSDB> {
+    pub fn parser(line: String) -> Result<OPSDB, PistolErrors> {
         let mut map = HashMap::new();
         if line.contains("%") {
             let split_1: Vec<&str> = line.split("(").collect();
@@ -510,7 +510,7 @@ impl WINDB {
             r,
         }
     }
-    pub fn parser(line: String) -> Result<WINDB> {
+    pub fn parser(line: String) -> Result<WINDB, PistolErrors> {
         let split_1: Vec<&str> = line.split("(").collect();
         let split_2: Vec<&str> = split_1[1].split(")").collect();
         let many_info = split_2[0];
@@ -628,7 +628,7 @@ impl ECNDB {
             q,
         }
     }
-    pub fn parser(line: String) -> Result<ECNDB> {
+    pub fn parser(line: String) -> Result<ECNDB, PistolErrors> {
         let split_1: Vec<&str> = line.split("(").collect();
         let split_2: Vec<&str> = split_1[1].split(")").collect();
         let many_info = split_2[0];
@@ -792,7 +792,7 @@ impl TX {
             q,
         }
     }
-    pub fn parser(line: String) -> Result<TX> {
+    pub fn parser(line: String) -> Result<TX, PistolErrors> {
         let split_1: Vec<&str> = line.split("(").collect();
         let split_2: Vec<&str> = split_1[1].split(")").collect();
         let many_info = split_2[0];
@@ -965,7 +965,7 @@ impl U1DB {
             rud,
         }
     }
-    pub fn parser(line: String) -> Result<U1DB> {
+    pub fn parser(line: String) -> Result<U1DB, PistolErrors> {
         let split_1: Vec<&str> = line.split("(").collect();
         let split_2: Vec<&str> = split_1[1].split(")").collect();
         let many_info = split_2[0];
@@ -1068,7 +1068,7 @@ impl IEDB {
 
         IEDB { r, dfi, t, tg, cd }
     }
-    fn parser(line: String) -> Result<IEDB> {
+    fn parser(line: String) -> Result<IEDB, PistolErrors> {
         let split_1: Vec<&str> = line.split("(").collect();
         let split_2: Vec<&str> = split_1[1].split(")").collect();
         let many_info = split_2[0];
@@ -1181,7 +1181,7 @@ impl NmapOsDb {
     }
 }
 
-fn value_parser_usize(info: &str) -> Result<NmapOsDbValueTypes> {
+fn value_parser_usize(info: &str) -> Result<NmapOsDbValueTypes, PistolErrors> {
     let value_split: Vec<&str> = info.split("=").collect();
     let value = value_split[1];
     let items: Vec<&str> = value.split("|").collect();
@@ -1245,7 +1245,7 @@ fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
 /// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
-pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>> {
+pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErrors> {
     let option_string = |x: Option<String>| -> String {
         match x {
             Some(x) => x,

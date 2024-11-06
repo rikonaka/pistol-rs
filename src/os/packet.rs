@@ -1,4 +1,3 @@
-use anyhow::Result;
 use pnet::packet::icmp;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpCode;
@@ -17,6 +16,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
 use std::net::Ipv4Addr;
 
+use crate::errors::PistolErrors;
 use crate::layers::ICMP_HEADER_SIZE;
 use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
@@ -108,7 +108,7 @@ pub fn seq_packet_1_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -168,7 +168,7 @@ pub fn seq_packet_2_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
@@ -226,7 +226,7 @@ pub fn seq_packet_3_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -287,7 +287,7 @@ pub fn seq_packet_4_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
@@ -344,7 +344,7 @@ pub fn seq_packet_5_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
@@ -402,7 +402,7 @@ pub fn seq_packet_6_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
@@ -454,7 +454,11 @@ pub fn seq_packet_6_layer3(
     Ok(buff.to_vec())
 }
 
-pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> Result<Vec<u8>> {
+pub fn ie_packet_1_layer3(
+    src_ipv4: Ipv4Addr,
+    dst_ipv4: Ipv4Addr,
+    idtf: u16,
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const ICMP_DATA_SIZE: usize = 120; // and 120 bytes of 0x00 for the data payload
 
@@ -498,7 +502,11 @@ pub fn ie_packet_1_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> 
     Ok(buff.to_vec())
 }
 
-pub fn ie_packet_2_layer3(src_ipv4: Ipv4Addr, dst_ipv4: Ipv4Addr, idtf: u16) -> Result<Vec<u8>> {
+pub fn ie_packet_2_layer3(
+    src_ipv4: Ipv4Addr,
+    dst_ipv4: Ipv4Addr,
+    idtf: u16,
+) -> Result<Vec<u8>, PistolErrors> {
     // 150 bytes of data is sent
     let mut rng = rand::thread_rng();
     const ICMP_DATA_SIZE: usize = 150; // 150 bytes of data is sent
@@ -547,7 +555,7 @@ pub fn ecn_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = WSCALE_SIZE
@@ -622,7 +630,7 @@ pub fn t2_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -681,7 +689,7 @@ pub fn t3_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -740,7 +748,7 @@ pub fn t4_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -799,7 +807,7 @@ pub fn t5_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -858,7 +866,7 @@ pub fn t6_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -917,7 +925,7 @@ pub fn t7_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     let mut rng = rand::thread_rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
@@ -978,7 +986,7 @@ pub fn udp_packet_layer3(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, PistolErrors> {
     const UDP_DATA_SIZE: usize = 300;
     let mut buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     // ip header

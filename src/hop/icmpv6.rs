@@ -1,4 +1,3 @@
-use anyhow::Result;
 use chrono::Utc;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
@@ -14,6 +13,7 @@ use rand::Rng;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
+use crate::errors::PistolErrors;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
@@ -26,7 +26,7 @@ pub fn send_icmpv6_ping_packet(
     dst_ipv6: Ipv6Addr,
     ttl: u8,
     timeout: Duration,
-) -> Result<bool> {
+) -> Result<bool, PistolErrors> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::thread_rng();
     // ipv6 header

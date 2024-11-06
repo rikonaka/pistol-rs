@@ -1,4 +1,3 @@
-use anyhow::Result;
 use log::debug;
 use log::warn;
 use num_cpus;
@@ -11,10 +10,10 @@ use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
 
-use crate::errors::CanNotFoundRouterAddress;
+use crate::errors::PistolErrors;
+use crate::route::SystemNetCache;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
-use crate::SYSTEM_CACHE;
 
 pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in interfaces() {
@@ -42,15 +41,18 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     false
 }
 
-pub fn find_source_addr(src_addr: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<Option<Ipv4Addr>> {
+pub fn find_source_addr(
+    src_addr: Option<IpAddr>,
+    dst_ipv4: Ipv4Addr,
+) -> Result<Option<Ipv4Addr>, PistolErrors> {
     match src_addr {
         Some(s) => match s {
             IpAddr::V6(_) => (),
             IpAddr::V4(s) => return Ok(Some(s)),
         },
         None => {
-            let sc = SYSTEM_CACHE.lock().expect("can not lock the network cache");
-            match sc.search_route(dst_ipv4.into())? {
+            let snc = SystemNetCache::init()?;
+            match snc.search_route(dst_ipv4.into())? {
                 Some(i) => {
                     for ipnetwork in i.ips {
                         match ipnetwork.ip() {
@@ -66,9 +68,9 @@ pub fn find_source_addr(src_addr: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<
                 }
                 None => {
                     // return the route ip
-                    let route = match sc.default_ipv4_route() {
+                    let route = match snc.default_ipv4_route() {
                         Some(d) => d,
-                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                        None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
                     if let IpAddr::V4(route_ipv4) = route.via {
                         for interface in interfaces() {
@@ -90,15 +92,18 @@ pub fn find_source_addr(src_addr: Option<IpAddr>, dst_ipv4: Ipv4Addr) -> Result<
     Ok(None)
 }
 
-pub fn find_source_addr6(src_addr: Option<IpAddr>, dst_ipv6: Ipv6Addr) -> Result<Option<Ipv6Addr>> {
+pub fn find_source_addr6(
+    src_addr: Option<IpAddr>,
+    dst_ipv6: Ipv6Addr,
+) -> Result<Option<Ipv6Addr>, PistolErrors> {
     match src_addr {
         Some(s) => match s {
             IpAddr::V4(_) => (),
             IpAddr::V6(s) => return Ok(Some(s)),
         },
         None => {
-            let sc = SYSTEM_CACHE.lock().expect("can not lock the network cache");
-            match sc.search_route(dst_ipv6.into())? {
+            let snc = SystemNetCache::init()?;
+            match snc.search_route(dst_ipv6.into())? {
                 Some(i) => {
                     for ipnetwork in i.ips {
                         match ipnetwork.ip() {
@@ -118,9 +123,9 @@ pub fn find_source_addr6(src_addr: Option<IpAddr>, dst_ipv6: Ipv6Addr) -> Result
                 }
                 None => {
                     // return the route ip
-                    let route = match sc.default_ipv6_route() {
+                    let route = match snc.default_ipv6_route() {
                         Some(d) => d,
-                        None => return Err(CanNotFoundRouterAddress::new().into()),
+                        None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
                     if let IpAddr::V6(route_ipv6) = route.via {
                         for interface in interfaces() {
@@ -237,7 +242,7 @@ impl SpHex {
         }
         ret
     }
-    pub fn decode(&self) -> Result<u32> {
+    pub fn decode(&self) -> Result<u32, PistolErrors> {
         match &self.hex {
             Some(hex_str) => match hex::decode(hex_str) {
                 Ok(d) => Ok(SpHex::vec_4u8_to_u32(&d)),
