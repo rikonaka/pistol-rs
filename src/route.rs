@@ -63,23 +63,17 @@ pub struct DefaultRoute {
     pub dev: NetworkInterface, // Device interface name
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RouteAddr {
     IpNetwork(IpNetwork),
     IpAddr(IpAddr),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Route {
-    pub dst: RouteAddr,        // Destination network or host address
-    pub dev: NetworkInterface, // Device interface name
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteTable {
-    pub default_ipv4_route: Option<DefaultRoute>,
-    pub default_ipv6_route: Option<DefaultRoute>,
-    pub routes: Vec<Route>,
+    pub default_route: Option<DefaultRoute>,
+    pub default_route6: Option<DefaultRoute>,
+    pub routes: HashMap<RouteAddr, NetworkInterface>,
 }
 
 impl RouteTable {
@@ -109,7 +103,7 @@ impl RouteTable {
 
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
-        let mut routes = Vec::new();
+        let mut routes = HashMap::new();
 
         // regex
         let default_route_re =
@@ -188,8 +182,7 @@ impl RouteTable {
                                 continue; // not raise error here
                             }
                         };
-                        let route = Route { dst, dev };
-                        routes.push(route);
+                        routes.insert(dst, dev);
                     }
                     None => warn!("line: [{}] route_re no match", line),
                 }
@@ -197,8 +190,8 @@ impl RouteTable {
         }
 
         let rt = RouteTable {
-            default_ipv4_route,
-            default_ipv6_route,
+            default_route: default_ipv4_route,
+            default_route6: default_ipv6_route,
             routes,
         };
         Ok(rt)
@@ -625,8 +618,10 @@ impl NeighborCache {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemNetCache {
-    pub route_table: RouteTable,
-    pub neighbor_cache: HashMap<IpAddr, MacAddr>,
+    pub default_route: Option<DefaultRoute>,
+    pub default_route6: Option<DefaultRoute>,
+    pub routes: HashMap<RouteAddr, NetworkInterface>,
+    pub neighbor: HashMap<IpAddr, MacAddr>,
 }
 
 impl SystemNetCache {
@@ -636,54 +631,48 @@ impl SystemNetCache {
         let neighbor_cache = NeighborCache::init()?;
         debug!("neighbor cache [{}] done", neighbor_cache.len());
         let snc = SystemNetCache {
-            route_table,
-            neighbor_cache,
+            default_route: route_table.default_route,
+            default_route6: route_table.default_route6,
+            routes: route_table.routes,
+            neighbor: neighbor_cache,
         };
         Ok(snc)
     }
     pub fn search_mac(&self, ipaddr: IpAddr) -> Option<MacAddr> {
-        let mac = match self.neighbor_cache.get(&ipaddr) {
+        let mac = match self.neighbor.get(&ipaddr) {
             Some(m) => Some(*m),
             None => None,
         };
         mac
     }
-    // pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
-    //     self.neighbor_cache.insert(ipaddr, mac);
-    // }
-    pub fn search_route(&self, ipaddr: IpAddr) -> Result<Option<NetworkInterface>, PistolErrors> {
+    pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
+        self.neighbor.insert(ipaddr, mac);
+    }
+    pub fn search_route(&self, ipaddr: IpAddr) -> Option<NetworkInterface> {
         debug!("search route: {}", ipaddr);
-        let route_table = &self.route_table;
-        for route in &route_table.routes {
-            let dst = &route.dst;
+        for (dst, dev) in &self.routes {
             match dst {
                 RouteAddr::IpAddr(dst) => {
                     if *dst == ipaddr {
                         debug!(
                             "found route interface: {}, ip: {}, ipn: {}",
-                            route.dev.name, ipaddr, dst
+                            dev.name, ipaddr, dst
                         );
-                        return Ok(Some(route.dev.clone()));
+                        return Some(dev.clone());
                     }
                 }
                 RouteAddr::IpNetwork(dst) => {
                     if dst.contains(ipaddr) {
                         debug!(
                             "found route interface: {}, ip: {}, ipn: {}",
-                            route.dev.name, ipaddr, dst
+                            dev.name, ipaddr, dst
                         );
-                        return Ok(Some(route.dev.clone()));
+                        return Some(dev.clone());
                     }
                 }
             }
         }
-        Ok(None)
-    }
-    pub fn default_ipv4_route(&self) -> Option<DefaultRoute> {
-        self.route_table.default_ipv4_route.clone()
-    }
-    pub fn default_ipv6_route(&self) -> Option<DefaultRoute> {
-        self.route_table.default_ipv6_route.clone()
+        None
     }
 }
 
@@ -693,160 +682,13 @@ mod tests {
     // use std::time::Instant;
     use crate::Logger;
     use pnet::datalink::interfaces;
-    use std::fs;
-    #[test]
-    fn test_macos_route_table() {
-        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
-            let file_path = "./src/test/macos_routetable.txt";
-            let contents = fs::read_to_string(file_path)?;
-            let ret = contents
-                .split("\n")
-                .map(|x| x.to_string())
-                .filter(|v| v.trim().len() > 0)
-                .collect();
-            Ok(ret)
-        };
-
-        let ipv6_addr_bsd_fix = |dst_str: &str| -> Result<String, PistolErrors> {
-            // Remove the %em0 .etc
-            // fe80::%lo0/10 => fe80::/10
-            // fe80::20c:29ff:fe1f:6f71%lo0 => fe80::20c:29ff:fe1f:6f71
-            if dst_str.contains("%") {
-                let bsd_fix_re =
-                    Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
-                match bsd_fix_re.captures(dst_str) {
-                    Some(caps) => {
-                        let addr = &caps["subnet"];
-                        if dst_str.contains("/") {
-                            let mask = &caps["mask"];
-                            let output = addr.to_string() + "/" + mask;
-                            return Ok(output);
-                        } else {
-                            return Ok(addr.to_string());
-                        }
-                    }
-                    None => {
-                        warn!("line: [{}] bsd_fix_re no match", dst_str);
-                        Ok(String::new())
-                    }
-                }
-            } else {
-                Ok(dst_str.to_string())
-            }
-        };
-
-        let mut default_ipv4_route = None;
-        let mut default_ipv6_route = None;
-        let mut routes = Vec::new();
-
-        // regex
-        let default_route_re =
-            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([\s\w]+)?").unwrap();
-        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)").unwrap();
-
-        for line in system_route_lines().unwrap() {
-            let default_route_judge = |line: &str| -> bool { line.contains("default") };
-            if default_route_judge(&line) {
-                match default_route_re.captures(&line) {
-                    Some(caps) => {
-                        let via_str = &caps["via"];
-                        let via_str = ipv6_addr_bsd_fix(via_str).unwrap();
-                        let via: IpAddr = match via_str.parse() {
-                            Ok(v) => v,
-                            Err(e) => {
-                                warn!("parse via error: {e}");
-                                continue;
-                            }
-                        };
-                        let dev_str = &caps["dev"];
-                        let dev = match find_interface_by_name(dev_str) {
-                            Some(i) => i,
-                            None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
-                                warn!("invaild default route string: [{}]", line);
-                                continue; // not raise error here
-                            }
-                        };
-
-                        let mut is_ipv4 = true;
-                        if via_str.contains(":") {
-                            is_ipv4 = false;
-                        }
-
-                        let default_route = DefaultRoute { via, dev };
-
-                        if is_ipv4 {
-                            default_ipv4_route = Some(default_route);
-                        } else {
-                            default_ipv6_route = Some(default_route);
-                        }
-                    }
-                    None => warn!("line: [{}] default_route_re no match", line),
-                }
-            } else {
-                match route_re.captures(&line) {
-                    Some(caps) => {
-                        let dst_str = &caps["subnet"];
-
-                        let dst_str = ipv6_addr_bsd_fix(dst_str).unwrap();
-                        let dst = if dst_str.contains("/") {
-                            let dst = match IpNetwork::from_str(&dst_str) {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    warn!("dst parse error:  {e}");
-                                    continue;
-                                }
-                            };
-                            let dst = RouteAddr::IpNetwork(dst);
-                            dst
-                        } else {
-                            let dst: IpAddr = match dst_str.parse() {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    warn!("dst parse error:  {e}");
-                                    continue;
-                                }
-                            };
-                            let dst = RouteAddr::IpAddr(dst);
-                            dst
-                        };
-                        let dev_str = &caps["dev"];
-                        let dev = match find_interface_by_name(dev_str) {
-                            Some(i) => i,
-                            None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
-                                warn!("invaild route string: [{}]", line);
-                                continue; // not raise error here
-                            }
-                        };
-                        let route = Route { dst, dev };
-                        routes.push(route);
-                    }
-                    None => warn!("line: [{}] route_re no match", line),
-                }
-            }
-        }
-
-        let rt = RouteTable {
-            default_ipv4_route,
-            default_ipv6_route,
-            routes,
-        };
-        println!("{:?}", rt);
-    }
     #[test]
     fn test_network_cache() {
         let _ = Logger::init_debug_logging();
-        let nc = SystemNetCache::init().unwrap();
-        println!(
-            "default ipv4 route: {:?}",
-            nc.route_table.default_ipv4_route
-        );
-        println!(
-            "default ipv6 route: {:?}",
-            nc.route_table.default_ipv6_route
-        );
-        println!("neighbor cache: {:?}", nc.neighbor_cache);
+        let snc = SystemNetCache::init().unwrap();
+        println!("default ipv4 route: {:?}", snc.default_route);
+        println!("default ipv6 route: {:?}", snc.default_route6);
+        println!("neighbor cache: {:?}", snc.neighbor);
         // println!("{:?}", nc);
     }
     #[test]

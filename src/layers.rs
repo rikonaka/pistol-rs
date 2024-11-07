@@ -50,7 +50,11 @@ use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
 use crate::utils::get_threads_pool;
-use crate::SYSTEM_NET_CACHE;
+use crate::utils::system_cache_default_route;
+use crate::utils::system_cache_default_route6;
+use crate::utils::system_cache_search_mac;
+use crate::utils::system_cache_search_route;
+use crate::utils::system_cache_update;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const IPV4_HEADER_SIZE: usize = 20;
@@ -674,17 +678,15 @@ pub fn system_route(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
 ) -> Result<(MacAddr, NetworkInterface), PistolErrors> {
-    let snc_read_only = &SYSTEM_NET_CACHE;
-
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
         None => {
-            let interface = match snc_read_only.search_route(dst_ipv4.into())? {
+            let interface = match system_cache_search_route(dst_ipv4.into()) {
                 Some(i) => i,
                 None => {
                     // The system route table not contain this ipaddr,
                     // so send it to the default route.
-                    let default_route = match snc_read_only.default_ipv4_route() {
+                    let default_route = match system_cache_default_route() {
                         Some(d) => d,
                         None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
@@ -695,7 +697,7 @@ pub fn system_route(
         }
     };
 
-    let dst_mac = match snc_read_only.search_mac(dst_ipv4.into()) {
+    let dst_mac = match system_cache_search_mac(dst_ipv4.into()) {
         Some(m) => {
             debug!("search dst mac locally success");
             m
@@ -708,23 +710,21 @@ pub fn system_route(
                     (Some(m), _rtt) => m,
                     (_, _) => return Err(PistolErrors::CanNotFoundMacAddress),
                 };
-                // snc_read_only.update_neighbor_cache(dst_ipv4.into(), dst_mac)?;
-                // update_system_net_cache(dst_ipv4.into(), dst_mac);
+                system_cache_update(dst_ipv4.into(), dst_mac);
                 dst_mac
             } else {
                 debug!("search dst mac via default route ip...");
-                let default_route = match snc_read_only.default_ipv4_route() {
+                let default_route = match system_cache_default_route() {
                     Some(r) => r,
                     None => return Err(PistolErrors::CanNotFoundRouterAddress),
                 };
                 let dst_mac = match default_route.via {
                     IpAddr::V4(default_route_ipv4) => {
-                        let dst_mac = match snc_read_only.search_mac(default_route_ipv4.into()) {
+                        let dst_mac = match system_cache_search_mac(default_route_ipv4.into()) {
                             Some(m) => m,
                             None => match arp(src_ipv4, default_route_ipv4, timeout)? {
                                 (Some(m), _rtt) => {
-                                    // snc_read_only.update_neighbor_cache(default_route_ipv4.into(), m)?;
-                                    // update_system_net_cache(default_route_ipv4.into(), m);
+                                    system_cache_update(default_route_ipv4.into(), m);
                                     m
                                 }
                                 (_, _) => return Err(PistolErrors::CanNotFoundRouteMacAddress),
@@ -738,7 +738,6 @@ pub fn system_route(
             }
         }
     };
-
     Ok((dst_mac, interface))
 }
 
@@ -994,17 +993,15 @@ pub fn system_route6(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
 ) -> Result<(MacAddr, NetworkInterface), PistolErrors> {
-    let snc_read_only = &SYSTEM_NET_CACHE;
-
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
         None => {
-            let interface = match snc_read_only.search_route(dst_ipv6.into())? {
+            let interface = match system_cache_search_route(dst_ipv6.into()) {
                 Some(i) => i,
                 None => {
                     // The system route table not contain this ipaddr,
                     // so send it to the default route.
-                    let default_route = match snc_read_only.default_ipv6_route() {
+                    let default_route = match system_cache_default_route6() {
                         Some(d) => d,
                         None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
@@ -1015,7 +1012,7 @@ pub fn system_route6(
         }
     };
 
-    let dst_mac = match snc_read_only.search_mac(dst_ipv6.into()) {
+    let dst_mac = match system_cache_search_mac(dst_ipv6.into()) {
         Some(m) => m,
         None => {
             if dst_ipv6_in_local(dst_ipv6) {
@@ -1023,22 +1020,20 @@ pub fn system_route6(
                     (Some(m), _rtt) => m,
                     (_, _) => return Err(PistolErrors::CanNotFoundMacAddress),
                 };
-                // snc_read_only.update_neighbor_cache(dst_ipv6.into(), dst_mac)?;
-                // update_system_net_cache(dst_ipv6.into(), dst_mac);
+                system_cache_update(dst_ipv6.into(), dst_mac);
                 dst_mac
             } else {
-                let default_route = match snc_read_only.default_ipv6_route() {
+                let default_route = match system_cache_default_route6() {
                     Some(r) => r,
                     None => return Err(PistolErrors::CanNotFoundRouterAddress),
                 };
                 let dst_mac = match default_route.via {
                     IpAddr::V6(default_route_ipv6) => {
-                        let dst_mac = match snc_read_only.search_mac(default_route_ipv6.into()) {
+                        let dst_mac = match system_cache_search_mac(default_route_ipv6.into()) {
                             Some(m) => m,
                             None => match ndp_rs(src_ipv6, timeout)? {
                                 (Some(m), _rtt) => {
-                                    // snc_read_only.update_neighbor_cache(default_route_ipv6.into(), m)?;
-                                    // update_system_net_cache(default_route_ipv6.into(), m);
+                                    system_cache_update(default_route_ipv6.into(), m);
                                     m
                                 }
                                 (_, _) => return Err(PistolErrors::CanNotFoundRouteMacAddress),
@@ -1052,7 +1047,6 @@ pub fn system_route6(
             }
         }
     };
-
     Ok((dst_mac, interface))
 }
 

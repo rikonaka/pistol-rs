@@ -582,6 +582,7 @@ pub fn scan(
     };
 
     let mut timeout_hm: HashMap<IpAddr, HashMap<u16, Instant>> = HashMap::new();
+    let mut port_scan_ret = PortScanResults::new();
 
     for host in target.hosts {
         let dst_addr = host.addr;
@@ -663,7 +664,6 @@ pub fn scan(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut port_scan_ret = PortScanResults::new();
 
     for (dst_ipv4, dst_port, v) in iter {
         match timeout_hm.get(&dst_ipv4) {
@@ -675,12 +675,6 @@ pub fn scan(
                         dst_port,
                         i.elapsed().as_secs_f32()
                     );
-                    // println!(
-                    //     "ip: {}, port: {}, elapsed: {:.2}s",
-                    //     dst_ipv4,
-                    //     dst_port,
-                    //     i.elapsed().as_secs_f32()
-                    // );
                 }
                 None => (),
             },
@@ -1361,8 +1355,8 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
 
-        let start = Ipv4Addr::new(192, 168, 5, 1);
-        let end = Ipv4Addr::new(192, 168, 5, 200);
+        let start = Ipv4Addr::new(192, 168, 72, 1);
+        let end = Ipv4Addr::new(192, 168, 72, 200);
         let subnet = CrossIpv4Pool::new(start, end).unwrap();
         // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
         let mut hosts = vec![];
@@ -1373,9 +1367,9 @@ mod tests {
         let target = Target::new(hosts);
         let tests = 1;
 
-        // let start_time = Instant::now();
+        let start_time = Instant::now();
         let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
-        // println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
         println!("{}", ret);
+        println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
     }
 }

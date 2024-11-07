@@ -2,6 +2,7 @@ use log::debug;
 use log::warn;
 use num_cpus;
 use pnet::datalink::interfaces;
+use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use rand::Rng;
 use std::net::IpAddr;
@@ -11,9 +12,49 @@ use std::time::Duration;
 use threadpool::ThreadPool;
 
 use crate::errors::PistolErrors;
-use crate::route::SystemNetCache;
+use crate::route::DefaultRoute;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
+use crate::SYSTEM_NET_CACHE;
+
+pub fn system_cache_search_route(dst_addr: IpAddr) -> Option<NetworkInterface> {
+    // release the lock when leaving the function
+    let snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("can not lock SYSTEM_NET_CACHE");
+    snc.search_route(dst_addr)
+}
+
+pub fn system_cache_search_mac(dst_addr: IpAddr) -> Option<MacAddr> {
+    // release the lock when leaving the function
+    let snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("can not lock SYSTEM_NET_CACHE");
+    snc.search_mac(dst_addr)
+}
+
+pub fn system_cache_default_route() -> Option<DefaultRoute> {
+    // release the lock when leaving the function
+    let snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("can not lock SYSTEM_NET_CACHE");
+    snc.default_route.clone()
+}
+
+pub fn system_cache_default_route6() -> Option<DefaultRoute> {
+    // release the lock when leaving the function
+    let snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("can not lock SYSTEM_NET_CACHE");
+    snc.default_route6.clone()
+}
+
+pub fn system_cache_update(addr: IpAddr, mac: MacAddr) {
+    let mut snc = SYSTEM_NET_CACHE
+        .lock()
+        .expect("can not lock SYSTEM_NET_CACHE");
+    snc.update_neighbor_cache(addr, mac)
+}
 
 pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in interfaces() {
@@ -51,8 +92,7 @@ pub fn find_source_addr(
             IpAddr::V4(s) => return Ok(Some(s)),
         },
         None => {
-            let snc = SystemNetCache::init()?;
-            match snc.search_route(dst_ipv4.into())? {
+            match system_cache_search_route(dst_ipv4.into()) {
                 Some(i) => {
                     for ipnetwork in i.ips {
                         match ipnetwork.ip() {
@@ -68,7 +108,7 @@ pub fn find_source_addr(
                 }
                 None => {
                     // return the route ip
-                    let route = match snc.default_ipv4_route() {
+                    let route = match system_cache_default_route() {
                         Some(d) => d,
                         None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
@@ -102,8 +142,7 @@ pub fn find_source_addr6(
             IpAddr::V6(s) => return Ok(Some(s)),
         },
         None => {
-            let snc = SystemNetCache::init()?;
-            match snc.search_route(dst_ipv6.into())? {
+            match system_cache_search_route(dst_ipv6.into()) {
                 Some(i) => {
                     for ipnetwork in i.ips {
                         match ipnetwork.ip() {
@@ -123,7 +162,7 @@ pub fn find_source_addr6(
                 }
                 None => {
                     // return the route ip
-                    let route = match snc.default_ipv6_route() {
+                    let route = match system_cache_default_route6() {
                         Some(d) => d,
                         None => return Err(PistolErrors::CanNotFoundRouterAddress),
                     };
