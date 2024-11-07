@@ -1,4 +1,4 @@
-use chrono::Local;
+// use chrono::Local;
 use dns_lookup::lookup_host;
 use log::debug;
 use pnet::datalink;
@@ -45,7 +45,7 @@ use std::time::Instant;
 use subnetwork::Ipv6;
 
 use crate::errors::PistolErrors;
-use crate::route::SystemNetCache;
+// use crate::route::SystemNetCache;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
@@ -669,26 +669,12 @@ fn arp(
     }
 }
 
-fn get_system_net_cache() -> SystemNetCache {
-    let snc = SYSTEM_NET_CACHE
-        .lock()
-        .expect("lock SYSTEM_NET_CACHE failed");
-    snc.clone()
-}
-
-fn update_system_net_cache(dst_addr: IpAddr, dst_mac: MacAddr) {
-    let mut snc = SYSTEM_NET_CACHE
-        .lock()
-        .expect("lock SYSTEM_NET_CACHE failed");
-    snc.update_neighbor_cache(dst_addr, dst_mac);
-}
-
 pub fn system_route(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
 ) -> Result<(MacAddr, NetworkInterface), PistolErrors> {
-    let snc_read_only = get_system_net_cache();
+    let snc_read_only = &SYSTEM_NET_CACHE;
 
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
@@ -723,7 +709,7 @@ pub fn system_route(
                     (_, _) => return Err(PistolErrors::CanNotFoundMacAddress),
                 };
                 // snc_read_only.update_neighbor_cache(dst_ipv4.into(), dst_mac)?;
-                update_system_net_cache(dst_ipv4.into(), dst_mac);
+                // update_system_net_cache(dst_ipv4.into(), dst_mac);
                 dst_mac
             } else {
                 debug!("search dst mac via default route ip...");
@@ -738,7 +724,7 @@ pub fn system_route(
                             None => match arp(src_ipv4, default_route_ipv4, timeout)? {
                                 (Some(m), _rtt) => {
                                     // snc_read_only.update_neighbor_cache(default_route_ipv4.into(), m)?;
-                                    update_system_net_cache(default_route_ipv4.into(), m);
+                                    // update_system_net_cache(default_route_ipv4.into(), m);
                                     m
                                 }
                                 (_, _) => return Err(PistolErrors::CanNotFoundRouteMacAddress),
@@ -763,24 +749,24 @@ pub fn layer3_ipv4_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
-    let system_time = Local::now();
-    println!(
-        "layer3 {}, start: {}",
-        dst_ipv4,
-        system_time.timestamp_millis()
-    );
+    // let system_time = Local::now();
+    // println!(
+    //     "layer3 {}, start: {}",
+    //     dst_ipv4,
+    //     system_time.timestamp_millis()
+    // );
+    debug!("layer3 src: {}, dst: {}", src_ipv4, dst_ipv4);
+    let (dst_mac, interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
+    debug!("convert dst ipv6: {} to mac: {}", dst_ipv4, dst_mac);
+    // let ret = system_route(src_ipv4, dst_ipv4, timeout);
+    // let (dst_mac, interface) = ret?;
+    // let system_time2 = Local::now();
+    // println!(
+    //     "layer3 {}, end: {}",
+    //     dst_ipv4,
+    //     system_time2.timestamp_millis()
+    // );
 
-    debug!("src: {}, dst: {}", src_ipv4, dst_ipv4);
-    // let (dst_mac, interface) = layer3_ipv4_system_route(src_ipv4, dst_ipv4, timeout)?;
-    let ret = system_route(src_ipv4, dst_ipv4, timeout);
-    let system_time2 = Local::now();
-    println!(
-        "layer3 {}, end: {}",
-        dst_ipv4,
-        system_time2.timestamp_millis()
-    );
-
-    let (dst_mac, interface) = ret?;
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
@@ -1008,7 +994,7 @@ pub fn system_route6(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
 ) -> Result<(MacAddr, NetworkInterface), PistolErrors> {
-    let snc_read_only = get_system_net_cache();
+    let snc_read_only = &SYSTEM_NET_CACHE;
 
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
@@ -1038,7 +1024,7 @@ pub fn system_route6(
                     (_, _) => return Err(PistolErrors::CanNotFoundMacAddress),
                 };
                 // snc_read_only.update_neighbor_cache(dst_ipv6.into(), dst_mac)?;
-                update_system_net_cache(dst_ipv6.into(), dst_mac);
+                // update_system_net_cache(dst_ipv6.into(), dst_mac);
                 dst_mac
             } else {
                 let default_route = match snc_read_only.default_ipv6_route() {
@@ -1052,7 +1038,7 @@ pub fn system_route6(
                             None => match ndp_rs(src_ipv6, timeout)? {
                                 (Some(m), _rtt) => {
                                     // snc_read_only.update_neighbor_cache(default_route_ipv6.into(), m)?;
-                                    update_system_net_cache(default_route_ipv6.into(), m);
+                                    // update_system_net_cache(default_route_ipv6.into(), m);
                                     m
                                 }
                                 (_, _) => return Err(PistolErrors::CanNotFoundRouteMacAddress),
@@ -1077,7 +1063,7 @@ pub fn layer3_ipv6_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
-    debug!("src: {}, dst: {}", src_ipv6, dst_ipv6);
+    debug!("layer3 src: {}, dst: {}", src_ipv6, dst_ipv6);
     let (dst_mac, interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
     debug!("use this interface to send data: {}", interface.name);

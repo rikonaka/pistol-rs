@@ -12,13 +12,12 @@ use std::net::IpAddr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
-use anyhow::Result;
-
-pub use self::dbparser::ExcludePorts;
+use crate::errors::PistolErrors;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::vs::dbparser::nsp_exclued_parser;
 use crate::vs::dbparser::nsp_parser;
+use crate::vs::dbparser::ExcludePorts;
 use crate::vs::dbparser::Match;
 use crate::vs::vscan::threads_vs_probe;
 use crate::Target;
@@ -95,7 +94,7 @@ pub fn vs_scan(
     intensity: usize,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<VsScanResults> {
+) -> Result<VsScanResults, PistolErrors> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
@@ -182,7 +181,7 @@ pub fn vs_scan_raw(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<Services> {
+) -> Result<Services, PistolErrors> {
     let nsp_str = include_str!("./db/nmap-service-probes");
     let mut nsp_lines = Vec::new();
     for l in nsp_str.lines() {
@@ -225,7 +224,7 @@ mod tests {
     // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     #[test]
-    fn test_vs_detect() -> Result<()> {
+    fn test_vs_detect() {
         // Logger::init_debug_logging()?;
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
         let target = Target::new(vec![host]);
@@ -243,8 +242,8 @@ mod tests {
             intensity,
             threads_num,
             timeout,
-        )?;
+        )
+        .unwrap();
         println!("{}", ret);
-        Ok(())
     }
 }

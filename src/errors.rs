@@ -63,4 +63,6 @@ pub enum PistolErrors {
     SubnetworkErrors(#[from] subnetwork::SubnetworkErrors),
     #[error("log error")]
     SetLoggerError(#[from] log::SetLoggerError),
+    #[error("hex error")]
+    FromHexError(#[from] hex::FromHexError),
 }

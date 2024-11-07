@@ -9,13 +9,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fs::metadata;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::Read;
-use std::io::Write;
 use std::net::IpAddr;
-use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 
@@ -635,51 +629,17 @@ pub struct SystemNetCache {
     pub neighbor_cache: HashMap<IpAddr, MacAddr>,
 }
 
-pub const NET_CACHE_FILE: &str = ".pistol_net_cache";
-
-impl Drop for SystemNetCache {
-    fn drop(&mut self) {
-        // write the newest config file to disk
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(NET_CACHE_FILE)
-            .expect("can not open file");
-
-        let snc_string = serde_json::to_string(self).expect("serde config to string failed");
-        file.write_all(snc_string.as_bytes())
-            .expect("write serde to disk failed");
-        debug!("write config file to disk {NET_CACHE_FILE} done");
-    }
-}
-
 impl SystemNetCache {
     pub fn init() -> Result<SystemNetCache, PistolErrors> {
-        let net_cache_path = Path::new(NET_CACHE_FILE);
-        if net_cache_path.exists() {
-            let mt = metadata(NET_CACHE_FILE)?;
-            debug!("net cache config file exists [{}]", mt.len());
-            let mut file = File::open(NET_CACHE_FILE)?;
-            let mut snc_string = String::new();
-            file.read_to_string(&mut snc_string)?;
-            let snc: SystemNetCache = serde_json::from_str(&snc_string)?;
-            Ok(snc)
-        } else {
-            let route_table = RouteTable::init()?;
-            debug!("route table [{}] done", route_table.routes.len());
-            let neighbor_cache = NeighborCache::init()?;
-            debug!("neighbor cache [{}] done", neighbor_cache.len());
-            let snc = SystemNetCache {
-                route_table,
-                neighbor_cache,
-            };
-
-            let mut file = File::create(NET_CACHE_FILE)?;
-            let snc_string = serde_json::to_string(&snc)?;
-            file.write_all(snc_string.as_bytes())?;
-            Ok(snc)
-        }
+        let route_table = RouteTable::init()?;
+        debug!("route table [{}] done", route_table.routes.len());
+        let neighbor_cache = NeighborCache::init()?;
+        debug!("neighbor cache [{}] done", neighbor_cache.len());
+        let snc = SystemNetCache {
+            route_table,
+            neighbor_cache,
+        };
+        Ok(snc)
     }
     pub fn search_mac(&self, ipaddr: IpAddr) -> Option<MacAddr> {
         let mac = match self.neighbor_cache.get(&ipaddr) {
@@ -688,9 +648,9 @@ impl SystemNetCache {
         };
         mac
     }
-    pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
-        self.neighbor_cache.insert(ipaddr, mac);
-    }
+    // pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
+    //     self.neighbor_cache.insert(ipaddr, mac);
+    // }
     pub fn search_route(&self, ipaddr: IpAddr) -> Result<Option<NetworkInterface>, PistolErrors> {
         debug!("search route: {}", ipaddr);
         let route_table = &self.route_table;
@@ -876,7 +836,7 @@ mod tests {
     }
     #[test]
     fn test_network_cache() {
-        Logger::init_debug_logging();
+        let _ = Logger::init_debug_logging();
         let nc = SystemNetCache::init().unwrap();
         println!(
             "default ipv4 route: {:?}",

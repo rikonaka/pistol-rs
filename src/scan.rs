@@ -57,6 +57,8 @@ pub enum PortStatus {
     Unreachable,
     ClosedOrFiltered,
     Error,
+    // pistol new
+    Offline,
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +191,7 @@ impl fmt::Display for PortScanResults {
                         PortStatus::Unreachable => String::from("unreachable"),
                         PortStatus::ClosedOrFiltered => String::from("closed_or_filtered"),
                         PortStatus::Error => String::from("error"),
+                        PortStatus::Offline => String::from("offline"),
                     };
                     status_str_vec.push(s_str);
                 }
@@ -302,15 +305,15 @@ fn ipv4_arp_scan(
 ) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress),
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+        None => return Err(PistolErrors::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(CanNotFoundMacAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundMacAddress),
     };
     arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
 }
@@ -319,19 +322,19 @@ pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
     timeout: Duration,
-) -> Result<Option<MacAddr>> {
+) -> Result<Option<MacAddr>, PistolErrors> {
     let dst_mac = MacAddr::broadcast();
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(CanNotFoundSourceAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
-        None => return Err(CanNotFoundInterface::new().into()),
+        None => return Err(PistolErrors::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(CanNotFoundMacAddress::new().into()),
+        None => return Err(PistolErrors::CanNotFoundMacAddress),
     };
     match arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
         Ok((mac, _)) => Ok(mac),
@@ -346,7 +349,7 @@ pub fn arp_scan(
     src_addr: Option<IpAddr>,
     threads_num: usize,
     timeout: Option<Duration>,
-) -> Result<ArpScanResults> {
+) -> Result<ArpScanResults, PistolErrors> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut ret = ArpScanResults::new();
 
@@ -438,7 +441,7 @@ fn threads_scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let (scan_ret, rtt) = match method {
         ScanMethod::Connect => {
             tcp::send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
@@ -495,7 +498,7 @@ fn threads_scan6(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let (scan_ret, rtt) = match method {
         ScanMethod::Connect => {
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
@@ -543,7 +546,7 @@ pub fn scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     let mut threads_num = 0;
     for host in &target.hosts {
         threads_num += host.ports.len();
@@ -603,7 +606,7 @@ pub fn scan(
                             }
                             None => {
                                 warn!("can not found src addr");
-                                return Err(CanNotFoundSourceAddress::new().into());
+                                return Err(PistolErrors::CanNotFoundSourceAddress);
                             }
                         };
 
@@ -632,7 +635,7 @@ pub fn scan(
                         recv_size += 1;
                         let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
                             Some(s) => s,
-                            None => return Err(CanNotFoundSourceAddress::new().into()),
+                            None => return Err(PistolErrors::CanNotFoundSourceAddress),
                         };
                         pool.execute(move || {
                             let scan_ret = threads_scan6(
@@ -677,10 +680,15 @@ pub fn scan(
                 // println!("rtt: {:.2}", rtt.as_secs_f32());
                 port_scan_ret.insert(dst_ipv4.into(), dst_port, port_status, Some(rtt));
             }
-            Err(e) => {
-                warn!("scan error: {}", e);
-                port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Error, None);
-            }
+            Err(e) => match e {
+                PistolErrors::CanNotFoundMacAddress => {
+                    port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Offline, None);
+                }
+                _ => {
+                    warn!("scan error: {}", e);
+                    port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Error, None);
+                }
+            },
         }
     }
     port_scan_ret.enrichment();
@@ -706,7 +714,7 @@ pub fn tcp_connect_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Connect,
@@ -726,7 +734,7 @@ pub fn tcp_connect_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Connect,
         dst_addr,
@@ -757,7 +765,7 @@ pub fn tcp_syn_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Syn,
@@ -777,7 +785,7 @@ pub fn tcp_syn_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Syn,
         dst_addr,
@@ -809,7 +817,7 @@ pub fn tcp_fin_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Fin,
@@ -829,7 +837,7 @@ pub fn tcp_fin_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Fin,
         dst_addr,
@@ -854,7 +862,7 @@ pub fn tcp_ack_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Ack,
@@ -874,7 +882,7 @@ pub fn tcp_ack_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Ack,
         dst_addr,
@@ -898,7 +906,7 @@ pub fn tcp_null_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Null,
@@ -918,7 +926,7 @@ pub fn tcp_null_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Null,
         dst_addr,
@@ -942,7 +950,7 @@ pub fn tcp_xmas_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Xmas,
@@ -962,7 +970,7 @@ pub fn tcp_xmas_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Xmas,
         dst_addr,
@@ -987,7 +995,7 @@ pub fn tcp_window_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Window,
@@ -1007,7 +1015,7 @@ pub fn tcp_window_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Window,
         dst_addr,
@@ -1032,7 +1040,7 @@ pub fn tcp_maimon_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Maimon,
@@ -1052,7 +1060,7 @@ pub fn tcp_maimon_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Maimon,
         dst_addr,
@@ -1081,7 +1089,7 @@ pub fn tcp_idle_scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Idle,
@@ -1103,7 +1111,7 @@ pub fn tcp_idle_scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Idle,
         dst_addr,
@@ -1130,7 +1138,7 @@ pub fn udp_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults> {
+) -> Result<PortScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Udp,
@@ -1150,7 +1158,7 @@ pub fn udp_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
         ScanMethod::Udp,
         dst_addr,
@@ -1172,7 +1180,7 @@ pub fn scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration)> {
+) -> Result<(PortStatus, Duration), PistolErrors> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -1185,7 +1193,7 @@ pub fn scan_raw(
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
                 Some(s) => s,
-                None => return Err(CanNotFoundSourceAddress::new().into()),
+                None => return Err(PistolErrors::CanNotFoundSourceAddress),
             };
             threads_scan(
                 method,
@@ -1201,7 +1209,7 @@ pub fn scan_raw(
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
                 Some(s) => s,
-                None => return Err(CanNotFoundSourceAddress::new().into()),
+                None => return Err(PistolErrors::CanNotFoundSourceAddress),
             };
             threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
         }
@@ -1212,14 +1220,13 @@ pub fn scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    // use crate::Logger;
     use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use subnetwork::CrossIpv4Pool;
     use subnetwork::Ipv4Pool;
     #[test]
-    fn test_arp_scan_subnet() -> Result<()> {
-        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24")?;
+    fn test_arp_scan_subnet() {
+        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
         let mut hosts: Vec<Host> = vec![];
         for ip in subnet {
             let host = Host::new(ip.into(), None);
@@ -1230,100 +1237,92 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         // let print_result = false;
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout)?;
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_arp_scan_subnet_new() -> Result<()> {
-        let target: Target = Target::from_subnet("192.168.1.1/24", None)?;
+    fn test_arp_scan_subnet_new() {
+        let target: Target = Target::from_subnet("192.168.1.1/24", None).unwrap();
         let threads_num = 300;
         let timeout = Some(Duration::new(1, 0));
         // let print_result = false;
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout)?;
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_tcp_connect_scan() -> Result<()> {
+    fn test_tcp_connect_scan() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(0, 500));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests)?;
+        let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
 
         // let target: Target = Target::from_subnet("192.168.1.1/24", Some(vec![22]))?;
         // let ret = tcp_connect_scan(target, src_ipv4, src_port, threads_num, timeout).unwrap();
         // println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_tcp_syn_scan() -> Result<()> {
+    fn test_tcp_syn_scan() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests)?;
+        let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
         // println!("{:#?}", ret.get(&dst_ipv4.into()).unwrap().status);
-        Ok(())
     }
     #[test]
-    fn test_tcp_fin_scan() -> Result<()> {
+    fn test_tcp_fin_scan() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_fin_scan(target, src_ipv4, src_port, timeout, tests)?;
+        let ret = tcp_fin_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_tcp_ack_scan() -> Result<()> {
+    fn test_tcp_ack_scan() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests)?;
+        let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_tcp_null_scan() -> Result<()> {
+    fn test_tcp_null_scan() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_null_scan(target, src_ipv4, src_port, timeout, tests)?;
+        let ret = tcp_null_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_udp_scan() -> Result<()> {
+    fn test_udp_scan() {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = udp_scan(target, src_ipv4, src_port, timeout, tests)?;
+        let ret = udp_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
-        Ok(())
     }
     #[test]
-    fn test_scan_timeout() -> Result<()> {
+    fn test_scan_timeout() {
         // scanme.nmap.org
         let dst_ip = Ipv4Addr::new(192, 168, 5, 4);
         let timeout = Some(Duration::new(1, 0));
@@ -1342,19 +1341,18 @@ mod tests {
                 println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
             }
         };
-        Ok(())
     }
     #[test]
-    fn test_scan_timeout2() -> Result<()> {
-        // Logger::init_debug_logging()?;
-
+    fn test_scan_timeout2() {
+        // use crate::Logger;
+        // let _ = Logger::init_debug_logging().unwrap();
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
 
-        let start = Ipv4Addr::new(192, 168, 5, 3);
-        let end = Ipv4Addr::new(192, 168, 5, 5);
-        let subnet = CrossIpv4Pool::new(start, end)?;
+        let start = Ipv4Addr::new(192, 168, 5, 1);
+        let end = Ipv4Addr::new(192, 168, 5, 200);
+        let subnet = CrossIpv4Pool::new(start, end).unwrap();
         // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
         let mut hosts = vec![];
         for ip in subnet {
@@ -1364,10 +1362,9 @@ mod tests {
         let target = Target::new(hosts);
         let tests = 1;
 
-        let start_time = Instant::now();
-        let _ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests)?;
-        // println!("{}", ret);
-        println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
-        Ok(())
+        // let start_time = Instant::now();
+        let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        // println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
+        println!("{}", ret);
     }
 }

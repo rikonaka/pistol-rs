@@ -9,7 +9,7 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::Arc;
-use std::sync::Mutex;
+// use std::sync::Mutex;
 use subnetwork::Ipv4Pool;
 
 pub mod flood;
@@ -35,9 +35,9 @@ const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
 const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e4);
 
-static SYSTEM_NET_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
+static SYSTEM_NET_CACHE: Lazy<Arc<SystemNetCache>> = Lazy::new(|| {
     let sncw = SystemNetCache::init().expect("can not init the system net cache");
-    Arc::new(Mutex::new(sncw))
+    Arc::new(sncw)
 });
 
 const DEFAULT_TIMEOUT: u64 = 3;
