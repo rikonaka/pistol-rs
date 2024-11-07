@@ -57,7 +57,7 @@ pub enum PortStatus {
     Unreachable,
     ClosedOrFiltered,
     Error,
-    // pistol new
+    // pistol new, for offline host
     Offline,
 }
 
@@ -67,6 +67,8 @@ pub struct PortScanResults {
     pub rtts: HashMap<IpAddr, HashMap<u16, Vec<Duration>>>,
     pub avg_rtt: Option<Duration>,
     pub open_ports: usize,
+    pub start_time: Instant,
+    pub elapsed: Option<Duration>,
 }
 
 impl PortScanResults {
@@ -76,6 +78,8 @@ impl PortScanResults {
             rtts: HashMap::new(),
             avg_rtt: None,
             open_ports: 0,
+            start_time: Instant::now(),
+            elapsed: None,
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Vec<PortStatus>>> {
@@ -112,6 +116,7 @@ impl PortScanResults {
             }
         }
         self.open_ports = open_ports;
+        self.elapsed = Some(self.start_time.elapsed());
     }
     fn insert(
         &mut self,
@@ -203,8 +208,14 @@ impl fmt::Display for PortScanResults {
             Some(avg_rtt) => avg_rtt,
             None => Duration::new(0, 0),
         };
+        let total_time = match self.elapsed {
+            Some(ed) => ed.as_secs_f32(),
+            None => 0.0,
+        };
+
         let summary = format!(
-            "avg rtt: {:.1}ms\nopen ports: {}",
+            "total time: {:.2}s\navg rtt: {:.2}ms\nopen ports: {}",
+            total_time,
             avg_rtt.as_secs_f32() * 1000.0,
             self.open_ports
         );
