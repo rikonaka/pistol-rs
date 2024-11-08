@@ -50,6 +50,7 @@ pub fn system_cache_default_route6() -> Option<DefaultRoute> {
 }
 
 pub fn system_cache_update(addr: IpAddr, mac: MacAddr) {
+    // release the lock when leaving the function
     let mut snc = SYSTEM_NET_CACHE
         .lock()
         .expect("can not lock SYSTEM_NET_CACHE");

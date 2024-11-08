@@ -748,6 +748,7 @@ pub fn layer3_ipv4_send(
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
 ) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
+    // use chrono::Local;
     // let system_time = Local::now();
     // println!(
     //     "layer3 {}, start: {}",
@@ -758,13 +759,13 @@ pub fn layer3_ipv4_send(
     let (dst_mac, interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv4, dst_mac);
     // let ret = system_route(src_ipv4, dst_ipv4, timeout);
-    // let (dst_mac, interface) = ret?;
     // let system_time2 = Local::now();
     // println!(
     //     "layer3 {}, end: {}",
     //     dst_ipv4,
     //     system_time2.timestamp_millis()
     // );
+    // let (dst_mac, interface) = ret?;
 
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);

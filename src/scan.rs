@@ -61,60 +61,64 @@ pub enum PortStatus {
     Offline,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PortScanResults {
-    pub scans: HashMap<IpAddr, HashMap<u16, Vec<PortStatus>>>,
-    pub rtts: HashMap<IpAddr, HashMap<u16, Vec<Duration>>>,
-    pub avg_rtt: Option<Duration>,
+    pub port_status: PortStatus,
+    pub port_rtt: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScanResults {
+    pub scans: HashMap<IpAddr, HashMap<u16, Vec<PortScanResults>>>,
+    pub avg_time_cost: f64,
     pub open_ports: usize,
     pub start_time: Instant,
     pub elapsed: Option<Duration>,
+    pub tests: usize,
 }
 
-impl PortScanResults {
-    pub fn new() -> PortScanResults {
-        PortScanResults {
+impl ScanResults {
+    pub fn new() -> ScanResults {
+        ScanResults {
             scans: HashMap::new(),
-            rtts: HashMap::new(),
-            avg_rtt: None,
+            avg_time_cost: 0.0,
             open_ports: 0,
             start_time: Instant::now(),
             elapsed: None,
+            tests: 0,
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Vec<PortStatus>>> {
-        self.scans.get(k)
+    pub fn get(&self, k: &IpAddr) -> Option<HashMap<u16, Vec<PortScanResults>>> {
+        match self.scans.get(k) {
+            Some(ph) => Some(ph.clone()),
+            None => None,
+        }
     }
     pub fn enrichment(&mut self) {
         // avg rtt
-        let mut total_rtt = 0.0;
+        let mut total_cost = 0.0;
         let mut total_num = 0;
-        for (_ip, rtts0) in &self.rtts {
-            for (_port, rtts1) in rtts0 {
-                for rtt in rtts1 {
-                    total_rtt += rtt.as_secs_f64();
-                    total_num += 1;
-                }
-            }
-        }
-        let avg_rtt = if total_num != 0 {
-            let avg_rtt = total_rtt / total_num as f64;
-            let avg_rtt = Duration::from_secs_f64(avg_rtt);
-            Some(avg_rtt)
-        } else {
-            None
-        };
-        self.avg_rtt = avg_rtt;
-
+        // open ports
         let mut open_ports = 0;
         for (_ip, ports_status) in &self.scans {
-            for (_port, status) in ports_status {
-                if status.contains(&PortStatus::Open) {
-                    open_ports += 1;
-                    break;
+            for (_port, psr) in ports_status {
+                self.tests = psr.len();
+                for ps in psr {
+                    match ps.port_status {
+                        PortStatus::Open => {
+                            open_ports += 1;
+                            break;
+                        }
+                        _ => (),
+                    }
+                    total_cost += ps.port_rtt.as_secs_f64();
+                    if ps.port_rtt != Duration::new(0, 0) {
+                        total_num += 1;
+                    }
                 }
             }
         }
+        self.avg_time_cost = total_cost / total_num as f64;
         self.open_ports = open_ports;
         self.elapsed = Some(self.start_time.elapsed());
     }
@@ -122,72 +126,56 @@ impl PortScanResults {
         &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
-        scan_ret: PortStatus,
-        rtt: Option<Duration>,
+        port_status: PortStatus,
+        port_rtt: Duration,
     ) {
+        let psr = PortScanResults {
+            port_status,
+            port_rtt,
+        };
+
         match self.scans.get_mut(&dst_addr) {
             Some(s) => match s.get_mut(&dst_port) {
                 Some(d) => {
-                    d.push(scan_ret);
+                    d.push(psr);
                 }
                 None => {
-                    let d = vec![scan_ret];
+                    let d = vec![psr];
                     s.insert(dst_port, d);
                 }
             },
             None => {
                 let mut s = HashMap::new();
-                s.insert(dst_port, vec![scan_ret]);
+                s.insert(dst_port, vec![psr]);
                 self.scans.insert(dst_addr, s);
-            }
-        }
-        match self.rtts.get_mut(&dst_addr) {
-            Some(s) => match s.get_mut(&dst_port) {
-                Some(d) => match rtt {
-                    Some(r) => {
-                        d.push(r);
-                    }
-                    None => (),
-                },
-                None => {
-                    let d = match rtt {
-                        Some(r) => vec![r],
-                        None => vec![],
-                    };
-                    s.insert(dst_port, d);
-                }
-            },
-            None => {
-                let mut s = HashMap::new();
-                let d = match rtt {
-                    Some(r) => vec![r],
-                    None => vec![],
-                };
-                s.insert(dst_port, d);
-                self.rtts.insert(dst_addr.into(), s);
             }
         }
     }
 }
 
-impl fmt::Display for PortScanResults {
+impl fmt::Display for ScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![Cell::new("Scan Results")
             .style_spec("c")
-            .with_hspan(3)]));
+            .with_hspan(5)]));
+
+        table.add_row(
+            row![c -> "id", c -> "addr", c-> "status", c -> "port", c -> format!("cost(tests:{})", self.tests)],
+        );
 
         // convert hashmap to btreemap here
         let scans = &self.scans;
-        let scans: BTreeMap<IpAddr, &HashMap<u16, Vec<PortStatus>>> =
+        let scans: BTreeMap<IpAddr, &HashMap<u16, Vec<PortScanResults>>> =
             scans.into_iter().map(|(i, h)| (*i, h)).collect();
         for (ip, ports_status) in scans {
-            let ports_status: BTreeMap<u16, &Vec<PortStatus>> =
+            let ports_status: BTreeMap<u16, &Vec<PortScanResults>> =
                 ports_status.into_iter().map(|(p, s)| (*p, s)).collect();
-            for (port, status) in ports_status {
+            let mut ports_rtt = 0.0;
+            for (i, (port, psr)) in ports_status.into_iter().enumerate() {
                 let mut status_str_vec = Vec::new();
-                for s in status {
-                    let s_str = match s {
+                for p in psr {
+                    let s_str = match p.port_status {
                         PortStatus::Open => String::from("open"),
                         PortStatus::OpenOrFiltered => String::from("open_or_filtered"),
                         PortStatus::Filtered => String::from("filtered"),
@@ -199,27 +187,25 @@ impl fmt::Display for PortScanResults {
                         PortStatus::Offline => String::from("offline"),
                     };
                     status_str_vec.push(s_str);
+                    ports_rtt += p.port_rtt.as_secs_f64();
                 }
                 let status_str = status_str_vec.join("|");
-                table.add_row(row![c -> ip, c-> port, c -> status_str]);
+                let ports_rtt_str = format!("{:.2}ms", ports_rtt * 1000.0);
+                table.add_row(row![c -> i, c -> ip, c-> port, c -> status_str, c-> ports_rtt_str ]);
             }
         }
-        let avg_rtt = match self.avg_rtt {
-            Some(avg_rtt) => avg_rtt,
-            None => Duration::new(0, 0),
-        };
         let total_time = match self.elapsed {
             Some(ed) => ed.as_secs_f32(),
             None => 0.0,
         };
 
         let summary = format!(
-            "total time: {:.2}s\navg rtt: {:.2}ms\nopen ports: {}",
+            "total used time: {:.2}s\navg time cost: {:.2}ms\nopen ports: {}",
             total_time,
-            avg_rtt.as_secs_f32() * 1000.0,
+            self.avg_time_cost * 1000.0,
             self.open_ports
         );
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
     }
 }
@@ -557,10 +543,10 @@ pub fn scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     let mut threads_num = 0;
     for host in &target.hosts {
-        threads_num += host.ports.len();
+        threads_num += host.ports.len() * tests;
     }
 
     let pool = get_threads_pool(threads_num);
@@ -581,8 +567,7 @@ pub fn scan(
         }
     };
 
-    let mut timeout_hm: HashMap<IpAddr, HashMap<u16, Instant>> = HashMap::new();
-    let mut port_scan_ret = PortScanResults::new();
+    let mut port_scan_ret = ScanResults::new();
 
     for host in target.hosts {
         let dst_addr = host.addr;
@@ -592,24 +577,6 @@ pub fn scan(
                     for _ in 0..tests {
                         let tx = tx.clone();
                         recv_size += 1;
-
-                        /* debug codes */
-                        debug!(
-                            "scan method {:?}, ip: {}, port: {}",
-                            method, dst_ipv4, dst_port
-                        );
-                        let start = Instant::now();
-                        match timeout_hm.get_mut(&dst_ipv4.into()) {
-                            Some(hm) => {
-                                hm.insert(dst_port, start);
-                            }
-                            None => {
-                                let mut port_instant = HashMap::new();
-                                port_instant.insert(dst_port, start);
-                                timeout_hm.insert(dst_ipv4.into(), port_instant);
-                            }
-                        }
-                        /* debug codes */
 
                         let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
                             Some(s) => {
@@ -623,6 +590,7 @@ pub fn scan(
                         };
 
                         pool.execute(move || {
+                            let cost = Instant::now();
                             let scan_ret = threads_scan(
                                 method,
                                 dst_ipv4,
@@ -633,7 +601,7 @@ pub fn scan(
                                 zombie_port,
                                 timeout,
                             );
-                            match tx.send((dst_addr, dst_port, scan_ret)) {
+                            match tx.send((dst_addr, dst_port, scan_ret, cost)) {
                                 _ => (),
                             }
                         });
@@ -650,10 +618,11 @@ pub fn scan(
                             None => return Err(PistolErrors::CanNotFoundSourceAddress),
                         };
                         pool.execute(move || {
+                            let cost = Instant::now();
                             let scan_ret = threads_scan6(
                                 method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
                             );
-                            match tx.send((dst_addr, dst_port, scan_ret)) {
+                            match tx.send((dst_addr, dst_port, scan_ret, cost)) {
                                 _ => (),
                             }
                         });
@@ -665,33 +634,29 @@ pub fn scan(
 
     let iter = rx.into_iter().take(recv_size);
 
-    for (dst_ipv4, dst_port, v) in iter {
-        match timeout_hm.get(&dst_ipv4) {
-            Some(port_instant) => match port_instant.get(&dst_port) {
-                Some(i) => {
-                    debug!(
-                        "ip: {}, port: {}, elapsed: {:.2}s",
-                        dst_ipv4,
-                        dst_port,
-                        i.elapsed().as_secs_f32()
-                    );
-                }
-                None => (),
-            },
-            None => (),
-        }
+    for (dst_ipv4, dst_port, v, cost) in iter {
         match v {
             Ok((port_status, rtt)) => {
                 // println!("rtt: {:.2}", rtt.as_secs_f32());
-                port_scan_ret.insert(dst_ipv4.into(), dst_port, port_status, Some(rtt));
+                port_scan_ret.insert(dst_ipv4.into(), dst_port, port_status, rtt);
             }
             Err(e) => match e {
                 PistolErrors::CanNotFoundMacAddress => {
-                    port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Offline, None);
+                    port_scan_ret.insert(
+                        dst_ipv4.into(),
+                        dst_port,
+                        PortStatus::Offline,
+                        cost.elapsed(),
+                    );
                 }
                 _ => {
                     warn!("scan error: {}", e);
-                    port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Error, None);
+                    port_scan_ret.insert(
+                        dst_ipv4.into(),
+                        dst_port,
+                        PortStatus::Error,
+                        cost.elapsed(),
+                    );
                 }
             },
         }
@@ -719,7 +684,7 @@ pub fn tcp_connect_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Connect,
@@ -770,7 +735,7 @@ pub fn tcp_syn_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Syn,
@@ -822,7 +787,7 @@ pub fn tcp_fin_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Fin,
@@ -867,7 +832,7 @@ pub fn tcp_ack_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Ack,
@@ -911,7 +876,7 @@ pub fn tcp_null_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Null,
@@ -955,7 +920,7 @@ pub fn tcp_xmas_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Xmas,
@@ -1000,7 +965,7 @@ pub fn tcp_window_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Window,
@@ -1045,7 +1010,7 @@ pub fn tcp_maimon_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Maimon,
@@ -1094,7 +1059,7 @@ pub fn tcp_idle_scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Idle,
@@ -1143,7 +1108,7 @@ pub fn udp_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PortScanResults, PistolErrors> {
+) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
         ScanMethod::Udp,
@@ -1355,8 +1320,8 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
 
-        let start = Ipv4Addr::new(192, 168, 72, 1);
-        let end = Ipv4Addr::new(192, 168, 72, 200);
+        let start = Ipv4Addr::new(192, 168, 5, 1);
+        let end = Ipv4Addr::new(192, 168, 5, 100);
         let subnet = CrossIpv4Pool::new(start, end).unwrap();
         // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
         let mut hosts = vec![];
@@ -1365,7 +1330,7 @@ mod tests {
             hosts.push(host);
         }
         let target = Target::new(hosts);
-        let tests = 1;
+        let tests = 4;
 
         let start_time = Instant::now();
         let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
