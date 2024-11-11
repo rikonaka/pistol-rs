@@ -1170,8 +1170,6 @@ pub fn threads_os_probe6(
         if class.len() > 0 {
             let class = class[0].join(" | ");
             let cpe = linear.cpe[i].cpe.join(" ");
-            // debug!("linear cpe class: {}", class);
-            // debug!("linear cpe cpe: {}", cpe);
             let dr = OsInfo6 {
                 info: info.to_string(),
                 class,
@@ -1346,7 +1344,6 @@ pub fn threads_os_probe6(
         let ret = vec![];
         ret
     };
-    debug!("fingerprint:\n{}", fingerprint.nmap_format());
     Ok((fingerprint, ret))
 }
 

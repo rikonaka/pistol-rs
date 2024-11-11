@@ -1644,21 +1644,14 @@ pub fn threads_os_probe(
     };
 
     // Use seq to judge target is alive or not.
-    debug!("parse seqx");
     let seqx = seq_fingerprint(&ap);
     match seqx {
         Ok(seqx) => {
-            debug!("parse opsx");
             let opsx = ops_fingerprint(&ap)?;
-            debug!("parse winx");
             let winx = win_fingerprint(&ap)?;
-            debug!("parse ecnx");
             let ecnx = ecn_fingerprint(&ap)?;
-            debug!("parse t1x-t7x");
             let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap)?;
-            debug!("parse u1x");
             let u1x = u1_fingerprint(&ap)?;
-            debug!("parse iex");
             let iex = ie_fingerprint(&ap)?;
 
             debug!("generate the fingerprint");
@@ -1711,8 +1704,6 @@ pub fn threads_os_probe(
                     detect_rets.push(os_info);
                 }
 
-                debug!("ret len: {}", detect_rets.len());
-                debug!("fingerprint:\n{}", fingerprint.nmap_format());
                 Ok((fingerprint, detect_rets))
             } else {
                 Err(PistolErrors::OsDetectResultsNullError)

@@ -171,50 +171,78 @@ use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use anyhow::Result;
+use subnetwork::CrossIpv4Pool;
 
-fn main() -> Result<()> {
+fn main() {
     // When using scanning, please use a real local address to get the return packet.
     // And for flood attacks, please consider using a fake address.
     // If the value here is None, the programme will automatically look up the available addresses from the existing interfaces on the device.
+    // In some complex network environments, if the program cannot automatically identify the source IP address, you can set the source IP address manually here.
     let src_ipv4 = None;
     // If the value of `source port` is `None`, the program will generate the source port randomly.
     let src_port = None;
-    // The destination address is required.
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-    let threads_num = 8;
     let timeout = Some(Duration::new(1, 0));
-    // Test with an open port `22` and a closed port `99`.
-    let host = Host::new(dst_ipv4.into(), Some(vec![22, 99]));
-    // Users should build the `target` themselves.
-    let target = Target::new(vec![host]);
+    let start = Ipv4Addr::new(192, 168, 5, 1);
+    let end = Ipv4Addr::new(192, 168, 5, 10);
+    // The destination address is from 192.168.5.1 to 192.168.5.10.
+    let subnet = CrossIpv4Pool::new(start, end).unwrap();
+    let mut hosts = vec![];
+    for ip in subnet {
+        // Test with a example port `22`
+        let host = Host::new(ip.into(), Some(vec![22]));
+        hosts.push(host);
+    }
+    let target = Target::new(hosts);
     // Number of tests
-    let tests = 4;
+    let tests = 2;
     let ret = tcp_syn_scan(
         target,
         src_ipv4,
         src_port,
-        threads_num,
         timeout,
         tests
     ).unwrap();
     println!("{}", ret);
-    Ok(())
 }
 ```
 
 ### Output
 
 ```
-+----------------+------+-----------------------------+
-|                    Scan Results                     |
-+----------------+------+-----------------------------+
-| 192.168.72.134 |  22  |     open|open|open|open     |
-+----------------+------+-----------------------------+
-| 192.168.72.134 |  99  | closed|closed|closed|closed |
-+----------------+------+-----------------------------+
-| avg rtt: 51.5ms                                     |
-| open ports: 1                                       |
-+----------------+------+-----------------------------+
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|                                    Scan Results (tests:2)                                     |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|    id     |     addr     |   port    |                   status                   | avg cost  |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     1     | 192.168.5.1  |    22     | OP(0)OF(0)F(2)UF(0)C(0)UR(0)CF(0)E(0)OL(0) | 1061.39ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     2     | 192.168.5.2  |    22     | OP(0)OF(0)F(0)UF(0)C(2)UR(0)CF(0)E(0)OL(0) |  74.26ms  |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     3     | 192.168.5.3  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1079.59ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     4     | 192.168.5.4  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1077.55ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     5     | 192.168.5.5  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1094.39ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     6     | 192.168.5.6  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1093.97ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     7     | 192.168.5.7  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1093.10ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     8     | 192.168.5.8  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1093.42ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|     9     | 192.168.5.9  |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1090.77ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+|    10     | 192.168.5.10 |    22     | OP(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1089.91ms |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+| NOTE:                                                                                         |
+| OP: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,                                                  |
+| UF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,                                                   |
+| CF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE.                                                 |
++-----------+--------------+-----------+--------------------------------------------+-----------+
+| total used time: 1177.12ms                                                                    |
+| avg time cost: 984.83ms                                                                       |
+| open ports: 0                                                                                 |
++-----------+--------------+-----------+--------------------------------------------+-----------+
 ```
 
 Or
@@ -226,12 +254,12 @@ use std::time::Duration;
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
+    let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 1);
     let dst_port = 80;
     let src_ipv4 = None;
     let src_port = None;
     let timeout = Some(Duration::new(1, 0));
-    let (port_status, _rtt) = tcp_syn_ping_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
+    let (port_status, _time_cost) = tcp_syn_scan_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
     println!("{:?}", port_status);
     Ok(())
 }

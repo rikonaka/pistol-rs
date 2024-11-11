@@ -3,8 +3,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PistolErrors {
-    #[error("can not found router address")]
-    CanNotFoundRouterAddress,
     /* OS DETECT ERRORS */
     #[error("calculation of diff vec failed, the input vec length is not enough")]
     CalcDiffFailed,
@@ -32,6 +30,10 @@ pub enum PistolErrors {
     TsValIsNull,
     #[error("system time error")]
     SystemTimeError(#[from] std::time::SystemTimeError),
+    #[error("os db parser error: {name}-{line}")]
+    OsDbParseError { name: String, line: String },
+
+    /* SCAN ERRORS */
     #[error("idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is: all zeros, try another proxy")]
     IdleScanAllZeroError {
         zombie_ipv4: Ipv4Addr,
@@ -39,9 +41,11 @@ pub enum PistolErrors {
     },
     #[error("serde json error")]
     SerdeJsonError(#[from] serde_json::Error),
+
     /* SERVICE DETECT ERRORS */
     #[error("parser int error")]
     ParseIntError(#[from] std::num::ParseIntError),
+
     /* LAYERS ERRORS */
     #[error("create datalink channel failed")]
     CreateDatalinkChannelFailed,
@@ -53,9 +57,13 @@ pub enum PistolErrors {
     CanNotFoundInterface,
     #[error("can not found the source address, please set it maunal")]
     CanNotFoundSourceAddress,
+    #[error("can not found router address")]
+    CanNotFoundRouterAddress,
+
     /* ROUTE ERRORS */
     #[error("subnetwork error")]
     RegexError(#[from] regex::Error),
+
     /* OTHER ERRORS */
     #[error("std error")]
     IOError(#[from] std::io::Error),

@@ -487,8 +487,6 @@ impl NeighborCache {
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
-                    debug!("neighbor captures addr: {}", &caps["addr"]);
-                    debug!("neighbor captures mac: {}", &caps["mac"]);
                     let addr: IpAddr = match caps["addr"].parse() {
                         Ok(a) => a,
                         Err(e) => {
@@ -544,8 +542,6 @@ impl NeighborCache {
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
-                    debug!("neighbor captures addr: {}", &caps["addr"]);
-                    debug!("neighbor captures mac: {}", &caps["mac"]);
                     let addr_str = &caps["addr"];
                     let addr_str = ipv6_addr_bsd_fix(addr_str)?;
                     let addr: IpAddr = match addr_str.parse() {
@@ -591,8 +587,6 @@ impl NeighborCache {
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
-                    debug!("neighbor captures addr: {}", &caps["addr"]);
-                    debug!("neighbor captures mac: {}", &caps["mac"]);
                     let addr: IpAddr = match caps["addr"].parse() {
                         Ok(a) => a,
                         Err(e) => {
@@ -649,24 +643,15 @@ impl SystemNetCache {
         self.neighbor.insert(ipaddr, mac);
     }
     pub fn search_route(&self, ipaddr: IpAddr) -> Option<NetworkInterface> {
-        debug!("search route: {}", ipaddr);
         for (dst, dev) in &self.routes {
             match dst {
                 RouteAddr::IpAddr(dst) => {
                     if *dst == ipaddr {
-                        debug!(
-                            "found route interface: {}, ip: {}, ipn: {}",
-                            dev.name, ipaddr, dst
-                        );
                         return Some(dev.clone());
                     }
                 }
                 RouteAddr::IpNetwork(dst) => {
                     if dst.contains(ipaddr) {
-                        debug!(
-                            "found route interface: {}, ip: {}, ipn: {}",
-                            dev.name, ipaddr, dst
-                        );
                         return Some(dev.clone());
                     }
                 }

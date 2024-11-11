@@ -15,10 +15,8 @@ pub fn ipv4_get_hops(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
 ) -> Result<u8, PistolErrors> {
-    debug!("30 hops max");
     for ttl in 1..=30 {
         let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, ttl, timeout)?;
-        debug!("ttl: {} = {}", ttl, ret);
         if ret {
             debug!("ipv4 get hops: {}", ttl);
             return Ok(ttl);
@@ -32,10 +30,8 @@ pub fn ipv6_get_hops(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
 ) -> Result<u8, PistolErrors> {
-    debug!("30 hops max");
     for ttl in 1..=30 {
         let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, ttl, timeout)?;
-        debug!("ttl: {} = {}", ttl, ret);
         if ret {
             debug!("ipv6 get hops: {}", ttl);
             return Ok(ttl);
@@ -53,7 +49,10 @@ mod tests {
     use crate::TEST_IPV6_LOCAL;
     #[test]
     fn test_get_hops() {
-        let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
+        // use crate::Logger;
+        // let _ = Logger::init_debug_logging();
+        // let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let src_ipv4 = find_source_addr(None, dst_ipv4).unwrap();
         match src_ipv4 {
             Some(src_ipv4) => {

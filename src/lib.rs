@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-use log::debug;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
@@ -89,7 +88,6 @@ impl Ipv4CheckMethods for Ipv4Addr {
         } else {
             false
         };
-        debug!("ip: {}, is_global_x: {}", self, !is_private);
         !is_private
     }
 }
@@ -106,7 +104,6 @@ impl Ipv6CheckMethods for Ipv6Addr {
         } else {
             false
         };
-        debug!("ip: {}, is_global_x: {}", self, !is_local);
         !is_local
     }
 }

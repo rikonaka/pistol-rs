@@ -1,5 +1,4 @@
 /* Scan */
-use log::debug;
 use log::warn;
 use pnet::datalink::MacAddr;
 use prettytable::row;
@@ -64,16 +63,16 @@ pub enum PortStatus {
 #[derive(Debug, Clone, Copy)]
 pub struct PortScanResults {
     pub port_status: PortStatus,
-    pub port_rtt: Duration,
+    pub port_time_cost: Duration,
 }
 
 #[derive(Debug, Clone)]
 pub struct ScanResults {
     pub scans: HashMap<IpAddr, HashMap<u16, Vec<PortScanResults>>>,
     pub avg_time_cost: f64,
+    pub total_time_cost: f64,
     pub open_ports: usize,
     pub start_time: Instant,
-    pub elapsed: Option<Duration>,
     pub tests: usize,
 }
 
@@ -82,9 +81,9 @@ impl ScanResults {
         ScanResults {
             scans: HashMap::new(),
             avg_time_cost: 0.0,
+            total_time_cost: 0.0,
             open_ports: 0,
             start_time: Instant::now(),
-            elapsed: None,
             tests: 0,
         }
     }
@@ -111,8 +110,8 @@ impl ScanResults {
                         }
                         _ => (),
                     }
-                    total_cost += ps.port_rtt.as_secs_f64();
-                    if ps.port_rtt != Duration::new(0, 0) {
+                    total_cost += ps.port_time_cost.as_secs_f64();
+                    if ps.port_time_cost != Duration::new(0, 0) {
                         total_num += 1;
                     }
                 }
@@ -120,18 +119,18 @@ impl ScanResults {
         }
         self.avg_time_cost = total_cost / total_num as f64;
         self.open_ports = open_ports;
-        self.elapsed = Some(self.start_time.elapsed());
+        self.total_time_cost = self.start_time.elapsed().as_secs_f64();
     }
     fn insert(
         &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
         port_status: PortStatus,
-        port_rtt: Duration,
+        port_time_cost: Duration,
     ) {
         let psr = PortScanResults {
             port_status,
-            port_rtt,
+            port_time_cost,
         };
 
         match self.scans.get_mut(&dst_addr) {
@@ -156,52 +155,90 @@ impl ScanResults {
 impl fmt::Display for ScanResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("Scan Results")
-            .style_spec("c")
-            .with_hspan(5)]));
+        table.add_row(Row::new(vec![Cell::new(&format!(
+            "Scan Results (tests:{})",
+            self.tests
+        ))
+        .style_spec("c")
+        .with_hspan(5)]));
 
-        table.add_row(
-            row![c -> "id", c -> "addr", c-> "status", c -> "port", c -> format!("cost(tests:{})", self.tests)],
-        );
+        table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "avg cost"]);
 
         // convert hashmap to btreemap here
         let scans = &self.scans;
         let scans: BTreeMap<IpAddr, &HashMap<u16, Vec<PortScanResults>>> =
             scans.into_iter().map(|(i, h)| (*i, h)).collect();
-        for (ip, ports_status) in scans {
+        for (i, (ip, ports_status)) in scans.into_iter().enumerate() {
             let ports_status: BTreeMap<u16, &Vec<PortScanResults>> =
                 ports_status.into_iter().map(|(p, s)| (*p, s)).collect();
-            let mut ports_rtt = 0.0;
-            for (i, (port, psr)) in ports_status.into_iter().enumerate() {
-                let mut status_str_vec = Vec::new();
+            let mut avg_ports_time_cost = 0.0;
+
+            let mut open_num = 0;
+            let mut open_or_filtered_num = 0;
+            let mut filtered_num = 0;
+            let mut unfiltered_num = 0;
+            let mut closed_num = 0;
+            let mut unreachable_num = 0;
+            let mut close_or_filtered_num = 0;
+            let mut error_num = 0;
+            let mut offline_num = 0;
+
+            for (port, psr) in ports_status {
+                // let mut status_str_vec = Vec::new();
                 for p in psr {
-                    let s_str = match p.port_status {
-                        PortStatus::Open => String::from("open"),
-                        PortStatus::OpenOrFiltered => String::from("open_or_filtered"),
-                        PortStatus::Filtered => String::from("filtered"),
-                        PortStatus::Unfiltered => String::from("unfiltered"),
-                        PortStatus::Closed => String::from("closed"),
-                        PortStatus::Unreachable => String::from("unreachable"),
-                        PortStatus::ClosedOrFiltered => String::from("closed_or_filtered"),
-                        PortStatus::Error => String::from("error"),
-                        PortStatus::Offline => String::from("offline"),
+                    // let s_str = match p.port_status {
+                    //     PortStatus::Open => String::from("open"),
+                    //     PortStatus::OpenOrFiltered => String::from("open_or_filtered"),
+                    //     PortStatus::Filtered => String::from("filtered"),
+                    //     PortStatus::Unfiltered => String::from("unfiltered"),
+                    //     PortStatus::Closed => String::from("closed"),
+                    //     PortStatus::Unreachable => String::from("unreachable"),
+                    //     PortStatus::ClosedOrFiltered => String::from("closed_or_filtered"),
+                    //     PortStatus::Error => String::from("error"),
+                    //     PortStatus::Offline => String::from("offline"),
+                    // };
+                    // status_str_vec.push(s_str);
+                    avg_ports_time_cost += p.port_time_cost.as_secs_f64();
+
+                    match p.port_status {
+                        PortStatus::Open => open_num += 1,
+                        PortStatus::OpenOrFiltered => open_or_filtered_num += 1,
+                        PortStatus::Filtered => filtered_num += 1,
+                        PortStatus::Unfiltered => unfiltered_num += 1,
+                        PortStatus::Closed => closed_num += 1,
+                        PortStatus::Unreachable => unreachable_num += 1,
+                        PortStatus::ClosedOrFiltered => close_or_filtered_num += 1,
+                        PortStatus::Error => error_num += 1,
+                        PortStatus::Offline => offline_num += 1,
                     };
-                    status_str_vec.push(s_str);
-                    ports_rtt += p.port_rtt.as_secs_f64();
                 }
-                let status_str = status_str_vec.join("|");
-                let ports_rtt_str = format!("{:.2}ms", ports_rtt * 1000.0);
-                table.add_row(row![c -> i, c -> ip, c-> port, c -> status_str, c-> ports_rtt_str ]);
+                // let status_str = status_str_vec.join("|");
+                let status_str = format!(
+                    "OP({})OF({})F({})UF({})C({})UR({})CF({})E({})OL({})",
+                    open_num,
+                    open_or_filtered_num,
+                    filtered_num,
+                    unfiltered_num,
+                    closed_num,
+                    unreachable_num,
+                    close_or_filtered_num,
+                    error_num,
+                    offline_num
+                );
+                let ports_rtt_str =
+                    format!("{:.2}ms", avg_ports_time_cost * 1000.0 / self.tests as f64);
+                table.add_row(
+                    row![c -> (i + 1), c -> ip, c-> port, c -> status_str, c-> ports_rtt_str ],
+                );
             }
         }
-        let total_time = match self.elapsed {
-            Some(ed) => ed.as_secs_f32(),
-            None => 0.0,
-        };
+
+        let help_info = format!("NOTE:\nOP: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,\nUF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,\nCF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE.");
+        table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
         let summary = format!(
-            "total used time: {:.2}s\navg time cost: {:.2}ms\nopen ports: {}",
-            total_time,
+            "total used time: {:.2}ms\navg time cost: {:.2}ms\nopen ports: {}",
+            self.total_time_cost * 1000.0,
             self.avg_time_cost * 1000.0,
             self.open_ports
         );
@@ -544,6 +581,8 @@ pub fn scan(
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<ScanResults, PistolErrors> {
+    let mut port_scan_ret = ScanResults::new();
+
     let mut threads_num = 0;
     for host in &target.hosts {
         threads_num += host.ports.len() * tests;
@@ -557,17 +596,12 @@ pub fn scan(
         None => get_default_timeout(),
     };
     let src_port = match src_port {
-        Some(s) => {
-            debug!("find src port: {}", s);
-            s
-        }
+        Some(s) => s,
         None => {
             warn!("can not found src port, use random port instead");
             random_port()
         }
     };
-
-    let mut port_scan_ret = ScanResults::new();
 
     for host in target.hosts {
         let dst_addr = host.addr;
@@ -577,12 +611,8 @@ pub fn scan(
                     for _ in 0..tests {
                         let tx = tx.clone();
                         recv_size += 1;
-
                         let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
-                            Some(s) => {
-                                debug!("find src addr: {}", s);
-                                s
-                            }
+                            Some(s) => s,
                             None => {
                                 warn!("can not found src addr");
                                 return Err(PistolErrors::CanNotFoundSourceAddress);
@@ -635,6 +665,7 @@ pub fn scan(
     let iter = rx.into_iter().take(recv_size);
 
     for (dst_ipv4, dst_port, v, cost) in iter {
+        let tc = cost.elapsed();
         match v {
             Ok((port_status, rtt)) => {
                 // println!("rtt: {:.2}", rtt.as_secs_f32());
@@ -642,21 +673,11 @@ pub fn scan(
             }
             Err(e) => match e {
                 PistolErrors::CanNotFoundMacAddress => {
-                    port_scan_ret.insert(
-                        dst_ipv4.into(),
-                        dst_port,
-                        PortStatus::Offline,
-                        cost.elapsed(),
-                    );
+                    port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Offline, tc);
                 }
                 _ => {
                     warn!("scan error: {}", e);
-                    port_scan_ret.insert(
-                        dst_ipv4.into(),
-                        dst_port,
-                        PortStatus::Error,
-                        cost.elapsed(),
-                    );
+                    port_scan_ret.insert(dst_ipv4.into(), dst_port, PortStatus::Error, tc);
                 }
             },
         }
@@ -1294,10 +1315,10 @@ mod tests {
     #[test]
     fn test_scan_timeout() {
         // scanme.nmap.org
-        let dst_ip = Ipv4Addr::new(192, 168, 5, 4);
+        let dst_ip = Ipv4Addr::new(192, 168, 5, 1);
         let timeout = Some(Duration::new(1, 0));
         let start_time = Instant::now();
-        match tcp_syn_scan_raw(dst_ip.into(), 22, None, None, timeout) {
+        match tcp_syn_scan_raw(dst_ip.into(), 80, None, None, timeout) {
             Ok((status, dura)) => {
                 println!(
                     "status: {:?}, dura: {:?}, elapsed: {:.2}",
@@ -1321,7 +1342,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
 
         let start = Ipv4Addr::new(192, 168, 5, 1);
-        let end = Ipv4Addr::new(192, 168, 5, 100);
+        let end = Ipv4Addr::new(192, 168, 5, 10);
         let subnet = CrossIpv4Pool::new(start, end).unwrap();
         // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
         let mut hosts = vec![];
@@ -1330,10 +1351,12 @@ mod tests {
             hosts.push(host);
         }
         let target = Target::new(hosts);
-        let tests = 4;
+        let tests = 2;
 
         let start_time = Instant::now();
         let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        // let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        // let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
         println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
     }

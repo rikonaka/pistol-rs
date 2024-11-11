@@ -1101,8 +1101,7 @@ impl IEDB {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapOsDb {
-    pub info: String,
-    pub fingerprint: String,
+    pub name: String,
     pub class: String,
     pub cpe: String,
     pub seq: SEQDB,
@@ -1339,8 +1338,8 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                 // last line
                 let ie = Some(IEDB::parser(l)?);
                 let v = NmapOsDb {
-                    info: option_string(l1),
-                    fingerprint: option_string(l2),
+                    // info: option_string(l1),
+                    name: option_string(l2),
                     class: option_string(l3),
                     cpe: option_string(l4),
                     seq: seq.clone().unwrap(),

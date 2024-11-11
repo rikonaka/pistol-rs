@@ -36,6 +36,7 @@ pub mod osscan6;
 pub mod packet;
 pub mod packet6;
 pub mod rr;
+pub mod dbparser_re;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsInfo {

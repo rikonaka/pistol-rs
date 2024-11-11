@@ -1,4 +1,3 @@
-use log::debug;
 use log::warn;
 use num_cpus;
 use pnet::datalink::interfaces;
@@ -61,7 +60,6 @@ pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv4.into()) {
-                debug!("found dst ipv4: {} in local net", dst_ipv4);
                 return true;
             }
         }
@@ -74,7 +72,6 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     for interface in interfaces() {
         for ipnetwork in interface.ips {
             if ipnetwork.contains(dst_ipv6.into()) {
-                debug!("found dst ipv6: {} in local net", dst_ipv6);
                 return true;
             }
         }
@@ -99,7 +96,6 @@ pub fn find_source_addr(
                         match ipnetwork.ip() {
                             IpAddr::V4(src_ipv4) => {
                                 if !src_ipv4.is_loopback() {
-                                    debug!("found source addr: {}", src_ipv4);
                                     return Ok(Some(src_ipv4));
                                 }
                             }
@@ -118,7 +114,6 @@ pub fn find_source_addr(
                             for ipnetwork in interface.ips {
                                 if ipnetwork.contains(route_ipv4.into()) {
                                     if let IpAddr::V4(src_ipv4) = ipnetwork.ip() {
-                                        debug!("can not found source addr, use addr which same subnet with route instead: {}", src_ipv4);
                                         return Ok(Some(src_ipv4));
                                     }
                                 }
@@ -129,7 +124,6 @@ pub fn find_source_addr(
             };
         }
     }
-    debug!("can not found source of the dst: {}", dst_ipv4);
     Ok(None)
 }
 
@@ -152,7 +146,6 @@ pub fn find_source_addr6(
                                     if (dst_ipv6.is_global_x() && src_ipv6.is_global_x())
                                         || (!dst_ipv6.is_global_x() && !src_ipv6.is_global_x())
                                     {
-                                        debug!("found source addr: {}", src_ipv6);
                                         return Ok(Some(src_ipv6));
                                     }
                                 }
@@ -172,7 +165,6 @@ pub fn find_source_addr6(
                             for ipnetwork in interface.ips {
                                 if ipnetwork.contains(route_ipv6.into()) {
                                     if let IpAddr::V6(src_ipv6) = ipnetwork.ip() {
-                                        debug!("can not found source addr, use addr which same subnet with route instead: {}", src_ipv6);
                                         return Ok(Some(src_ipv6));
                                     }
                                 }
@@ -183,7 +175,6 @@ pub fn find_source_addr6(
             };
         }
     }
-    debug!("can not found source of the dst: {}", dst_ipv6);
     Ok(None)
 }
 
@@ -208,12 +199,10 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
         for ip in &interface.ips {
             let i = ip.ip();
             if ipaddr == i && !i.is_unspecified() {
-                debug!("found the interface: {}, by {}", interface.name, ipaddr);
                 return Some(interface);
             }
         }
     }
-    debug!("can not found interface of the ip: {}", ipaddr);
     None
 }
 

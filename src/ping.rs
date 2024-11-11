@@ -1,4 +1,3 @@
-use log::debug;
 use log::warn;
 use prettytable::row;
 use prettytable::Cell;
@@ -44,16 +43,16 @@ pub enum PingStatus {
 #[derive(Debug, Clone)]
 pub struct HostPingResults {
     pub ping_status: PingStatus,
-    pub ping_rtt: Duration,
+    pub ping_time_cost: Duration,
 }
 
 #[derive(Debug, Clone)]
 pub struct PingResults {
     pub pings: HashMap<IpAddr, Vec<HostPingResults>>,
     pub avg_time_cost: f64,
+    pub total_time_cost: f64,
     pub alive_hosts: usize,
     pub start_time: Instant,
-    pub elapsed: Option<Duration>,
     pub tests: usize,
 }
 
@@ -64,7 +63,7 @@ impl PingResults {
             avg_time_cost: 0.0,
             alive_hosts: 0,
             start_time: Instant::now(),
-            elapsed: None,
+            total_time_cost: 0.0,
             tests: 0,
         }
     }
@@ -85,7 +84,7 @@ impl PingResults {
             Some(host_ping_status) => {
                 let mut ping_rtts = Vec::new();
                 for hpr in host_ping_status {
-                    ping_rtts.push(hpr.ping_rtt);
+                    ping_rtts.push(hpr.ping_time_cost);
                 }
                 Some(ping_rtts)
             }
@@ -93,7 +92,7 @@ impl PingResults {
         }
     }
     pub fn enrichment(&mut self) {
-        // avg rtt
+        // avg time cost
         let mut total_cost = 0.0;
         let mut total_num = 0;
         // alive hosts
@@ -108,8 +107,8 @@ impl PingResults {
                     }
                     _ => (),
                 }
-                total_cost += p.ping_rtt.as_secs_f64();
-                if p.ping_rtt != Duration::new(0, 0) {
+                total_cost += p.ping_time_cost.as_secs_f64();
+                if p.ping_time_cost != Duration::new(0, 0) {
                     total_num += 1;
                 }
             }
@@ -117,12 +116,12 @@ impl PingResults {
 
         self.avg_time_cost = total_cost / total_num as f64;
         self.alive_hosts = alive_hosts;
-        self.elapsed = Some(self.start_time.elapsed());
+        self.total_time_cost = self.start_time.elapsed().as_secs_f64();
     }
-    fn insert(&mut self, dst_addr: IpAddr, ping_status: PingStatus, ping_rtt: Duration) {
+    fn insert(&mut self, dst_addr: IpAddr, ping_status: PingStatus, ping_time_cost: Duration) {
         let hpr = HostPingResults {
             ping_status,
-            ping_rtt,
+            ping_time_cost,
         };
 
         match self.pings.get_mut(&dst_addr.into()) {
@@ -140,22 +139,25 @@ impl PingResults {
 impl fmt::Display for PingResults {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("Ping Results")
-            .style_spec("c")
-            .with_hspan(4)]));
+        table.add_row(Row::new(vec![Cell::new(&format!(
+            "Ping Results (tests:{})",
+            self.tests
+        ))
+        .style_spec("c")
+        .with_hspan(4)]));
 
         table.add_row(row![
             c -> "id",
             c -> "addr",
             c -> "status",
-            c -> format!("cost(tests:{})", self.tests)
+            c -> "avg cost"
         ]);
 
         let pings = &self.pings;
         let pings: BTreeMap<IpAddr, &Vec<HostPingResults>> =
             pings.into_iter().map(|(i, p)| (*i, p)).collect();
         for (i, (ip, hpr)) in pings.into_iter().enumerate() {
-            let mut host_rtt = 0.0;
+            let mut host_avg_time_cost = 0.0;
             let mut host_up_num = 0;
             // let mut host_down_num = 0;
             // let mut host_error_num = 0;
@@ -165,7 +167,7 @@ impl fmt::Display for PingResults {
                     PingStatus::Down => (),  // host_down_num += 1,
                     PingStatus::Error => (), //host_error_num += 1,
                 };
-                host_rtt += h.ping_rtt.as_secs_f64();
+                host_avg_time_cost += h.ping_time_cost.as_secs_f64();
             }
 
             let status_str = if host_up_num > 0 {
@@ -174,17 +176,16 @@ impl fmt::Display for PingResults {
                 String::from("down")
             };
 
-            let rtt_str = format!("{:.2}ms", host_rtt * 1000.0);
+            let rtt_str = format!("{:.2}ms", host_avg_time_cost * 1000.0 / self.tests as f64);
             table.add_row(row![c -> (i + 1), c -> ip, c -> status_str, c -> rtt_str]);
         }
-        let total_time = match self.elapsed {
-            Some(ed) => ed.as_secs_f32(),
-            None => 0.0,
-        };
+
+        let help_info = "NOTE:\nThe target host is considered alive\nas long as one of the packets returns\na result that is considered to be alive.";
+        table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
         let summary = format!(
-            "total used time: {:.2}s\navg time cost: {:.1}ms\nalive hosts: {}",
-            total_time,
+            "total used time: {:.2}ms\navg time cost: {:.1}ms\nalive hosts: {}",
+            self.total_time_cost * 1000.0,
             self.avg_time_cost * 1000.0,
             self.alive_hosts
         );
@@ -209,10 +210,6 @@ fn threads_ping(
     dst_port: Option<u16>,
     timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolErrors> {
-    match dst_port {
-        None => debug!("can not found dst port on method: {:?}", method),
-        _ => (),
-    }
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -222,7 +219,6 @@ fn threads_ping(
 
             let (ret, rtt) =
                 tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
-            debug!("syn ret: {:?}", ret);
             match ret {
                 PortStatus::Open => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
@@ -236,7 +232,6 @@ fn threads_ping(
 
             let (ret, rtt) =
                 tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
-            debug!("ack ret: {:?}", ret);
             match ret {
                 PortStatus::Unfiltered => (PingStatus::Up, rtt),
                 _ => (PingStatus::Down, rtt),
@@ -250,7 +245,6 @@ fn threads_ping(
 
             let (ret, rtt) =
                 udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
-            debug!("udp ret: {:?}", ret);
             match ret {
                 PortStatus::Open => (PingStatus::Up, rtt),
                 // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
@@ -259,7 +253,6 @@ fn threads_ping(
         }
         PingMethods::Icmp => {
             let (ret, rtt) = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?;
-            debug!("icmp ret: {:?}", ret);
             (ret, rtt)
         }
     };
@@ -274,10 +267,6 @@ fn threads_ping6(
     dst_port: Option<u16>,
     timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolErrors> {
-    match dst_port {
-        None => debug!("can not found dst port on method: {:?}", method),
-        _ => (),
-    }
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -332,8 +321,9 @@ pub fn ping(
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PingResults, PistolErrors> {
-    let threads_num = target.hosts.len() * tests;
+    let mut ping_results = PingResults::new();
 
+    let threads_num = target.hosts.len() * tests;
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
@@ -346,7 +336,6 @@ pub fn ping(
         Some(t) => t,
         None => get_default_timeout(),
     };
-    let mut ping_results = PingResults::new();
 
     for host in target.hosts {
         let dst_addr = host.addr;
@@ -410,25 +399,21 @@ pub fn ping(
         }
     }
 
-    debug!("recv_size: {}", recv_size);
     let iter = rx.into_iter().take(recv_size);
 
     for (dst_ipv4, pr, cost) in iter {
+        let tc = cost.elapsed();
         match pr {
             Ok((ping_status, rtt)) => {
-                debug!(
-                    "ip: {}, port status: {:?}, rtt: {:?}",
-                    dst_ipv4, ping_status, rtt
-                );
                 ping_results.insert(dst_ipv4, ping_status, rtt);
             }
             Err(e) => match e {
                 PistolErrors::CanNotFoundMacAddress => {
-                    ping_results.insert(dst_ipv4, PingStatus::Down, cost.elapsed())
+                    ping_results.insert(dst_ipv4, PingStatus::Down, tc)
                 }
                 _ => {
                     warn!("ping error: {}", e);
-                    ping_results.insert(dst_ipv4, PingStatus::Error, cost.elapsed());
+                    ping_results.insert(dst_ipv4, PingStatus::Error, tc);
                 }
             },
         }
@@ -472,7 +457,6 @@ pub fn tcp_syn_ping_raw(
             Some(src_ipv4) => {
                 let (ret, rtt) =
                     tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
-                debug!("syn ret: {:?}", ret);
                 let (s, rtt) = match ret {
                     PortStatus::Open => (PingStatus::Up, rtt),
                     _ => (PingStatus::Down, rtt),
@@ -485,7 +469,6 @@ pub fn tcp_syn_ping_raw(
             Some(src_ipv6) => {
                 let (ret, rtt) =
                     tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
-                debug!("syn ret: {:?}", ret);
                 let (s, rtt) = match ret {
                     PortStatus::Open => (PingStatus::Up, rtt),
                     _ => (PingStatus::Down, rtt),
@@ -531,7 +514,6 @@ pub fn tcp_ack_ping_raw(
             Some(src_ipv4) => {
                 let (ret, rtt) =
                     tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
-                debug!("ack ret: {:?}", ret);
                 let (s, rtt) = match ret {
                     PortStatus::Unfiltered => (PingStatus::Up, rtt),
                     _ => (PingStatus::Down, rtt),
@@ -544,7 +526,6 @@ pub fn tcp_ack_ping_raw(
             Some(src_ipv6) => {
                 let (ret, rtt) =
                     tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
-                debug!("ack ret: {:?}", ret);
                 let (s, rtt) = match ret {
                     PortStatus::Unfiltered => (PingStatus::Up, rtt),
                     _ => (PingStatus::Down, rtt),
@@ -590,7 +571,6 @@ pub fn udp_ping_raw(
             Some(src_ipv4) => {
                 let (ret, rtt) =
                     udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
-                debug!("udp ret: {:?}", ret);
                 let (s, rtt) = match ret {
                     PortStatus::Open => (PingStatus::Up, rtt),
                     // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
@@ -604,7 +584,6 @@ pub fn udp_ping_raw(
             Some(src_ipv6) => {
                 let (ret, rtt) =
                     udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?;
-                debug!("udp ret: {:?}", ret);
                 let (s, rtt) = match ret {
                     PortStatus::Open => (PingStatus::Up, rtt),
                     // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
@@ -656,7 +635,6 @@ pub fn icmp_ping_raw(
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
                 let (ret, rtt) = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?;
-                debug!("icmp ret: {:?}", ret);
                 Ok((ret, rtt))
             }
             None => Err(PistolErrors::CanNotFoundSourceAddress),
@@ -664,7 +642,6 @@ pub fn icmp_ping_raw(
         IpAddr::V6(dst_ipv6) => match find_source_addr6(src_addr, dst_ipv6)? {
             Some(src_ipv6) => {
                 let (ret, rtt) = icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?;
-                debug!("icmpv6 ret: {:?}", ret);
                 Ok((ret, rtt))
             }
             None => Err(PistolErrors::CanNotFoundSourceAddress),
@@ -755,7 +732,7 @@ mod tests {
             hosts.push(Host::new(ip.into(), None));
         }
         let target: Target = Target::new(hosts);
-        let tests = 4;
+        let tests = 2;
         let ret = icmp_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }

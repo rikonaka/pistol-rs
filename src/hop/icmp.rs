@@ -1,5 +1,4 @@
 use chrono::Utc;
-use log::debug;
 use pnet::packet::icmp;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpCode;
@@ -80,7 +79,6 @@ pub fn send_icmp_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    debug!("send icmp hop {} packet", ttl);
     let (ret, _rtt) = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
     match ret {
         Some(r) => {
