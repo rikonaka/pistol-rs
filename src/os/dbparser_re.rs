@@ -111,10 +111,10 @@ impl NmapData {
             let mut single_values = Vec::new();
             let items: Vec<&str> = input.split("|").collect();
 
-            println!(">>> usize input: {}", input);
-            let range_reg = Regex::new(r"(?P<start>[^-]+)-(?P<end>[^-]+)")?;
-            let great_reg = Regex::new(r">(?P<start>[\d]+)")?;
-            let less_reg = Regex::new(r"<(?P<end>[\d]+)")?;
+            // println!(">>> usize input: {}", input);
+            let range_reg = Regex::new(r"(?P<start>[\w\d]+)-(?P<end>[\w\d]+)")?;
+            let great_reg = Regex::new(r">(?P<start>[\w\d]+)")?;
+            let less_reg = Regex::new(r"<(?P<end>[\w\d]+)")?;
 
             for it in items {
                 if range_reg.is_match(it) {
@@ -147,7 +147,14 @@ impl NmapData {
                     match great_reg.captures(it) {
                         Some(caps) => {
                             let start = caps.name("start").map_or("", |m| m.as_str());
-                            let start: usize = start.parse()?;
+                            let start: usize = match start.parse() {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    let he = SpHex::new_hex(start);
+                                    let e_u32 = he.decode()?;
+                                    e_u32 as usize
+                                }
+                            };
                             let range = NmapRangeValue::new(start, 0, NmapRangeTypes::Left);
                             range_values.push(range);
                         }
@@ -157,7 +164,14 @@ impl NmapData {
                     match less_reg.captures(it) {
                         Some(caps) => {
                             let end = caps.name("end").map_or("", |m| m.as_str());
-                            let end: usize = end.parse()?;
+                            let end: usize = match end.parse() {
+                                Ok(e) => e,
+                                Err(_) => {
+                                    let he = SpHex::new_hex(end);
+                                    let e_u32 = he.decode()?;
+                                    e_u32 as usize
+                                }
+                            };
                             let range = NmapRangeValue::new(end, 0, NmapRangeTypes::Right);
                             range_values.push(range);
                         }
@@ -615,7 +629,7 @@ pub struct NmapOSDB {
     pub t6: TXDB,
     pub t7: TXDB,
     pub u1: U1DB,
-    pub ie: IEDB,
+    pub ie: Option<IEDB>,
 }
 
 impl NmapOSDB {
@@ -644,7 +658,10 @@ impl NmapOSDB {
         // println!("T7: {}", t7_check);
         let (u1_score, u1_total) = self.u1.check(&probe_ret.u1x);
         // println!("U1: {}", u1_check);
-        let (ie_score, ie_total) = self.ie.check(&probe_ret.iex);
+        let (ie_score, ie_total) = match &self.ie {
+            Some(ie) => ie.check(&probe_ret.iex),
+            None => (3, 3), // all scores
+        };
         // println!("IE: {}", ie_check);
 
         let score = seq_score
@@ -689,43 +706,25 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
     )?;
     let cpe_reg = Regex::new(r"CPE\s+(?P<cpe>.+)")?;
     let seq_reg = Regex::new(
-        r"SEQ\((SP=(?P<sp>[^%^(^)^=]+))?(R=(?P<r>[^%^(^)^=]+))?(%GCD=(?P<gcd>[^%^(^)^=]+))?(%?ISR=(?P<isr>[^%^(^)^=]+))?(%?TI=(?P<ti>[^%^(^)^=]+))?(%?CI=(?P<ci>[^%^(^)^=]+))?(%?II=(?P<ii>[^%^(^)^=]+))?(%SS=(?P<ss>[^%^(^)^=]+))?(%TS=(?P<ts>[^%^(^)^=]+))?\)",
+        r"SEQ\((SP=(?P<sp>[\w\d-]+))?(R=(?P<r>[YN]+))?(%GCD=(?P<gcd>[\w\d>\-|]+))?(%?ISR=(?P<isr>[\w\d-]+))?(%?TI=(?P<ti>[\w|]+))?(%?CI=(?P<ci>[\w|]+))?(%?II=(?P<ii>[\w|]+))?(%SS=(?P<ss>[\w|]+))?(%TS=(?P<ts>[\w\-|]+))?\)",
     )?;
     let ops_reg = Regex::new(
-        r"OPS\((R=(?P<r>[^%^(^)^=]+|))?(O1=(?P<o1>[^%^(^)^=]+|))?(%O2=(?P<o2>[^%^(^)^=]+|))?(%O3=(?P<o3>[^%^(^)^=]+|))?(%O4=(?P<o4>[^%^(^)^=]+|))?(%O5=(?P<o5>[^%^(^)^=]+|))?(%O6=(?P<o6>[^%^(^)^=]+|))?\)",
+        r"OPS\((R=(?P<r>[YN]+|))?(O1=(?P<o1>[\w\d|]+|))?(%O2=(?P<o2>[\w\d|]+|))?(%O3=(?P<o3>[\w\d|]+|))?(%O4=(?P<o4>[\w\d|]+|))?(%O5=(?P<o5>[\w\d|]+|))?(%O6=(?P<o6>[\w\d|]+|))?\)",
     )?;
     let win_reg = Regex::new(
-        r"WIN\((R=(?P<r>[^%^(^)^=]+))?(W1=(?P<w1>[^%^(^)^=]+))?(%W2=(?P<w2>[^%^(^)^=]+))?(%W3=(?P<w3>[^%^(^)^=]+))?(%W4=(?P<w4>[^%^(^)^=]+))?(%W5=(?P<w5>[^%^(^)^=]+))?(%W6=(?P<w6>[^%^(^)^=]+))?\)",
+        r"WIN\((R=(?P<r>[YN]+))?(W1=(?P<w1>[\w\d|]+))?(%W2=(?P<w2>[\w\d|]+))?(%W3=(?P<w3>[\w\d|]+))?(%W4=(?P<w4>[\w\d|]+))?(%W5=(?P<w5>[\w\d|]+))?(%W6=(?P<w6>[\w\d|]+))?\)",
     )?;
     let ecn_reg = Regex::new(
-        r"ECN\(R=(?P<r>[^%^(^)^=]+|)(%DF=(?P<df>[^%^(^)^=]+|))?(%T=(?P<t>[^%^(^)^=]+|))?(%TG=(?P<tg>[^%^(^)^=]+|))?(%W=(?P<w>[^%^(^)^=]+|))?(%O=(?P<o>[^%^(^)^=]+|))?(%CC=(?P<cc>[^%^(^)^=]+|))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
+        r"ECN\(R=(?P<r>[\w\d]+|)(%DF=(?P<df>[YN|]+|))?(%T=(?P<t>[\w\d\-|]+|))?(%TG=(?P<tg>[\w\d|]+|))?(%W=(?P<w>[\w\d|]+|))?(%O=(?P<o>[\w\d|]+|))?(%CC=(?P<cc>[\w\d|]+|))?(%Q=(?P<q>[\w\d|]+|))?\)",
     )?;
-    let t1_reg = Regex::new(
-        r"T1\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-    )?;
-    let t2_reg = Regex::new(
-        r"T2\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-    )?;
-    let t3_reg = Regex::new(
-        r"T3\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-    )?;
-    let t4_reg = Regex::new(
-        r"T4\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-    )?;
-    let t5_reg = Regex::new(
-        r"T5\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-    )?;
-    let t6_reg = Regex::new(
-        r"T6\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-    )?;
-    let t7_reg = Regex::new(
-        r"T7\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
+    let tx_reg = Regex::new(
+        r"T\d\((R=(?P<r>[YN]+))?(%?DF=(?P<df>[\w\d|]+))?(%T=(?P<t>[\w\d\-|]+))?(%TG=(?P<tg>[\w\d|]+))?(%W=(?P<w>[\w\d|]+))?(%S=(?P<s>[\w\d+|]+))?(%A=(?P<a>[\w\d+|]+))?(%F=(?P<f>[\w\d|]+))?(%O=(?P<o>[\w\d|]+|))?(%RD=(?P<rd>[\w\d|]+))?(%Q=(?P<q>[\w\d|]+|))?\)",
     )?;
     let u1_reg = Regex::new(
-        r"U1\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%IPL=(?P<ipl>[^%^(^)^=]+))?(%UN=(?P<un>[^%^(^)^=]+))?(%RIPL=(?P<ripl>[^%^(^)^=]+))?(%RID=(?P<rid>[^%^(^)^=]+))?(%RIPCK=(?P<ripck>[^%^(^)^=]+))?(%RUCK=(?P<ruck>[^%^(^)^=]+))?(%RUD=(?P<rud>[^%^(^)^=]+))?\)",
+        r"U1\((R=(?P<r>[\w\d]+))?(%?DF=(?P<df>[\w\d|]+))?(%T=(?P<t>[\w\d\-|]+))?(%TG=(?P<tg>[\w\d|]+))?(%IPL=(?P<ipl>[\w\d|]+))?(%UN=(?P<un>[\w\d>\-|]+))?(%RIPL=(?P<ripl>[\w\d\-|]+))?(%RID=(?P<rid>[\w\d\-|>]+))?(%RIPCK=(?P<ripck>[\w\d|]+))?(%RUCK=(?P<ruck>[\w\d\-|>]+))?(%RUD=(?P<rud>[\w\d|]+))?\)",
     )?;
     let ie_reg = Regex::new(
-        r"IE\((R=(?P<r>[^%^)^)^=]+))?(%?DFI=(?P<dfi>[^%^)^)^=]+))?(%T=(?P<t>[^%^)^)^=]+))?(%TG=(?P<tg>[^%^)^)^=]+))?(%CD=(?P<cd>[^%^)^)^=]+))?\)",
+        r"IE\((R=(?P<r>[YN]+))?(%?DFI=(?P<dfi>[\w]+))?(%T=(?P<t>[\w\d-]+))?(%TG=(?P<tg>[\w\d]+))?(%CD=(?P<cd>[\w]+))?\)",
     )?;
 
     let mut ret = Vec::new();
@@ -748,10 +747,9 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             })
                         }
                     };
-
                     /* class part */
-                    let class_parser = |line: &str| -> Result<Vec<String>, PistolErrors> {
-                        match class_reg.captures(line) {
+                    let class_parser = |line: String| -> Result<Vec<String>, PistolErrors> {
+                        match class_reg.captures(&line) {
                             Some(caps) => {
                                 let class1 = caps.name("class1").map_or("", |m| m.as_str());
                                 let class2 = caps.name("class2").map_or("", |m| m.as_str());
@@ -763,7 +761,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 let class3 = class3.trim().to_string();
                                 let class4 = class4.trim().to_string();
                                 let mut class = Vec::new();
-                                let class_push = |input: String| {
+                                let mut class_push = |input: String| {
                                     if input.len() > 0 {
                                         class.push(input);
                                     }
@@ -776,66 +774,16 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             }
                             None => Err(PistolErrors::OSDBParseError {
                                 name: String::from("Class"),
-                                line: line.to_string(),
+                                line,
                             }),
                         }
                     };
-
-                    match iter.next() {
-                        Some(line) => {
-                            if line.starts_with("Class") {
-                            } else {
-                                break;
-                            }
-                        }
-                        None => break,
-                    }
-
-                    let class = match iter.next() {
-                        Some(line) => match class_reg.captures(&line) {
-                            Some(caps) => {
-                                let class1 = caps.name("class1").map_or("", |m| m.as_str());
-                                let class2 = caps.name("class2").map_or("", |m| m.as_str());
-                                let class3 = caps.name("class3").map_or("", |m| m.as_str());
-                                let class4 = caps.name("class4").map_or("", |m| m.as_str());
-
-                                let class1 = class1.trim().to_string();
-                                let class2 = class2.trim().to_string();
-                                let class3 = class3.trim().to_string();
-                                let class4 = class4.trim().to_string();
-                                let mut class = Vec::new();
-                                let class_push = |input: String| {
-                                    if input.len() > 0 {
-                                        class.push(input);
-                                    }
-                                };
-                                class_push(class1);
-                                class_push(class2);
-                                class_push(class3);
-                                class_push(class4);
-                                class
-                            }
-                            None => {
-                                return Err(PistolErrors::OSDBParseError {
-                                    name: String::from("Class"),
-                                    line,
-                                })
-                            }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
-                        }
-                    };
-
                     /* cpe part */
-                    let cpe = match iter.next() {
-                        Some(line) => match cpe_reg.captures(&line) {
+                    let cpe_parser = |line: String| -> Result<String, PistolErrors> {
+                        match cpe_reg.captures(&line) {
                             Some(caps) => {
                                 let cpe = caps.name("cpe").map_or("", |m| m.as_str());
-                                cpe.to_string()
+                                Ok(cpe.to_string())
                             }
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
@@ -843,17 +791,11 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     line,
                                 })
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
                     /* seq part */
-                    let seq = match iter.next() {
-                        Some(line) => match seq_reg.captures(&line) {
+                    let seq_parser = |line: String| -> Result<SEQDB, PistolErrors> {
+                        match seq_reg.captures(&line) {
                             Some(caps) => {
                                 let sp = caps.name("sp").map_or("", |m| m.as_str());
                                 let r = caps.name("r").map_or("", |m| m.as_str());
@@ -886,7 +828,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     ss,
                                     ts,
                                 };
-                                seq
+                                Ok(seq)
                             }
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
@@ -894,17 +836,11 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     line,
                                 })
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
                     /* ops part */
-                    let ops = match iter.next() {
-                        Some(line) => match ops_reg.captures(&line) {
+                    let ops_parser = |line: String| -> Result<OPSDB, PistolErrors> {
+                        match ops_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
                                 let o1 = caps.name("o1").map_or("", |m| m.as_str());
@@ -931,7 +867,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     o5,
                                     o6,
                                 };
-                                ops
+                                Ok(ops)
                             }
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
@@ -939,17 +875,11 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     line,
                                 })
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
                     /* win part */
-                    let win = match iter.next() {
-                        Some(line) => match win_reg.captures(&line) {
+                    let win_parser = |line: String| -> Result<WINDB, PistolErrors> {
+                        match win_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
                                 let w1 = caps.name("w1").map_or("", |m| m.as_str());
@@ -976,7 +906,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     w5,
                                     w6,
                                 };
-                                win
+                                Ok(win)
                             }
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
@@ -984,17 +914,11 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     line,
                                 })
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
                     /* ecn part */
-                    let ecn = match iter.next() {
-                        Some(line) => match ecn_reg.captures(&line) {
+                    let ecn_parser = |line: String| -> Result<ECNDB, PistolErrors> {
+                        match ecn_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
                                 let df = caps.name("df").map_or("", |m| m.as_str());
@@ -1024,7 +948,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     cc,
                                     q,
                                 };
-                                ecn
+                                Ok(ecn)
                             }
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
@@ -1032,17 +956,11 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     line,
                                 })
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
                     /* tx part */
-                    fn tx_parser(tx_line: &str, tx_reg: &Regex) -> Result<TXDB, PistolErrors> {
-                        match tx_reg.captures(tx_line) {
+                    let tx_parser = |line: String| -> Result<TXDB, PistolErrors> {
+                        match tx_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
                                 let df = caps.name("df").map_or("", |m| m.as_str());
@@ -1086,45 +1004,14 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
                                     name: format!("TX"),
-                                    line: tx_line.to_string(),
+                                    line,
                                 })
                             }
                         }
-                    }
-                    let tx_regs = vec![
-                        t1_reg.clone(),
-                        t2_reg.clone(),
-                        t3_reg.clone(),
-                        t4_reg.clone(),
-                        t5_reg.clone(),
-                        t6_reg.clone(),
-                        t7_reg.clone(),
-                    ];
-                    let mut txv = Vec::new();
-                    for index in 0..7 {
-                        match iter.next() {
-                            Some(line) => {
-                                let tx = tx_parser(&line, &tx_regs[index])?;
-                                txv.push(tx);
-                            }
-                            None => {
-                                return Err(PistolErrors::OSDBParseError {
-                                    name: String::from("Next"),
-                                    line: String::new(),
-                                })
-                            }
-                        }
-                    }
-                    let t1 = txv[0].clone();
-                    let t2 = txv[1].clone();
-                    let t3 = txv[2].clone();
-                    let t4 = txv[3].clone();
-                    let t5 = txv[4].clone();
-                    let t6 = txv[5].clone();
-                    let t7 = txv[6].clone();
+                    };
                     /* u1 part */
-                    let u1 = match iter.next() {
-                        Some(line) => match u1_reg.captures(&line) {
+                    let u1_parser = |line: String| -> Result<U1DB, PistolErrors> {
+                        match u1_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
                                 let df = caps.name("df").map_or("", |m| m.as_str());
@@ -1163,7 +1050,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     ruck,
                                     rud,
                                 };
-                                u1
+                                Ok(u1)
                             }
                             None => {
                                 return Err(PistolErrors::OSDBParseError {
@@ -1171,17 +1058,11 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     line,
                                 })
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
                     /* ie part */
-                    let ie = match iter.next() {
-                        Some(line) => match ie_reg.captures(&line) {
+                    let ie_parser = |line: String| -> Result<Option<IEDB>, PistolErrors> {
+                        match ie_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
                                 let dfi = caps.name("dfi").map_or("", |m| m.as_str());
@@ -1196,42 +1077,118 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 let cd = NmapData::parser_str(cd);
 
                                 let ie = IEDB { r, dfi, t, tg, cd };
-                                ie
+                                Ok(Some(ie))
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
-                                    name: format!("U1"),
-                                    line,
-                                })
+                                // return Err(PistolErrors::OSDBParseError {
+                                //     name: format!("IE"),
+                                //     line,
+                                // })
+                                Ok(None)
                             }
-                        },
-                        None => {
-                            return Err(PistolErrors::OSDBParseError {
-                                name: String::from("Next"),
-                                line,
-                            })
                         }
                     };
 
-                    let nmap_os_db = NmapOSDB {
-                        name,
-                        class,
-                        cpe,
-                        seq,
-                        ops,
-                        win,
-                        ecn,
-                        t1,
-                        t2,
-                        t3,
-                        t4,
-                        t5,
-                        t6,
-                        t7,
-                        u1,
-                        ie,
-                    };
-                    ret.push(nmap_os_db);
+                    let mut class = Vec::new();
+                    let mut cpe = Vec::new();
+                    loop {
+                        match iter.next() {
+                            Some(line) => {
+                                if line.starts_with("Class") {
+                                    class.extend(class_parser(line)?);
+                                } else if line.starts_with("CPE") {
+                                    let c = cpe_parser(line)?;
+                                    cpe.push(c);
+                                } else if line.starts_with("SEQ") {
+                                    // only one line
+                                    let seq = seq_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let ops = ops_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let win = win_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let ecn = ecn_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t1 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t2 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t3 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t4 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t5 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t6 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t7 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let u1 = u1_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let ie = ie_parser(line)?;
+
+                                    let nmap_os_db = NmapOSDB {
+                                        name: name.clone(),
+                                        class: class.clone(),
+                                        cpe: cpe.clone(),
+                                        seq,
+                                        ops,
+                                        win,
+                                        ecn,
+                                        t1,
+                                        t2,
+                                        t3,
+                                        t4,
+                                        t5,
+                                        t6,
+                                        t7,
+                                        u1,
+                                        ie,
+                                    };
+                                    ret.push(nmap_os_db);
+                                } else {
+                                    break;
+                                }
+                            }
+                            None => break,
+                        }
+                    }
                 }
             }
             None => break,
@@ -1245,129 +1202,13 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
 mod tests {
     use super::*;
     #[test]
-    fn test_regex() {
-        let nmap_os_file = include_str!("../db/nmap-os-db");
-        let mut nmap_os_file_lines = Vec::new();
-        for l in nmap_os_file.lines() {
-            nmap_os_file_lines.push(l.to_string());
-        }
-
-        let name_reg = Regex::new(r"Fingerprint\s+(?P<name>.+)").unwrap();
-        let class_reg = Regex::new(
-            r"Class\s+(?P<class1>[^|]+)\s+\|\s+(?P<class2>[^|]+)\s+\|(\|)?\s+(?P<class3>[^|]+)(\s+\|(\|)?\s+(?P<class4>[^|]+))?",
-        )
-        .unwrap();
-        let cpe_reg = Regex::new(r"CPE\s+(?P<cpe>.+)").unwrap();
-        let seq_reg = Regex::new(
-            r"SEQ\((SP=(?P<sp>[^%^(^)^=]+))?(R=(?P<r>[^%^(^)^=]+))?(%GCD=(?P<gcd>[^%^(^)^=]+))?(%?ISR=(?P<isr>[^%^(^)^=]+))?(%?TI=(?P<ti>[^%^(^)^=]+))?(%?CI=(?P<ci>[^%^(^)^=]+))?(%?II=(?P<ii>[^%^(^)^=]+))?(%SS=(?P<ss>[^%^(^)^=]+))?(%TS=(?P<ts>[^%^(^)^=]+))?\)",
-        ).unwrap();
-        let ops_reg = Regex::new(
-            r"OPS\((R=(?P<r>[^%^(^)^=]+|))?(O1=(?P<o1>[^%^(^)^=]+|))?(%O2=(?P<o2>[^%^(^)^=]+|))?(%O3=(?P<o3>[^%^(^)^=]+|))?(%O4=(?P<o4>[^%^(^)^=]+|))?(%O5=(?P<o5>[^%^(^)^=]+|))?(%O6=(?P<o6>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let win_reg = Regex::new(
-            r"WIN\((R=(?P<r>[^%^(^)^=]+))?(W1=(?P<w1>[^%^(^)^=]+))?(%W2=(?P<w2>[^%^(^)^=]+))?(%W3=(?P<w3>[^%^(^)^=]+))?(%W4=(?P<w4>[^%^(^)^=]+))?(%W5=(?P<w5>[^%^(^)^=]+))?(%W6=(?P<w6>[^%^(^)^=]+))?\)",
-        ).unwrap();
-        let ecn_reg = Regex::new(
-            r"ECN\(R=(?P<r>[^%^(^)^=]+|)(%DF=(?P<df>[^%^(^)^=]+|))?(%T=(?P<t>[^%^(^)^=]+|))?(%TG=(?P<tg>[^%^(^)^=]+|))?(%W=(?P<w>[^%^(^)^=]+|))?(%O=(?P<o>[^%^(^)^=]+|))?(%CC=(?P<cc>[^%^(^)^=]+|))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t1_reg = Regex::new(
-            r"T1\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t2_reg = Regex::new(
-            r"T2\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t3_reg = Regex::new(
-            r"T3\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t4_reg = Regex::new(
-            r"T4\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t5_reg = Regex::new(
-            r"T5\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t6_reg = Regex::new(
-            r"T6\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let t7_reg = Regex::new(
-            r"T7\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%W=(?P<w>[^%^(^)^=]+))?(%S=(?P<s>[^%^(^)^=]+))?(%A=(?P<a>[^%^(^)^=]+))?(%F=(?P<f>[^%^(^)^=]+))?(%O=(?P<o>[^%^(^)^=]+|))?(%RD=(?P<rd>[^%^(^)^=]+))?(%Q=(?P<q>[^%^(^)^=]+|))?\)",
-        ).unwrap();
-        let u1_reg = Regex::new(
-            r"U1\((R=(?P<r>[^%^(^)^=]+))?(%?DF=(?P<df>[^%^(^)^=]+))?(%T=(?P<t>[^%^(^)^=]+))?(%TG=(?P<tg>[^%^(^)^=]+))?(%IPL=(?P<ipl>[^%^(^)^=]+))?(%UN=(?P<un>[^%^(^)^=]+))?(%RIPL=(?P<ripl>[^%^(^)^=]+))?(%RID=(?P<rid>[^%^(^)^=]+))?(%RIPCK=(?P<ripck>[^%^(^)^=]+))?(%RUCK=(?P<ruck>[^%^(^)^=]+))?(%RUD=(?P<rud>[^%^(^)^=]+))?\)",
-        ).unwrap();
-        let ie_reg = Regex::new(
-            r"IE\((R=(?P<r>[^%^)^)^=]+))?(%?DFI=(?P<dfi>[^%^)^)^=]+))?(%T=(?P<t>[^%^)^)^=]+))?(%TG=(?P<tg>[^%^)^)^=]+))?(%CD=(?P<cd>[^%^)^)^=]+))?\)",
-        ).unwrap();
-
-        for line in nmap_os_file_lines {
-            if line.starts_with("Fingerprint") && !name_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            // if line.starts_with("Class") {
-            //     match class_reg.captures(&line) {
-            //         Some(caps) => {
-            //             let class1 = caps.name("class1").map_or("", |m| m.as_str());
-            //             let class2 = caps.name("class2").map_or("", |m| m.as_str());
-            //             let class3 = caps.name("class3").map_or("", |m| m.as_str());
-            //             let class4 = caps.name("class4").map_or("", |m| m.as_str());
-            //             println!("{}, {}, {}, {}", class1, class2, class3, class4);
-            //         }
-            //         None => println!("class null match"),
-            //     }
-            // }
-            if line.starts_with("Class") && !class_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("CPE") && !cpe_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("SEQ") && !seq_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("OPS") && !ops_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("WIN") && !win_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("ECN") && !ecn_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T1") && !t1_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T2") && !t2_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T3") && !t3_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T4") && !t4_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T5") && !t5_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T6") && !t6_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("T7") && !t7_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("U1") && !u1_reg.is_match(&line) {
-                println!("{}", line);
-            }
-            if line.starts_with("IE") && !ie_reg.is_match(&line) {
-                println!("{}", line);
-            }
-        }
-    }
-    #[test]
     fn test_parser() {
         let nmap_os_file = include_str!("../db/nmap-os-db");
         let mut nmap_os_file_lines = Vec::new();
         for l in nmap_os_file.lines() {
             nmap_os_file_lines.push(l.to_string());
         }
-        let _ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        println!("len: {}", ret.len());
     }
 }
