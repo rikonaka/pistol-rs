@@ -38,9 +38,9 @@ fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String> {
         let bsd_fix_re = Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
         match bsd_fix_re.captures(dst_str) {
             Some(caps) => {
-                let addr = &caps["subnet"];
+                let addr = caps.name("subnet").map_or("", |m| m.as_str());
+                let mask = caps.name("mask").map_or("", |m| m.as_str());
                 if dst_str.contains("/") {
-                    let mask = &caps["mask"];
                     let output = addr.to_string() + "/" + mask;
                     return Ok(output);
                 } else {
@@ -115,7 +115,7 @@ impl RouteTable {
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
                     Some(caps) => {
-                        let via_str = &caps["via"];
+                        let via_str = caps.name("via").map_or("", |m| m.as_str());
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
@@ -123,7 +123,7 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        let dev_str = &caps["dev"];
+                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
@@ -151,7 +151,7 @@ impl RouteTable {
             } else {
                 match route_re.captures(&line) {
                     Some(caps) => {
-                        let dst_str = &caps["subnet"];
+                        let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
                         let dst = if dst_str.contains("/") {
                             let dst = match IpNetwork::from_str(dst_str) {
                                 Ok(d) => d,
@@ -173,7 +173,7 @@ impl RouteTable {
                             let dst = RouteAddr::IpAddr(dst);
                             dst
                         };
-                        let dev_str = &caps["dev"];
+                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
@@ -236,7 +236,7 @@ impl RouteTable {
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
                     Some(caps) => {
-                        let via_str = &caps["via"];
+                        let via_str = caps.name("via").map_or("", |m| m.as_str());
                         let via_str = ipv6_addr_bsd_fix(via_str)?;
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
@@ -245,7 +245,7 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        let dev_str = &caps["dev"];
+                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
@@ -273,7 +273,7 @@ impl RouteTable {
             } else {
                 match route_re.captures(&line) {
                     Some(caps) => {
-                        let dst_str = &caps["subnet"];
+                        let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
 
                         let dst_str = ipv6_addr_bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
@@ -297,7 +297,7 @@ impl RouteTable {
                             let dst = RouteAddr::IpAddr(dst);
                             dst
                         };
-                        let dev_str = &caps["dev"];
+                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
@@ -352,7 +352,8 @@ impl RouteTable {
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
                     Some(caps) => {
-                        let if_index: u32 = match caps["index"].parse() {
+                        let if_index = caps.name("index").map_or("", |m| m.as_str());
+                        let if_index: u32 = match if_index.parse() {
                             Ok(i) => i,
                             Err(e) => {
                                 warn!("parse route table 'if_index' error:  {e}");
@@ -368,9 +369,7 @@ impl RouteTable {
                             None
                         };
 
-                        // let dst = &caps["dst"];
-                        // let dst = IpNetwork::from_str(dst)?;
-                        let via_str = &caps["via"];
+                        let via_str = caps.name("via").map_or("", |m| m.as_str());
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
@@ -406,7 +405,8 @@ impl RouteTable {
             } else {
                 match route_re.captures(&line) {
                     Some(caps) => {
-                        let if_index: u32 = match caps["index"].parse() {
+                        let if_index = caps.name("index").map_or("", |m| m.as_str());
+                        let if_index: u32 = match if_index.parse() {
                             Ok(i) => i,
                             Err(e) => {
                                 warn!("parse route table 'if_index' error:  {e}");
@@ -422,7 +422,7 @@ impl RouteTable {
                             None
                         };
 
-                        let dst = &caps["dst"];
+                        let dst = caps.name("dst").map_or("", |m| m.as_str());
                         let dst = match IpNetwork::from_str(dst) {
                             Ok(d) => d,
                             Err(e) => {
@@ -431,7 +431,6 @@ impl RouteTable {
                             }
                         };
                         let dst = RouteAddr::IpNetwork(dst);
-                        // let via: IpAddr = caps["via"].parse()?;
                         let dev = find_interface(if_index);
                         match dev {
                             Some(dev) => {
@@ -487,14 +486,16 @@ impl NeighborCache {
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
-                    let addr: IpAddr = match caps["addr"].parse() {
+                    let addr = caps.name("addr").map_or("", |m| m.as_str());
+                    let addr: IpAddr = match addr.parse() {
                         Ok(a) => a,
                         Err(e) => {
                             warn!("parse neighbor 'addr' error:  {e}");
                             continue;
                         }
                     };
-                    let mac: MacAddr = match caps["mac"].parse() {
+                    let mac = caps.name("mac").map_or("", |m| m.as_str());
+                    let mac: MacAddr = match mac.parse() {
                         Ok(m) => m,
                         Err(e) => {
                             warn!("parse neighbor 'mac' error:  {e}");
@@ -542,7 +543,7 @@ impl NeighborCache {
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
-                    let addr_str = &caps["addr"];
+                    let addr_str = caps.name("addr").map_or("", |m| m.as_str());
                     let addr_str = ipv6_addr_bsd_fix(addr_str)?;
                     let addr: IpAddr = match addr_str.parse() {
                         Ok(a) => a,
@@ -551,7 +552,8 @@ impl NeighborCache {
                             continue;
                         }
                     };
-                    let mac: MacAddr = match caps["mac"].parse() {
+                    let mac = caps.name("mac").map_or("", |m| m.as_str());
+                    let mac: MacAddr = match mac.parse() {
                         Ok(m) => m,
                         Err(e) => {
                             warn!("parse neighbor 'mac' error:  {e}");
@@ -587,14 +589,16 @@ impl NeighborCache {
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
-                    let addr: IpAddr = match caps["addr"].parse() {
+                    let addr = caps.name("addr").map_or("", |m| m.as_str());
+                    let addr: IpAddr = match addr.parse() {
                         Ok(a) => a,
                         Err(e) => {
                             warn!("parse neighbor 'addr' error:  {e}");
                             continue;
                         }
                     };
-                    let mac: MacAddr = match caps["mac"].parse() {
+                    let mac = caps.name("mac").map_or("", |m| m.as_str());
+                    let mac: MacAddr = match mac.parse() {
                         Ok(m) => m,
                         Err(e) => {
                             warn!("parse neighbor 'mac' error:  {e}");

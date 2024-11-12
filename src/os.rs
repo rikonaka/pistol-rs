@@ -94,7 +94,8 @@ impl fmt::Display for OsDetectResults {
                     for (i, ni) in o.detects.iter().enumerate() {
                         let number_str = format!("#{}", i + 1);
                         let score_str = format!("{}/{}", ni.score, ni.total);
-                        let os_str = format!("{}", ni.db.info);
+                        // let os_str = format!("{}", ni.db.info);
+                        let os_str = format!("");
                         table.add_row(row![c -> ip, c -> number_str, c -> score_str, c -> os_str]);
                     }
                 }
@@ -516,7 +517,7 @@ mod tests {
         let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         for i in 0..5 {
             let r = &ret[i];
-            println!("{:?}", r.info);
+            // println!("{:?}", r.info);
             println!("{:?}", r.seq.gcd);
         }
 

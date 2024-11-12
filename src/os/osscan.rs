@@ -1676,7 +1676,7 @@ pub fn threads_os_probe(
             for db in &nmap_os_db {
                 let (score, total) = db.check(&fingerprint);
                 let os_info = OsInfo {
-                    info: db.info.clone(),
+                    info: String::new(),
                     class: db.class.clone(),
                     score,
                     total,

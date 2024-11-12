@@ -31,7 +31,7 @@ pub enum PistolErrors {
     #[error("system time error")]
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("os db parser error: {name}-{line}")]
-    OsDbParseError { name: String, line: String },
+    OSDBParseError { name: String, line: String },
 
     /* SCAN ERRORS */
     #[error("idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is: all zeros, try another proxy")]
