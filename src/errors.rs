@@ -23,15 +23,19 @@ pub enum PistolErrors {
     #[error("calculation of ss failed")]
     CalcSSFailed,
     #[error("not enough port value for os detect")]
-    OsDetectPortError,
+    OSDetectPortsNotEnough,
     #[error("os detect results is null")]
-    OsDetectResultsNullError,
+    OSDetectResultsNullError,
     #[error("tsval value length is not enough")]
     TsValIsNull,
     #[error("system time error")]
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("os db parser error: {name}-{line}")]
     OSDBParseError { name: String, line: String },
+    #[error("zip error")]
+    ZipError(#[from] zip::result::ZipError),
+    #[error("zip file empty")]
+    ZipEmptyError,
 
     /* SCAN ERRORS */
     #[error("idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is: all zeros, try another proxy")]
@@ -43,7 +47,7 @@ pub enum PistolErrors {
     SerdeJsonError(#[from] serde_json::Error),
 
     /* SERVICE DETECT ERRORS */
-    #[error("parser int error")]
+    #[error("parse int error")]
     ParseIntError(#[from] std::num::ParseIntError),
 
     /* LAYERS ERRORS */

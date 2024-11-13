@@ -1,11 +1,8 @@
+use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::HashMap;
 
-use crate::errors::PistolErrors;
-use crate::utils::SpHex;
-
-use super::osscan::PistolFingerprint;
+use super::osscan::TargetFingerprint;
 use super::osscan::ECNX;
 use super::osscan::IEX;
 use super::osscan::OPSX;
@@ -13,24 +10,37 @@ use super::osscan::SEQX;
 use super::osscan::TXX;
 use super::osscan::U1X;
 use super::osscan::WINX;
+use crate::errors::PistolErrors;
+use crate::utils::SpHex;
+
+fn bool_score(bool_vec: Vec<bool>) -> usize {
+    let mut score = 0;
+    for i in bool_vec {
+        match i {
+            true => score += 1,
+            _ => (),
+        }
+    }
+    score
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum DbRangeValueTypes {
+pub enum NmapRangeTypes {
     Left,  // 10 <= x
     Right, // x <= 20
     Both,  // 10 <= x <= 20
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DbRangeValue {
+pub struct NmapRangeValue {
     pub start: usize,
     pub end: usize,
-    pub range_value_type: DbRangeValueTypes,
+    pub range_value_type: NmapRangeTypes,
 }
 
-impl DbRangeValue {
-    pub fn new(start: usize, end: usize, range_value_type: DbRangeValueTypes) -> DbRangeValue {
-        DbRangeValue {
+impl NmapRangeValue {
+    pub fn new(start: usize, end: usize, range_value_type: NmapRangeTypes) -> NmapRangeValue {
+        NmapRangeValue {
             start,
             end,
             range_value_type,
@@ -39,45 +49,45 @@ impl DbRangeValue {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DbSingleValue {
+pub struct NmapSingleValue {
     pub value: usize,
 }
 
-impl DbSingleValue {
-    pub fn new(value: usize) -> DbSingleValue {
-        DbSingleValue { value }
+impl NmapSingleValue {
+    pub fn new(value: usize) -> NmapSingleValue {
+        NmapSingleValue { value }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DbStringValue {
+pub struct NmapString {
     pub value: Vec<String>,
 }
 
-impl DbStringValue {
-    pub fn new(value: Vec<String>) -> DbStringValue {
-        DbStringValue { value }
+impl NmapString {
+    pub fn new(value: Vec<String>) -> NmapString {
+        NmapString { value }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DbEmptyValue {}
+pub struct NmapEmpty {}
 
-impl DbEmptyValue {
-    pub fn new() -> DbEmptyValue {
-        DbEmptyValue {}
+impl NmapEmpty {
+    pub fn new() -> NmapEmpty {
+        NmapEmpty {}
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DbMixValue {
-    pub range_values: Vec<DbRangeValue>,
-    pub single_values: Vec<DbSingleValue>,
+pub struct NmapMix {
+    pub range_values: Vec<NmapRangeValue>,
+    pub single_values: Vec<NmapSingleValue>,
 }
 
-impl DbMixValue {
-    pub fn new(range_value: Vec<DbRangeValue>, single_value: Vec<DbSingleValue>) -> DbMixValue {
-        DbMixValue {
+impl NmapMix {
+    pub fn new(range_value: Vec<NmapRangeValue>, single_value: Vec<NmapSingleValue>) -> NmapMix {
+        NmapMix {
             range_values: range_value,
             single_values: single_value,
         }
@@ -85,37 +95,145 @@ impl DbMixValue {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum NmapOsDbValueTypes {
-    DbMixStringValue(DbStringValue),
-    DbEmptyValue(DbEmptyValue),
-    DbMixValue(DbMixValue), // u32, example: GCD=1-6|>5000
+pub enum NmapData {
+    NmapString(NmapString),
+    NmapEmpty(NmapEmpty),
+    NmapMix(NmapMix), // u32, example: GCD=1-6|>5000
 }
 
-impl NmapOsDbValueTypes {
-    pub fn empty() -> NmapOsDbValueTypes {
-        NmapOsDbValueTypes::DbEmptyValue(DbEmptyValue::new())
+impl NmapData {
+    pub fn parser_usize(input: &str) -> Result<NmapData, PistolErrors> {
+        let input = input.trim();
+        if input.len() == 0 {
+            Ok(NmapData::empty())
+        } else {
+            let mut range_values = Vec::new();
+            let mut single_values = Vec::new();
+            let items: Vec<&str> = input.split("|").collect();
+
+            // println!(">>> usize input: {}", input);
+            let range_reg = Regex::new(r"(?P<start>[^%]+)-(?P<end>[^%]+)")?;
+            let great_reg = Regex::new(r">(?P<start>[^%]+)")?;
+            let less_reg = Regex::new(r"<(?P<end>[^%]+)")?;
+
+            for it in items {
+                if range_reg.is_match(it) {
+                    match range_reg.captures(it) {
+                        Some(caps) => {
+                            let start = caps.name("start").map_or("", |m| m.as_str());
+                            let end = caps.name("end").map_or("", |m| m.as_str());
+                            let start: usize = match start.parse() {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    let he = SpHex::new_hex(start);
+                                    let e_u32 = he.decode()?;
+                                    e_u32 as usize
+                                }
+                            };
+                            let end: usize = match end.parse() {
+                                Ok(e) => e,
+                                Err(_) => {
+                                    let he = SpHex::new_hex(end);
+                                    let e_u32 = he.decode()?;
+                                    e_u32 as usize
+                                }
+                            };
+                            let range = NmapRangeValue::new(start, end, NmapRangeTypes::Both);
+                            range_values.push(range);
+                        }
+                        None => (),
+                    }
+                } else if great_reg.is_match(it) {
+                    match great_reg.captures(it) {
+                        Some(caps) => {
+                            let start = caps.name("start").map_or("", |m| m.as_str());
+                            let start: usize = match start.parse() {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    let he = SpHex::new_hex(start);
+                                    let e_u32 = he.decode()?;
+                                    e_u32 as usize
+                                }
+                            };
+                            let range = NmapRangeValue::new(start, 0, NmapRangeTypes::Left);
+                            range_values.push(range);
+                        }
+                        None => (),
+                    }
+                } else if less_reg.is_match(it) {
+                    match less_reg.captures(it) {
+                        Some(caps) => {
+                            let end = caps.name("end").map_or("", |m| m.as_str());
+                            let end: usize = match end.parse() {
+                                Ok(e) => e,
+                                Err(_) => {
+                                    let he = SpHex::new_hex(end);
+                                    let e_u32 = he.decode()?;
+                                    e_u32 as usize
+                                }
+                            };
+                            let range = NmapRangeValue::new(end, 0, NmapRangeTypes::Right);
+                            range_values.push(range);
+                        }
+                        None => (),
+                    }
+                } else {
+                    let he = SpHex::new_hex(it);
+                    let e_u32 = he.decode()?;
+                    let single = NmapSingleValue::new(e_u32 as usize);
+                    single_values.push(single);
+                }
+            }
+            let ret = NmapData::NmapMix(NmapMix::new(range_values, single_values));
+            Ok(ret)
+        }
+    }
+    pub fn parser_str(input: &str) -> NmapData {
+        let input = input.trim();
+        if input.len() == 0 {
+            NmapData::empty()
+        } else {
+            let value = input.to_string();
+            if value.contains("|") {
+                let mut ret = Vec::new();
+                let s_split: Vec<&str> = value.split("|").collect();
+                for s in s_split {
+                    ret.push(s.to_string());
+                }
+                NmapData::NmapString(NmapString::new(ret))
+            } else {
+                if value.len() > 0 {
+                    NmapData::NmapString(NmapString::new(vec![value]))
+                } else {
+                    NmapData::empty()
+                }
+            }
+        }
+    }
+    pub fn empty() -> NmapData {
+        NmapData::NmapEmpty(NmapEmpty::new())
     }
     pub fn check_usize(&self, input: usize) -> bool {
         match self {
-            NmapOsDbValueTypes::DbEmptyValue(_) => match input {
+            NmapData::NmapEmpty(_) => match input {
                 0 => true,
                 _ => false,
             },
-            NmapOsDbValueTypes::DbMixValue(m) => {
+            NmapData::NmapMix(m) => {
                 let m = m.clone();
                 for r in m.range_values {
                     match r.range_value_type {
-                        DbRangeValueTypes::Both => {
+                        NmapRangeTypes::Both => {
                             if input >= r.start && input <= r.end {
                                 return true;
                             }
                         }
-                        DbRangeValueTypes::Left => {
+                        NmapRangeTypes::Left => {
                             if input >= r.start {
                                 return true;
                             }
                         }
-                        DbRangeValueTypes::Right => {
+                        NmapRangeTypes::Right => {
                             if input <= r.end {
                                 return true;
                             }
@@ -134,7 +252,7 @@ impl NmapOsDbValueTypes {
     }
     pub fn check_string(&self, input: &str) -> bool {
         match self {
-            NmapOsDbValueTypes::DbMixStringValue(v) => match input.len() {
+            NmapData::NmapString(v) => match input.len() {
                 0 => false,
                 _ => {
                     let mut ret = false;
@@ -146,7 +264,7 @@ impl NmapOsDbValueTypes {
                     ret
                 }
             },
-            NmapOsDbValueTypes::DbEmptyValue(_) => match input.len() {
+            NmapData::NmapEmpty(_) => match input.len() {
                 0 => true,
                 _ => false,
             },
@@ -155,7 +273,7 @@ impl NmapOsDbValueTypes {
     }
     pub fn check_r(&self, input: &str) -> bool {
         match self {
-            NmapOsDbValueTypes::DbMixStringValue(v) => match input.len() {
+            NmapData::NmapString(v) => match input.len() {
                 0 => false,
                 _ => {
                     let mut ret = false;
@@ -167,7 +285,7 @@ impl NmapOsDbValueTypes {
                     ret
                 }
             },
-            NmapOsDbValueTypes::DbEmptyValue(_) => match input {
+            NmapData::NmapEmpty(_) => match input {
                 "Y" => true,
                 _ => false,
             },
@@ -176,28 +294,17 @@ impl NmapOsDbValueTypes {
     }
 }
 
-fn bool_score(bool_vec: Vec<bool>) -> usize {
-    let mut score = 0;
-    for i in bool_vec {
-        match i {
-            true => score += 1,
-            _ => (),
-        }
-    }
-    score
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SEQDB {
-    pub sp: NmapOsDbValueTypes,
-    pub gcd: NmapOsDbValueTypes,
-    pub isr: NmapOsDbValueTypes,
-    pub ti: NmapOsDbValueTypes,
-    pub ci: NmapOsDbValueTypes,
-    pub ii: NmapOsDbValueTypes,
-    pub ss: NmapOsDbValueTypes,
-    pub ts: NmapOsDbValueTypes,
-    pub r: NmapOsDbValueTypes,
+    pub sp: NmapData,
+    pub r: NmapData,
+    pub gcd: NmapData,
+    pub isr: NmapData,
+    pub ti: NmapData,
+    pub ci: NmapData,
+    pub ii: NmapData,
+    pub ss: NmapData,
+    pub ts: NmapData,
 }
 
 impl SEQDB {
@@ -207,9 +314,11 @@ impl SEQDB {
             match seqx.r.as_str() {
                 "N" => (),
                 _ => {
-                    let sp_check = self.sp.check_usize(seqx.sp as usize);
+                    // let sp_check = self.sp.check_usize(seqx.sp as usize);
+                    let sp_check = true;
                     let gcd_check = self.gcd.check_usize(seqx.gcd as usize);
-                    let isr_check = self.isr.check_usize(seqx.isr as usize);
+                    // let isr_check = self.isr.check_usize(seqx.isr as usize);
+                    let isr_check = true;
                     let ti_check = self.ti.check_string(&seqx.ti);
                     let ci_check = self.ci.check_string(&seqx.ci);
                     let ii_check = self.ii.check_string(&seqx.ii);
@@ -236,108 +345,17 @@ impl SEQDB {
         }
         (0, 8)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> SEQDB {
-        let sp = match map.get("sp") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let gcd = match map.get("gcd") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let isr = match map.get("isr") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ti = match map.get("ti") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ci = match map.get("ci") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ii = match map.get("ii") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ss = match map.get("ss") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ts = match map.get("ts") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        SEQDB {
-            sp,
-            gcd,
-            isr,
-            ti,
-            ci,
-            ii,
-            ss,
-            ts,
-            r,
-        }
-    }
-    pub fn parser(line: String) -> Result<SEQDB, PistolErrors> {
-        let split_1: Vec<&str> = line.split("(").collect();
-        let split_2: Vec<&str> = split_1[1].split(")").collect();
-        let many_info = split_2[0];
-        let info_split: Vec<&str> = many_info.split("%").collect();
-
-        let mut map = HashMap::new();
-        for info in info_split {
-            if info.contains("SP=") {
-                let value = value_parser_usize(info)?;
-                map.insert("sp", value);
-            } else if info.contains("GCD=") {
-                let value = value_parser_usize(info)?;
-                map.insert("gcd", value);
-            } else if info.contains("ISR=") {
-                let value = value_parser_usize(info)?;
-                map.insert("isr", value);
-            } else if info.contains("TI=") {
-                let value = value_parser_str(info);
-                map.insert("ti", value);
-            } else if info.contains("CI=") {
-                let value = value_parser_str(info);
-                map.insert("ci", value);
-            } else if info.contains("II=") {
-                let value = value_parser_str(info);
-                map.insert("ii", value);
-            } else if info.contains("SS=") {
-                let value = value_parser_str(info);
-                map.insert("ss", value);
-            } else if info.contains("TS=") {
-                let value = value_parser_str(info);
-                map.insert("ts", value);
-            } else if info.contains("R=") {
-                let value = value_parser_str(info);
-                map.insert("r", value);
-            } else {
-                panic!("new type: {}", info);
-            }
-        }
-        Ok(SEQDB::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OPSDB {
-    pub o1: NmapOsDbValueTypes,
-    pub o2: NmapOsDbValueTypes,
-    pub o3: NmapOsDbValueTypes,
-    pub o4: NmapOsDbValueTypes,
-    pub o5: NmapOsDbValueTypes,
-    pub o6: NmapOsDbValueTypes,
-    pub r: NmapOsDbValueTypes,
+    pub o1: NmapData,
+    pub o2: NmapData,
+    pub o3: NmapData,
+    pub o4: NmapData,
+    pub o5: NmapData,
+    pub o6: NmapData,
+    pub r: NmapData,
 }
 
 impl OPSDB {
@@ -360,94 +378,17 @@ impl OPSDB {
         }
         (0, 6)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> OPSDB {
-        let o1 = match map.get("o1") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o2 = match map.get("o2") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o3 = match map.get("o3") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o4 = match map.get("o4") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o5 = match map.get("o5") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o6 = match map.get("o6") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        OPSDB {
-            o1,
-            o2,
-            o3,
-            o4,
-            o5,
-            o6,
-            r,
-        }
-    }
-    pub fn parser(line: String) -> Result<OPSDB, PistolErrors> {
-        let mut map = HashMap::new();
-        if line.contains("%") {
-            let split_1: Vec<&str> = line.split("(").collect();
-            let split_2: Vec<&str> = split_1[1].split(")").collect();
-            let many_info = split_2[0];
-            let info_split: Vec<&str> = many_info.split("%").collect();
-
-            for info in info_split {
-                if info.contains("O1=") {
-                    let value = value_parser_str(info);
-                    map.insert("o1", value);
-                } else if info.contains("O2=") {
-                    let value = value_parser_str(info);
-                    map.insert("o2", value);
-                } else if info.contains("O3=") {
-                    let value = value_parser_str(info);
-                    map.insert("o3", value);
-                } else if info.contains("O4=") {
-                    let value = value_parser_str(info);
-                    map.insert("o4", value);
-                } else if info.contains("O5=") {
-                    let value = value_parser_str(info);
-                    map.insert("o5", value);
-                } else if info.contains("O6=") {
-                    let value = value_parser_str(info);
-                    map.insert("o6", value);
-                } else if info.contains("R=") {
-                    let value = value_parser_str(info);
-                    map.insert("r", value);
-                } else {
-                    panic!("new type: {}", info);
-                }
-            }
-        }
-        Ok(OPSDB::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WINDB {
-    pub w1: NmapOsDbValueTypes,
-    pub w2: NmapOsDbValueTypes,
-    pub w3: NmapOsDbValueTypes,
-    pub w4: NmapOsDbValueTypes,
-    pub w5: NmapOsDbValueTypes,
-    pub w6: NmapOsDbValueTypes,
-    pub r: NmapOsDbValueTypes,
+    pub w1: NmapData,
+    pub w2: NmapData,
+    pub w3: NmapData,
+    pub w4: NmapData,
+    pub w5: NmapData,
+    pub w6: NmapData,
+    pub r: NmapData,
 }
 
 impl WINDB {
@@ -470,93 +411,18 @@ impl WINDB {
         }
         (0, 6)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> WINDB {
-        let w1 = match map.get("w1") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w2 = match map.get("w2") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w3 = match map.get("w3") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w4 = match map.get("w4") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w5 = match map.get("w5") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w6 = match map.get("w6") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        WINDB {
-            w1,
-            w2,
-            w3,
-            w4,
-            w5,
-            w6,
-            r,
-        }
-    }
-    pub fn parser(line: String) -> Result<WINDB, PistolErrors> {
-        let split_1: Vec<&str> = line.split("(").collect();
-        let split_2: Vec<&str> = split_1[1].split(")").collect();
-        let many_info = split_2[0];
-        let info_split: Vec<&str> = many_info.split("%").collect();
-
-        let mut map = HashMap::new();
-        for info in info_split {
-            if info.contains("W1=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w1", value);
-            } else if info.contains("W2=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w2", value);
-            } else if info.contains("W3=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w3", value);
-            } else if info.contains("W4=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w4", value);
-            } else if info.contains("W5=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w5", value);
-            } else if info.contains("W6=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w6", value);
-            } else if info.contains("R=") {
-                let value = value_parser_str(info);
-                map.insert("r", value);
-            } else {
-                panic!("new type: {}", info);
-            }
-        }
-        Ok(WINDB::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ECNDB {
-    pub r: NmapOsDbValueTypes,
-    pub df: NmapOsDbValueTypes,
-    pub t: NmapOsDbValueTypes,
-    pub tg: NmapOsDbValueTypes,
-    pub w: NmapOsDbValueTypes,
-    pub o: NmapOsDbValueTypes,
-    pub cc: NmapOsDbValueTypes,
-    pub q: NmapOsDbValueTypes,
+    pub r: NmapData,
+    pub df: NmapData,
+    pub t: NmapData,
+    pub tg: NmapData,
+    pub w: NmapData,
+    pub o: NmapData,
+    pub cc: NmapData,
+    pub q: NmapData,
 }
 
 impl ECNDB {
@@ -583,107 +449,24 @@ impl ECNDB {
         }
         (0, 6)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> ECNDB {
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let df = match map.get("df") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let t = match map.get("t") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let tg = match map.get("tg") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w = match map.get("w") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o = match map.get("o") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let cc = match map.get("cc") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let q = match map.get("q") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        ECNDB {
-            r,
-            df,
-            t,
-            tg,
-            w,
-            o,
-            cc,
-            q,
-        }
-    }
-    pub fn parser(line: String) -> Result<ECNDB, PistolErrors> {
-        let split_1: Vec<&str> = line.split("(").collect();
-        let split_2: Vec<&str> = split_1[1].split(")").collect();
-        let many_info = split_2[0];
-        let info_split: Vec<&str> = many_info.split("%").collect();
-
-        let mut map = HashMap::new();
-        for info in info_split {
-            if info.contains("R=") {
-                let value = value_parser_str(info);
-                map.insert("r", value);
-            } else if info.contains("DF=") {
-                let value = value_parser_str(info);
-                map.insert("df", value);
-            } else if info.contains("T=") {
-                let value = value_parser_usize(info)?;
-                map.insert("t", value);
-            } else if info.contains("TG=") {
-                let value = value_parser_usize(info)?;
-                map.insert("tg", value);
-            } else if info.contains("W=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w", value);
-            } else if info.contains("O=") {
-                let value = value_parser_str(info);
-                map.insert("o", value);
-            } else if info.contains("CC=") {
-                let value = value_parser_str(info);
-                map.insert("cc", value);
-            } else if info.contains("Q=") {
-                let value = value_parser_str(info);
-                map.insert("q", value);
-            } else {
-                panic!("new type: {}", info);
-            }
-        }
-        Ok(ECNDB::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TX {
-    pub r: NmapOsDbValueTypes,
-    pub df: NmapOsDbValueTypes,
-    pub t: NmapOsDbValueTypes,
-    pub tg: NmapOsDbValueTypes,
-    pub w: NmapOsDbValueTypes,
-    pub s: NmapOsDbValueTypes,
-    pub a: NmapOsDbValueTypes,
-    pub f: NmapOsDbValueTypes,
-    pub o: NmapOsDbValueTypes,
-    pub rd: NmapOsDbValueTypes,
-    pub q: NmapOsDbValueTypes,
+pub struct TXDB {
+    pub r: NmapData,
+    pub df: NmapData,
+    pub t: NmapData,
+    pub tg: NmapData,
+    pub w: NmapData,
+    pub s: NmapData,
+    pub a: NmapData,
+    pub f: NmapData,
+    pub o: NmapData,
+    pub rd: NmapData,
+    pub q: NmapData,
 }
 
-impl TX {
+impl TXDB {
     pub fn check(&self, txx: &TXX, name: &str) -> (usize, usize) {
         let r_check = self.r.check_r(&txx.r);
         if r_check {
@@ -732,129 +515,21 @@ impl TX {
         }
         (0, 9)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> TX {
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let df = match map.get("df") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let t = match map.get("t") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let tg = match map.get("tg") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let w = match map.get("w") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let s = match map.get("s") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let a = match map.get("a") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let f = match map.get("f") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let o = match map.get("o") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let rd = match map.get("rd") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let q = match map.get("q") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        TX {
-            r,
-            df,
-            t,
-            tg,
-            w,
-            s,
-            a,
-            f,
-            o,
-            rd,
-            q,
-        }
-    }
-    pub fn parser(line: String) -> Result<TX, PistolErrors> {
-        let split_1: Vec<&str> = line.split("(").collect();
-        let split_2: Vec<&str> = split_1[1].split(")").collect();
-        let many_info = split_2[0];
-        let info_split: Vec<&str> = many_info.split("%").collect();
-
-        let mut map = HashMap::new();
-        for info in info_split {
-            if info.contains("R=") {
-                let value = value_parser_str(info);
-                map.insert("r", value);
-            } else if info.contains("DF=") {
-                let value = value_parser_str(info);
-                map.insert("df", value);
-            } else if info.contains("T=") {
-                let value = value_parser_usize(info)?;
-                map.insert("t", value);
-            } else if info.contains("TG=") {
-                let value = value_parser_usize(info)?;
-                map.insert("tg", value);
-            } else if info.contains("W=") {
-                let value = value_parser_usize(info)?;
-                map.insert("w", value);
-            } else if info.contains("S=") {
-                let value = value_parser_str(info);
-                map.insert("s", value);
-            } else if info.contains("A=") {
-                let value = value_parser_str(info);
-                map.insert("a", value);
-            } else if info.contains("F=") {
-                let value = value_parser_str(info);
-                map.insert("f", value);
-            } else if info.contains("O=") {
-                let value = value_parser_str(info);
-                map.insert("o", value);
-            } else if info.contains("RD=") {
-                let value = value_parser_usize(info)?;
-                map.insert("rd", value);
-            } else if info.contains("Q=") {
-                let value = value_parser_str(info);
-                map.insert("q", value);
-            } else {
-                panic!("new type: {}", info);
-            }
-        }
-
-        Ok(TX::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct U1DB {
-    pub r: NmapOsDbValueTypes,
-    pub df: NmapOsDbValueTypes,
-    pub t: NmapOsDbValueTypes,
-    pub tg: NmapOsDbValueTypes,
-    pub ipl: NmapOsDbValueTypes,
-    pub un: NmapOsDbValueTypes,
-    pub ripl: NmapOsDbValueTypes,
-    pub rid: NmapOsDbValueTypes,
-    pub ripck: NmapOsDbValueTypes,
-    pub ruck: NmapOsDbValueTypes,
-    pub rud: NmapOsDbValueTypes,
+    pub r: NmapData,
+    pub df: NmapData,
+    pub t: NmapData,
+    pub tg: NmapData,
+    pub ipl: NmapData,
+    pub un: NmapData,
+    pub ripl: NmapData,
+    pub rid: NmapData,
+    pub ripck: NmapData,
+    pub ruck: NmapData,
+    pub rud: NmapData,
 }
 
 impl U1DB {
@@ -905,122 +580,15 @@ impl U1DB {
         }
         (0, 9)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> U1DB {
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let df = match map.get("df") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let t = match map.get("t") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let tg = match map.get("tg") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ipl = match map.get("ipl") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let un = match map.get("un") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ripl = match map.get("ripl") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let rid = match map.get("rid") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ripck = match map.get("ripck") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let ruck = match map.get("ruck") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let rud = match map.get("rud") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        U1DB {
-            r,
-            df,
-            t,
-            tg,
-            ipl,
-            un,
-            ripl,
-            rid,
-            ripck,
-            ruck,
-            rud,
-        }
-    }
-    pub fn parser(line: String) -> Result<U1DB, PistolErrors> {
-        let split_1: Vec<&str> = line.split("(").collect();
-        let split_2: Vec<&str> = split_1[1].split(")").collect();
-        let many_info = split_2[0];
-        let info_split: Vec<&str> = many_info.split("%").collect();
-
-        let mut map = HashMap::new();
-        for info in info_split {
-            if info.contains("R=") {
-                let value = value_parser_str(info);
-                map.insert("r", value);
-            } else if info.contains("DF=") {
-                let value = value_parser_str(info);
-                map.insert("df", value);
-            } else if info.contains("T=") {
-                let value = value_parser_usize(info)?;
-                map.insert("t", value);
-            } else if info.contains("TG=") {
-                let value = value_parser_usize(info)?;
-                map.insert("tg", value);
-            } else if info.contains("RIPL=") {
-                let value = value_parser_str(info);
-                map.insert("ripl", value);
-            } else if info.contains("IPL=") {
-                let value = value_parser_usize(info)?;
-                map.insert("ipl", value);
-            } else if info.contains("UN=") {
-                let value = value_parser_usize(info)?;
-                map.insert("un", value);
-            } else if info.contains("RID=") {
-                let value = value_parser_str(info);
-                map.insert("rid", value);
-            } else if info.contains("RIPCK=") {
-                let value = value_parser_str(info);
-                map.insert("ripck", value);
-            } else if info.contains("RUCK=") {
-                let value = value_parser_str(info);
-                map.insert("ruck", value);
-            } else if info.contains("RUD=") {
-                let value = value_parser_str(info);
-                map.insert("rud", value);
-            } else {
-                panic!("new type: {}", info);
-            }
-        }
-        Ok(U1DB::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IEDB {
-    pub r: NmapOsDbValueTypes,
-    pub dfi: NmapOsDbValueTypes,
-    pub t: NmapOsDbValueTypes,
-    pub tg: NmapOsDbValueTypes,
-    pub cd: NmapOsDbValueTypes,
+    pub r: NmapData,
+    pub dfi: NmapData,
+    pub t: NmapData,
+    pub tg: NmapData,
+    pub cd: NmapData,
 }
 
 impl IEDB {
@@ -1044,83 +612,30 @@ impl IEDB {
         }
         (0, 3)
     }
-    pub fn new(map: HashMap<&str, NmapOsDbValueTypes>) -> IEDB {
-        let r = match map.get("r") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let dfi = match map.get("dfi") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let t = match map.get("t") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let tg = match map.get("tg") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-        let cd = match map.get("cd") {
-            Some(v) => v.clone(),
-            _ => NmapOsDbValueTypes::empty(),
-        };
-
-        IEDB { r, dfi, t, tg, cd }
-    }
-    fn parser(line: String) -> Result<IEDB, PistolErrors> {
-        let split_1: Vec<&str> = line.split("(").collect();
-        let split_2: Vec<&str> = split_1[1].split(")").collect();
-        let many_info = split_2[0];
-        let info_split: Vec<&str> = many_info.split("%").collect();
-
-        let mut map = HashMap::new();
-        for info in info_split {
-            if info.contains("R=") {
-                let value = value_parser_str(info);
-                map.insert("r", value);
-            } else if info.contains("DFI=") {
-                let value = value_parser_str(info);
-                map.insert("dfi", value);
-            } else if info.contains("T=") {
-                let value = value_parser_usize(info)?;
-                map.insert("t", value);
-            } else if info.contains("TG=") {
-                let value = value_parser_usize(info)?;
-                map.insert("tg", value);
-            } else if info.contains("CD=") {
-                let value = value_parser_str(info);
-                map.insert("cd", value);
-            } else {
-                panic!("new type: {}", info);
-            }
-        }
-        Ok(IEDB::new(map))
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOsDb {
+pub struct NmapOSDB {
     pub name: String,
-    pub class: String,
-    pub cpe: String,
+    pub class: Vec<String>,
+    pub cpe: Vec<String>,
     pub seq: SEQDB,
     pub ops: OPSDB,
     pub win: WINDB,
     pub ecn: ECNDB,
-    pub t1: TX,
-    pub t2: TX,
-    pub t3: TX,
-    pub t4: TX,
-    pub t5: TX,
-    pub t6: TX,
-    pub t7: TX,
+    pub t1: TXDB,
+    pub t2: TXDB,
+    pub t3: TXDB,
+    pub t4: TXDB,
+    pub t5: TXDB,
+    pub t6: TXDB,
+    pub t7: TXDB,
     pub u1: U1DB,
-    pub ie: IEDB,
+    pub ie: Option<IEDB>,
 }
 
-impl NmapOsDb {
-    pub fn check(&self, probe_ret: &PistolFingerprint) -> (usize, usize) {
+impl NmapOSDB {
+    pub fn check(&self, probe_ret: &TargetFingerprint) -> (usize, usize) {
         let (seq_score, seq_total) = self.seq.check(&probe_ret.seqx);
         // println!("SEQ: {}", seq_check);
         let (ops_score, ops_total) = self.ops.check(&probe_ret.opsx);
@@ -1145,7 +660,10 @@ impl NmapOsDb {
         // println!("T7: {}", t7_check);
         let (u1_score, u1_total) = self.u1.check(&probe_ret.u1x);
         // println!("U1: {}", u1_check);
-        let (ie_score, ie_total) = self.ie.check(&probe_ret.iex);
+        let (ie_score, ie_total) = match &self.ie {
+            Some(ie) => ie.check(&probe_ret.iex),
+            None => (0, 3), // all scores
+        };
         // println!("IE: {}", ie_check);
 
         let score = seq_score
@@ -1180,189 +698,535 @@ impl NmapOsDb {
     }
 }
 
-fn value_parser_usize(info: &str) -> Result<NmapOsDbValueTypes, PistolErrors> {
-    let value_split: Vec<&str> = info.split("=").collect();
-    let value = value_split[1];
-    let items: Vec<&str> = value.split("|").collect();
-    let mut range_values: Vec<DbRangeValue> = Vec::new();
-    let mut single_values: Vec<DbSingleValue> = Vec::new();
-    for i in items {
-        if i.contains("-") {
-            // 1-6
-            let range_value_split: Vec<&str> = i.split("-").collect();
-            let hs = SpHex::new_hex(range_value_split[0]);
-            let start = hs.decode()? as usize;
-            let he = SpHex::new_hex(range_value_split[1]);
-            let end = he.decode()? as usize;
-            let range_value = DbRangeValue::new(start, end, DbRangeValueTypes::Both);
-            range_values.push(range_value);
-        } else if i.contains(">") {
-            // still have some problem
-            let special_value_split: Vec<&str> = i.split(">").collect();
-            let h = SpHex::new_hex(special_value_split[1]);
-            let value = h.decode()? as usize;
-            let range_value = DbRangeValue::new(value, 0, DbRangeValueTypes::Left);
-            range_values.push(range_value);
-        } else if i.contains("<") {
-            // still have some problem
-            let special_value_split: Vec<&str> = i.split(">").collect();
-            let h = SpHex::new_hex(special_value_split[1]);
-            let value = h.decode()? as usize;
-            let range_value = DbRangeValue::new(value, 0, DbRangeValueTypes::Right);
-            range_values.push(range_value);
-        } else {
-            let he = SpHex::new_hex(i);
-            let e_u32 = he.decode()?;
-            let single_value = DbSingleValue::new(e_u32 as usize);
-            single_values.push(single_value);
+/// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
+/// Each item in the input vec `lines` represents a line of nmap-os-db file content.
+/// So just read the nmap file line by line and store it in vec for input.
+pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErrors> {
+    let name_reg = Regex::new(r"Fingerprint\s+(?P<name>.+)")?;
+    let class_reg = Regex::new(
+        r"Class\s+(?P<class1>[^|]+)\s+\|\s+(?P<class2>[^|]+)\s+\|(\|)?\s+(?P<class3>[^|]+)(\s+\|(\|)?\s+(?P<class4>[^|]+))?",
+    )?;
+    let cpe_reg = Regex::new(r"CPE\s+(?P<cpe>.+)")?;
+    let seq_reg = Regex::new(
+        r"SEQ\((SP=(?P<sp>[^%]+))?(R=(?P<r>[^%]+))?(%GCD=(?P<gcd>[^%]+))?(%?ISR=(?P<isr>[^%]+))?(%?TI=(?P<ti>[^%]+))?(%?CI=(?P<ci>[^%]+))?(%?II=(?P<ii>[^%]+))?(%SS=(?P<ss>[^%]+))?(%TS=(?P<ts>[^%]+))?\)",
+    )?;
+    let ops_reg = Regex::new(
+        r"OPS\((R=(?P<r>[^%]+|))?(O1=(?P<o1>[^%]+|))?(%O2=(?P<o2>[^%]+|))?(%O3=(?P<o3>[^%]+|))?(%O4=(?P<o4>[^%]+|))?(%O5=(?P<o5>[^%]+|))?(%O6=(?P<o6>[^%]+|))?\)",
+    )?;
+    let win_reg = Regex::new(
+        r"WIN\((R=(?P<r>[^%]+))?(W1=(?P<w1>[^%]+)%W2=(?P<w2>[^%]+)%W3=(?P<w3>[^%]+)%W4=(?P<w4>[^%]+)%W5=(?P<w5>[^%]+)%W6=(?P<w6>[^%]+))?\)",
+    )?;
+    let ecn_reg = Regex::new(
+        r"ECN\(R=(?P<r>[^%]+|)(%DF=(?P<df>[^%]+|))?(%T=(?P<t>[^%]+|))?(%TG=(?P<tg>[^%]+|))?(%W=(?P<w>[^%]+|))?(%O=(?P<o>[^%]+|))?(%CC=(?P<cc>[^%]+|))?(%Q=(?P<q>[^%]+|))?\)",
+    )?;
+    let tx_reg = Regex::new(
+        r"T\d\((R=(?P<r>[^%]+))?(%?DF=(?P<df>[^%]+))?(%T=(?P<t>[^%]+))?(%TG=(?P<tg>[^%]+))?(%W=(?P<w>[^%]+))?(%S=(?P<s>[^%]+))?(%A=(?P<a>[^%]+))?(%F=(?P<f>[^%]+))?(%O=(?P<o>[^%]+|))?(%RD=(?P<rd>[^%]+))?(%Q=(?P<q>[^%]+|))?\)",
+    )?;
+    let u1_reg = Regex::new(
+        r"U1\((R=(?P<r>[^%]+))?(%?DF=(?P<df>[^%]+))?(%T=(?P<t>[^%]+))?(%TG=(?P<tg>[^%]+))?(%IPL=(?P<ipl>[^%]+))?(%UN=(?P<un>[^%]+))?(%RIPL=(?P<ripl>[^%]+))?(%RID=(?P<rid>[^%]+))?(%RIPCK=(?P<ripck>[^%]+))?(%RUCK=(?P<ruck>[^%]+))?(%RUD=(?P<rud>[^%]+))?\)",
+    )?;
+    let ie_reg = Regex::new(
+        r"IE\((R=(?P<r>[^%]+))?(%?DFI=(?P<dfi>[^%]+))?(%T=(?P<t>[^%]+))?(%TG=(?P<tg>[^%]+))?(%CD=(?P<cd>[^%]+))?\)",
+    )?;
+
+    let mut ret = Vec::new();
+    let mut iter = lines.into_iter();
+
+    loop {
+        match iter.next() {
+            Some(line) => {
+                if line.starts_with("Fingerprint") {
+                    /* name part */
+                    let name = match name_reg.captures(&line) {
+                        Some(caps) => {
+                            let name = caps.name("name").map_or("", |m| m.as_str());
+                            name.to_string()
+                        }
+                        None => {
+                            return Err(PistolErrors::OSDBParseError {
+                                name: String::from("Fingerprint"),
+                                line,
+                            })
+                        }
+                    };
+                    println!("{}", name);
+                    /* class part */
+                    let class_parser = |line: String| -> Result<Vec<String>, PistolErrors> {
+                        match class_reg.captures(&line) {
+                            Some(caps) => {
+                                let class1 = caps.name("class1").map_or("", |m| m.as_str());
+                                let class2 = caps.name("class2").map_or("", |m| m.as_str());
+                                let class3 = caps.name("class3").map_or("", |m| m.as_str());
+                                let class4 = caps.name("class4").map_or("", |m| m.as_str());
+
+                                let class1 = class1.trim().to_string();
+                                let class2 = class2.trim().to_string();
+                                let class3 = class3.trim().to_string();
+                                let class4 = class4.trim().to_string();
+                                let mut class = Vec::new();
+                                let mut class_push = |input: String| {
+                                    if input.len() > 0 {
+                                        class.push(input);
+                                    }
+                                };
+                                class_push(class1);
+                                class_push(class2);
+                                class_push(class3);
+                                class_push(class4);
+                                Ok(class)
+                            }
+                            None => Err(PistolErrors::OSDBParseError {
+                                name: String::from("Class"),
+                                line,
+                            }),
+                        }
+                    };
+                    /* cpe part */
+                    let cpe_parser = |line: String| -> Result<String, PistolErrors> {
+                        match cpe_reg.captures(&line) {
+                            Some(caps) => {
+                                let cpe = caps.name("cpe").map_or("", |m| m.as_str());
+                                Ok(cpe.to_string())
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: String::from("CPE"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* seq part */
+                    let seq_parser = |line: String| -> Result<SEQDB, PistolErrors> {
+                        match seq_reg.captures(&line) {
+                            Some(caps) => {
+                                let sp = caps.name("sp").map_or("", |m| m.as_str());
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let gcd = caps.name("gcd").map_or("", |m| m.as_str());
+                                let isr = caps.name("isr").map_or("", |m| m.as_str());
+                                let ti = caps.name("ti").map_or("", |m| m.as_str());
+                                let ci = caps.name("ci").map_or("", |m| m.as_str());
+                                let ii = caps.name("ii").map_or("", |m| m.as_str());
+                                let ss = caps.name("ss").map_or("", |m| m.as_str());
+                                let ts = caps.name("ts").map_or("", |m| m.as_str());
+
+                                let sp = NmapData::parser_usize(sp)?;
+                                let r = NmapData::parser_str(r);
+                                let gcd = NmapData::parser_usize(gcd)?;
+                                let isr = NmapData::parser_usize(isr)?;
+                                let ti = NmapData::parser_str(ti);
+                                let ci = NmapData::parser_str(ci);
+                                let ii = NmapData::parser_str(ii);
+                                let ss = NmapData::parser_str(ss);
+                                let ts = NmapData::parser_str(ts);
+
+                                let seq = SEQDB {
+                                    sp,
+                                    r,
+                                    gcd,
+                                    isr,
+                                    ti,
+                                    ci,
+                                    ii,
+                                    ss,
+                                    ts,
+                                };
+                                Ok(seq)
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: String::from("SEQ"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* ops part */
+                    let ops_parser = |line: String| -> Result<OPSDB, PistolErrors> {
+                        match ops_reg.captures(&line) {
+                            Some(caps) => {
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let o1 = caps.name("o1").map_or("", |m| m.as_str());
+                                let o2 = caps.name("o2").map_or("", |m| m.as_str());
+                                let o3 = caps.name("o3").map_or("", |m| m.as_str());
+                                let o4 = caps.name("o4").map_or("", |m| m.as_str());
+                                let o5 = caps.name("o5").map_or("", |m| m.as_str());
+                                let o6 = caps.name("o6").map_or("", |m| m.as_str());
+
+                                let r = NmapData::parser_str(r);
+                                let o1 = NmapData::parser_str(o1);
+                                let o2 = NmapData::parser_str(o2);
+                                let o3 = NmapData::parser_str(o3);
+                                let o4 = NmapData::parser_str(o4);
+                                let o5 = NmapData::parser_str(o5);
+                                let o6 = NmapData::parser_str(o6);
+
+                                let ops = OPSDB {
+                                    r,
+                                    o1,
+                                    o2,
+                                    o3,
+                                    o4,
+                                    o5,
+                                    o6,
+                                };
+                                Ok(ops)
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: String::from("OPS"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* win part */
+                    let win_parser = |line: String| -> Result<WINDB, PistolErrors> {
+                        match win_reg.captures(&line) {
+                            Some(caps) => {
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let w1 = caps.name("w1").map_or("", |m| m.as_str());
+                                let w2 = caps.name("w2").map_or("", |m| m.as_str());
+                                let w3 = caps.name("w3").map_or("", |m| m.as_str());
+                                let w4 = caps.name("w4").map_or("", |m| m.as_str());
+                                let w5 = caps.name("w5").map_or("", |m| m.as_str());
+                                let w6 = caps.name("w6").map_or("", |m| m.as_str());
+
+                                let r = NmapData::parser_str(r);
+                                let w1 = NmapData::parser_usize(w1)?;
+                                let w2 = NmapData::parser_usize(w2)?;
+                                let w3 = NmapData::parser_usize(w3)?;
+                                let w4 = NmapData::parser_usize(w4)?;
+                                let w5 = NmapData::parser_usize(w5)?;
+                                let w6 = NmapData::parser_usize(w6)?;
+
+                                let win = WINDB {
+                                    r,
+                                    w1,
+                                    w2,
+                                    w3,
+                                    w4,
+                                    w5,
+                                    w6,
+                                };
+                                Ok(win)
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: String::from("WIN"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* ecn part */
+                    let ecn_parser = |line: String| -> Result<ECNDB, PistolErrors> {
+                        match ecn_reg.captures(&line) {
+                            Some(caps) => {
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let df = caps.name("df").map_or("", |m| m.as_str());
+                                let t = caps.name("t").map_or("", |m| m.as_str());
+                                let tg = caps.name("tg").map_or("", |m| m.as_str());
+                                let w = caps.name("w").map_or("", |m| m.as_str());
+                                let o = caps.name("o").map_or("", |m| m.as_str());
+                                let cc = caps.name("cc").map_or("", |m| m.as_str());
+                                let q = caps.name("q").map_or("", |m| m.as_str());
+
+                                let r = NmapData::parser_str(r);
+                                let df = NmapData::parser_str(df);
+                                let t = NmapData::parser_usize(t)?;
+                                let tg = NmapData::parser_usize(tg)?;
+                                let w = NmapData::parser_usize(w)?;
+                                let o = NmapData::parser_str(o);
+                                let cc = NmapData::parser_str(cc);
+                                let q = NmapData::parser_str(q);
+
+                                let ecn = ECNDB {
+                                    r,
+                                    df,
+                                    t,
+                                    tg,
+                                    w,
+                                    o,
+                                    cc,
+                                    q,
+                                };
+                                Ok(ecn)
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: String::from("ECN"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* tx part */
+                    let tx_parser = |line: String| -> Result<TXDB, PistolErrors> {
+                        match tx_reg.captures(&line) {
+                            Some(caps) => {
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let df = caps.name("df").map_or("", |m| m.as_str());
+                                let t = caps.name("t").map_or("", |m| m.as_str());
+                                let tg = caps.name("tg").map_or("", |m| m.as_str());
+                                let w = caps.name("w").map_or("", |m| m.as_str());
+                                let s = caps.name("s").map_or("", |m| m.as_str());
+                                let a = caps.name("a").map_or("", |m| m.as_str());
+                                let f = caps.name("f").map_or("", |m| m.as_str());
+                                let o = caps.name("o").map_or("", |m| m.as_str());
+                                let rd = caps.name("rd").map_or("", |m| m.as_str());
+                                let q = caps.name("q").map_or("", |m| m.as_str());
+
+                                let r = NmapData::parser_str(r);
+                                let df = NmapData::parser_str(df);
+                                let t = NmapData::parser_usize(t)?;
+                                let tg = NmapData::parser_usize(tg)?;
+                                let w = NmapData::parser_usize(w)?;
+                                let s = NmapData::parser_str(s);
+                                let a = NmapData::parser_str(a);
+                                let f = NmapData::parser_str(f);
+                                let o = NmapData::parser_str(o);
+                                let rd = NmapData::parser_usize(rd)?;
+                                let q = NmapData::parser_str(q);
+
+                                let txdb = TXDB {
+                                    r,
+                                    df,
+                                    t,
+                                    tg,
+                                    w,
+                                    s,
+                                    a,
+                                    f,
+                                    o,
+                                    rd,
+                                    q,
+                                };
+                                Ok(txdb)
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: format!("TX"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* u1 part */
+                    let u1_parser = |line: String| -> Result<U1DB, PistolErrors> {
+                        match u1_reg.captures(&line) {
+                            Some(caps) => {
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let df = caps.name("df").map_or("", |m| m.as_str());
+                                let t = caps.name("t").map_or("", |m| m.as_str());
+                                let tg = caps.name("tg").map_or("", |m| m.as_str());
+                                let ripl = caps.name("ripl").map_or("", |m| m.as_str());
+                                let ipl = caps.name("ipl").map_or("", |m| m.as_str());
+                                let un = caps.name("un").map_or("", |m| m.as_str());
+                                let rid = caps.name("rid").map_or("", |m| m.as_str());
+                                let ripck = caps.name("ripck").map_or("", |m| m.as_str());
+                                let ruck = caps.name("ruck").map_or("", |m| m.as_str());
+                                let rud = caps.name("rud").map_or("", |m| m.as_str());
+
+                                let r = NmapData::parser_str(r);
+                                let df = NmapData::parser_str(df);
+                                let t = NmapData::parser_usize(t)?;
+                                let tg = NmapData::parser_usize(tg)?;
+                                let ripl = NmapData::parser_str(ripl);
+                                let ipl = NmapData::parser_usize(ipl)?;
+                                let un = NmapData::parser_usize(un)?;
+                                let rid = NmapData::parser_str(rid);
+                                let ripck = NmapData::parser_str(ripck);
+                                let ruck = NmapData::parser_str(ruck);
+                                let rud = NmapData::parser_str(rud);
+
+                                let u1 = U1DB {
+                                    r,
+                                    df,
+                                    t,
+                                    tg,
+                                    ripl,
+                                    ipl,
+                                    un,
+                                    rid,
+                                    ripck,
+                                    ruck,
+                                    rud,
+                                };
+                                Ok(u1)
+                            }
+                            None => {
+                                return Err(PistolErrors::OSDBParseError {
+                                    name: format!("U1"),
+                                    line,
+                                })
+                            }
+                        }
+                    };
+                    /* ie part */
+                    let ie_parser = |line: String| -> Result<Option<IEDB>, PistolErrors> {
+                        match ie_reg.captures(&line) {
+                            Some(caps) => {
+                                let r = caps.name("r").map_or("", |m| m.as_str());
+                                let dfi = caps.name("dfi").map_or("", |m| m.as_str());
+                                let t = caps.name("t").map_or("", |m| m.as_str());
+                                let tg = caps.name("tg").map_or("", |m| m.as_str());
+                                let cd = caps.name("cd").map_or("", |m| m.as_str());
+
+                                let r = NmapData::parser_str(r);
+                                let dfi = NmapData::parser_str(dfi);
+                                let t = NmapData::parser_usize(t)?;
+                                let tg = NmapData::parser_usize(tg)?;
+                                let cd = NmapData::parser_str(cd);
+
+                                let ie = IEDB { r, dfi, t, tg, cd };
+                                Ok(Some(ie))
+                            }
+                            None => {
+                                // return Err(PistolErrors::OSDBParseError {
+                                //     name: format!("IE"),
+                                //     line,
+                                // })
+                                Ok(None)
+                            }
+                        }
+                    };
+
+                    let mut class = Vec::new();
+                    let mut cpe = Vec::new();
+                    loop {
+                        match iter.next() {
+                            Some(line) => {
+                                if line.starts_with("Class") {
+                                    class.extend(class_parser(line)?);
+                                } else if line.starts_with("CPE") {
+                                    let c = cpe_parser(line)?;
+                                    cpe.push(c);
+                                } else if line.starts_with("SEQ") {
+                                    // only one line
+                                    let seq = seq_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let ops = ops_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let win = win_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let ecn = ecn_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t1 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t2 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t3 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t4 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t5 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t6 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let t7 = tx_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let u1 = u1_parser(line)?;
+                                    let line = match iter.next() {
+                                        Some(line) => line,
+                                        None => break,
+                                    };
+                                    let ie = ie_parser(line)?;
+
+                                    let nmap_os_db = NmapOSDB {
+                                        name: name.clone(),
+                                        class: class.clone(),
+                                        cpe: cpe.clone(),
+                                        seq,
+                                        ops,
+                                        win,
+                                        ecn,
+                                        t1,
+                                        t2,
+                                        t3,
+                                        t4,
+                                        t5,
+                                        t6,
+                                        t7,
+                                        u1,
+                                        ie,
+                                    };
+                                    ret.push(nmap_os_db);
+                                } else {
+                                    break;
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                }
+            }
+            None => break,
         }
     }
-    let ret = NmapOsDbValueTypes::DbMixValue(DbMixValue::new(range_values, single_values));
 
     Ok(ret)
 }
 
-fn value_parser_str(info: &str) -> NmapOsDbValueTypes {
-    let value_split: Vec<&str> = info.split("=").collect();
-    let value = value_split[1].to_string();
-    if value.contains("|") {
-        let mut ret = Vec::new();
-        let s_split: Vec<&str> = value.split("|").collect();
-        for s in s_split {
-            ret.push(s.to_string());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use std::time::Instant;
+    #[test]
+    fn test_parser() {
+        /* THIS CODES PERFORMENCE IS SO POORLY THAN MY IMAGEINATION */
+        /* SO JUST LEAVE ITS HERE AND NOT USE IT IN OTHER FUNCTIONS */
+
+        let start = Instant::now();
+
+        let nmap_os_file = include_str!("../db/nmap-os-db");
+        let mut nmap_os_file_lines = Vec::new();
+        for l in nmap_os_file.lines() {
+            nmap_os_file_lines.push(l.to_string());
         }
-        NmapOsDbValueTypes::DbMixStringValue(DbStringValue::new(ret))
-    } else {
-        if value.len() > 0 {
-            NmapOsDbValueTypes::DbMixStringValue(DbStringValue::new(vec![value]))
-        } else {
-            NmapOsDbValueTypes::empty()
-        }
+        println!("read os db file finish");
+        let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        println!("len: {}", ret.len());
+
+        println!("parse time: {:.3}", start.elapsed().as_secs_f32());
+
+        let serialized = serde_json::to_string(&ret).unwrap();
+        let mut file_write = File::create("nmap-os-db.pistol").unwrap();
+        file_write.write_all(serialized.as_bytes()).unwrap();
     }
-}
-
-/// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
-/// Each item in the input vec `lines` represents a line of nmap-os-db file content.
-/// So just read the nmap file line by line and store it in vec for input.
-pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErrors> {
-    let option_string = |x: Option<String>| -> String {
-        match x {
-            Some(x) => x,
-            _ => String::new(),
-        }
-    };
-
-    let mut result = Vec::new();
-
-    let mut l1 = None;
-    let mut l2 = None;
-    let mut l3 = None;
-    let mut l4 = None;
-    let mut seq = None;
-    let mut ops = None;
-    let mut win = None;
-    let mut ecn = None;
-    let mut t1 = None;
-    let mut t2 = None;
-    let mut t3 = None;
-    let mut t4 = None;
-    let mut t5 = None;
-    let mut t6 = None;
-    let mut t7 = None;
-    let mut u1 = None;
-    for l in lines {
-        // println!("{}", l);
-        let l = l.trim().to_string();
-        if l.len() > 0 {
-            if l.starts_with("#") {
-                let l = match l1 {
-                    Some(x) => {
-                        let l = format!("{}\n{}", x, l);
-                        l
-                    }
-                    None => l,
-                };
-                l1 = Some(l);
-            } else if l.starts_with("Fingerprint") {
-                let l = match l2 {
-                    Some(x) => {
-                        let l = format!("{}\n{}", x, l);
-                        l
-                    }
-                    None => l,
-                };
-                l2 = Some(l);
-            } else if l.starts_with("Class") {
-                let l = match l3 {
-                    Some(x) => {
-                        let l = format!("{}\n{}", x, l);
-                        l
-                    }
-                    None => l,
-                };
-                l3 = Some(l);
-            } else if l.starts_with("CPE") {
-                let l = match l4 {
-                    Some(x) => {
-                        let l = format!("{}\n{}", x, l);
-                        l
-                    }
-                    None => l,
-                };
-                l4 = Some(l);
-            } else if l.starts_with("SEQ") {
-                seq = Some(SEQDB::parser(l)?);
-            } else if l.starts_with("OPS") {
-                ops = Some(OPSDB::parser(l)?);
-            } else if l.starts_with("WIN") {
-                win = Some(WINDB::parser(l)?);
-            } else if l.starts_with("ECN") {
-                ecn = Some(ECNDB::parser(l)?);
-            } else if l.starts_with("T1") {
-                t1 = Some(TX::parser(l)?);
-            } else if l.starts_with("T2") {
-                t2 = Some(TX::parser(l)?);
-            } else if l.starts_with("T3") {
-                t3 = Some(TX::parser(l)?);
-            } else if l.starts_with("T4") {
-                t4 = Some(TX::parser(l)?);
-            } else if l.starts_with("T5") {
-                t5 = Some(TX::parser(l)?);
-            } else if l.starts_with("T6") {
-                t6 = Some(TX::parser(l)?);
-            } else if l.starts_with("T7") {
-                t7 = Some(TX::parser(l)?);
-            } else if l.starts_with("U1") {
-                u1 = Some(U1DB::parser(l)?);
-            } else if l.starts_with("IE") {
-                // last line
-                let ie = Some(IEDB::parser(l)?);
-                let v = NmapOsDb {
-                    // info: option_string(l1),
-                    name: option_string(l2),
-                    class: option_string(l3),
-                    cpe: option_string(l4),
-                    seq: seq.clone().unwrap(),
-                    ops: ops.clone().unwrap(),
-                    win: win.clone().unwrap(),
-                    ecn: ecn.clone().unwrap(),
-                    t1: t1.clone().unwrap(),
-                    t2: t2.clone().unwrap(),
-                    t3: t3.clone().unwrap(),
-                    t4: t4.clone().unwrap(),
-                    t5: t5.clone().unwrap(),
-                    t6: t6.clone().unwrap(),
-                    t7: t7.clone().unwrap(),
-                    u1: u1.clone().unwrap(),
-                    ie: ie.clone().unwrap(),
-                };
-                result.push(v);
-                l1 = None;
-                l2 = None;
-                l3 = None;
-                l4 = None;
-            }
-        }
-    }
-    Ok(result)
 }

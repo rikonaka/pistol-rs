@@ -37,7 +37,7 @@ use super::rr::TECNRR6;
 use super::rr::TXRR6;
 use super::rr::U1RR6;
 use super::Linear;
-use super::OsInfo6;
+use super::OSInfo6;
 
 // EXAMPLE
 // SCAN(V=5.61TEST1%E=6%D=9/27%OT=22%CT=443%CU=42192%PV=N%DS=5%DC=T%G=Y%TM=4E82908D%P=x86_64-unknown-linux-gnu)
@@ -284,7 +284,7 @@ impl fmt::Display for TX6 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PistolFingerprint6 {
+pub struct TargetFingerprint6 {
     // Some fields just for display.
     pub scan: String,
     pub s1x: SEQX6,
@@ -310,7 +310,7 @@ pub struct PistolFingerprint6 {
     pub status: bool,
 }
 
-impl PistolFingerprint6 {
+impl TargetFingerprint6 {
     pub fn nmap_format(&self) -> String {
         let interval = 71; // from nmap format
         let mut ret = String::new();
@@ -329,7 +329,7 @@ impl PistolFingerprint6 {
     }
 }
 
-impl fmt::Display for PistolFingerprint6 {
+impl fmt::Display for TargetFingerprint6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let s1x_str = format!("\n{}", self.s1x);
@@ -1068,33 +1068,32 @@ fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
     sum.sqrt()
 }
 
-fn isort(input: &[OsInfo6]) -> Vec<OsInfo6> {
-    let find_max_prob = |x: &[OsInfo6]| -> usize {
-        let mut max_value = 0.0;
-        for a in x {
-            if a.score > max_value {
-                max_value = a.score;
+fn isort(arr: &[OSInfo6]) -> Vec<OSInfo6> {
+    fn pick(arr: &[OSInfo6]) -> (OSInfo6, Vec<OSInfo6>) {
+        let mut max_score = 0.0;
+        let mut max_score_loc = 0;
+        let mut i = 0;
+        let mut arr = arr.to_vec();
+        for a in &arr {
+            if a.score > max_score {
+                max_score = a.score;
+                max_score_loc = i;
             }
+            i += 1;
         }
-        for (i, a) in x.iter().enumerate() {
-            if a.score == max_value {
-                return i;
-            }
-        }
-        0
-    };
-
-    let mut input_sort = Vec::new();
-    let mut input_clone = input.to_vec();
-    loop {
-        if input_clone.len() <= 0 {
-            break;
-        }
-        let max_value_index = find_max_prob(&input_clone);
-        input_sort.push(input_clone[max_value_index].clone());
-        input_clone.remove(max_value_index);
+        let ret = arr.remove(max_score_loc);
+        (ret, arr)
     }
-    input_sort
+
+    let mut ret = Vec::new();
+    let mut arr = arr.to_vec();
+
+    while arr.len() > 0 {
+        let (r, new_arr) = pick(&arr);
+        arr = new_arr;
+        ret.push(r);
+    }
+    ret
 }
 
 pub fn threads_os_probe6(
@@ -1107,7 +1106,7 @@ pub fn threads_os_probe6(
     top_k: usize,
     linear: Linear,
     timeout: Duration,
-) -> Result<(PistolFingerprint6, Vec<OsInfo6>), PistolErrors> {
+) -> Result<(TargetFingerprint6, Vec<OSInfo6>), PistolErrors> {
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv6,
@@ -1165,13 +1164,13 @@ pub fn threads_os_probe6(
     let predict = predict_value(&features, &linear.w);
 
     let mut detect_rets = Vec::new();
-    for (i, (info, score)) in zip(&linear.infolist, &predict).into_iter().enumerate() {
+    for (i, (name, score)) in zip(&linear.infolist, &predict).into_iter().enumerate() {
         let class = &linear.cpe[i].osclass;
         if class.len() > 0 {
             let class = class[0].join(" | ");
             let cpe = linear.cpe[i].cpe.join(" ");
-            let dr = OsInfo6 {
-                info: info.to_string(),
+            let dr = OSInfo6 {
+                name: name.to_string(),
                 class,
                 cpe,
                 score: *score,
@@ -1181,19 +1180,19 @@ pub fn threads_os_probe6(
         }
     }
 
-    let detect_rets_sort = isort(&detect_rets);
+    let detect_rets = isort(&detect_rets);
     let mut perfect_match = 1;
     for i in 1..36 {
-        if detect_rets_sort[i].score >= 0.9 * detect_rets_sort[0].score {
+        if detect_rets[i].score >= 0.9 * detect_rets[0].score {
             perfect_match += 1;
         }
     }
 
     // println!("{}", perfect_match);
-    let label = detect_rets_sort[0].label;
+    let label = detect_rets[0].label;
     let novelty = novelty_of(&features, &linear.mean[label], &linear.variance[label]);
 
-    let match_status = if perfect_match == 1 {
+    let status = if perfect_match == 1 {
         const FP_NOVELTY_THRESHOLD: f64 = 15.0;
         // println!("{}", novelty);
         if novelty < FP_NOVELTY_THRESHOLD {
@@ -1312,7 +1311,7 @@ pub fn threads_os_probe6(
         rt: ap.tx.rt7,
     };
 
-    let fingerprint = PistolFingerprint6 {
+    let target_fingerprint = TargetFingerprint6 {
         scan,
         s1x,
         s2x,
@@ -1334,17 +1333,31 @@ pub fn threads_os_probe6(
         t7x,
         extra: String::from("12345"), // IPv6 flow label
         novelty,
-        status: match_status,
+        status,
     };
 
-    let ret = if match_status {
-        let ret = detect_rets_sort[0..top_k].to_vec();
+    let ret = if status {
+        let mut count = top_k;
+        let mut last_score = 0.0;
+        let mut ret = Vec::new();
+        let mut iter = detect_rets.into_iter();
+        while count > 0 {
+            let r = match iter.next() {
+                Some(r) => r,
+                None => break,
+            };
+            if last_score != r.score {
+                last_score = r.score;
+                count -= 1;
+            }
+            ret.push(r);
+        }
         ret
     } else {
         let ret = vec![];
         ret
     };
-    Ok((fingerprint, ret))
+    Ok((target_fingerprint, ret))
 }
 
 #[cfg(test)]

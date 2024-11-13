@@ -18,4 +18,5 @@ Cargo.lock
 
 # My libc raw socket test
 pistol-libc/
-.pistol_net_cache
+*.pcap
+*.log

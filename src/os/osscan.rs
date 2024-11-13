@@ -6,7 +6,6 @@ use pnet::datalink::MacAddr;
 use rand::Rng;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -23,13 +22,13 @@ use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::os::OsInfo;
+use crate::os::OSInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_multi;
 use crate::IpCheckMethods;
 
-use super::dbparser::NmapOsDb;
+use super::dbparser::NmapOSDB;
 use super::operator::icmp_cd;
 use super::operator::icmp_dfi;
 use super::operator::tcp_a;
@@ -85,7 +84,7 @@ use super::rr::U1RR;
 // IE(R=Y%DFI=N%T=40%CD=S)
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PistolFingerprint {
+pub struct TargetFingerprint {
     pub scan: String,
     pub seqx: SEQX,
     pub opsx: OPSX,
@@ -102,7 +101,7 @@ pub struct PistolFingerprint {
     pub iex: IEX,
 }
 
-impl fmt::Display for PistolFingerprint {
+impl fmt::Display for TargetFingerprint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let seqx_str = format!("\n{}", self.seqx);
@@ -135,7 +134,7 @@ impl fmt::Display for PistolFingerprint {
     }
 }
 
-impl PistolFingerprint {
+impl TargetFingerprint {
     pub fn nmap_format(&self) -> String {
         let interval = 72;
         let mut ret = String::new();
@@ -1579,6 +1578,41 @@ pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolErrors> {
     Ok(IEX { r, dfi, t, tg, cd })
 }
 
+fn sort_pick(arr: &[OSInfo], top_k: usize) -> Vec<OSInfo> {
+    /* Insertion Sort (O(n^2) ==! anyway) */
+    let mut ret = Vec::new();
+    let mut arr = arr.to_vec();
+
+    fn pick(arr: &[OSInfo]) -> (OSInfo, Vec<OSInfo>) {
+        let mut max_score = 0;
+        let mut max_score_loc = 0;
+        let mut arr = arr.to_vec();
+        let mut i = 0;
+        for a in &arr {
+            if a.score > max_score {
+                max_score = a.score;
+                max_score_loc = i;
+            }
+            i += 1;
+        }
+        let ret = arr.remove(max_score_loc);
+        (ret, arr)
+    }
+
+    let mut count = top_k;
+    let mut last_score = 0;
+    while count > 0 {
+        let (max, new_arr) = pick(&arr);
+        if max.score != last_score {
+            count -= 1;
+            last_score = max.score;
+        }
+        arr = new_arr;
+        ret.push(max)
+    }
+    ret
+}
+
 pub fn threads_os_probe(
     src_ipv4: Ipv4Addr,
     src_port: Option<u16>,
@@ -1586,10 +1620,10 @@ pub fn threads_os_probe(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    nmap_os_db: Vec<NmapOsDb>,
+    nmap_os_db: Vec<NmapOSDB>,
     top_k: usize,
     timeout: Duration,
-) -> Result<(PistolFingerprint, Vec<OsInfo>), PistolErrors> {
+) -> Result<(TargetFingerprint, Vec<OSInfo>), PistolErrors> {
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv4,
@@ -1655,7 +1689,7 @@ pub fn threads_os_probe(
             let iex = ie_fingerprint(&ap)?;
 
             debug!("generate the fingerprint");
-            let fingerprint = PistolFingerprint {
+            let target_fingerprint = TargetFingerprint {
                 scan,
                 seqx,
                 opsx,
@@ -1672,41 +1706,26 @@ pub fn threads_os_probe(
                 iex,
             };
 
-            let mut bm = BTreeMap::new();
+            let mut sort_vec = Vec::new();
             for db in &nmap_os_db {
-                let (score, total) = db.check(&fingerprint);
-                let os_info = OsInfo {
-                    info: String::new(),
+                let (score, total) = db.check(&target_fingerprint);
+                // println!("name: {}, score: {}", &db.name, score);
+                let osinfo = OSInfo {
+                    name: db.name.clone(),
                     class: db.class.clone(),
                     score,
                     total,
                     db: db.clone(),
                     cpe: db.cpe.clone(),
                 };
-                bm.insert(score, os_info);
+                sort_vec.push(osinfo);
             }
 
-            let mut detect_rets = Vec::new();
-            let bm_keys: Vec<&usize> = bm.keys().rev().collect();
-            if bm_keys.len() > 0 {
-                let mut last_score = *bm_keys[0];
-                let mut top_k_count = 0;
-                for (score, os_info) in bm.into_iter().rev() {
-                    debug!("score: {}, cpe: {}", score, os_info.db.class);
-                    debug!("last_score: {}, score: {}", last_score, score);
-                    if last_score != score {
-                        top_k_count += 1;
-                        last_score = score;
-                    }
-                    if top_k_count == top_k {
-                        break;
-                    }
-                    detect_rets.push(os_info);
-                }
-
-                Ok((fingerprint, detect_rets))
+            let detect_rets = sort_pick(&sort_vec, top_k);
+            if detect_rets.len() > 0 {
+                Ok((target_fingerprint, detect_rets))
             } else {
-                Err(PistolErrors::OsDetectResultsNullError)
+                Err(PistolErrors::OSDetectResultsNullError)
             }
         }
         Err(e) => Err(e),

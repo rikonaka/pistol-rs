@@ -43,6 +43,7 @@ fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Option<Vec<u8>> {
 }
 
 fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolErrors> {
+    println!("{}", ipv6_buff.len());
     if ipv6_buff.len() > 0 {
         match Ipv6Packet::new(ipv6_buff) {
             Some(p) => return Ok(p),
