@@ -29,6 +29,7 @@ use crate::utils::get_threads_pool;
 use crate::Target;
 
 pub mod dbparser;
+pub mod dbparser_re;
 pub mod operator;
 pub mod operator6;
 pub mod osscan;
@@ -36,7 +37,6 @@ pub mod osscan6;
 pub mod packet;
 pub mod packet6;
 pub mod rr;
-pub mod dbparser_re;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsInfo {
@@ -472,7 +472,7 @@ mod tests {
     // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV6_LOCAL;
-    use std::time::SystemTime;
+    use std::time::Instant;
     #[test]
     fn test_os_detect() {
         // Logger::init_debug_logging()?;
@@ -507,7 +507,7 @@ mod tests {
     }
     #[test]
     fn test_parser() {
-        let start = SystemTime::now();
+        let start = Instant::now();
 
         let nmap_os_file = include_str!("./db/nmap-os-db");
         let mut nmap_os_file_lines = Vec::new();
@@ -517,12 +517,12 @@ mod tests {
         let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         for i in 0..5 {
             let r = &ret[i];
-            // println!("{:?}", r.info);
-            println!("{:?}", r.seq.gcd);
+            println!("{:?}", r.name);
+            // println!("{:?}", r.seq.gcd);
         }
 
         // in my homelab server: parse time: 1.285817538s
-        println!("parse time: {:?}", start.elapsed().unwrap());
+        println!("parse time: {:.2}s", start.elapsed().as_secs_f64());
         // let serialized = serde_json::to_string(&ret).unwrap();
         // let mut file_write = File::create("nmap-os-db.pistol").unwrap();
         // file_write.write_all(serialized.as_bytes()).unwrap();

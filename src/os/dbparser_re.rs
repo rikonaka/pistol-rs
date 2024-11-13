@@ -1,6 +1,7 @@
 use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
+use std::time::Instant;
 
 use super::osscan::PistolFingerprint;
 use super::osscan::ECNX;
@@ -709,10 +710,10 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
         r"SEQ\((SP=(?P<sp>[\w\d-]+))?(R=(?P<r>[YN]+))?(%GCD=(?P<gcd>[\w\d>\-|]+))?(%?ISR=(?P<isr>[\w\d-]+))?(%?TI=(?P<ti>[\w|]+))?(%?CI=(?P<ci>[\w|]+))?(%?II=(?P<ii>[\w|]+))?(%SS=(?P<ss>[\w|]+))?(%TS=(?P<ts>[\w\-|]+))?\)",
     )?;
     let ops_reg = Regex::new(
-        r"OPS\((R=(?P<r>[YN]+|))?(O1=(?P<o1>[\w\d|]+|))?(%O2=(?P<o2>[\w\d|]+|))?(%O3=(?P<o3>[\w\d|]+|))?(%O4=(?P<o4>[\w\d|]+|))?(%O5=(?P<o5>[\w\d|]+|))?(%O6=(?P<o6>[\w\d|]+|))?\)",
+        r"OPS\((R=(?P<r>[YN]+|))?(O1=(?P<o1>[\w\d|]+|)%O2=(?P<o2>[\w\d|]+|)%O3=(?P<o3>[\w\d|]+|)%O4=(?P<o4>[\w\d|]+|)%O5=(?P<o5>[\w\d|]+|)%O6=(?P<o6>[\w\d|]+|))?\)",
     )?;
     let win_reg = Regex::new(
-        r"WIN\((R=(?P<r>[YN]+))?(W1=(?P<w1>[\w\d|]+))?(%W2=(?P<w2>[\w\d|]+))?(%W3=(?P<w3>[\w\d|]+))?(%W4=(?P<w4>[\w\d|]+))?(%W5=(?P<w5>[\w\d|]+))?(%W6=(?P<w6>[\w\d|]+))?\)",
+        r"WIN\((R=(?P<r>[YN]+))?(W1=(?P<w1>[\w\d|]+)%W2=(?P<w2>[\w\d|]+)%W3=(?P<w3>[\w\d|]+)%W4=(?P<w4>[\w\d|]+)%W5=(?P<w5>[\w\d|]+)%W6=(?P<w6>[\w\d|]+))?\)",
     )?;
     let ecn_reg = Regex::new(
         r"ECN\(R=(?P<r>[\w\d]+|)(%DF=(?P<df>[YN|]+|))?(%T=(?P<t>[\w\d\-|]+|))?(%TG=(?P<tg>[\w\d|]+|))?(%W=(?P<w>[\w\d|]+|))?(%O=(?P<o>[\w\d|]+|))?(%CC=(?P<cc>[\w\d|]+|))?(%Q=(?P<q>[\w\d|]+|))?\)",
@@ -747,6 +748,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             })
                         }
                     };
+                    println!("{}", name);
                     /* class part */
                     let class_parser = |line: String| -> Result<Vec<String>, PistolErrors> {
                         match class_reg.captures(&line) {
@@ -1095,33 +1097,47 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         match iter.next() {
                             Some(line) => {
                                 if line.starts_with("Class") {
+                                    let s = Instant::now();
                                     class.extend(class_parser(line)?);
+                                    println!("class: {:.2}s", s.elapsed().as_secs_f32());
                                 } else if line.starts_with("CPE") {
+                                    let s = Instant::now();
                                     let c = cpe_parser(line)?;
                                     cpe.push(c);
+                                    println!("cpe: {:.2}s", s.elapsed().as_secs_f32());
                                 } else if line.starts_with("SEQ") {
                                     // only one line
+                                    let s = Instant::now();
                                     let seq = seq_parser(line)?;
+                                    println!("seq: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let ops = ops_parser(line)?;
+                                    println!("ops: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let win = win_parser(line)?;
+                                    println!("win: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let ecn = ecn_parser(line)?;
+                                    println!("ecn: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let t1 = tx_parser(line)?;
+                                    println!("t1: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
@@ -1136,32 +1152,44 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let t4 = tx_parser(line)?;
+                                    println!("t4: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let t5 = tx_parser(line)?;
+                                    println!("t5: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let t6 = tx_parser(line)?;
+                                    println!("t6: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let t7 = tx_parser(line)?;
+                                    println!("t7: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let u1 = u1_parser(line)?;
+                                    println!("u1: {:.2}s", s.elapsed().as_secs_f32());
                                     let line = match iter.next() {
                                         Some(line) => line,
                                         None => break,
                                     };
+                                    let s = Instant::now();
                                     let ie = ie_parser(line)?;
+                                    println!("ie: {:.2}s", s.elapsed().as_secs_f32());
 
                                     let nmap_os_db = NmapOSDB {
                                         name: name.clone(),
@@ -1203,11 +1231,15 @@ mod tests {
     use super::*;
     #[test]
     fn test_parser() {
+        /* THIS CODES PERFORMENCE IS SO POORLY THAN MY IMAGEINATION */
+        /* SO JUST LEAVE ITS HERE AND NOT USE IT IN OTHER FUNCTIONS */
+
         let nmap_os_file = include_str!("../db/nmap-os-db");
         let mut nmap_os_file_lines = Vec::new();
         for l in nmap_os_file.lines() {
             nmap_os_file_lines.push(l.to_string());
         }
+        println!("read os db file finish");
         let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         println!("len: {}", ret.len());
     }
