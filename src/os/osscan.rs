@@ -6,6 +6,7 @@ use pnet::datalink::MacAddr;
 use rand::Rng;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -25,7 +26,7 @@ use crate::layers::LayersMatch;
 use crate::os::OSInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::utils::random_port_multi;
+use crate::utils::random_ports_unique;
 use crate::IpCheckMethods;
 
 use super::dbparser::NmapOSDB;
@@ -242,7 +243,7 @@ fn send_seq_probes(
 
     let src_ports = match src_port {
         Some(s) => vec![s; 6],
-        None => random_port_multi(6),
+        None => random_ports_unique(6),
     };
 
     let buff_1 = packet::seq_packet_1_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
@@ -282,39 +283,44 @@ fn send_seq_probes(
         i += 1;
     }
 
-    let mut seq1 = None;
-    let mut seq2 = None;
-    let mut seq3 = None;
-    let mut seq4 = None;
-    let mut seq5 = None;
-    let mut seq6 = None;
-
+    let mut seq_hm = HashMap::new();
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let response = match ret? {
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            0 => seq1 = rr,
-            1 => seq2 = rr,
-            2 => seq3 = rr,
-            3 => seq4 = rr,
-            4 => seq5 = rr,
-            5 => seq6 = rr,
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        seq_hm.insert(i, rr);
     }
     let elapsed = start.elapsed()?.as_secs_f64();
 
+    let seq1 = seq_hm
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq2 = seq_hm
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq3 = seq_hm
+        .get(&2)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq4 = seq_hm
+        .get(&3)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq5 = seq_hm
+        .get(&4)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq6 = seq_hm
+        .get(&5)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
     let seqrr = SEQRR {
-        seq1: seq1.unwrap(),
-        seq2: seq2.unwrap(),
-        seq3: seq3.unwrap(),
-        seq4: seq4.unwrap(),
-        seq5: seq5.unwrap(),
-        seq6: seq6.unwrap(),
+        seq1,
+        seq2,
+        seq3,
+        seq4,
+        seq5,
+        seq6,
         elapsed,
     };
 
@@ -445,7 +451,7 @@ fn send_tx_probes(
     let (tx, rx) = channel();
     let src_ports = match src_port {
         Some(s) => vec![s; 6],
-        None => random_port_multi(6),
+        None => random_ports_unique(6),
     };
 
     let layer3 = Layer3Match {
@@ -526,38 +532,43 @@ fn send_tx_probes(
         i += 1;
     }
 
-    let mut t2 = None;
-    let mut t3 = None;
-    let mut t4 = None;
-    let mut t5 = None;
-    let mut t6 = None;
-    let mut t7 = None;
-
+    let mut tx_hm = HashMap::new();
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let response = match ret? {
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            0 => t2 = rr,
-            1 => t3 = rr,
-            2 => t4 = rr,
-            3 => t5 = rr,
-            4 => t6 = rr,
-            5 => t7 = rr,
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        tx_hm.insert(i, rr);
     }
 
+    let t2 = tx_hm
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t3 = tx_hm
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t4 = tx_hm
+        .get(&2)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t5 = tx_hm
+        .get(&3)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t6 = tx_hm
+        .get(&4)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t7 = tx_hm
+        .get(&5)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
     let txrr = TXRR {
-        t2: t2.unwrap(),
-        t3: t3.unwrap(),
-        t4: t4.unwrap(),
-        t5: t5.unwrap(),
-        t6: t6.unwrap(),
-        t7: t7.unwrap(),
+        t2,
+        t3,
+        t4,
+        t5,
+        t6,
+        t7,
     };
 
     Ok(txrr)

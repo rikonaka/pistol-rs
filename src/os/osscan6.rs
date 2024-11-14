@@ -21,7 +21,7 @@ use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::utils::random_port_multi;
+use crate::utils::random_ports_unique;
 use crate::IpCheckMethods;
 
 use super::operator6::apply_scale;
@@ -409,7 +409,7 @@ fn send_seq_probes(
 
     let src_ports = match src_port {
         Some(s) => vec![s; 6],
-        None => random_port_multi(6),
+        None => random_ports_unique(6),
     };
 
     let buff_1 = packet6::seq_packet_1_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port)?;
@@ -804,7 +804,7 @@ fn send_tx_probes(
 
     let src_ports = match src_port {
         Some(s) => vec![s; 6],
-        None => random_port_multi(6),
+        None => random_ports_unique(6),
     };
 
     let layer3 = Layer3Match {

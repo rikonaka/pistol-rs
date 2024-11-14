@@ -209,16 +209,20 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
 /// Returns the random port.
 pub fn random_port() -> u16 {
     let mut rng = rand::thread_rng();
-    rng.gen_range(1024..=65535)
+    rng.gen_range(10000..=65535)
 }
 
 /// Returns many random ports.
-pub fn random_port_multi(num: usize) -> Vec<u16> {
+pub fn random_ports_unique(num: usize) -> Vec<u16> {
     let mut rng = rand::thread_rng();
     let mut ret = Vec::new();
-    for _ in 0..num {
-        let p = rng.gen_range(1024..=65535);
-        ret.push(p)
+    let mut count = num;
+    while count > 0 {
+        let p = rng.gen_range(10000..=65535);
+        if !ret.contains(&p) {
+            ret.push(p);
+            count -= 1;
+        }
     }
     ret
 }

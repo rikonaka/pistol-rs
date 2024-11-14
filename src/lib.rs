@@ -32,7 +32,10 @@ use crate::route::SystemNetCache;
 #[cfg(test)]
 const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 #[cfg(test)]
+// debian
 const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e4);
+// centos
+// const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x4cec, 0xac70, 0x46eb, 0xea21);
 
 static SYSTEM_NET_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
     let snc = SystemNetCache::init().expect("can not init the system net cache");

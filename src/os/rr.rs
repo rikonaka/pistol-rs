@@ -1,6 +1,6 @@
-use std::time::Duration;
 use serde::Deserialize;
 use serde::Serialize;
+use std::time::Duration;
 
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +8,15 @@ pub struct RequestAndResponse {
     // pub name: String,
     pub request: Vec<u8>,  // layer3
     pub response: Vec<u8>, // layer3, if no response: response.len() == 0
+}
+
+impl RequestAndResponse {
+    pub fn empty() -> RequestAndResponse {
+        RequestAndResponse {
+            request: vec![],
+            response: vec![],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
