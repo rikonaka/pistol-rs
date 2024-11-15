@@ -26,7 +26,7 @@ use crate::layers::LayersMatch;
 use crate::os::OSInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::utils::random_ports_unique;
+use crate::utils::random_port_sp;
 use crate::IpCheckMethods;
 
 use super::dbparser::NmapOSDB;
@@ -232,7 +232,6 @@ pub fn get_scan_line(
 
 fn send_seq_probes(
     src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     timeout: Duration,
@@ -241,10 +240,11 @@ fn send_seq_probes(
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_ports = match src_port {
-        Some(s) => vec![s; 6],
-        None => random_ports_unique(6),
-    };
+    let src_port_start = random_port_sp(1000, 6540);
+    let mut src_ports = Vec::new();
+    for i in 0..6 {
+        src_ports.push(src_port_start * 10 + i);
+    }
 
     let buff_1 = packet::seq_packet_1_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
     let buff_2 = packet::seq_packet_2_layer3(src_ipv4, src_ports[1], dst_ipv4, dst_open_port)?;
@@ -256,8 +256,7 @@ fn send_seq_probes(
     // let buffs = vec![buff_4];
 
     let start = SystemTime::now();
-    let mut i = 0;
-    for buff in buffs {
+    for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
         let layer3 = Layer3Match {
             layer2: None,
@@ -280,7 +279,6 @@ fn send_seq_probes(
         });
         // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
         sleep(Duration::from_millis(100));
-        i += 1;
     }
 
     let mut seq_hm = HashMap::new();
@@ -354,9 +352,7 @@ fn send_ie_probes(
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let mut i = 0;
-    for buff in buffs {
-        i += 1;
+    for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
@@ -367,8 +363,7 @@ fn send_ie_probes(
         }
     }
 
-    let mut ie1 = None;
-    let mut ie2 = None;
+    let mut ies = HashMap::new();
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
@@ -376,37 +371,28 @@ fn send_ie_probes(
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            1 => {
-                ie1 = rr;
-            }
-            2 => {
-                ie2 = rr;
-            }
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        ies.insert(i, rr);
     }
 
-    let ie = IERR {
-        ie1: ie1.unwrap(),
-        ie2: ie2.unwrap(),
-    };
+    let ie1 = ies
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let ie2 = ies
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
+    let ie = IERR { ie1, ie2 };
     Ok(ie)
 }
 
 fn send_ecn_probe(
     src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     timeout: Duration,
 ) -> Result<ECNRR, PistolErrors> {
-    let src_port = match src_port {
-        Some(s) => s,
-        None => random_port(),
-    };
-
+    let src_port = random_port();
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
@@ -440,7 +426,6 @@ fn send_ecn_probe(
 
 fn send_tx_probes(
     src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
@@ -449,10 +434,12 @@ fn send_tx_probes(
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
-    let src_ports = match src_port {
-        Some(s) => vec![s; 6],
-        None => random_ports_unique(6),
-    };
+
+    let src_port_start = random_port_sp(1000, 6540);
+    let mut src_ports = Vec::new();
+    for i in 0..6 {
+        src_ports.push(src_port_start * 10 + i);
+    }
 
     let layer3 = Layer3Match {
         layer2: None,
@@ -519,8 +506,7 @@ fn send_tx_probes(
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
     // let buffs = vec![buff_5];
 
-    let mut i = 0;
-    for buff in buffs {
+    for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         let m = ms[i];
         pool.execute(move || {
@@ -529,7 +515,6 @@ fn send_tx_probes(
                 _ => (),
             }
         });
-        i += 1;
     }
 
     let mut tx_hm = HashMap::new();
@@ -576,16 +561,11 @@ fn send_tx_probes(
 
 fn send_u1_probe(
     src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
     timeout: Duration,
 ) -> Result<U1RR, PistolErrors> {
-    let src_port = match src_port {
-        Some(s) => s,
-        None => random_port(),
-    };
-
+    let src_port = random_port();
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
@@ -619,25 +599,23 @@ fn send_u1_probe(
 
 fn send_all_probes(
     src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     timeout: Duration,
 ) -> Result<AllPacketRR, PistolErrors> {
-    let seq = send_seq_probes(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, timeout)?;
+    let seq = send_seq_probes(src_ipv4, dst_ipv4, dst_open_tcp_port, timeout)?;
     let ie = send_ie_probes(src_ipv4, dst_ipv4, timeout)?;
-    let ecn = send_ecn_probe(src_ipv4, src_port, dst_ipv4, dst_open_tcp_port, timeout)?;
+    let ecn = send_ecn_probe(src_ipv4, dst_ipv4, dst_open_tcp_port, timeout)?;
     let tx = send_tx_probes(
         src_ipv4,
-        src_port,
         dst_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         timeout,
     )?;
-    let u1 = send_u1_probe(src_ipv4, src_port, dst_ipv4, dst_closed_udp_port, timeout)?;
+    let u1 = send_u1_probe(src_ipv4, dst_ipv4, dst_closed_udp_port, timeout)?;
 
     let ap = AllPacketRR {
         seq,
@@ -1626,7 +1604,6 @@ fn sort_pick(arr: &[OSInfo], top_k: usize) -> Vec<OSInfo> {
 
 pub fn threads_os_probe(
     src_ipv4: Ipv4Addr,
-    src_port: Option<u16>,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
@@ -1638,7 +1615,6 @@ pub fn threads_os_probe(
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv4,
-        src_port,
         dst_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,

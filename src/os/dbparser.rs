@@ -749,7 +749,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             })
                         }
                     };
-                    println!("{}", name);
+                    // println!("{}", name);
                     /* class part */
                     let class_parser = |line: String| -> Result<Vec<String>, PistolErrors> {
                         match class_reg.captures(&line) {

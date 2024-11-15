@@ -212,19 +212,9 @@ pub fn random_port() -> u16 {
     rng.gen_range(10000..=65535)
 }
 
-/// Returns many random ports.
-pub fn random_ports_unique(num: usize) -> Vec<u16> {
+pub fn random_port_sp(start: u16, end: u16) -> u16 {
     let mut rng = rand::thread_rng();
-    let mut ret = Vec::new();
-    let mut count = num;
-    while count > 0 {
-        let p = rng.gen_range(10000..=65535);
-        if !ret.contains(&p) {
-            ret.push(p);
-            count -= 1;
-        }
-    }
-    ret
+    rng.gen_range(start..=end)
 }
 
 /// Returns the number of CPUs in the machine.

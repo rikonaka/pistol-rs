@@ -744,9 +744,7 @@ pub fn system_route(
     };
 
     let dst_mac = match system_cache_search_mac(dst_ipv4.into()) {
-        Some(m) => {
-            m
-        }
+        Some(m) => m,
         None => {
             if dst_ipv4_in_local(dst_ipv4) {
                 let dst_mac = match arp(src_ipv4, dst_ipv4, timeout)? {

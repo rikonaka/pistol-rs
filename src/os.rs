@@ -249,7 +249,6 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolErrors> {
 pub fn os_detect(
     target: Target,
     src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<OSDetectResults, PistolErrors> {
@@ -284,7 +283,6 @@ pub fn os_detect(
 
                         let os_detect_ret = threads_os_probe(
                             src_ipv4,
-                            src_port,
                             dst_ipv4,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
@@ -325,7 +323,6 @@ pub fn os_detect(
                         let dst_closed_udp_port = dst_ports[2];
                         let os_detect_ret = threads_os_probe6(
                             src_ipv6,
-                            src_port,
                             dst_ipv6,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
@@ -372,7 +369,6 @@ pub fn os_detect_raw(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<HostOSDetectResult, PistolErrors> {
@@ -389,7 +385,6 @@ pub fn os_detect_raw(
                 let nmap_os_db = nmap_os_db.to_vec();
                 match threads_os_probe(
                     src_ipv4,
-                    src_port,
                     dst_ipv4,
                     dst_open_tcp_port,
                     dst_closed_tcp_port,
@@ -414,7 +409,6 @@ pub fn os_detect_raw(
 
                 match threads_os_probe6(
                     src_ipv6,
-                    src_port,
                     dst_ipv6,
                     dst_open_tcp_port,
                     dst_closed_tcp_port,
@@ -446,7 +440,6 @@ mod tests {
         // use crate::Logger;
         // Logger::init_debug_logging()?;
         let src_addr = None;
-        let src_port = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -463,7 +456,7 @@ mod tests {
         let target = Target::new(vec![host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
-        let ret = os_detect(target, src_addr, src_port, top_k, timeout).unwrap();
+        let ret = os_detect(target, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let rr = ret.get(&TEST_IPV4_LOCAL.into()).unwrap();
@@ -479,7 +472,6 @@ mod tests {
         // use crate::Logger;
         // Logger::init_debug_logging()?;
         let src_addr = None;
-        let src_port = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -495,13 +487,12 @@ mod tests {
         let target = Target::new(vec![host1]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
-        let ret = os_detect(target, src_addr, src_port, top_k, timeout).unwrap();
+        let ret = os_detect(target, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_os_detect_raw() {
         let src_addr = None;
-        let src_port = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -513,7 +504,6 @@ mod tests {
             dst_closed_tcp_port,
             dst_closed_udp_port,
             src_addr,
-            src_port,
             top_k,
             timeout,
         )
@@ -523,7 +513,6 @@ mod tests {
     #[test]
     fn test_os_detect6_raw() {
         let src_addr = None;
-        let src_port = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -535,7 +524,6 @@ mod tests {
             dst_closed_tcp_port,
             dst_closed_udp_port,
             src_addr,
-            src_port,
             top_k,
             timeout,
         )

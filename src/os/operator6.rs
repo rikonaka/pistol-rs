@@ -18,32 +18,32 @@ const RST_MASK: u8 = 0b00000100;
 const SYN_MASK: u8 = 0b00000010;
 const FIN_MASK: u8 = 0b00000001;
 
-fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Option<Vec<u8>> {
+fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Vec<u8> {
     match name {
-        "S1" => Some(ap.seq.seq1.response.to_vec()),
-        "S2" => Some(ap.seq.seq2.response.to_vec()),
-        "S3" => Some(ap.seq.seq3.response.to_vec()),
-        "S4" => Some(ap.seq.seq4.response.to_vec()),
-        "S5" => Some(ap.seq.seq5.response.to_vec()),
-        "S6" => Some(ap.seq.seq6.response.to_vec()),
-        "IE1" => Some(ap.ie.ie1.response.to_vec()),
-        "IE2" => Some(ap.ie.ie2.response.to_vec()),
-        "NI" => Some(ap.nx.ni.response.to_vec()),
-        "NS" => Some(ap.nx.ns.response.to_vec()),
-        "U1" => Some(ap.u1.u1.response.to_vec()),
-        "TECN" => Some(ap.tecn.tecn.response.to_vec()),
-        "T2" => Some(ap.tx.t2.response.to_vec()),
-        "T3" => Some(ap.tx.t3.response.to_vec()),
-        "T4" => Some(ap.tx.t4.response.to_vec()),
-        "T5" => Some(ap.tx.t5.response.to_vec()),
-        "T6" => Some(ap.tx.t6.response.to_vec()),
-        "T7" => Some(ap.tx.t7.response.to_vec()),
-        _ => None,
+        "S1" => ap.seq.seq1.response.to_vec(),
+        "S2" => ap.seq.seq2.response.to_vec(),
+        "S3" => ap.seq.seq3.response.to_vec(),
+        "S4" => ap.seq.seq4.response.to_vec(),
+        "S5" => ap.seq.seq5.response.to_vec(),
+        "S6" => ap.seq.seq6.response.to_vec(),
+        "IE1" => ap.ie.ie1.response.to_vec(),
+        "IE2" => ap.ie.ie2.response.to_vec(),
+        "NI" => ap.nx.ni.response.to_vec(),
+        "NS" => ap.nx.ns.response.to_vec(),
+        "U1" => ap.u1.u1.response.to_vec(),
+        "TECN" => ap.tecn.tecn.response.to_vec(),
+        "T2" => ap.tx.t2.response.to_vec(),
+        "T3" => ap.tx.t3.response.to_vec(),
+        "T4" => ap.tx.t4.response.to_vec(),
+        "T5" => ap.tx.t5.response.to_vec(),
+        "T6" => ap.tx.t6.response.to_vec(),
+        "T7" => ap.tx.t7.response.to_vec(),
+        _ => vec![],
     }
 }
 
 fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolErrors> {
-    println!("{}", ipv6_buff.len());
+    // println!("{}", ipv6_buff.len());
     if ipv6_buff.len() > 0 {
         match Ipv6Packet::new(ipv6_buff) {
             Some(p) => return Ok(p),
@@ -309,8 +309,9 @@ pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolErrors> {
 
     let mut features: Vec<f64> = Vec::new();
     for name in ipv6_probe_names {
-        let ipv6_response = get_response_by_name(ap, name).unwrap();
+        let ipv6_response = get_response_by_name(ap, name);
         let (plen, tc) = ipv6_plen_tc(&ipv6_response)?;
+        // println!("name: {}, plen: {}", name, plen);
         features.push(plen);
         features.push(tc);
         let hlim = ipv6_hlim(&ipv6_response)?;
@@ -322,7 +323,7 @@ pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolErrors> {
 
     for name in tcp_probe_names {
         // Each round will add 49 features.
-        let ipv6_response = get_response_by_name(ap, name).unwrap();
+        let ipv6_response = get_response_by_name(ap, name);
         let window = tcp_window(&ipv6_response)?;
         features.push(window);
 
@@ -362,7 +363,7 @@ pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolErrors> {
     }
 
     for name in icmpv6_probe_names {
-        let ipv6_response = get_response_by_name(ap, name).unwrap();
+        let ipv6_response = get_response_by_name(ap, name);
         let (t, c) = icmpv6_type_code(&ipv6_response)?;
         features.push(t);
         features.push(c);

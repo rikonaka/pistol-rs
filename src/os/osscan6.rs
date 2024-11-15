@@ -1,6 +1,7 @@
 use log::debug;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt;
 use std::iter::zip;
 use std::net::IpAddr;
@@ -21,7 +22,7 @@ use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::utils::random_ports_unique;
+use crate::utils::random_port_sp;
 use crate::IpCheckMethods;
 
 use super::operator6::apply_scale;
@@ -398,7 +399,6 @@ impl fmt::Display for TargetFingerprint6 {
 
 fn send_seq_probes(
     src_ipv6: Ipv6Addr,
-    src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
     timeout: Duration,
@@ -407,11 +407,11 @@ fn send_seq_probes(
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_ports = match src_port {
-        Some(s) => vec![s; 6],
-        None => random_ports_unique(6),
-    };
-
+    let src_port_start = random_port_sp(1000, 6540);
+    let mut src_ports = Vec::new();
+    for i in 0..6 {
+        src_ports.push(src_port_start * 10 + i);
+    }
     let buff_1 = packet6::seq_packet_1_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port)?;
     let buff_2 = packet6::seq_packet_2_layer3(src_ipv6, src_ports[1], dst_ipv6, dst_open_port)?;
     let buff_3 = packet6::seq_packet_3_layer3(src_ipv6, src_ports[2], dst_ipv6, dst_open_port)?;
@@ -421,8 +421,7 @@ fn send_seq_probes(
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
 
     let start = SystemTime::now();
-    let mut i = 0;
-    for buff in buffs {
+    for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
         let layer3 = Layer3Match {
             layer2: None,
@@ -447,29 +446,11 @@ fn send_seq_probes(
         });
         // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
         sleep(Duration::from_millis(100));
-        i += 1;
     }
 
-    let mut seq1 = None;
-    let mut seq2 = None;
-    let mut seq3 = None;
-    let mut seq4 = None;
-    let mut seq5 = None;
-    let mut seq6 = None;
-
-    let mut st1 = None;
-    let mut st2 = None;
-    let mut st3 = None;
-    let mut st4 = None;
-    let mut st5 = None;
-    let mut st6 = None;
-
-    let mut rt1 = None;
-    let mut rt2 = None;
-    let mut rt3 = None;
-    let mut rt4 = None;
-    let mut rt5 = None;
-    let mut rt6 = None;
+    let mut seqs = HashMap::new();
+    let mut sts = HashMap::new();
+    let mut rts = HashMap::new();
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
@@ -477,63 +458,66 @@ fn send_seq_probes(
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            0 => {
-                seq1 = rr;
-                st1 = Some(st);
-                rt1 = Some(rt);
-            }
-            1 => {
-                seq2 = rr;
-                st2 = Some(st);
-                rt2 = Some(rt);
-            }
-            2 => {
-                seq3 = rr;
-                st3 = Some(st);
-                rt3 = Some(rt);
-            }
-            3 => {
-                seq4 = rr;
-                st4 = Some(st);
-                rt4 = Some(rt);
-            }
-            4 => {
-                seq5 = rr;
-                st5 = Some(st);
-                rt5 = Some(rt);
-            }
-            5 => {
-                seq6 = rr;
-                st6 = Some(st);
-                rt6 = Some(rt);
-            }
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        seqs.insert(i, rr);
+        sts.insert(i, st);
+        rts.insert(i, rt);
     }
     let elapsed = start.elapsed()?.as_secs_f64();
 
+    let seq1 = seqs
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq2 = seqs
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq3 = seqs
+        .get(&2)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq4 = seqs
+        .get(&3)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq5 = seqs
+        .get(&4)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq6 = seqs
+        .get(&5)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
+    let st1 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let st2 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+    let st3 = sts.get(&2).map_or(Duration::new(0, 0), |x| *x);
+    let st4 = sts.get(&3).map_or(Duration::new(0, 0), |x| *x);
+    let st5 = sts.get(&4).map_or(Duration::new(0, 0), |x| *x);
+    let st6 = sts.get(&5).map_or(Duration::new(0, 0), |x| *x);
+
+    let rt1 = rts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let rt2 = rts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+    let rt3 = rts.get(&2).map_or(Duration::new(0, 0), |x| *x);
+    let rt4 = rts.get(&3).map_or(Duration::new(0, 0), |x| *x);
+    let rt5 = rts.get(&4).map_or(Duration::new(0, 0), |x| *x);
+    let rt6 = rts.get(&5).map_or(Duration::new(0, 0), |x| *x);
+
     let seqrr = SEQRR6 {
-        seq1: seq1.unwrap(),
-        seq2: seq2.unwrap(),
-        seq3: seq3.unwrap(),
-        seq4: seq4.unwrap(),
-        seq5: seq5.unwrap(),
-        seq6: seq6.unwrap(),
+        seq1,
+        seq2,
+        seq3,
+        seq4,
+        seq5,
+        seq6,
         elapsed,
-        st1: st1.unwrap(),
-        rt1: rt1.unwrap(),
-        st2: st2.unwrap(),
-        rt2: rt2.unwrap(),
-        st3: st3.unwrap(),
-        rt3: rt3.unwrap(),
-        st4: st4.unwrap(),
-        rt4: rt4.unwrap(),
-        st5: st5.unwrap(),
-        rt5: rt5.unwrap(),
-        st6: st6.unwrap(),
-        rt6: rt6.unwrap(),
+        st1,
+        rt1,
+        st2,
+        rt2,
+        st3,
+        rt3,
+        st4,
+        rt4,
+        st5,
+        rt5,
+        st6,
+        rt6,
     };
 
     Ok(seqrr)
@@ -563,9 +547,7 @@ fn send_ie_probes(
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let mut i = 0;
-    for buff in buffs {
-        i += 1;
+    for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
@@ -578,12 +560,9 @@ fn send_ie_probes(
         }
     }
 
-    let mut ie1 = None;
-    let mut ie2 = None;
-    let mut st1 = None;
-    let mut rt1 = None;
-    let mut st2 = None;
-    let mut rt2 = None;
+    let mut ies = HashMap::new();
+    let mut sts = HashMap::new();
+    let mut rts = HashMap::new();
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
@@ -591,29 +570,32 @@ fn send_ie_probes(
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            1 => {
-                ie1 = rr;
-                st1 = Some(st);
-                rt1 = Some(rt);
-            }
-            2 => {
-                ie2 = rr;
-                st2 = Some(st);
-                rt2 = Some(rt);
-            }
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        ies.insert(i, rr);
+        sts.insert(i, st);
+        rts.insert(i, rt);
     }
 
+    let ie1 = ies
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let ie2 = ies
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
+    let st1 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let st2 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+
+    let rt1 = rts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let rt2 = rts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+
     let ie = IERR6 {
-        ie1: ie1.unwrap(),
-        ie2: ie2.unwrap(),
-        st1: st1.unwrap(),
-        rt1: rt1.unwrap(),
-        st2: st2.unwrap(),
-        rt2: rt2.unwrap(),
+        ie1,
+        ie2,
+        st1,
+        rt1,
+        st2,
+        rt2,
     };
     Ok(ie)
 }
@@ -643,9 +625,7 @@ fn send_nx_probes(
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let mut i = 0;
-    for buff in buffs {
-        i += 1;
+    for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
@@ -658,12 +638,9 @@ fn send_nx_probes(
         }
     }
 
-    let mut ni = None;
-    let mut ns = None;
-    let mut sts = None;
-    let mut rts = None;
-    let mut sti = None;
-    let mut rti = None;
+    let mut nxs = HashMap::new();
+    let mut sts = HashMap::new();
+    let mut rts = HashMap::new();
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
@@ -671,46 +648,44 @@ fn send_nx_probes(
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            1 => {
-                ni = rr;
-                sti = Some(st);
-                rti = Some(rt);
-            }
-            2 => {
-                ns = rr;
-                sts = Some(st);
-                rts = Some(rt);
-            }
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        nxs.insert(i, rr);
+        sts.insert(i, st);
+        rts.insert(i, rt);
     }
 
+    let ni = nxs
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let ns = nxs
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
+    let sti = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let sts = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+
+    let rti = rts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let rts = rts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+
     let ns = NXRR6 {
-        ni: ni.unwrap(),
-        ns: ns.unwrap(),
-        sti: sti.unwrap(),
-        rti: rti.unwrap(),
-        sts: sts.unwrap(),
-        rts: rts.unwrap(),
+        ni,
+        ns,
+        sti,
+        rti,
+        sts,
+        rts,
     };
     Ok(ns)
 }
 
 fn send_u1_probe(
     src_ipv6: Ipv6Addr,
-    src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_closed_port: u16, //should be an closed udp port
     timeout: Duration,
     start_time: Instant,
 ) -> Result<U1RR6, PistolErrors> {
-    let src_port = match src_port {
-        Some(s) => s,
-        None => random_port(),
-    };
-
+    let src_port = random_port();
     let buff = packet6::udp_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_closed_port)?;
     let layer3 = Layer3Match {
         layer2: None,
@@ -746,16 +721,12 @@ fn send_u1_probe(
 
 fn send_tecn_probe(
     src_ipv6: Ipv6Addr,
-    src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
     timeout: Duration,
     start_time: Instant,
 ) -> Result<TECNRR6, PistolErrors> {
-    let src_port = match src_port {
-        Some(s) => s,
-        None => random_port(),
-    };
+    let src_port = random_port();
 
     let layer3 = Layer3Match {
         layer2: None,
@@ -792,7 +763,6 @@ fn send_tecn_probe(
 
 fn send_tx_probes(
     src_ipv6: Ipv6Addr,
-    src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
@@ -802,59 +772,61 @@ fn send_tx_probes(
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_ports = match src_port {
-        Some(s) => vec![s; 6],
-        None => random_ports_unique(6),
-    };
+    let src_port_start = random_port_sp(1000, 6540);
+    let mut src_ports = Vec::new();
+    for i in 0..6 {
+        src_ports.push(src_port_start * 10 + i);
+    }
 
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
+
+    let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
-    let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
-    let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
-    let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
-    let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
-    let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_1);
     let layers_match_2 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
     let layers_match_3 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
     let layers_match_4 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
     let layers_match_5 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
     let layers_match_6 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+    let layers_match_7 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
     let ms = vec![
-        layers_match_1,
         layers_match_2,
         layers_match_3,
         layers_match_4,
         layers_match_5,
         layers_match_6,
+        layers_match_7,
     ];
 
     let buff_2 = packet6::t2_packet_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port)?;
@@ -865,8 +837,7 @@ fn send_tx_probes(
     let buff_7 = packet6::t7_packet_layer3(src_ipv6, src_ports[5], dst_ipv6, dst_closed_port)?;
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
 
-    let mut i = 0;
-    for buff in buffs {
+    for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         let m = ms[i];
         pool.execute(move || {
@@ -878,29 +849,11 @@ fn send_tx_probes(
             }
         });
         sleep(Duration::from_millis(100));
-        i += 1;
     }
 
-    let mut t2 = None;
-    let mut t3 = None;
-    let mut t4 = None;
-    let mut t5 = None;
-    let mut t6 = None;
-    let mut t7 = None;
-
-    let mut st2 = None;
-    let mut st3 = None;
-    let mut st4 = None;
-    let mut st5 = None;
-    let mut st6 = None;
-    let mut st7 = None;
-
-    let mut rt2 = None;
-    let mut rt3 = None;
-    let mut rt4 = None;
-    let mut rt5 = None;
-    let mut rt6 = None;
-    let mut rt7 = None;
+    let mut txs = HashMap::new();
+    let mut sts = HashMap::new();
+    let mut rts = HashMap::new();
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
@@ -908,61 +861,64 @@ fn send_tx_probes(
             (Some(r), _rtt) => r,
             (_, _) => vec![],
         };
-        let rr = Some(RequestAndResponse { request, response });
-        match i {
-            0 => {
-                t2 = rr;
-                st2 = Some(st);
-                rt2 = Some(rt);
-            }
-            1 => {
-                t3 = rr;
-                st3 = Some(st);
-                rt3 = Some(rt);
-            }
-            2 => {
-                t4 = rr;
-                st4 = Some(st);
-                rt4 = Some(rt);
-            }
-            3 => {
-                t5 = rr;
-                st5 = Some(st);
-                rt5 = Some(rt);
-            }
-            4 => {
-                t6 = rr;
-                st6 = Some(st);
-                rt6 = Some(rt);
-            }
-            5 => {
-                t7 = rr;
-                st7 = Some(st);
-                rt7 = Some(rt);
-            }
-            _ => (),
-        }
+        let rr = RequestAndResponse { request, response };
+        txs.insert(i, rr);
+        sts.insert(i, st);
+        rts.insert(i, rt);
     }
 
+    let t2 = txs
+        .get(&0)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t3 = txs
+        .get(&1)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t4 = txs
+        .get(&2)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t5 = txs
+        .get(&3)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t6 = txs
+        .get(&4)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t7 = txs
+        .get(&5)
+        .map_or(RequestAndResponse::empty(), |x| x.clone());
+
+    let st2 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let st3 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+    let st4 = sts.get(&2).map_or(Duration::new(0, 0), |x| *x);
+    let st5 = sts.get(&3).map_or(Duration::new(0, 0), |x| *x);
+    let st6 = sts.get(&4).map_or(Duration::new(0, 0), |x| *x);
+    let st7 = sts.get(&5).map_or(Duration::new(0, 0), |x| *x);
+
+    let rt2 = rts.get(&0).map_or(Duration::new(0, 0), |x| *x);
+    let rt3 = rts.get(&1).map_or(Duration::new(0, 0), |x| *x);
+    let rt4 = rts.get(&2).map_or(Duration::new(0, 0), |x| *x);
+    let rt5 = rts.get(&3).map_or(Duration::new(0, 0), |x| *x);
+    let rt6 = rts.get(&4).map_or(Duration::new(0, 0), |x| *x);
+    let rt7 = rts.get(&5).map_or(Duration::new(0, 0), |x| *x);
+
     let txrr = TXRR6 {
-        t2: t2.unwrap(),
-        t3: t3.unwrap(),
-        t4: t4.unwrap(),
-        t5: t5.unwrap(),
-        t6: t6.unwrap(),
-        t7: t7.unwrap(),
-        st2: st2.unwrap(),
-        rt2: rt2.unwrap(),
-        st3: st3.unwrap(),
-        rt3: rt3.unwrap(),
-        st4: st4.unwrap(),
-        rt4: rt4.unwrap(),
-        st5: st5.unwrap(),
-        rt5: rt5.unwrap(),
-        st6: st6.unwrap(),
-        rt6: rt6.unwrap(),
-        st7: st7.unwrap(),
-        rt7: rt7.unwrap(),
+        t2,
+        t3,
+        t4,
+        t5,
+        t6,
+        t7,
+        st2,
+        rt2,
+        st3,
+        rt3,
+        st4,
+        rt4,
+        st5,
+        rt5,
+        st6,
+        rt6,
+        st7,
+        rt7,
     };
 
     Ok(txrr)
@@ -970,7 +926,6 @@ fn send_tx_probes(
 
 fn send_all_probes(
     src_ipv6: Ipv6Addr,
-    src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
@@ -978,35 +933,13 @@ fn send_all_probes(
     timeout: Duration,
 ) -> Result<AllPacketRR6, PistolErrors> {
     let start_time = Instant::now();
-    let seq = send_seq_probes(
-        src_ipv6,
-        src_port,
-        dst_ipv6,
-        dst_open_tcp_port,
-        timeout,
-        start_time,
-    )?;
+    let seq = send_seq_probes(src_ipv6, dst_ipv6, dst_open_tcp_port, timeout, start_time)?;
     let ie = send_ie_probes(src_ipv6, dst_ipv6, timeout, start_time)?;
     let nx = send_nx_probes(src_ipv6, dst_ipv6, timeout, start_time)?;
-    let u1 = send_u1_probe(
-        src_ipv6,
-        src_port,
-        dst_ipv6,
-        dst_closed_udp_port,
-        timeout,
-        start_time,
-    )?;
-    let tecn = send_tecn_probe(
-        src_ipv6,
-        src_port,
-        dst_ipv6,
-        dst_open_tcp_port,
-        timeout,
-        start_time,
-    )?;
+    let u1 = send_u1_probe(src_ipv6, dst_ipv6, dst_closed_udp_port, timeout, start_time)?;
+    let tecn = send_tecn_probe(src_ipv6, dst_ipv6, dst_open_tcp_port, timeout, start_time)?;
     let tx = send_tx_probes(
         src_ipv6,
-        src_port,
         dst_ipv6,
         dst_open_tcp_port,
         dst_closed_tcp_port,
@@ -1098,7 +1031,6 @@ fn isort(arr: &[OSInfo6]) -> Vec<OSInfo6> {
 
 pub fn threads_os_probe6(
     src_ipv6: Ipv6Addr,
-    src_port: Option<u16>,
     dst_ipv6: Ipv6Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
@@ -1110,7 +1042,6 @@ pub fn threads_os_probe6(
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv6,
-        src_port,
         dst_ipv6,
         dst_open_tcp_port,
         dst_closed_tcp_port,
@@ -1363,6 +1294,7 @@ pub fn threads_os_probe6(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{utils::find_source_addr6, TEST_IPV6_LOCAL};
     #[test]
     fn test_something() {
         let p = "000XXXXXX";
@@ -1376,5 +1308,91 @@ mod tests {
         let p = "0000XXXXXXX";
         let ret = p_reduce(p);
         println!("{}", ret);
+    }
+    #[test]
+    fn test_send_tx() {
+        let dst_ipv6 = TEST_IPV6_LOCAL;
+        let src_ipv6 = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
+        let dst_open_port = 22;
+        let dst_closed_port = 9876;
+
+        let src_port_start = random_port_sp(1000, 6540);
+        let mut src_ports = Vec::new();
+        for i in 0..6 {
+            src_ports.push(src_port_start * 10 + i);
+        }
+        println!("src_ports: {:?}", src_ports);
+
+        let layer3 = Layer3Match {
+            layer2: None,
+            src_addr: Some(dst_ipv6.into()),
+            dst_addr: Some(src_ipv6.into()),
+        };
+
+        let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_open_port),
+            dst_port: Some(src_ports[0]),
+        };
+        let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_open_port),
+            dst_port: Some(src_ports[1]),
+        };
+        let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_open_port),
+            dst_port: Some(src_ports[2]),
+        };
+        let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_closed_port),
+            dst_port: Some(src_ports[3]),
+        };
+        let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_closed_port),
+            dst_port: Some(src_ports[4]),
+        };
+        let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_closed_port),
+            dst_port: Some(src_ports[5]),
+        };
+        let layers_match_2 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+        let layers_match_3 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+        let layers_match_4 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+        let layers_match_5 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+        let layers_match_6 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+        let layers_match_7 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+        let ms = vec![
+            layers_match_2,
+            layers_match_3,
+            layers_match_4,
+            layers_match_5,
+            layers_match_6,
+            layers_match_7,
+        ];
+
+        let buff_2 =
+            packet6::t2_packet_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port).unwrap();
+        let buff_3 =
+            packet6::t3_packet_layer3(src_ipv6, src_ports[1], dst_ipv6, dst_open_port).unwrap();
+        let buff_4 =
+            packet6::t4_packet_layer3(src_ipv6, src_ports[2], dst_ipv6, dst_open_port).unwrap();
+        let buff_5 =
+            packet6::t5_packet_layer3(src_ipv6, src_ports[3], dst_ipv6, dst_closed_port).unwrap();
+        let buff_6 =
+            packet6::t6_packet_layer3(src_ipv6, src_ports[4], dst_ipv6, dst_closed_port).unwrap();
+        let buff_7 =
+            packet6::t7_packet_layer3(src_ipv6, src_ports[5], dst_ipv6, dst_closed_port).unwrap();
+        let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
+
+        let i = 0;
+        let m = ms[i];
+        let buff = buffs[i].clone();
+        let timeout = Duration::new(3, 0);
+        let (ret, _rtt) = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout).unwrap();
+        println!("ret: {}", ret.unwrap().len());
     }
 }

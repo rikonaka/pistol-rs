@@ -367,7 +367,7 @@ pub fn flood(
         let mut detail = FloodAttackDetail::new();
         match ret {
             Ok((packets, traffic, elapsed)) => {
-                println!(">>> {}", traffic);
+                // println!(">>> {}", traffic);
                 detail.send_packets = packets;
                 detail.send_traffic = traffic as f64;
                 detail.elapsed_time = elapsed;
