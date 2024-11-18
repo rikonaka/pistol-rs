@@ -132,7 +132,7 @@ pub fn seq_packet_1_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -189,7 +189,7 @@ pub fn seq_packet_2_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -246,7 +246,7 @@ pub fn seq_packet_3_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -304,7 +304,7 @@ pub fn seq_packet_4_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -359,7 +359,7 @@ pub fn seq_packet_5_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -415,7 +415,7 @@ pub fn seq_packet_6_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -471,7 +471,7 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_payload_length(payload_length as u16);
     // Hop-by-Hop Options
     ipv6_header.set_next_header(IpNextHeaderProtocol(0));
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -539,7 +539,7 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_payload_length(payload_length as u16);
     // Hop-by-Hop Options
     ipv6_header.set_next_header(IpNextHeaderProtocol(0));
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -638,7 +638,7 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     let payload_length = ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -777,7 +777,7 @@ pub fn udp_packet_layer3(
     let payload_length = UDP_HEADER_SIZE + UDP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Udp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -828,7 +828,7 @@ pub fn tecn_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -892,7 +892,7 @@ pub fn t2_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -949,7 +949,7 @@ pub fn t3_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1006,7 +1006,7 @@ pub fn t4_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1063,7 +1063,7 @@ pub fn t5_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1120,7 +1120,7 @@ pub fn t6_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1177,7 +1177,7 @@ pub fn t7_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen();
+    let hop_limit = rng.gen_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);

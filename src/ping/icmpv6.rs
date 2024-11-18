@@ -89,35 +89,30 @@ pub fn send_icmpv6_ping_packet(
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], timeout)?;
-    match ret {
-        Some(r) => {
-            match Ipv6Packet::new(&r) {
-                Some(ipv6_packet) => {
-                    match ipv6_packet.get_next_header() {
-                        IpNextHeaderProtocols::Icmpv6 => {
-                            match Icmpv6Packet::new(ipv6_packet.payload()) {
-                                Some(icmpv6_packet) => {
-                                    let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                                    let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+    match Ipv6Packet::new(&ret) {
+        Some(ipv6_packet) => {
+            match ipv6_packet.get_next_header() {
+                IpNextHeaderProtocols::Icmpv6 => {
+                    match Icmpv6Packet::new(ipv6_packet.payload()) {
+                        Some(icmpv6_packet) => {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
 
-                                    if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                        if codes_1.contains(&icmpv6_code) {
-                                            // icmp protocol unreachable error (type 3, code 2)
-                                            return Ok((PingStatus::Down, rtt));
-                                        }
-                                    } else if icmpv6_type == Icmpv6Types::EchoReply {
-                                        if codes_2.contains(&icmpv6_code) {
-                                            return Ok((PingStatus::Up, rtt));
-                                        }
-                                    }
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes_1.contains(&icmpv6_code) {
+                                    // icmp protocol unreachable error (type 3, code 2)
+                                    return Ok((PingStatus::Down, rtt));
                                 }
-                                None => (),
+                            } else if icmpv6_type == Icmpv6Types::EchoReply {
+                                if codes_2.contains(&icmpv6_code) {
+                                    return Ok((PingStatus::Up, rtt));
+                                }
                             }
                         }
-                        _ => (),
+                        None => (),
                     }
                 }
-                None => (),
+                _ => (),
             }
         }
         None => (),

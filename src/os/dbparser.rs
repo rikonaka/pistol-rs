@@ -1203,30 +1203,29 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs::File;
-    use std::io::Write;
-    use std::time::Instant;
+    // use super::*;
+    // use std::fs::File;
+    // use std::io::Write;
+    // use std::time::Instant;
     #[test]
     fn test_parser() {
         /* THIS CODES PERFORMENCE IS SO POORLY THAN MY IMAGEINATION */
         /* SO JUST LEAVE ITS HERE AND NOT USE IT IN OTHER FUNCTIONS */
 
-        let start = Instant::now();
+        // let start = Instant::now();
+        // let nmap_os_file = include_str!("../db/nmap-os-db");
+        // let mut nmap_os_file_lines = Vec::new();
+        // for l in nmap_os_file.lines() {
+        //     nmap_os_file_lines.push(l.to_string());
+        // }
+        // println!("read os db file finish");
+        // let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        // println!("len: {}", ret.len());
 
-        let nmap_os_file = include_str!("../db/nmap-os-db");
-        let mut nmap_os_file_lines = Vec::new();
-        for l in nmap_os_file.lines() {
-            nmap_os_file_lines.push(l.to_string());
-        }
-        println!("read os db file finish");
-        let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
-        println!("len: {}", ret.len());
+        // println!("parse time: {:.3}", start.elapsed().as_secs_f32());
 
-        println!("parse time: {:.3}", start.elapsed().as_secs_f32());
-
-        let serialized = serde_json::to_string(&ret).unwrap();
-        let mut file_write = File::create("nmap-os-db.pistol").unwrap();
-        file_write.write_all(serialized.as_bytes()).unwrap();
+        // let serialized = serde_json::to_string(&ret).unwrap();
+        // let mut file_write = File::create("nmap-os-db.pistol").unwrap();
+        // file_write.write_all(serialized.as_bytes()).unwrap();
     }
 }

@@ -68,6 +68,8 @@ use super::rr::SEQRR;
 use super::rr::TXRR;
 use super::rr::U1RR;
 
+const MAX_RETRY: usize = 5; // nmap default
+
 // EXAMPLE
 // SCAN(V=5.05BETA1%D=8/23%OT=22%CT=1%CU=42341%PV=N%DS=0%DC=L%G=Y%TM=4A91CB90%P=i686-pc-linux-gnu)
 // SEQ(SP=C9%GCD=1%ISR=CF%TI=Z%CI=Z%II=I%TS=A)
@@ -100,6 +102,27 @@ pub struct TargetFingerprint {
     pub t7x: TXX,
     pub u1x: U1X,
     pub iex: IEX,
+}
+
+impl TargetFingerprint {
+    pub fn empty() -> TargetFingerprint {
+        TargetFingerprint {
+            scan: String::new(),
+            seqx: SEQX::empty(),
+            opsx: OPSX::empty(),
+            winx: WINX::empty(),
+            ecnx: ECNX::empty(),
+            t1x: TXX::empty(),
+            t2x: TXX::empty(),
+            t3x: TXX::empty(),
+            t4x: TXX::empty(),
+            t5x: TXX::empty(),
+            t6x: TXX::empty(),
+            t7x: TXX::empty(),
+            u1x: U1X::empty(),
+            iex: IEX::empty(),
+        }
+    }
 }
 
 impl fmt::Display for TargetFingerprint {
@@ -272,9 +295,29 @@ fn send_seq_probes(
 
         let tx = tx.clone();
         pool.execute(move || {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
-            match tx.send((i, buff.to_vec(), ret)) {
-                _ => (),
+            for retry_time in 0..MAX_RETRY {
+                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
+                match ret {
+                    Ok((response, rtt)) => {
+                        if response.len() > 0 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
+                                _ => (),
+                            }
+                            break;
+                        } else if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
+                                _ => (),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Err(e))) {
+                                _ => (),
+                            }
+                        }
+                    }
+                }
             }
         });
         // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
@@ -284,10 +327,7 @@ fn send_seq_probes(
     let mut seq_hm = HashMap::new();
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         seq_hm.insert(i, rr);
     }
@@ -357,9 +397,29 @@ fn send_ie_probes(
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
-        match tx.send((i, buff.to_vec(), ret)) {
-            _ => (),
+        for retry_time in 0..MAX_RETRY {
+            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
+            match ret {
+                Ok((response, rtt)) => {
+                    if response.len() > 0 {
+                        match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
+                            _ => (),
+                        }
+                        break;
+                    } else if retry_time == MAX_RETRY - 1 {
+                        match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
+                            _ => (),
+                        }
+                    }
+                }
+                Err(e) => {
+                    if retry_time == MAX_RETRY - 1 {
+                        match tx.send((i, buff.to_vec(), Err(e))) {
+                            _ => (),
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -367,10 +427,7 @@ fn send_ie_probes(
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         ies.insert(i, rr);
     }
@@ -409,19 +466,27 @@ fn send_ecn_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
+    for _ in 0..MAX_RETRY {
+        let (response, _) =
+            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
+        if response.len() > 0 {
+            let rr = RequestAndResponse {
+                request: buff,
+                response,
+            };
 
-    let response = match ret? {
-        (Some(r), _rtt) => r,
-        (_, _) => vec![],
-    };
+            let ecn = ECNRR { ecn: rr };
+            return Ok(ecn);
+        }
+    }
+
     let rr = RequestAndResponse {
         request: buff,
-        response,
+        response: vec![],
     };
 
     let ecn = ECNRR { ecn: rr };
-    Ok(ecn)
+    return Ok(ecn);
 }
 
 fn send_tx_probes(
@@ -510,9 +575,29 @@ fn send_tx_probes(
         let tx = tx.clone();
         let m = ms[i];
         pool.execute(move || {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], timeout);
-            match tx.send((i, buff.to_vec(), ret)) {
-                _ => (),
+            for retry_time in 0..MAX_RETRY {
+                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], timeout);
+                match ret {
+                    Ok((response, rtt)) => {
+                        if response.len() > 0 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
+                                _ => (),
+                            }
+                            break;
+                        } else if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
+                                _ => (),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Err(e))) {
+                                _ => (),
+                            }
+                        }
+                    }
+                }
             }
         });
     }
@@ -520,10 +605,7 @@ fn send_tx_probes(
     let mut tx_hm = HashMap::new();
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         tx_hm.insert(i, rr);
     }
@@ -582,19 +664,27 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
+    for _ in 0..MAX_RETRY {
+        let (response, _) =
+            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
 
-    let response = match ret {
-        (Some(r), _rtt) => r,
-        (_, _) => vec![],
-    };
+        if response.len() > 0 {
+            let rr = RequestAndResponse {
+                request: buff,
+                response,
+            };
+
+            let u1 = U1RR { u1: rr };
+            return Ok(u1);
+        }
+    }
     let rr = RequestAndResponse {
         request: buff,
-        response,
+        response: vec![],
     };
 
     let u1 = U1RR { u1: rr };
-    Ok(u1)
+    return Ok(u1);
 }
 
 fn send_all_probes(
@@ -639,8 +729,23 @@ pub struct SEQX {
     pub ii: String,
     pub ss: String,
     pub ts: String,
-    // Fit the db file.
     pub r: String,
+}
+
+impl SEQX {
+    pub fn empty() -> SEQX {
+        SEQX {
+            sp: 0,
+            gcd: 0,
+            isr: 0,
+            ti: String::new(),
+            ci: String::new(),
+            ii: String::new(),
+            ss: String::new(),
+            ts: String::new(),
+            r: String::new(),
+        }
+    }
 }
 
 impl fmt::Display for SEQX {
@@ -746,6 +851,20 @@ pub struct OPSX {
     pub o6: String,
     // Fit the db file.
     pub r: String,
+}
+
+impl OPSX {
+    pub fn empty() -> OPSX {
+        OPSX {
+            o1: String::new(),
+            o2: String::new(),
+            o3: String::new(),
+            o4: String::new(),
+            o5: String::new(),
+            o6: String::new(),
+            r: String::new(),
+        }
+    }
 }
 
 impl fmt::Display for OPSX {
@@ -869,6 +988,20 @@ pub struct WINX {
     pub r: String,
 }
 
+impl WINX {
+    pub fn empty() -> WINX {
+        WINX {
+            w1: 0,
+            w2: 0,
+            w3: 0,
+            w4: 0,
+            w5: 0,
+            w6: 0,
+            r: String::new(),
+        }
+    }
+}
+
 impl fmt::Display for WINX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.r.as_str() {
@@ -987,6 +1120,21 @@ pub struct ECNX {
     pub o: String,
     pub cc: String,
     pub q: String,
+}
+
+impl ECNX {
+    pub fn empty() -> ECNX {
+        ECNX {
+            r: String::new(),
+            df: String::new(),
+            t: 0,
+            tg: 0,
+            w: 0,
+            o: String::new(),
+            cc: String::new(),
+            q: String::new(),
+        }
+    }
 }
 
 impl fmt::Display for ECNX {
@@ -1130,6 +1278,25 @@ pub struct TXX {
     pub o: String,
     pub rd: u32, // CRC32
     pub q: String,
+}
+
+impl TXX {
+    pub fn empty() -> TXX {
+        TXX {
+            name: String::new(),
+            r: String::new(),
+            df: String::new(),
+            t: 0,
+            tg: 0,
+            w: 0,
+            s: String::new(),
+            a: String::new(),
+            f: String::new(),
+            o: String::new(),
+            rd: 0,
+            q: String::new(),
+        }
+    }
 }
 
 impl fmt::Display for TXX {
@@ -1324,6 +1491,24 @@ pub struct U1X {
     pub rud: String,
 }
 
+impl U1X {
+    pub fn empty() -> U1X {
+        U1X {
+            r: String::new(),
+            df: String::new(),
+            t: 0,
+            tg: 0,
+            ipl: 0,
+            un: 0,
+            ripl: String::new(),
+            rid: String::new(),
+            ripck: String::new(),
+            ruck: String::new(),
+            rud: String::new(),
+        }
+    }
+}
+
 impl fmt::Display for U1X {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first_elem = true;
@@ -1486,6 +1671,18 @@ pub struct IEX {
     pub t: u16,
     pub tg: u8,
     pub cd: String,
+}
+
+impl IEX {
+    pub fn empty() -> IEX {
+        IEX {
+            r: String::new(),
+            dfi: String::new(),
+            t: 0,
+            tg: 0,
+            cd: String::new(),
+        }
+    }
 }
 
 impl fmt::Display for IEX {

@@ -94,38 +94,33 @@ pub fn send_icmp_ping_packet(
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
-    match ret {
-        Some(r) => {
-            match Ipv4Packet::new(&r) {
-                Some(ipv4_packet) => {
-                    match ipv4_packet.get_next_level_protocol() {
-                        IpNextHeaderProtocols::Icmp => {
-                            match IcmpPacket::new(ipv4_packet.payload()) {
-                                Some(icmp_packet) => {
-                                    let icmp_type = icmp_packet.get_icmp_type();
-                                    let icmp_code = icmp_packet.get_icmp_code();
+    match Ipv4Packet::new(&ret) {
+        Some(ipv4_packet) => {
+            match ipv4_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Icmp => {
+                    match IcmpPacket::new(ipv4_packet.payload()) {
+                        Some(icmp_packet) => {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
 
-                                    let codes_2 = vec![
-                                        echo_reply::IcmpCodes::NoCode, // 0
-                                    ];
-                                    if icmp_type == IcmpTypes::DestinationUnreachable {
-                                        if codes_1.contains(&icmp_code) {
-                                            // icmp protocol unreachable error (type 3, code 2)
-                                            return Ok((PingStatus::Down, rtt));
-                                        }
-                                    } else if icmp_type == IcmpTypes::EchoReply {
-                                        if codes_2.contains(&icmp_code) {
-                                            return Ok((PingStatus::Up, rtt));
-                                        }
-                                    }
+                            let codes_2 = vec![
+                                echo_reply::IcmpCodes::NoCode, // 0
+                            ];
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes_1.contains(&icmp_code) {
+                                    // icmp protocol unreachable error (type 3, code 2)
+                                    return Ok((PingStatus::Down, rtt));
                                 }
-                                None => (),
+                            } else if icmp_type == IcmpTypes::EchoReply {
+                                if codes_2.contains(&icmp_code) {
+                                    return Ok((PingStatus::Up, rtt));
+                                }
                             }
                         }
-                        _ => (),
+                        None => (),
                     }
                 }
-                None => (),
+                _ => (),
             }
         }
         None => (),

@@ -6,7 +6,7 @@ The library must be run as root (Linux, *BSD) or administrator (Windows), the `s
 
 ```toml
 [dependencies]
-pistol = "^2"
+pistol = "^3"
 ```
 
 On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npcap` [here](https://npcap.com/#download) SDK, then place `Packet.lib` from the `Lib/x64` folder in your root of code (Note: the `npcap` did not test by libpnet according to the doc of libpnet).
@@ -100,9 +100,9 @@ Furthermore, for the current mainstream operating systems, ipv6 fingerprint supp
 ```rust
 use pistol::Logger;
 
-fn main() -> Result<()> {
-    Logger::init_debug_logging()?;
-    // Logger::init_warn_logging()?;
+fn main() {
+    let _ = Logger::init_debug_logging();
+    // let _ = Logger::init_warn_logging();
     // your code below
     ...
 }
@@ -122,7 +122,7 @@ use pistol::Host;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 
-fn main() -> Result<()> {
+fn main() {
     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
     let host1 = Host::new(dst_ipv4.into(), Some(vec![22, 99]));
     let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x020c, 0x29ff, 0xfeb6, 0x8d99);
@@ -170,7 +170,6 @@ use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
-use anyhow::Result;
 use subnetwork::CrossIpv4Pool;
 
 fn main() {
@@ -251,17 +250,15 @@ Or
 use pistol::scan::tcp_syn_scan_raw;
 use std::net::Ipv4Addr;
 use std::time::Duration;
-use anyhow::Result;
 
-fn main() -> Result<()> {
+fn main() {
     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 1);
     let dst_port = 80;
     let src_ipv4 = None;
     let src_port = None;
     let timeout = Some(Duration::new(1, 0));
-    let (port_status, _time_cost) = tcp_syn_scan_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout)?;
+    let (port_status, _time_cost) = tcp_syn_scan_raw(dst_ipv4.into(), dst_port, src_ipv4, src_port, timeout).unwrap();
     println!("{:?}", port_status);
-    Ok(())
 }
 ```
 
@@ -275,9 +272,8 @@ use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
-use anyhow::Result;
 
-fn main() -> Result<()> {
+fn main() {
     // If the value of `src_ipv4` is `None`, the program will find it auto.
     let src_ipv4 = None;
     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 133);
@@ -298,7 +294,6 @@ fn main() -> Result<()> {
     let target = Target::new(vec![host]);
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
-    let threads_num = 8;
 
     // The `fingerprint` is the obtained fingerprint of the target OS.
     // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
@@ -306,30 +301,31 @@ fn main() -> Result<()> {
         target,
         src_ipv4,
         top_k,
-        threads_num,
         timeout,
-    )?;
+    ).unwrap();
     println!("{}", ret);
-    Ok(())
 }
 ```
 
 ### output
 
 ```
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
-|                                                        OS Detect Results                                                        |
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
-| id  |     addr      | rank | score  |        details        |                                cpe                                |
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
-|  1  | 192.168.5.133 |  #1  | 75/101 |   Linux 4.15 - 5.6    | cpe:/o:linux:linux_kernel:4 auto|cpe:/o:linux:linux_kernel:5 auto |
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
-|  2  | 192.168.5.133 |  #2  | 75/101 |    Linux 5.0 - 5.3    |                 cpe:/o:linux:linux_kernel:5 auto                  |
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
-|  3  | 192.168.5.133 |  #3  | 74/101 |       Linux 5.4       |                cpe:/o:linux:linux_kernel:5.4 auto                 |
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
-|  4  | 192.168.5.133 |  #4  | 68/101 | Linux 2.6.24 - 2.6.36 |                cpe:/o:linux:linux_kernel:2.6 auto                 |
-+-----+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+|                                                        OS Detect Results                                                         |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+|  id  |     addr      | rank | score  |        details        |                                cpe                                |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+|  1   | 192.168.5.133 |  #1  | 75/101 |   Linux 4.15 - 5.6    | cpe:/o:linux:linux_kernel:4 auto|cpe:/o:linux:linux_kernel:5 auto |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+|  2   | 192.168.5.133 |  #2  | 75/101 |    Linux 5.0 - 5.3    |                 cpe:/o:linux:linux_kernel:5 auto                  |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+|  3   | 192.168.5.133 |  #3  | 74/101 |       Linux 5.4       |                cpe:/o:linux:linux_kernel:5.4 auto                 |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+|  4   | 192.168.5.133 |  #4  | 68/101 | Linux 2.6.24 - 2.6.36 |                cpe:/o:linux:linux_kernel:2.6 auto                 |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
+| total used time: 8638.91ms                                                                                                       |
+| avg time cost: 8583.76ms                                                                                                         |
++------+---------------+------+--------+-----------------------+-------------------------------------------------------------------+
 ```
 
 
@@ -343,11 +339,10 @@ use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
-use anyhow::Result;
 
-fn main() -> Result<()> {
+fn main() {
     let src_ipv6 = None;
-    let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
+    let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2c:9e4".parse().unwrap();
     let dst_open_tcp_port = 22;
     let dst_closed_tcp_port = 8765;
     let dst_closed_udp_port = 9876;
@@ -363,25 +358,28 @@ fn main() -> Result<()> {
     let target = Target::new(vec![host]);
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
-    let threads_num = 8;
-    let ret = os_detect(target, src_ipv6, top_k, threads_num, timeout)?;
+    let ret = os_detect(target, src_ipv6, top_k, timeout).unwrap();
     println!("{}", ret);
-    Ok(())
 }
 ```
 
 ### Output
 
 ```
-+---------------- ---------+------+------+--------------------------+
-|                        OS Detect Results                          |
-+--------------------------+------+------+--------------------------+
-| fe80::20c:29ff:feb6:8d99 |  #1  | 0.9  |        Linux 4.19        |
-+--------------------------+------+------+--------------------------+
-| fe80::20c:29ff:feb6:8d99 |  #2  | 0.7  |     Linux 3.13 - 4.6     |
-+--------------------------+------+------+--------------------------+
-| fe80::20c:29ff:feb6:8d99 |  #3  | 0.0  | Android 7.1 (Linux 3.18) |
-+--------------------------+------+------+--------------------------+
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
+|                                                         OS Detect Results                                                          |
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
+|  id  |          addr           | rank | score |         details          |                           cpe                           |
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
+|  1   | fe80::20c:29ff:fe2c:9e4 |  #1  |  0.9  |        Linux 4.19        |             cpe:/o:linux:linux_kernel:4.19              |
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
+|  2   | fe80::20c:29ff:fe2c:9e4 |  #2  |  0.5  |     Linux 3.13 - 4.6     | cpe:/o:linux:linux_kernel:3 cpe:/o:linux:linux_kernel:4 |
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
+|  3   | fe80::20c:29ff:fe2c:9e4 |  #3  |  0.0  | Android 7.1 (Linux 3.18) |                                                         |
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
+| total used time: 10476.07ms                                                                                                        |
+| avg time cost: 10474.73ms                                                                                                          |
++------+-------------------------+------+-------+--------------------------+---------------------------------------------------------+
 ```
 
 According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value (third column in the table) must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
@@ -398,13 +396,11 @@ use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
-use anyhow::Result;
 
-fn main() -> Result<()> {
+fn main() {
     let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
     let host = Host::new(dst_addr.into(), Some(vec![22, 80]));
     let target = Target::new(vec![host]);
-    let threads_num = 8;
     let timeout = Some(Duration::new(1, 0));
     // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
     // only_tcp_recommended = true: only try the tcp probe recommended port
@@ -419,22 +415,25 @@ fn main() -> Result<()> {
         only_udp_recommended,
         exclude_ports,
         intensity,
-        threads_num,
         timeout,
-    )?;
+    )..unwrap();
     println!("{}", ret);
-    Ok(())
 }
 ```
 
 ### Output
 
 ```
-+--------------+--------+--------+
-|      Service Scan Results      |
-+--------------+--------+--------+
-| 192.168.1.51 |   22   |  ssh   |
-+--------------+--------+--------+
-| 192.168.1.51 |   80   |  http  |
-+--------------+--------+--------+
++--------+---------------+--------+---------+
+|           Service Scan Results            |
++--------+---------------+--------+---------+
+|   id   |     addr      |  port  | service |
++--------+---------------+--------+---------+
+|   1    | 192.168.5.133 |   22   |   ssh   |
++--------+---------------+--------+---------+
+|   2    | 192.168.5.133 |   80   |  http   |
++--------+---------------+--------+---------+
+| total used time: 22594.33ms               |
+| avg time cost: 21161.98ms                 |
++--------+---------------+--------+---------+
 ```

@@ -40,6 +40,8 @@ use super::rr::U1RR6;
 use super::Linear;
 use super::OSInfo6;
 
+const MAX_RETRY: usize = 5; // nmap default
+
 // EXAMPLE
 // SCAN(V=5.61TEST1%E=6%D=9/27%OT=22%CT=443%CU=42192%PV=N%DS=5%DC=T%G=Y%TM=4E82908D%P=x86_64-unknown-linux-gnu)
 // S1(P=6000{4}28063cXX{32}0016c1b002bbd213c57562f5a01212e0f8880000020404c40402080a5be177f2ff{4}01030307%ST=0.021271%RT=0.041661)
@@ -140,6 +142,17 @@ pub struct SEQX6 {
     pub rt: Duration,
 }
 
+impl SEQX6 {
+    pub fn empty() -> SEQX6 {
+        SEQX6 {
+            name: String::new(),
+            rr: RequestAndResponse::empty(),
+            st: Duration::new(0, 0),
+            rt: Duration::new(0, 0),
+        }
+    }
+}
+
 impl fmt::Display for SEQX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let output = if self.rr.response.len() > 0 {
@@ -164,6 +177,17 @@ pub struct IEX6 {
     pub rr: RequestAndResponse,
     pub st: Duration,
     pub rt: Duration,
+}
+
+impl IEX6 {
+    pub fn empty() -> IEX6 {
+        IEX6 {
+            name: String::new(),
+            rr: RequestAndResponse::empty(),
+            st: Duration::new(0, 0),
+            rt: Duration::new(0, 0),
+        }
+    }
 }
 
 impl fmt::Display for IEX6 {
@@ -192,6 +216,17 @@ pub struct NX6 {
     pub rt: Duration,
 }
 
+impl NX6 {
+    pub fn empty() -> NX6 {
+        NX6 {
+            name: String::new(),
+            rr: RequestAndResponse::empty(),
+            st: Duration::new(0, 0),
+            rt: Duration::new(0, 0),
+        }
+    }
+}
+
 impl fmt::Display for NX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let output = if self.rr.response.len() > 0 {
@@ -215,6 +250,16 @@ pub struct U1X6 {
     pub rr: RequestAndResponse,
     pub st: Duration,
     pub rt: Duration,
+}
+
+impl U1X6 {
+    pub fn empty() -> U1X6 {
+        U1X6 {
+            rr: RequestAndResponse::empty(),
+            st: Duration::new(0, 0),
+            rt: Duration::new(0, 0),
+        }
+    }
 }
 
 impl fmt::Display for U1X6 {
@@ -241,6 +286,16 @@ pub struct TECNX6 {
     pub rt: Duration,
 }
 
+impl TECNX6 {
+    pub fn empty() -> TECNX6 {
+        TECNX6 {
+            rr: RequestAndResponse::empty(),
+            st: Duration::new(0, 0),
+            rt: Duration::new(0, 0),
+        }
+    }
+}
+
 impl fmt::Display for TECNX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let output = if self.rr.response.len() > 0 {
@@ -264,6 +319,17 @@ pub struct TX6 {
     pub rr: RequestAndResponse,
     pub st: Duration,
     pub rt: Duration,
+}
+
+impl TX6 {
+    pub fn empty() -> TX6 {
+        TX6 {
+            name: String::new(),
+            rr: RequestAndResponse::empty(),
+            st: Duration::new(0, 0),
+            rt: Duration::new(0, 0),
+        }
+    }
 }
 
 impl fmt::Display for TX6 {
@@ -309,6 +375,35 @@ pub struct TargetFingerprint6 {
     pub extra: String,
     pub novelty: f64,
     pub status: bool,
+}
+
+impl TargetFingerprint6 {
+    pub fn empty() -> TargetFingerprint6 {
+        TargetFingerprint6 {
+            scan: String::new(),
+            s1x: SEQX6::empty(),
+            s2x: SEQX6::empty(),
+            s3x: SEQX6::empty(),
+            s4x: SEQX6::empty(),
+            s5x: SEQX6::empty(),
+            s6x: SEQX6::empty(),
+            ie1x: IEX6::empty(),
+            ie2x: IEX6::empty(),
+            ni: NX6::empty(),
+            ns: NX6::empty(),
+            u1x: U1X6::empty(),
+            tecnx: TECNX6::empty(),
+            t2x: TX6::empty(),
+            t3x: TX6::empty(),
+            t4x: TX6::empty(),
+            t5x: TX6::empty(),
+            t6x: TX6::empty(),
+            t7x: TX6::empty(),
+            extra: String::new(),
+            novelty: 0.0,
+            status: false,
+        }
+    }
 }
 
 impl TargetFingerprint6 {
@@ -437,11 +532,31 @@ fn send_seq_probes(
 
         let tx = tx.clone();
         pool.execute(move || {
-            let st = start_time.elapsed();
-            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
-            let rt = start_time.elapsed();
-            match tx.send((i, buff.to_vec(), ret, st, rt)) {
-                _ => (),
+            for retry_time in 0..MAX_RETRY {
+                let st = start_time.elapsed();
+                let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
+                let rt = start_time.elapsed();
+                match ret {
+                    Ok((response, rtt)) => {
+                        if response.len() > 0 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                                _ => (),
+                            };
+                            break;
+                        } else if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                                _ => (),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
+                                _ => (),
+                            };
+                        }
+                    }
+                }
             }
         });
         // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
@@ -454,10 +569,7 @@ fn send_seq_probes(
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         seqs.insert(i, rr);
         sts.insert(i, st);
@@ -552,11 +664,31 @@ fn send_ie_probes(
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let st = start_time.elapsed();
-        let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
-        let rt = start_time.elapsed();
-        match tx.send((i, buff.to_vec(), ret, st, rt)) {
-            _ => (),
+        for retry_time in 0..MAX_RETRY {
+            let st = start_time.elapsed();
+            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
+            let rt = start_time.elapsed();
+            match ret {
+                Ok((response, rtt)) => {
+                    if response.len() > 0 {
+                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                            _ => (),
+                        };
+                        break;
+                    } else if retry_time == MAX_RETRY - 1 {
+                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                            _ => (),
+                        }
+                    }
+                }
+                Err(e) => {
+                    if retry_time == MAX_RETRY - 1 {
+                        match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
+                            _ => (),
+                        };
+                    }
+                }
+            }
         }
     }
 
@@ -566,10 +698,7 @@ fn send_ie_probes(
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         ies.insert(i, rr);
         sts.insert(i, st);
@@ -630,11 +759,31 @@ fn send_nx_probes(
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let st = start_time.elapsed();
-        let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
-        let rt = start_time.elapsed();
-        match tx.send((i, buff.to_vec(), ret, st, rt)) {
-            _ => (),
+        for retry_time in 0..MAX_RETRY {
+            let st = start_time.elapsed();
+            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout);
+            let rt = start_time.elapsed();
+            match ret {
+                Ok((response, rtt)) => {
+                    if response.len() > 0 {
+                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                            _ => (),
+                        };
+                        break;
+                    } else if retry_time == MAX_RETRY - 1 {
+                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                            _ => (),
+                        }
+                    }
+                }
+                Err(e) => {
+                    if retry_time == MAX_RETRY - 1 {
+                        match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
+                            _ => (),
+                        };
+                    }
+                }
+            }
         }
     }
 
@@ -644,10 +793,7 @@ fn send_nx_probes(
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         nxs.insert(i, rr);
         sts.insert(i, st);
@@ -702,21 +848,30 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let st = start_time.elapsed();
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
-    let rt = start_time.elapsed();
+    let mut st = start_time.elapsed();
+    let mut rt = start_time.elapsed();
+    for _ in 0..MAX_RETRY {
+        st = start_time.elapsed();
+        let (response, _rtt) =
+            layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
+        rt = start_time.elapsed();
+        if response.len() > 0 {
+            let rr = RequestAndResponse {
+                request: buff,
+                response,
+            };
 
-    let response = match ret {
-        (Some(r), _rtt) => r,
-        (_, _) => vec![],
-    };
+            let u1 = U1RR6 { u1: rr, st, rt };
+            return Ok(u1);
+        }
+    }
+
     let rr = RequestAndResponse {
         request: buff,
-        response,
+        response: vec![],
     };
-
     let u1 = U1RR6 { u1: rr, st, rt };
-    Ok(u1)
+    return Ok(u1);
 }
 
 fn send_tecn_probe(
@@ -745,13 +900,9 @@ fn send_tecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
-    let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
+    let (response, _) = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout)?;
     let rt = start_time.elapsed();
 
-    let response = match ret {
-        (Some(r), _rtt) => r,
-        (_, _) => vec![],
-    };
     let rr = RequestAndResponse {
         request: buff,
         response,
@@ -841,11 +992,31 @@ fn send_tx_probes(
         let tx = tx.clone();
         let m = ms[i];
         pool.execute(move || {
-            let st = start_time.elapsed();
-            let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout);
-            let rt = start_time.elapsed();
-            match tx.send((i, buff.to_vec(), ret, st, rt)) {
-                _ => (),
+            for retry_time in 0..MAX_RETRY {
+                let st = start_time.elapsed();
+                let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout);
+                let rt = start_time.elapsed();
+                match ret {
+                    Ok((response, rtt)) => {
+                        if response.len() > 0 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                                _ => (),
+                            };
+                            break;
+                        } else if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
+                                _ => (),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if retry_time == MAX_RETRY - 1 {
+                            match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
+                                _ => (),
+                            };
+                        }
+                    }
+                }
             }
         });
         sleep(Duration::from_millis(100));
@@ -857,10 +1028,7 @@ fn send_tx_probes(
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
-        let response = match ret? {
-            (Some(r), _rtt) => r,
-            (_, _) => vec![],
-        };
+        let (response, _) = ret?;
         let rr = RequestAndResponse { request, response };
         txs.insert(i, rr);
         sts.insert(i, st);
@@ -1049,8 +1217,6 @@ pub fn threads_os_probe6(
         timeout,
     )?;
 
-    let (dst_mac, _interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
-
     let good_results = true;
     // form get_scan_line function
     let need_cal_hops = |dst_addr: IpAddr| -> bool {
@@ -1063,6 +1229,7 @@ pub fn threads_os_probe6(
         }
     };
 
+    let (dst_mac, _interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
     let scan = match need_cal_hops(dst_ipv6.into()) {
         true => {
             let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
@@ -1310,6 +1477,7 @@ mod tests {
         println!("{}", ret);
     }
     #[test]
+    // #[should_panic]
     fn test_send_tx() {
         let dst_ipv6 = TEST_IPV6_LOCAL;
         let src_ipv6 = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
@@ -1393,6 +1561,6 @@ mod tests {
         let buff = buffs[i].clone();
         let timeout = Duration::new(3, 0);
         let (ret, _rtt) = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout).unwrap();
-        println!("ret: {}", ret.unwrap().len());
+        println!("ret: {}", ret.len());
     }
 }

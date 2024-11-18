@@ -669,11 +669,11 @@ impl SystemNetCache {
 mod tests {
     use super::*;
     // use std::time::Instant;
-    use crate::Logger;
     use pnet::datalink::interfaces;
     #[test]
     fn test_network_cache() {
-        let _ = Logger::init_debug_logging();
+        // use crate::Logger;
+        // let _ = Logger::init_debug_logging();
         let snc = SystemNetCache::init().unwrap();
         println!("default ipv4 route: {:?}", snc.default_route);
         println!("default ipv6 route: {:?}", snc.default_route6);

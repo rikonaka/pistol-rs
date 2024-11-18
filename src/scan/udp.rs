@@ -95,35 +95,30 @@ pub fn send_udp_scan_packet(
         vec![layers_match_1, layers_match_2],
         timeout,
     )?;
-    match ret {
-        Some(r) => {
-            match Ipv4Packet::new(&r) {
-                Some(ipv4_packet) => {
-                    match ipv4_packet.get_next_level_protocol() {
-                        IpNextHeaderProtocols::Udp => {
-                            // any udp response from target port (unusual)
-                            return Ok((PortStatus::Open, rtt));
-                        }
-                        IpNextHeaderProtocols::Icmp => {
-                            match IcmpPacket::new(ipv4_packet.payload()) {
-                                Some(icmp_packet) => {
-                                    // let icmp_type = icmp_packet.get_icmp_type();
-                                    let icmp_code = icmp_packet.get_icmp_code();
-                                    if codes_1.contains(&icmp_code) {
-                                        // icmp port unreachable error (type 3, code 3)
-                                        return Ok((PortStatus::Closed, rtt));
-                                    } else if codes_2.contains(&icmp_code) {
-                                        // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                        return Ok((PortStatus::Filtered, rtt));
-                                    }
-                                }
-                                None => (),
+    match Ipv4Packet::new(&ret) {
+        Some(ipv4_packet) => {
+            match ipv4_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Udp => {
+                    // any udp response from target port (unusual)
+                    return Ok((PortStatus::Open, rtt));
+                }
+                IpNextHeaderProtocols::Icmp => {
+                    match IcmpPacket::new(ipv4_packet.payload()) {
+                        Some(icmp_packet) => {
+                            // let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if codes_1.contains(&icmp_code) {
+                                // icmp port unreachable error (type 3, code 3)
+                                return Ok((PortStatus::Closed, rtt));
+                            } else if codes_2.contains(&icmp_code) {
+                                // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
+                                return Ok((PortStatus::Filtered, rtt));
                             }
                         }
-                        _ => (),
+                        None => (),
                     }
                 }
-                None => (),
+                _ => (),
             }
         }
         None => (),

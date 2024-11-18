@@ -653,7 +653,6 @@ pub fn icmp_ping_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    use crate::Logger;
     use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     // use crate::TEST_IPV4_REMOTE;
@@ -661,7 +660,8 @@ mod tests {
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_tcp_syn_ping() {
-        Logger::init_debug_logging().unwrap();
+        // use crate::Logger;
+        // Logger::init_debug_logging().unwrap();
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
@@ -721,7 +721,7 @@ mod tests {
     }
     #[test]
     fn test_ping_timeout2() {
-        let src_ipv4 = None;
+        let src_ipv4: Option<IpAddr> = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let start_ip = Ipv4Addr::new(192, 168, 5, 1);
@@ -733,7 +733,8 @@ mod tests {
         }
         let target: Target = Target::new(hosts);
         let tests = 2;
+        let start = Instant::now();
         let ret = icmp_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
-        println!("{}", ret);
+        println!("{} - {:.2}s", ret, start.elapsed().as_secs_f64());
     }
 }

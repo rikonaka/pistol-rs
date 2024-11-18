@@ -11,6 +11,7 @@ use std::fmt;
 use std::net::IpAddr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
+use std::time::Instant;
 
 use crate::errors::PistolErrors;
 use crate::utils::get_default_timeout;
@@ -28,31 +29,49 @@ pub mod vscan;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Services {
     pub matchs: Vec<Match>,
-    pub elapsed: Option<Duration>,
+    pub elapsed: Duration,
 }
 
 impl Services {
     pub fn new() -> Services {
         Services {
             matchs: Vec::new(),
-            elapsed: None,
+            elapsed: Duration::new(0, 0),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct VsScanResults {
     pub vss: HashMap<IpAddr, HashMap<u16, Services>>,
+    pub start: Instant,
+    pub total_time_cost: f64,
+    pub avg_time_cost: f64,
 }
 
 impl VsScanResults {
     pub fn new() -> VsScanResults {
         VsScanResults {
             vss: HashMap::new(),
+            start: Instant::now(),
+            total_time_cost: 0.0,
+            avg_time_cost: 0.0,
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Services>> {
         self.vss.get(k)
+    }
+    pub fn enrichment(&mut self) {
+        self.total_time_cost = self.start.elapsed().as_secs_f64();
+        let mut total_time = 0.0;
+        let mut total_num = 0;
+        for (_, h) in &self.vss {
+            for (_, s) in h {
+                total_time += s.elapsed.as_secs_f64();
+                total_num += 1;
+            }
+        }
+        self.avg_time_cost = total_time / total_num as f64;
     }
 }
 
@@ -61,11 +80,13 @@ impl fmt::Display for VsScanResults {
         let mut table = Table::new();
         table.add_row(Row::new(vec![Cell::new("Service Scan Results")
             .style_spec("c")
-            .with_hspan(3)]));
+            .with_hspan(4)]));
 
+        table.add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service"]);
         let vss = &self.vss;
         let vss: BTreeMap<IpAddr, &HashMap<u16, Services>> =
             vss.into_iter().map(|(i, h)| (*i, h)).collect();
+        let mut i = 1;
         for (ip, ports_service) in vss {
             let ports_service: BTreeMap<u16, &Services> =
                 ports_service.into_iter().map(|(p, s)| (*p, s)).collect();
@@ -76,10 +97,20 @@ impl fmt::Display for VsScanResults {
                         sv.push(m.service.clone());
                     }
                 }
-                let services_str = sv.join(",");
-                table.add_row(row![c -> ip, c -> port, c -> services_str]);
+                let mut services_str = sv.join(",");
+                if services_str.trim().len() == 0 {
+                    services_str = String::from("closed|nomatch");
+                }
+                table.add_row(row![c -> i, c -> ip, c -> port, c -> services_str]);
+                i += 1;
             }
         }
+        let summary = format!(
+            "total used time: {:.2}ms\navg time cost: {:.2}ms",
+            self.total_time_cost * 1000.0,
+            self.avg_time_cost * 1000.0,
+        );
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
         write!(f, "{}", table)
     }
 }
@@ -92,9 +123,13 @@ pub fn vs_scan(
     only_udp_recommended: bool,
     exclude_ports: Option<ExcludePorts>,
     intensity: usize,
-    threads_num: usize,
     timeout: Option<Duration>,
 ) -> Result<VsScanResults, PistolErrors> {
+    let mut threads_num = 0;
+    for h in &target.hosts {
+        threads_num += h.ports.len();
+    }
+
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
@@ -155,7 +190,7 @@ pub fn vs_scan(
             Ok((r, rtt)) => {
                 let mut service_status = Services::new();
                 service_status.matchs = r;
-                service_status.elapsed = Some(rtt);
+                service_status.elapsed = rtt;
                 match ret.vss.get_mut(&addr) {
                     Some(services) => {
                         services.insert(port, service_status);
@@ -170,6 +205,7 @@ pub fn vs_scan(
             Err(e) => return Err(e),
         }
     }
+    ret.enrichment();
     Ok(ret)
 }
 
@@ -210,7 +246,7 @@ pub fn vs_scan_raw(
         Ok((r, rtt)) => {
             let mut service_status = Services::new();
             service_status.matchs = r;
-            service_status.elapsed = Some(rtt);
+            service_status.elapsed = rtt;
             Ok(service_status)
         }
         Err(e) => Err(e),
@@ -228,7 +264,6 @@ mod tests {
         // Logger::init_debug_logging()?;
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
         let target = Target::new(vec![host]);
-        let threads_num = 8;
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let exclude_ports = Some(ExcludePorts::new(vec![51, 52]));
@@ -240,7 +275,6 @@ mod tests {
             only_udp_recommended,
             exclude_ports,
             intensity,
-            threads_num,
             timeout,
         )
         .unwrap();

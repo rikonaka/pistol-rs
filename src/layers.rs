@@ -576,7 +576,7 @@ pub fn layer2_send(
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
+) -> Result<(Vec<u8>, Duration), PistolErrors> {
     let (mut sender, mut receiver) = match datalink_channel(&interface)? {
         Some((s, r)) => (s, r),
         None => return Err(PistolErrors::CreateDatalinkChannelFailed),
@@ -642,25 +642,23 @@ pub fn layer2_send(
                 (vec![], rtt) // read timeout
             }
         };
-        if buff.len() > 0 {
-            Ok((Some(buff), rtt))
-        } else {
-            Ok((None, rtt))
-        }
+        Ok((buff, rtt))
     } else {
         // not recv any response for flood attack enffience
-        Ok((None, Duration::new(0, 0)))
+        Ok((vec![], Duration::new(0, 0)))
     }
 }
 
 pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
-    let re = EthernetPacket::new(ethernet_buff).unwrap();
-    match re.get_ethertype() {
-        EtherTypes::Arp => {
-            let arp = ArpPacket::new(re.payload()).unwrap();
-            Some(arp.get_sender_hw_addr())
-        }
-        _ => None,
+    match EthernetPacket::new(ethernet_buff) {
+        Some(re) => match re.get_ethertype() {
+            EtherTypes::Arp => {
+                let arp = ArpPacket::new(re.payload()).unwrap();
+                Some(arp.get_sender_hw_addr())
+            }
+            _ => None,
+        },
+        None => None,
     }
 }
 
@@ -713,10 +711,7 @@ fn arp(
         vec![layers_match],
         timeout,
     )?;
-    match ret {
-        Some(r) => Ok((get_mac_from_arp(&r), rtt)),
-        None => Ok((None, rtt)),
-    }
+    Ok((get_mac_from_arp(&ret), rtt))
 }
 
 pub fn system_route(
@@ -787,7 +782,7 @@ pub fn layer3_ipv4_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
+) -> Result<(Vec<u8>, Duration), PistolErrors> {
     // use chrono::Local;
     // let system_time = Local::now();
     // println!(
@@ -817,10 +812,7 @@ pub fn layer3_ipv4_send(
         layers_match,
         timeout,
     )?;
-    match layer2_buff {
-        Some(layer2_packet) => Ok((Some(layer2_payload(&layer2_packet)), rtt)),
-        None => Ok((None, rtt)),
-    }
+    Ok((layer2_payload(&layer2_buff), rtt))
 }
 
 pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
@@ -912,17 +904,11 @@ fn ndp_ns(
         vec![layers_match],
         timeout,
     )?;
-    let mac = match r {
-        Some(r) => match layer4_icmpv6.do_match(&r) {
-            true => get_mac_from_ndp_ns(&r),
-            false => None,
-        },
-        None => None,
+    let mac = match layer4_icmpv6.do_match(&r) {
+        true => get_mac_from_ndp_ns(&r),
+        false => None,
     };
-    match mac {
-        Some(mac) => Ok((Some(mac), rtt)),
-        None => Ok((None, rtt)),
-    }
+    Ok((mac, rtt))
 }
 
 fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
@@ -1010,19 +996,15 @@ fn ndp_rs(
         timeout,
     )?;
 
-    let mac = match r {
-        Some(r) => get_mac_from_ndp_rs(&r),
-        None => None,
-    };
-    match mac {
-        Some(mac) => Ok((Some(mac), rtt)),
-        None => Ok((None, rtt)),
-    }
+    let mac = get_mac_from_ndp_rs(&r);
+    Ok((mac, rtt))
 }
 
 fn layer2_payload(buff: &[u8]) -> Vec<u8> {
-    let ethernet_packet = EthernetPacket::new(buff).unwrap();
-    ethernet_packet.payload().to_vec()
+    match EthernetPacket::new(buff) {
+        Some(ethernet_packet) => ethernet_packet.payload().to_vec(),
+        None => Vec::new(),
+    }
 }
 
 pub fn system_route6(
@@ -1093,7 +1075,7 @@ pub fn layer3_ipv6_send(
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
     timeout: Duration,
-) -> Result<(Option<Vec<u8>>, Duration), PistolErrors> {
+) -> Result<(Vec<u8>, Duration), PistolErrors> {
     let (dst_mac, interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
@@ -1106,10 +1088,7 @@ pub fn layer3_ipv6_send(
         layers_match,
         timeout,
     )?;
-    match layer2_buff {
-        Some(layer2_packet) => Ok((Some(layer2_payload(&layer2_packet)), rtt)),
-        None => Ok((None, rtt)),
-    }
+    Ok((layer2_payload(&layer2_buff), rtt))
 }
 
 /// Queries the IP address of a domain name and returns.
