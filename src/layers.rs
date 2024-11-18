@@ -39,7 +39,6 @@ use pnet::packet::Packet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
-use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6;
@@ -49,7 +48,6 @@ use crate::errors::PistolErrors;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
-use crate::utils::get_threads_pool;
 use crate::utils::system_cache_default_route;
 use crate::utils::system_cache_default_route6;
 use crate::utils::system_cache_search_mac;
@@ -543,7 +541,8 @@ impl LayersMatch {
 fn datalink_channel(
     interface: &NetworkInterface,
 ) -> Result<Option<(Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>)>, PistolErrors> {
-    match datalink::channel(&interface, Default::default()) {
+    let cfg = pnet::datalink::Config::default();
+    match datalink::channel(&interface, cfg) {
         Ok(Ethernet(tx, rx)) => Ok(Some((tx, rx))),
         Ok(_) => Ok(None),
         Err(e) => Err(e.into()),
@@ -610,10 +609,7 @@ pub fn layer2_send(
     }
 
     if timeout != Duration::new(0, 0) {
-        let pool = get_threads_pool(32);
-        let (tx, rx) = channel();
-
-        pool.execute(move || loop {
+        loop {
             let buff = match receiver.next() {
                 Ok(b) => b,
                 Err(_) => &[],
@@ -622,27 +618,13 @@ pub fn layer2_send(
                 match m.do_match(buff) {
                     true => {
                         debug!("match found: {:?}", m);
-                        match tx.send(buff.to_vec()) {
-                            _ => (),
-                        }
-                        break;
+                        let rtt = send_time.elapsed();
+                        return Ok((buff.to_vec(), rtt));
                     }
                     false => (),
                 }
             }
-        });
-
-        let (buff, rtt) = match rx.recv_timeout(timeout) {
-            Ok(b) => {
-                let rtt = send_time.elapsed();
-                (b, rtt)
-            }
-            Err(_) => {
-                let rtt = send_time.elapsed();
-                (vec![], rtt) // read timeout
-            }
-        };
-        Ok((buff, rtt))
+        }
     } else {
         // not recv any response for flood attack enffience
         Ok((vec![], Duration::new(0, 0)))

@@ -657,6 +657,7 @@ mod tests {
     use crate::TEST_IPV4_LOCAL;
     // use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
+    use std::process::Command;
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_tcp_syn_ping() {
@@ -736,5 +737,29 @@ mod tests {
         let start = Instant::now();
         let ret = icmp_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{} - {:.2}s", ret, start.elapsed().as_secs_f64());
+    }
+    #[test]
+    fn test_github_issues_14() {
+        let pid = std::process::id();
+
+        for i in 0..10_000 {
+            let c2 = Command::new("bash")
+                .arg("-c")
+                .arg(&format!("lsof -p {} | wc -l", pid))
+                .output()
+                .unwrap();
+            println!(
+                "pid: {}, lsof output: {}",
+                &pid,
+                String::from_utf8_lossy(&c2.stdout)
+            );
+
+            let host = Host::new(TEST_IPV4_LOCAL.into(), None);
+            let target = Target::new(vec![host]);
+            let _ret = icmp_ping(target, None, None, Some(Duration::new(1, 0)), 1).unwrap();
+            // println!("{}\n{:?}", i, ret);
+            println!("id: {}", i);
+            // std::thread::sleep(Duration::new(1, 0));
+        }
     }
 }
