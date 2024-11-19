@@ -441,16 +441,13 @@ pub fn os_detect(
             Ok(hodr) => {
                 ret.oss.insert(addr, hodr);
             }
-            Err(e) => match e {
-                PistolErrors::CanNotFoundMacAddress => {
-                    let h = match addr {
-                        IpAddr::V4(_) => HostOSDetectResult::new_dead(),
-                        IpAddr::V6(_) => HostOSDetectResult::new6_dead(),
-                    };
-                    ret.oss.insert(addr, h);
-                }
-                _ => return Err(e),
-            },
+            Err(_) => {
+                let h = match addr {
+                    IpAddr::V4(_) => HostOSDetectResult::new_dead(),
+                    IpAddr::V6(_) => HostOSDetectResult::new6_dead(),
+                };
+                ret.oss.insert(addr, h);
+            }
         }
     }
     ret.enrichment();
@@ -549,7 +546,7 @@ mod tests {
     #[test]
     fn test_os_detect() {
         // use crate::Logger;
-        // Logger::init_debug_logging()?;
+        // let _ = Logger::init_debug_logging();
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;

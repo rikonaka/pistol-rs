@@ -608,8 +608,12 @@ pub fn layer2_send(
         None => (),
     }
 
+    let start_time = Instant::now();
     if timeout != Duration::new(0, 0) {
         loop {
+            if start_time.elapsed() > timeout {
+                break;
+            }
             let buff = match receiver.next() {
                 Ok(b) => b,
                 Err(_) => &[],
@@ -625,6 +629,7 @@ pub fn layer2_send(
                 }
             }
         }
+        Ok((vec![], start_time.elapsed()))
     } else {
         // not recv any response for flood attack enffience
         Ok((vec![], Duration::new(0, 0)))

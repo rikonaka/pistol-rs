@@ -1809,6 +1809,9 @@ pub fn threads_os_probe(
     top_k: usize,
     timeout: Duration,
 ) -> Result<(TargetFingerprint, Vec<OSInfo>), PistolErrors> {
+    // exec this line first to return error for host which dead
+    let (dst_mac, _interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
+
     debug!("send all probes now");
     let ap = send_all_probes(
         src_ipv4,
@@ -1818,9 +1821,6 @@ pub fn threads_os_probe(
         dst_closed_udp_port,
         timeout,
     )?;
-
-    // let hops = Some(1);
-    let (dst_mac, _interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
 
     let good_results = true;
     // form get_scan_line function
