@@ -657,7 +657,6 @@ mod tests {
     use crate::TEST_IPV4_LOCAL;
     // use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
-    use std::process::Command;
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_tcp_syn_ping() {
@@ -740,6 +739,7 @@ mod tests {
     }
     #[test]
     fn test_github_issues_14() {
+        use std::process::Command;
         let pid = std::process::id();
 
         for i in 0..10_000 {

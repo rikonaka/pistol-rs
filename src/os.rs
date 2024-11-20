@@ -117,7 +117,7 @@ impl fmt::Display for OSDetectResults {
                             id += 1;
                         }
                     } else {
-                        let rank_str = format!("#{}", id + 1);
+                        let rank_str = format!("#{}", 1);
                         table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0.0", c -> "target dead", c -> ""]);
                         id += 1;
                     }
@@ -542,7 +542,9 @@ mod tests {
     use super::*;
     use crate::Host;
     use crate::TEST_IPV4_LOCAL;
+    use crate::TEST_IPV4_LOCAL_DEAD;
     use crate::TEST_IPV6_LOCAL;
+    use crate::TEST_IPV6_LOCAL_DEAD;
     #[test]
     fn test_os_detect() {
         // use crate::Logger;
@@ -552,7 +554,7 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
-        let host2 = Host::new(
+        let host1 = Host::new(
             TEST_IPV4_LOCAL.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -561,7 +563,16 @@ mod tests {
             ]),
         );
 
-        let target = Target::new(vec![host2]);
+        let host2 = Host::new(
+            TEST_IPV4_LOCAL_DEAD.into(),
+            Some(vec![
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+
+        let target = Target::new(vec![host1, host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let ret = os_detect(target, src_addr, top_k, timeout).unwrap();
@@ -592,7 +603,16 @@ mod tests {
             ]),
         );
 
-        let target = Target::new(vec![host1]);
+        let host2 = Host::new(
+            TEST_IPV6_LOCAL_DEAD.into(),
+            Some(vec![
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+
+        let target = Target::new(vec![host1, host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let ret = os_detect(target, src_addr, top_k, timeout).unwrap();

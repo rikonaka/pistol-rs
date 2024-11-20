@@ -34,6 +34,11 @@ use crate::route::SystemNetCache;
 const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
 // kali
 // const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 128);
+
+#[cfg(test)]
+// dead host
+const TEST_IPV4_LOCAL_DEAD: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 99);
+
 #[cfg(test)]
 // debian
 const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e4);
@@ -41,6 +46,10 @@ const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 
 // const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x4cec, 0xac70, 0x46eb, 0xea21);
 // kali
 // const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x3fa1, 0x587a, 0x3738, 0x345);
+
+#[cfg(test)]
+// dead host
+const TEST_IPV6_LOCAL_DEAD: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e5);
 
 static SYSTEM_NET_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
     let snc = SystemNetCache::init().expect("can not init the system net cache");
