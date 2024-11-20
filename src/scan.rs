@@ -173,31 +173,18 @@ impl fmt::Display for ScanResults {
                 ports_status.into_iter().map(|(p, s)| (*p, s)).collect();
             let mut avg_ports_time_cost = 0.0;
 
-            let mut open_num = 0;
-            let mut open_or_filtered_num = 0;
-            let mut filtered_num = 0;
-            let mut unfiltered_num = 0;
-            let mut closed_num = 0;
-            let mut unreachable_num = 0;
-            let mut close_or_filtered_num = 0;
-            let mut error_num = 0;
-            let mut offline_num = 0;
-
             for (port, psr) in ports_status {
-                // let mut status_str_vec = Vec::new();
+                let mut open_num = 0;
+                let mut open_or_filtered_num = 0;
+                let mut filtered_num = 0;
+                let mut unfiltered_num = 0;
+                let mut closed_num = 0;
+                let mut unreachable_num = 0;
+                let mut close_or_filtered_num = 0;
+                let mut error_num = 0;
+                let mut offline_num = 0;
+
                 for p in psr {
-                    // let s_str = match p.port_status {
-                    //     PortStatus::Open => String::from("open"),
-                    //     PortStatus::OpenOrFiltered => String::from("open_or_filtered"),
-                    //     PortStatus::Filtered => String::from("filtered"),
-                    //     PortStatus::Unfiltered => String::from("unfiltered"),
-                    //     PortStatus::Closed => String::from("closed"),
-                    //     PortStatus::Unreachable => String::from("unreachable"),
-                    //     PortStatus::ClosedOrFiltered => String::from("closed_or_filtered"),
-                    //     PortStatus::Error => String::from("error"),
-                    //     PortStatus::Offline => String::from("offline"),
-                    // };
-                    // status_str_vec.push(s_str);
                     avg_ports_time_cost += p.port_time_cost.as_secs_f64();
 
                     match p.port_status {
