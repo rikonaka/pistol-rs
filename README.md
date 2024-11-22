@@ -31,7 +31,7 @@ Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 ## Host Discovery (Ping Scanning)
 
-The implementation of the `pistol' host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
+The implementation of the `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
 | Method               | Detailed Documentation                                                                         | Note                            |
 | :------------------- | :--------------------------------------------------------------------------------------------- | :------------------------------ |
