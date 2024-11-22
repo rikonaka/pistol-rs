@@ -144,7 +144,7 @@ If you don't want to use `Target`, you can also use the `_raw` functions we prov
 | tcp_fin_scan      | tcp_fin_scan_raw      |
 | tcp_idle_scan     | tcp_idle_scan_raw     |
 | tcp_maimon_scan   | tcp_maimon_scan_raw   |
-| tcp_null_scan     | tcp_null_scan_raW     |
+| tcp_null_scan     | tcp_null_scan_raw     |
 | tcp_window_scan   | tcp_window_scan_raw   |
 | tcp_xmas_scan     | tcp_xmas_scan_raw     |
 | udp_scan          | udp_scan_raw          |
