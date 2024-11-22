@@ -72,8 +72,8 @@ pub struct ScanResults {
     pub avg_time_cost: f64,
     pub total_time_cost: f64,
     pub open_ports: usize,
-    pub start_time: Instant,
-    pub tests: usize,
+    start_time: Instant,
+    tests: usize,
 }
 
 impl ScanResults {

@@ -1,5 +1,6 @@
 /* Remote OS Detection */
 use log::debug;
+use log::warn;
 use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
@@ -41,18 +42,18 @@ pub mod rr;
 #[derive(Debug, Clone)]
 pub struct OSDetectResults {
     pub oss: HashMap<IpAddr, HostOSDetectResult>,
-    pub start_time: Instant,
     pub total_time_cost: f64,
     pub avg_time_cost: f64,
+    start_time: Instant,
 }
 
 impl OSDetectResults {
     pub fn new() -> OSDetectResults {
         OSDetectResults {
             oss: HashMap::new(),
-            start_time: Instant::now(),
             total_time_cost: 0.0,
             avg_time_cost: 0.0,
+            start_time: Instant::now(),
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HostOSDetectResult> {
@@ -493,7 +494,12 @@ pub fn os_detect_raw(
                         );
                         Ok(oss)
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        // Err(e)
+                        warn!("threads os probe error: {}", e);
+                        let h = HostOSDetectResult::new_dead();
+                        Ok(h)
+                    }
                 }
             }
             None => {
@@ -525,7 +531,12 @@ pub fn os_detect_raw(
                         );
                         Ok(oss)
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        // Err(e)
+                        warn!("threads os probe error: {}", e);
+                        let h = HostOSDetectResult::new_dead();
+                        Ok(h)
+                    }
                 }
             }
             None => {

@@ -44,18 +44,18 @@ impl Services {
 #[derive(Debug, Clone)]
 pub struct VsScanResults {
     pub vss: HashMap<IpAddr, HashMap<u16, Services>>,
-    pub start_time: Instant,
     pub total_time_cost: f64,
     pub avg_time_cost: f64,
+    start_time: Instant,
 }
 
 impl VsScanResults {
     pub fn new() -> VsScanResults {
         VsScanResults {
             vss: HashMap::new(),
-            start_time: Instant::now(),
             total_time_cost: 0.0,
             avg_time_cost: 0.0,
+            start_time: Instant::now(),
         }
     }
     pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Services>> {
