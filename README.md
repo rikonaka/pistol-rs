@@ -401,7 +401,7 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 fn main() {
-    let dst_addr = Ipv4Addr::new(192, 168, 1, 51);
+    let dst_addr = Ipv4Addr::new(192, 168, 5, 133);
     let host = Host::new(dst_addr.into(), Some(vec![22, 80]));
     let target = Target::new(vec![host]);
     let timeout = Some(Duration::new(1, 0));
