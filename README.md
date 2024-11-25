@@ -65,12 +65,13 @@ The implementation of the `pistol` port scan according to the nmap [pdf](https:/
 
 ## Flood Attack
 
-| Method            | Note                               |
-| :---------------- | :--------------------------------- |
-| [x] TCP SYN Flood | IPv4 & IPv6 support                |
-| [x] TCP ACK Flood | IPv4 & IPv6 support                |
-| [x] UDP Flood     | IPv4 & IPv6 support                |
-| [x] ICMP Flood    | IPv4 & IPv6 support (ICMP, ICMPv6) |
+| Method                | Note                               |
+| :-------------------- | :--------------------------------- |
+| [x] TCP SYN Flood     | IPv4 & IPv6 support                |
+| [x] TCP ACK Flood     | IPv4 & IPv6 support                |
+| [x] TCP ACK PSH Flood | IPv4 & IPv6 support                |
+| [x] UDP Flood         | IPv4 & IPv6 support                |
+| [x] ICMP Flood        | IPv4 & IPv6 support (ICMP, ICMPv6) |
 
 ## Remote OS Detection
 
