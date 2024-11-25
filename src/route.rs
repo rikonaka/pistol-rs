@@ -202,8 +202,8 @@ impl RouteTable {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn init() -> Result<RouteTable> {
-        let system_route_lines = || -> Result<Vec<String>> {
+    pub fn init() -> Result<RouteTable, PistolErrors> {
+        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
             // default 192.168.72.2 UGS em0
             // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
             // 127.0.0.1          link#2             UH          lo0
