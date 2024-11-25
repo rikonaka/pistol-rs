@@ -201,7 +201,7 @@ impl fmt::Display for ScanResults {
                 }
                 // let status_str = status_str_vec.join("|");
                 let status_str = format!(
-                    "OP({})OF({})F({})UF({})C({})UR({})CF({})E({})OL({})",
+                    "O({})OF({})F({})UF({})C({})UR({})CF({})E({})OL({})",
                     open_num,
                     open_or_filtered_num,
                     filtered_num,
@@ -220,7 +220,7 @@ impl fmt::Display for ScanResults {
             }
         }
 
-        let help_info = format!("NOTE:\nOP: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,\nUF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,\nCF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE.");
+        let help_info = format!("NOTE:\nO: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,\nUF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,\nCF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE.");
         table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
         let summary = format!(

@@ -2,6 +2,8 @@
 
 The library must be run as root (Linux, *BSD) or administrator (Windows), the `stable` version of rust is recommended.
 
+[![Rust](https://github.com/rikonaka/pistol-rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/rikonaka/pistol-rs/actions/workflows/rust.yml)
+
 ## Import from crates.io
 
 ```toml
