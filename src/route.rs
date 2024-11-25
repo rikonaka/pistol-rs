@@ -322,8 +322,8 @@ impl RouteTable {
         Ok(rt)
     }
     #[cfg(target_os = "windows")]
-    pub fn init() -> Result<RouteTable> {
-        let system_route_lines = || -> Result<Vec<String>> {
+    pub fn init() -> Result<RouteTable, PistolErrors> {
+        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
             // 1 ::1/128 :: 256 75 ActiveStore
             // 15 ::/0 fe80::ecb5:83ff:fec3:6a6 16 45 ActiveStore
             let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
@@ -338,7 +338,7 @@ impl RouteTable {
 
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
-        let mut routes = Vec::new();
+        let mut routes = HashMap::new();
 
         // regex
         let default_route_re =
@@ -432,17 +432,15 @@ impl RouteTable {
                         };
                         let dst = RouteAddr::IpNetwork(dst);
                         let dev = find_interface(if_index);
-                        match dev {
-                            Some(dev) => {
-                                let route = Route { dst, dev };
-                                routes.push(route);
-                            }
+                        let dev = match dev {
+                            Some(i) => i,
                             None => {
                                 // return Err(InvalidRouteFormat::new(line.to_string()).into());
                                 warn!("invaild default route string: [{}]", line);
                                 continue; // not raise error here
                             }
-                        }
+                        };
+                        routes.insert(dst, dev);
                     }
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
@@ -450,8 +448,8 @@ impl RouteTable {
         }
 
         let rt = RouteTable {
-            default_ipv4_route,
-            default_ipv6_route,
+            default_route: default_ipv4_route,
+            default_route6: default_ipv6_route,
             routes,
         };
         Ok(rt)
@@ -568,7 +566,7 @@ impl NeighborCache {
         Ok(ret)
     }
     #[cfg(target_os = "windows")]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolErrors> {
         // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
         // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
         let c = Command::new("powershell")
