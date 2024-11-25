@@ -511,7 +511,7 @@ impl NeighborCache {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolErrors> {
         // # arp -a
         // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
         // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
