@@ -224,7 +224,7 @@ impl RouteTable {
 
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
-        let mut routes = Vec::new();
+        let mut routes = HashMap::new();
 
         // regex
         let default_route_re =
@@ -306,17 +306,15 @@ impl RouteTable {
                                 continue; // not raise error here
                             }
                         };
-                        let route = Route { dst, dev };
-                        routes.push(route);
+                        routes.insert(dst, dev);
                     }
                     None => warn!("line: [{}] route_re no match", line),
                 }
             }
         }
-
         let rt = RouteTable {
-            default_ipv4_route,
-            default_ipv6_route,
+            default_route: default_ipv4_route,
+            default_route6: default_ipv6_route,
             routes,
         };
         Ok(rt)
