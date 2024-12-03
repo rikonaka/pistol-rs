@@ -28,6 +28,7 @@ use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
+use crate::utils::threads_num_check;
 use crate::Target;
 
 pub mod dbparser;
@@ -328,6 +329,8 @@ pub fn os_detect(
     timeout: Option<Duration>,
 ) -> Result<OSDetectResults, PistolErrors> {
     let threads_num = target.hosts.len();
+    let threads_num = threads_num_check(threads_num);
+
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),

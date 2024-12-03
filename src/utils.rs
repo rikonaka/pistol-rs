@@ -16,6 +16,20 @@ use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
 use crate::SYSTEM_NET_CACHE;
 
+const MAX_THREADS_NUM: usize = 1000;
+
+pub fn threads_num_check(threads_num: usize) -> usize {
+    let mut threads_num = threads_num;
+    if threads_num > MAX_THREADS_NUM {
+        warn!(
+            "too many targets (real: {} => now: {}), consider using the _raw function",
+            threads_num, MAX_THREADS_NUM
+        );
+        threads_num = MAX_THREADS_NUM;
+    }
+    threads_num
+}
+
 pub fn system_cache_search_route(dst_addr: IpAddr) -> Option<NetworkInterface> {
     // release the lock when leaving the function
     let snc = SYSTEM_NET_CACHE

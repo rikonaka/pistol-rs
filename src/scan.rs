@@ -30,6 +30,7 @@ use crate::utils::find_source_addr6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
+use crate::utils::threads_num_check;
 use crate::Target;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -368,11 +369,13 @@ pub fn arp_scan_raw(
 pub fn arp_scan(
     target: Target,
     src_addr: Option<IpAddr>,
-    threads_num: usize,
     timeout: Option<Duration>,
 ) -> Result<ArpScanResults, PistolErrors> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut ret = ArpScanResults::new();
+
+    let threads_num = target.hosts.len();
+    let threads_num = threads_num_check(threads_num);
 
     let pool = get_threads_pool(threads_num);
     let timeout = match timeout {
@@ -574,6 +577,7 @@ pub fn scan(
     for host in &target.hosts {
         threads_num += host.ports.len() * tests;
     }
+    let threads_num = threads_num_check(threads_num);
 
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
@@ -1211,21 +1215,17 @@ mod tests {
             hosts.push(host);
         }
         let target: Target = Target::new(hosts);
-        let threads_num = 300;
         let timeout = Some(Duration::new(1, 0));
-        // let print_result = false;
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_arp_scan_subnet_new() {
         let target: Target = Target::from_subnet("192.168.1.1/24", None).unwrap();
-        let threads_num = 300;
         let timeout = Some(Duration::new(1, 0));
-        // let print_result = false;
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, threads_num, timeout).unwrap();
+        let ret: ArpScanResults = arp_scan(target, src_ipv4, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]

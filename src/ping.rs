@@ -27,6 +27,7 @@ use crate::utils::find_source_addr6;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
+use crate::utils::threads_num_check;
 use crate::Target;
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
@@ -322,8 +323,9 @@ pub fn ping(
     tests: usize,
 ) -> Result<PingResults, PistolErrors> {
     let mut ping_results = PingResults::new();
-
     let threads_num = target.hosts.len() * tests;
+    let threads_num = threads_num_check(threads_num);
+
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),

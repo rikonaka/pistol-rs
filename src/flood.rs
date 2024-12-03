@@ -113,16 +113,26 @@ pub enum FloodMethods {
     Udp,
 }
 
-fn run_flood(
+fn ipv4_flood(
     method: FloodMethods,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_ipv4: Ipv4Addr,
+    src_addr: Option<IpAddr>,
     src_port: u16,
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<(usize, usize, Duration), PistolErrors> {
+    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+        Some(s) => s,
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
+    };
+    let dst_port = if method == FloodMethods::Icmp {
+        0
+    } else {
+        dst_port
+    };
+
     let start_time = Instant::now();
     let func = match method {
         FloodMethods::Icmp => icmp::send_icmp_flood_packet,
@@ -163,16 +173,27 @@ fn run_flood(
     ))
 }
 
-fn run_flood6(
+fn ipv6_flood(
     method: FloodMethods,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_ipv6: Ipv6Addr,
+    src_addr: Option<IpAddr>,
     src_port: u16,
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<(usize, usize, Duration), PistolErrors> {
+    let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
+        Some(s) => s,
+        None => return Err(PistolErrors::CanNotFoundSourceAddress),
+    };
+
+    let dst_port = if method == FloodMethods::Icmp {
+        0
+    } else {
+        dst_port
+    };
+
     let start_time = Instant::now();
     let func = match method {
         FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet,
@@ -211,86 +232,6 @@ fn run_flood6(
         total_send_buff_size,
         start_time.elapsed(),
     ))
-}
-
-fn ipv4_flood(
-    method: FloodMethods,
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-    src_addr: Option<IpAddr>,
-    src_port: u16,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<(usize, usize, Duration), PistolErrors> {
-    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
-        Some(s) => s,
-        None => return Err(PistolErrors::CanNotFoundSourceAddress),
-    };
-    let ret = if method == FloodMethods::Icmp {
-        run_flood(
-            method,
-            dst_ipv4,
-            0,
-            src_ipv4,
-            src_port,
-            threads_num,
-            max_same_packet,
-            max_flood_packet,
-        )
-    } else {
-        run_flood(
-            method,
-            dst_ipv4,
-            dst_port,
-            src_ipv4,
-            src_port,
-            threads_num,
-            max_same_packet,
-            max_flood_packet,
-        )
-    };
-    ret
-}
-
-fn ipv6_flood(
-    method: FloodMethods,
-    dst_ipv6: Ipv6Addr,
-    dst_port: u16,
-    src_addr: Option<IpAddr>,
-    src_port: u16,
-    threads_num: usize,
-    max_same_packet: usize,
-    max_flood_packet: usize,
-) -> Result<(usize, usize, Duration), PistolErrors> {
-    let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
-        Some(s) => s,
-        None => return Err(PistolErrors::CanNotFoundSourceAddress),
-    };
-    let ret = if method == FloodMethods::Icmp {
-        run_flood6(
-            method,
-            dst_ipv6,
-            0,
-            src_ipv6,
-            src_port,
-            threads_num,
-            max_same_packet,
-            max_flood_packet,
-        )
-    } else {
-        run_flood6(
-            method,
-            dst_ipv6,
-            dst_port,
-            src_ipv6,
-            src_port,
-            threads_num,
-            max_same_packet,
-            max_flood_packet,
-        )
-    };
-    ret
 }
 
 pub fn flood(

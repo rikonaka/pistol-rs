@@ -16,6 +16,7 @@ use std::time::Instant;
 use crate::errors::PistolErrors;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
+use crate::utils::threads_num_check;
 use crate::vs::dbparser::nsp_exclued_parser;
 use crate::vs::dbparser::nsp_parser;
 use crate::vs::dbparser::ExcludePorts;
@@ -129,6 +130,7 @@ pub fn vs_scan(
     for h in &target.hosts {
         threads_num += h.ports.len();
     }
+    let threads_num = threads_num_check(threads_num);
 
     let timeout = match timeout {
         Some(t) => t,
