@@ -1,4 +1,6 @@
-use fancy_regex::Regex;
+use fancy_regex::Regex as FancyRegex;
+use log::error;
+use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
@@ -6,7 +8,7 @@ use std::fmt;
 use crate::errors::PistolErrors;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum ProbesProtocol {
+pub enum ProbeProtocol {
     Tcp,
     Udp,
 }
@@ -32,7 +34,7 @@ impl fmt::Display for Match {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Probe {
     /// This must be either TCP or UDP. Nmap only uses probes that match the protocol of the service it is trying to scan.
-    pub protocol: ProbesProtocol,
+    pub probeprotocol: ProbeProtocol,
     /// This is a plain English name for the probe. It is used in service fingerprints to describe which probes elicited responses.
     pub probename: String,
     /// Tells Nmap what to send.
@@ -41,28 +43,39 @@ pub struct Probe {
     pub no_payload: bool,
 }
 
+impl Probe {
+    pub fn empty() -> Probe {
+        Probe {
+            probeprotocol: ProbeProtocol::Tcp,
+            probename: String::new(),
+            probestring: String::new(),
+            no_payload: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceProbe {
     pub probe: Probe,
     pub matchs: Vec<Match>,
     pub softmatchs: Vec<Match>,
     /// This line tells Nmap what ports the services identified by this probe are commonly found on.
-    pub ports: Option<Vec<u16>>,
+    pub ports: Vec<u16>,
     /// This is the same as 'ports' directive described above, except that these ports are often used to wrap a service in SSL.
-    pub sslports: Option<Vec<u16>>,
+    pub sslports: Vec<u16>,
     /// This rarely necessary directive specifies the amount of time Nmap should wait before giving up on the most recently defined Probe against a particular service.
-    pub totalwaitms: Option<u64>,
+    pub totalwaitms: usize,
     /// This directive is only used for the Null probe.
-    pub tcpwrappedms: Option<u64>,
+    pub tcpwrappedms: usize,
     /// The rarity directive roughly corresponds to how infrequently this probe can be expected to return useful results.
-    pub rarity: Option<u64>,
+    pub rarity: usize,
     /// This optional directive specifies which probes should be used as fallbacks for if there are no matches in the current Probe section.
-    pub fallback: Option<Vec<String>>,
+    pub fallback: Vec<String>,
 }
 
 impl ServiceProbe {
     pub fn check(&self, recv_str: &str) -> Vec<Match> {
-        let match_function = |m: &Match, re: &Regex, recv_str: &str| -> Option<Match> {
+        let match_function = |m: &Match, re: &FancyRegex, recv_str: &str| -> Option<Match> {
             match re.is_match(&recv_str) {
                 Ok(b) => {
                     if b {
@@ -108,7 +121,7 @@ impl ServiceProbe {
         for m in &self.matchs {
             // println!("{}", m.pattern);
             let recv_str = recv_str.to_string();
-            let re = match Regex::new(&m.pattern) {
+            let re = match FancyRegex::new(&m.pattern) {
                 Ok(r) => r,
                 Err(_) => continue, // rust regex is not support some format, and it will return error here
             };
@@ -121,7 +134,7 @@ impl ServiceProbe {
 
         // softmatch
         for m in &self.softmatchs {
-            let re = match Regex::new(&m.pattern) {
+            let re = match FancyRegex::new(&m.pattern) {
                 Ok(r) => r,
                 Err(_) => continue, // rust regex is not support some format, and it will return error here
             };
@@ -156,172 +169,238 @@ fn ports_parser(ports: &str) -> Result<Vec<u16>, PistolErrors> {
 
 /// Instead of getting the `Exclude` port based on the `nmap-service-probes` file,
 /// we expect the user to provide a parameter to specify this value themselves.
-pub fn nsp_parser(lines: &[String]) -> Result<Vec<ServiceProbe>, PistolErrors> {
-    let mut ret: Vec<ServiceProbe> = Vec::new();
-    let mut probe_global: Option<Probe> = None;
-    let mut matchs_global: Vec<Match> = Vec::new();
-    let mut softmatchs_global: Vec<Match> = Vec::new();
-    let mut ports_global: Option<Vec<u16>> = None;
-    let mut sslports_global: Option<Vec<u16>> = None;
-    let mut totalwaitms_global: Option<u64> = None;
-    let mut tcpwrappedms_global: Option<u64> = None;
-    let mut rarity_global: Option<u64> = None;
-    let mut fallback_gloabl: Option<Vec<String>> = None;
+pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe>, PistolErrors> {
+    let probe_name_reg = Regex::new(
+        r"Probe (?P<probeprotocol>[^\s]+) (?P<probename>[^\s]+) q\|(?P<probestring>[\w]+|)\|.+",
+    )?;
+    let ports_reg = Regex::new(r"ports (?P<ports>[\d,-]+)")?;
+    let sslports_reg = Regex::new(r"sslports (?P<sslports>[\d,-]+)")?;
+    let totalwaitms_reg = Regex::new(r"totalwaitms (?P<totalwaitms>[\d]+)")?;
+    let tcpwrappedms_reg = Regex::new(r"tcpwrappedms (?P<tcpwrappedms>[\d]+)")?;
+    let rarity_reg = Regex::new(r"rarity (?P<rarity>[\d]+)")?;
+    let match_reg = Regex::new(
+        r"match (?P<service>.+) m(\||/)(?P<pattern>[^/\|]+)(\||/)(\w)?( p/(?P<p>[^/]+)/)?( v/(?P<v>[^/]+)/)?( h/(?P<h>[^/]+)/)?( i/(?P<i>[^/]+)/)?( o/(?P<o>[^/]+)/)?( (?P<cpe>cpe:/[^/]+)/(\w)?)?",
+    )?;
+    let softmatch_reg = Regex::new(r"softmatch (?P<service>[^\s]+) m(\||/)(?P<pattern>.+)(\||/)")?;
+    let fallback_reg = Regex::new(r"fallback (?P<fallback>[\w\d,]+)")?;
+
+    let mut ret_v: Vec<ServiceProbe> = Vec::new();
+    let mut probe_v: Probe = Probe::empty();
+    let mut ports_v: Vec<u16> = Vec::new();
+    let mut sslports_v: Vec<u16> = Vec::new();
+    let mut totalwaitms_v: usize = 0;
+    let mut tcpwrappedms_v: usize = 0;
+    let mut rarity_v: usize = 0;
+    let mut match_v: Vec<Match> = Vec::new();
+    let mut softmatch_v: Vec<Match> = Vec::new();
+    let mut fallback_v: Vec<String> = Vec::new();
+
+    let mut first_probe = true;
+
     for line in lines {
-        if line.contains("#") {
-            continue;
-        } else if line.contains("Exclude") {
+        if line.starts_with("#") {
             continue;
         }
-
         if line.starts_with("Probe") {
-            match probe_global {
-                Some(p) => {
-                    let sp = ServiceProbe {
-                        probe: p,
-                        matchs: matchs_global,
-                        softmatchs: softmatchs_global,
-                        ports: ports_global.clone(),
-                        sslports: sslports_global.clone(),
-                        totalwaitms: totalwaitms_global,
-                        tcpwrappedms: tcpwrappedms_global,
-                        rarity: rarity_global,
-                        fallback: fallback_gloabl.clone(),
-                    };
-                    ret.push(sp);
-                    matchs_global = Vec::new();
-                    softmatchs_global = Vec::new();
-                    ports_global = None;
-                    sslports_global = None;
-                    totalwaitms_global = None;
-                    tcpwrappedms_global = None;
-                    rarity_global = None;
-                    fallback_gloabl = None;
-                }
-                None => (),
+            if !first_probe {
+                let probe = probe_v;
+                let totalwaitms = totalwaitms_v;
+                let tcpwrappedms = tcpwrappedms_v;
+                let rarity = rarity_v;
+                let ports = ports_v.clone();
+                let sslports = sslports_v.clone();
+                let matchs = match_v.clone();
+                let softmatchs = softmatch_v.clone();
+                let fallback = fallback_v.clone();
+
+                let sp = ServiceProbe {
+                    probe,
+                    matchs,
+                    softmatchs,
+                    ports,
+                    sslports,
+                    totalwaitms,
+                    tcpwrappedms,
+                    rarity,
+                    fallback,
+                };
+                ret_v.push(sp);
+
+                // probe_v = Probe::empty();
+                ports_v.clear();
+                sslports_v.clear();
+                totalwaitms_v = 0;
+                tcpwrappedms_v = 0;
+                rarity_v = 0;
+                match_v.clear();
+                softmatch_v.clear();
+                fallback_v.clear();
+                first_probe = false;
             }
 
-            // println!("{}", line);
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let protocol = match line_split[1] {
-                "TCP" => ProbesProtocol::Tcp,
-                "UDP" => ProbesProtocol::Udp,
-                _ => panic!("new protocol: {}", line_split[1]),
+            /* probe name part */
+            let (probeprotocol, probename, probestring) = match probe_name_reg.captures(&line) {
+                Some(caps) => {
+                    let probeprotocol = caps.name("probeprotocol").map_or("", |m| m.as_str());
+                    let probename = caps.name("probename").map_or("", |m| m.as_str());
+                    let probestring = caps.name("probestring").map_or("", |m| m.as_str());
+                    (
+                        probeprotocol.to_string(),
+                        probename.to_string(),
+                        probestring.to_string(),
+                    )
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("Probe"),
+                        line: line.to_string(),
+                    })
+                }
             };
-            let probename = line_split[2].to_string();
-            let probelast = line_split[3..].to_vec().join(" ");
-            let probelast_split: Vec<&str> = probelast.split("|").map(|s| s.trim()).collect();
-            let probestring = probelast_split[1].to_string();
-            let no_payload = if probelast.contains("no-payload") {
+            let probeprotocol = match probeprotocol.as_str() {
+                "TCP" => ProbeProtocol::Tcp,
+                "UDP" => ProbeProtocol::Udp,
+                _ => {
+                    return Err(PistolErrors::ServiceProbesProtocolUnknown {
+                        protocol: probeprotocol,
+                    })
+                }
+            };
+            let no_payload = if line.contains("no-payload") {
                 true
             } else {
                 false
             };
-            let sp = Probe {
-                protocol,
+
+            let probe = Probe {
+                probeprotocol,
                 probename,
                 probestring,
                 no_payload,
             };
-            probe_global = Some(sp);
-        } else if line.starts_with("match") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let class = line_split[0].to_string();
-            let service = line_split[1].to_string();
-            let line_other = line_split[2..].to_vec().join(" ");
-
-            let line_other_replace = line_other.replace("|s", "|");
-            let line_other_split: Vec<&str> = line_other_replace.split("|").collect();
-            let mut pattern = line_other_split[1].to_string();
-            if line_other.contains("|s") {
-                pattern += r"\s"
-            } else if line_other.contains("|i") {
-                pattern += r"\i";
-            }
-
-            let versioninfo = line_other_split[line_other_split.len() - 1]
-                .trim()
-                .to_string();
-
-            let m = Match {
-                class,
-                service,
-                pattern,
-                versioninfo,
-            };
-            matchs_global.push(m);
-        } else if line.starts_with("softmatch") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let class = line_split[0].to_string();
-            let service = line_split[1].to_string();
-            let line_other = line_split[2..].to_vec().join(" ");
-
-            let line_other_replace = line_other.replace("|s", "|");
-            let line_other_split: Vec<&str> = line_other_replace.split("|").collect();
-            let mut pattern = line_other_split[1].to_string();
-            if line_other.contains("|s") {
-                pattern += r"\s"
-            } else if line_other.contains("|i") {
-                pattern += r"\i";
-            }
-
-            let versioninfo = line_other_split[line_other_split.len() - 1]
-                .trim()
-                .to_string();
-
-            let m = Match {
-                class,
-                service,
-                pattern,
-                versioninfo,
-            };
-            softmatchs_global.push(m);
+            probe_v = probe;
         } else if line.starts_with("ports") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let ports_line = line_split[1..].to_vec().join(" ");
-            let ports = ports_parser(&ports_line)?;
-            ports_global = Some(ports);
-        } else if line.starts_with("sslports") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let sslports_line = line_split[1..].to_vec().join(" ");
-            let sslports = ports_parser(&sslports_line)?;
-            sslports_global = Some(sslports);
-        } else if line.starts_with("totalwaitms") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let totalwaitms: u64 = line_split[1].parse()?;
-            totalwaitms_global = Some(totalwaitms);
-        } else if line.starts_with("tcpwrappedms") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let tcpwrappedms: u64 = line_split[1].parse()?;
-            tcpwrappedms_global = Some(tcpwrappedms);
-        } else if line.starts_with("rarity") {
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let rarity: u64 = line_split[1].parse()?;
-            rarity_global = Some(rarity);
-        } else if line.starts_with("fallback") {
-            let line_split: Vec<String> = line.split(" ").map(|s| s.to_string()).collect();
-            let fallback = line_split[1..].to_vec();
-            fallback_gloabl = Some(fallback);
-        }
-    }
-    match probe_global {
-        Some(p) => {
-            let sp = ServiceProbe {
-                probe: p,
-                matchs: matchs_global,
-                softmatchs: softmatchs_global,
-                ports: ports_global,
-                sslports: sslports_global,
-                totalwaitms: totalwaitms_global,
-                tcpwrappedms: tcpwrappedms_global,
-                rarity: rarity_global,
-                fallback: fallback_gloabl,
+            let ports_str = match ports_reg.captures(&line) {
+                Some(caps) => {
+                    let ports_str = caps.name("ports").map_or("", |m| m.as_str());
+                    ports_str
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("ports"),
+                        line: line.to_string(),
+                    })
+                }
             };
-            ret.push(sp);
+            ports_v = ports_parser(ports_str)?;
+        } else if line.starts_with("sslports") {
+            let ports_str = match sslports_reg.captures(&line) {
+                Some(caps) => {
+                    let ports_str = caps.name("sslports").map_or("", |m| m.as_str());
+                    ports_str
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("ports"),
+                        line: line.to_string(),
+                    })
+                }
+            };
+            sslports_v = ports_parser(ports_str)?;
+        } else if line.starts_with("totalwaitms") {
+            let totalwaitms = match totalwaitms_reg.captures(&line) {
+                Some(caps) => {
+                    let totalwaitms_str = caps.name("totalwaitms").map_or("", |m| m.as_str());
+                    totalwaitms_str
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("totalwaitms"),
+                        line: line.to_string(),
+                    })
+                }
+            };
+            let totalwaitms: usize = totalwaitms.parse()?;
+            totalwaitms_v = totalwaitms;
+        } else if line.starts_with("tcpwrappedms") {
+            let tcpwrappedms = match tcpwrappedms_reg.captures(&line) {
+                Some(caps) => {
+                    let tcpwrappedms_str = caps.name("tcpwrappedms").map_or("", |m| m.as_str());
+                    tcpwrappedms_str
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("tcpwrappedms"),
+                        line: line.to_string(),
+                    })
+                }
+            };
+            let tcpwrappedms: usize = tcpwrappedms.parse()?;
+            tcpwrappedms_v = tcpwrappedms;
+        } else if line.starts_with("rarity") {
+            let rarity = match rarity_reg.captures(&line) {
+                Some(caps) => {
+                    let rarity_str = caps.name("rarity").map_or("", |m| m.as_str());
+                    rarity_str
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("rarity"),
+                        line: line.to_string(),
+                    })
+                }
+            };
+            let rarity: usize = rarity.parse()?;
+            rarity_v = rarity;
+        } else if line.starts_with("match") {
+            let matchx = match match_reg.captures(&line) {
+                Some(caps) => {
+                    let service_str = caps.name("service").map_or("", |m| m.as_str());
+                    let pattern_str = caps.name("pattern").map_or("", |m| m.as_str());
+                    let p_str = caps.name("p").map_or("", |m| m.as_str());
+                    let v_str = caps.name("v").map_or("", |m| m.as_str());
+                    let h_str = caps.name("h").map_or("", |m| m.as_str());
+                    let i_str = caps.name("i").map_or("", |m| m.as_str());
+                    let o_str = caps.name("o").map_or("", |m| m.as_str());
+                    let cpe_str = caps.name("cpe").map_or("", |m| m.as_str());
+                    let x = r"match (?P<service>.+) m(\||/)(?P<pattern>[^/\|]+)(\||/)(\w)?( p/(?P<p>[^/]+)/)?( v/(?P<v>[^/]+)/)?( h/(?P<h>[^/]+)/)?( i/(?P<i>[^/]+)/)?( o/(?P<o>[^/]+)/)?( (?P<cpe>cpe:/[^/]+)/(\w)?)?";
+                    service_str
+                }
+                None => {
+                    return Err(PistolErrors::ServiceProbesParseError {
+                        name: String::from("rarity"),
+                        line: line.to_string(),
+                    })
+                }
+            };
         }
-        None => (),
     }
-    Ok(ret)
+
+    // last value
+    let probe = probe_v;
+    let totalwaitms = totalwaitms_v;
+    let tcpwrappedms = tcpwrappedms_v;
+    let rarity = rarity_v;
+    let ports = ports_v.clone();
+    let sslports = sslports_v.clone();
+    let matchs = match_v.clone();
+    let softmatchs = softmatch_v.clone();
+    let fallback = fallback_v.clone();
+
+    let sp = ServiceProbe {
+        probe,
+        matchs,
+        softmatchs,
+        ports,
+        sslports,
+        totalwaitms,
+        tcpwrappedms,
+        rarity,
+        fallback,
+    };
+    ret_v.push(sp);
+
+    Ok(ret_v)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,63 +418,4 @@ impl ExcludePorts {
             udp_ports: vec![],
         }
     }
-}
-
-pub fn nsp_exclued_parser(lines: &[String]) -> Result<ExcludePorts, PistolErrors> {
-    let mut ports: Vec<u16> = Vec::new();
-    let mut tcp_ports: Vec<u16> = Vec::new();
-    let mut udp_ports: Vec<u16> = Vec::new();
-    for line in lines {
-        if line.starts_with("Exclude") {
-            // println!("{}", line);
-            let line_split: Vec<&str> = line.split(" ").collect();
-            let exclued = line_split[1..].to_vec().join(" ");
-            let exclued_split: Vec<&str> = exclued.split(",").map(|s| s.trim()).collect();
-            for ex in &exclued_split {
-                if ex.contains(":") {
-                    let ex_split: Vec<&str> = ex.split(":").collect();
-                    match ex_split[0] {
-                        "T" => {
-                            if ex_split[1].contains("-") {
-                                let ex_split_split: Vec<&str> = ex_split[1].split("-").collect();
-                                let start: u16 = ex_split_split[0].parse()?;
-                                let end: u16 = ex_split_split[1].parse()?;
-                                for p in start..=end {
-                                    tcp_ports.push(p);
-                                }
-                            } else {
-                                let p: u16 = ex_split[1].parse()?;
-                                tcp_ports.push(p);
-                            }
-                        }
-                        "U" => {
-                            if ex_split[1].contains("-") {
-                                let ex_split_split: Vec<&str> =
-                                    exclued_split[1].split("-").collect();
-                                let start: u16 = ex_split_split[0].parse()?;
-                                let end: u16 = ex_split_split[1].parse()?;
-                                for p in start..=end {
-                                    udp_ports.push(p);
-                                }
-                            } else {
-                                let p: u16 = ex_split[1].parse()?;
-                                udp_ports.push(p);
-                            }
-                        }
-                        _ => (),
-                    }
-                } else {
-                    let p: u16 = ex.parse()?;
-                    ports.push(p);
-                }
-            }
-            break;
-        }
-    }
-    let ep = ExcludePorts {
-        ports,
-        tcp_ports,
-        udp_ports,
-    };
-    Ok(ep)
 }

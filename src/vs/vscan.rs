@@ -12,7 +12,7 @@ use std::time::Instant;
 // use std::fs::File;
 
 use super::dbparser::Match;
-use super::dbparser::ProbesProtocol;
+use super::dbparser::ProbeProtocol;
 use super::dbparser::ServiceProbe;
 use crate::errors::PistolErrors;
 use crate::utils::random_port;
@@ -109,7 +109,7 @@ fn tcp_continue_probe(
             None => (),
         }
         if sp.probe.probename != "NULL"
-            && sp.probe.protocol == ProbesProtocol::Tcp
+            && sp.probe.protocol == ProbeProtocol::Tcp
             && intensity >= rarity
         {
             // Since the reality is that most ports are used by the service they are registered to in nmap-services,
@@ -190,7 +190,7 @@ fn udp_probe(
             None => (),
         }
         if sp.probe.probename != "NULL"
-            && sp.probe.protocol == ProbesProtocol::Udp
+            && sp.probe.protocol == ProbeProtocol::Udp
             && intensity >= rarity
         {
             // Since the reality is that most ports are used by the service they are registered to in nmap-services,

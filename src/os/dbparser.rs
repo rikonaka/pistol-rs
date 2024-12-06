@@ -735,6 +735,9 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
     loop {
         match iter.next() {
             Some(line) => {
+                if line.starts_with("#") {
+                    continue;
+                }
                 if line.starts_with("Fingerprint") {
                     /* name part */
                     let name = match name_reg.captures(&line) {

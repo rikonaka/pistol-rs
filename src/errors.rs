@@ -32,6 +32,10 @@ pub enum PistolErrors {
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("os db parser error: {name}-{line}")]
     OSDBParseError { name: String, line: String },
+    #[error("service probes parser error: {name}-{line}")]
+    ServiceProbesParseError { name: String, line: String },
+    #[error("service probes protocol unknown: {protocol}")]
+    ServiceProbesProtocolUnknown { protocol: String},
     #[error("zip error")]
     ZipError(#[from] zip::result::ZipError),
     #[error("zip file empty")]
