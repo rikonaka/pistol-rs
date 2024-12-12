@@ -1,3 +1,4 @@
+use dbparser::ServiceProbe;
 use log::debug;
 use prettytable::row;
 use prettytable::Cell;
@@ -8,20 +9,21 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Cursor;
+use std::io::Read;
 use std::net::IpAddr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
+use zip::ZipArchive;
 
 use crate::errors::PistolErrors;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::threads_num_check;
-use crate::vs::dbparser::nsp_exclued_parser;
-use crate::vs::dbparser::nsp_parser;
-use crate::vs::dbparser::ExcludePorts;
-use crate::vs::dbparser::Match;
+use crate::vs::dbparser::nmap_service_probes_parser;
 use crate::vs::vscan::threads_vs_probe;
+use crate::vs::vscan::MatchX;
 use crate::Target;
 
 pub mod dbparser;
@@ -29,7 +31,7 @@ pub mod vscan;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Services {
-    pub matchs: Vec<Match>,
+    pub matchs: Vec<MatchX>,
     pub elapsed: Duration,
 }
 
@@ -94,8 +96,12 @@ impl fmt::Display for VsScanResults {
             for (port, services) in ports_service {
                 let mut sv = Vec::new();
                 for m in &services.matchs {
-                    if !sv.contains(&m.service) {
-                        sv.push(m.service.clone());
+                    let service = match m {
+                        MatchX::Match(m) => &m.service,
+                        MatchX::SoftMatch(sm) => &sm.service,
+                    };
+                    if !sv.contains(service) {
+                        sv.push(service.to_string());
                     }
                 }
                 let mut services_str = sv.join(",");
@@ -116,72 +122,77 @@ impl fmt::Display for VsScanResults {
     }
 }
 
+fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolErrors> {
+    let data = include_bytes!("./db/nmap-service-probes.zip");
+    let reader = Cursor::new(data);
+    let mut archive = ZipArchive::new(reader)?;
+
+    if archive.len() > 0 {
+        let mut file = archive.by_index(0)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        let ret: Vec<ServiceProbe> = serde_json::from_str(&contents)?;
+        Ok(ret)
+    } else {
+        Err(PistolErrors::ZipEmptyError)
+    }
+}
+
 /// Detect target port service.
 pub fn vs_scan(
     target: Target,
+    threads_num: Option<usize>,
     only_null_probe: bool,
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
-    exclude_ports: Option<ExcludePorts>,
     intensity: usize,
     timeout: Option<Duration>,
 ) -> Result<VsScanResults, PistolErrors> {
-    let mut threads_num = 0;
-    for h in &target.hosts {
-        threads_num += h.ports.len();
-    }
-    let threads_num = threads_num_check(threads_num);
+    let threads_num = match threads_num {
+        Some(t) => t,
+        None => {
+            let mut threads_num = 0;
+            for h in &target.hosts {
+                threads_num += h.ports.len();
+            }
+            let threads_num = threads_num_check(threads_num);
+            threads_num
+        }
+    };
 
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
     };
-    let nsp_str = include_str!("./db/nmap-service-probes");
-    let mut nsp_lines = Vec::new();
-    for l in nsp_str.lines() {
-        nsp_lines.push(l.to_string());
-    }
-    debug!("nmap service db load finish");
 
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
-    let mut vs_target = HashMap::new();
 
-    for h in target.hosts {
-        vs_target.insert(h.addr, h.ports);
-    }
-
-    let exclude_ports = match exclude_ports {
-        Some(e) => e,
-        None => nsp_exclued_parser(&nsp_lines)?,
-    };
-    let service_probes = nsp_parser(&nsp_lines)?;
-    debug!("nmap service db parse finish");
+    let service_probes = get_nmap_service_probes()?;
+    debug!("nmap service db load finish");
 
     let mut recv_size = 0;
-    for (dst_addr, ports) in vs_target {
-        for dst_port in ports {
-            // Nmap checks to see if the port is one of the ports to be excluded.
-            if !exclude_ports.ports.contains(&dst_port) {
-                let tx = tx.clone();
-                let service_probes = service_probes.clone();
-                pool.execute(move || {
-                    let ret = threads_vs_probe(
-                        dst_addr,
-                        dst_port,
-                        only_null_probe,
-                        only_tcp_recommended,
-                        only_udp_recommended,
-                        intensity,
-                        &service_probes,
-                        timeout,
-                    );
-                    match tx.send((dst_addr, dst_port, ret)) {
-                        _ => (),
-                    }
-                });
-                recv_size += 1;
-            }
+    for host in target.hosts {
+        let dst_addr = host.addr;
+        for dst_port in host.ports {
+            let tx = tx.clone();
+            let service_probes = service_probes.clone();
+            pool.execute(move || {
+                let ret = threads_vs_probe(
+                    dst_addr,
+                    dst_port,
+                    only_null_probe,
+                    only_tcp_recommended,
+                    only_udp_recommended,
+                    intensity,
+                    service_probes,
+                    timeout,
+                );
+                match tx.send((dst_addr, dst_port, ret)) {
+                    _ => (),
+                }
+            });
+            recv_size += 1;
         }
     }
 
@@ -227,7 +238,7 @@ pub fn vs_scan_raw(
     }
     debug!("nmap service db load finish");
 
-    let service_probes = nsp_parser(&nsp_lines)?;
+    let service_probes = nmap_service_probes_parser(nsp_lines)?;
     debug!("nmap service db parse finish");
 
     let timeout = match timeout {
@@ -242,7 +253,7 @@ pub fn vs_scan_raw(
         only_tcp_recommended,
         only_udp_recommended,
         intensity,
-        &service_probes,
+        service_probes,
         timeout,
     ) {
         Ok((r, rtt)) => {
@@ -268,14 +279,14 @@ mod tests {
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
-        let exclude_ports = Some(ExcludePorts::new(vec![51, 52]));
         let intensity = 7; // nmap default
+        let threads_num = Some(8);
         let ret = vs_scan(
             target,
+            threads_num,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
-            exclude_ports,
             intensity,
             timeout,
         )

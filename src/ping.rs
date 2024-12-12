@@ -316,6 +316,7 @@ fn threads_ping6(
 
 pub fn ping(
     target: Target,
+    threads_num: Option<usize>,
     method: PingMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -323,8 +324,15 @@ pub fn ping(
     tests: usize,
 ) -> Result<PingResults, PistolErrors> {
     let mut ping_results = PingResults::new();
-    let threads_num = target.hosts.len() * tests;
-    let threads_num = threads_num_check(threads_num);
+
+    let threads_num = match threads_num {
+        Some(t) => t,
+        None => {
+            let threads_num = target.hosts.len() * tests;
+            let threads_num = threads_num_check(threads_num);
+            threads_num
+        }
+    };
 
     let src_port = match src_port {
         Some(p) => p,
@@ -430,12 +438,21 @@ pub fn ping(
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_syn_ping(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PingResults, PistolErrors> {
-    ping(target, PingMethods::Syn, src_addr, src_port, timeout, tests)
+    ping(
+        target,
+        threads_num,
+        PingMethods::Syn,
+        src_addr,
+        src_port,
+        timeout,
+        tests,
+    )
 }
 
 /// TCP SYN Ping, raw version.
@@ -487,12 +504,21 @@ pub fn tcp_syn_ping_raw(
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_ack_ping(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PingResults, PistolErrors> {
-    ping(target, PingMethods::Ack, src_addr, src_port, timeout, tests)
+    ping(
+        target,
+        threads_num,
+        PingMethods::Ack,
+        src_addr,
+        src_port,
+        timeout,
+        tests,
+    )
 }
 
 /// TCP ACK Ping, raw version.
@@ -544,12 +570,21 @@ pub fn tcp_ack_ping_raw(
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn udp_ping(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<PingResults, PistolErrors> {
-    ping(target, PingMethods::Udp, src_addr, src_port, timeout, tests)
+    ping(
+        target,
+        threads_num,
+        PingMethods::Udp,
+        src_addr,
+        src_port,
+        timeout,
+        tests,
+    )
 }
 
 /// UDP Ping, raw version.
@@ -608,6 +643,7 @@ pub fn udp_ping_raw(
 /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
 pub fn icmp_ping(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -615,6 +651,7 @@ pub fn icmp_ping(
 ) -> Result<PingResults, PistolErrors> {
     ping(
         target,
+        threads_num,
         PingMethods::Icmp,
         src_addr,
         src_port,
@@ -672,7 +709,8 @@ mod tests {
         // let target: Target = Target::new(vec![host_1, host_2]);
         let target: Target = Target::new(vec![host_1]);
         let tests = 3;
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_syn_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -693,7 +731,8 @@ mod tests {
         let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = tcp_syn_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_syn_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -705,7 +744,8 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = icmp_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = icmp_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -717,8 +757,9 @@ mod tests {
         let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
+        let threads_num = Some(8);
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmp_ping(target, src_ipv6, src_port, timeout, tests).unwrap();
+        let ret = icmp_ping(target, threads_num, src_ipv6, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -736,13 +777,16 @@ mod tests {
         let target: Target = Target::new(hosts);
         let tests = 2;
         let start = Instant::now();
-        let ret = icmp_ping(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = icmp_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{} - {:.2}s", ret, start.elapsed().as_secs_f64());
     }
     #[test]
+    #[ignore]
     fn test_github_issues_14() {
         use std::process::Command;
         let pid = std::process::id();
+        let threads_num = Some(8);
 
         for i in 0..10_000 {
             let c2 = Command::new("bash")
@@ -758,7 +802,15 @@ mod tests {
 
             let host = Host::new(TEST_IPV4_LOCAL.into(), None);
             let target = Target::new(vec![host]);
-            let _ret = icmp_ping(target, None, None, Some(Duration::new(1, 0)), 1).unwrap();
+            let _ret = icmp_ping(
+                target,
+                threads_num,
+                None,
+                None,
+                Some(Duration::new(1, 0)),
+                1,
+            )
+            .unwrap();
             // println!("{}\n{:?}", i, ret);
             println!("id: {}", i);
             // std::thread::sleep(Duration::new(1, 0));

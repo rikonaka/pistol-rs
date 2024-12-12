@@ -32,6 +32,10 @@ pub enum PistolErrors {
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("os db parser error: {name}-{line}")]
     OSDBParseError { name: String, line: String },
+    #[error("service probes parser error: {name}-{line}")]
+    ServiceProbesParseError { name: String, line: String },
+    #[error("service probes protocol unknown: {protocol}")]
+    ServiceProbesProtocolUnknown { protocol: String },
     #[error("zip error")]
     ZipError(#[from] zip::result::ZipError),
     #[error("zip file empty")]
@@ -49,6 +53,10 @@ pub enum PistolErrors {
     /* SERVICE DETECT ERRORS */
     #[error("parse int error")]
     ParseIntError(#[from] std::num::ParseIntError),
+    #[error("fancy_regex error")]
+    FancyRegexError(#[from] fancy_regex::Error),
+    #[error("no match found")]
+    NoMatchFound,
 
     /* LAYERS ERRORS */
     #[error("create datalink channel failed")]

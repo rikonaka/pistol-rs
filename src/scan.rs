@@ -368,14 +368,21 @@ pub fn arp_scan_raw(
 /// This will sends ARP packets to hosts on the local network and displays any responses that are received.
 pub fn arp_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<ArpScanResults, PistolErrors> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut ret = ArpScanResults::new();
 
-    let threads_num = target.hosts.len();
-    let threads_num = threads_num_check(threads_num);
+    let threads_num = match threads_num {
+        Some(t) => t,
+        None => {
+            let threads_num = target.hosts.len();
+            let threads_num = threads_num_check(threads_num);
+            threads_num
+        }
+    };
 
     let pool = get_threads_pool(threads_num);
     let timeout = match timeout {
@@ -563,6 +570,7 @@ fn threads_scan6(
 /// General scan function.
 pub fn scan(
     target: Target,
+    threads_num: Option<usize>,
     method: ScanMethod,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -573,11 +581,17 @@ pub fn scan(
 ) -> Result<ScanResults, PistolErrors> {
     let mut port_scan_ret = ScanResults::new();
 
-    let mut threads_num = 0;
-    for host in &target.hosts {
-        threads_num += host.ports.len() * tests;
-    }
-    let threads_num = threads_num_check(threads_num);
+    let threads_num = match threads_num {
+        Some(t) => t,
+        None => {
+            let mut threads_num = 0;
+            for host in &target.hosts {
+                threads_num += host.ports.len() * tests;
+            }
+            let threads_num = threads_num_check(threads_num);
+            threads_num
+        }
+    };
 
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
@@ -692,6 +706,7 @@ pub fn scan(
 /// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
 pub fn tcp_connect_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -699,6 +714,7 @@ pub fn tcp_connect_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Connect,
         src_addr,
         src_port,
@@ -743,6 +759,7 @@ pub fn tcp_connect_scan_raw(
 /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
 pub fn tcp_syn_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -750,6 +767,7 @@ pub fn tcp_syn_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Syn,
         src_addr,
         src_port,
@@ -795,6 +813,7 @@ pub fn tcp_syn_scan_raw(
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
 pub fn tcp_fin_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -802,6 +821,7 @@ pub fn tcp_fin_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Fin,
         src_addr,
         src_port,
@@ -840,6 +860,7 @@ pub fn tcp_fin_scan_raw(
 /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
 pub fn tcp_ack_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -847,6 +868,7 @@ pub fn tcp_ack_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Ack,
         src_addr,
         src_port,
@@ -884,6 +906,7 @@ pub fn tcp_ack_scan_raw(
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
 pub fn tcp_null_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -891,6 +914,7 @@ pub fn tcp_null_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Null,
         src_addr,
         src_port,
@@ -928,6 +952,7 @@ pub fn tcp_null_scan_raw(
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
 pub fn tcp_xmas_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -935,6 +960,7 @@ pub fn tcp_xmas_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Xmas,
         src_addr,
         src_port,
@@ -973,6 +999,7 @@ pub fn tcp_xmas_scan_raw(
 /// Window scan sends the same bare ACK probe as ACK scan.
 pub fn tcp_window_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -980,6 +1007,7 @@ pub fn tcp_window_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Window,
         src_addr,
         src_port,
@@ -1018,6 +1046,7 @@ pub fn tcp_window_scan_raw(
 /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
 pub fn tcp_maimon_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -1025,6 +1054,7 @@ pub fn tcp_maimon_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Maimon,
         src_addr,
         src_port,
@@ -1065,6 +1095,7 @@ pub fn tcp_maimon_scan_raw(
 /// Besides being extraordinarily stealthy, this scan type permits discovery of IP-based trust relationships between machines.
 pub fn tcp_idle_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
@@ -1074,6 +1105,7 @@ pub fn tcp_idle_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Idle,
         src_addr,
         src_port,
@@ -1116,6 +1148,7 @@ pub fn tcp_idle_scan_raw(
 /// Based on the response, or lack thereof, the port is assigned to one of four states.
 pub fn udp_scan(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
@@ -1123,6 +1156,7 @@ pub fn udp_scan(
 ) -> Result<ScanResults, PistolErrors> {
     scan(
         target,
+        threads_num,
         ScanMethod::Udp,
         src_addr,
         src_port,
@@ -1217,7 +1251,8 @@ mod tests {
         let target: Target = Target::new(hosts);
         let timeout = Some(Duration::new(1, 0));
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, timeout).unwrap();
+        let threads_num = Some(8);
+        let ret: ArpScanResults = arp_scan(target, threads_num, src_ipv4, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1225,7 +1260,8 @@ mod tests {
         let target: Target = Target::from_subnet("192.168.1.1/24", None).unwrap();
         let timeout = Some(Duration::new(1, 0));
         let src_ipv4 = None;
-        let ret: ArpScanResults = arp_scan(target, src_ipv4, timeout).unwrap();
+        let threads_num = Some(8);
+        let ret: ArpScanResults = arp_scan(target, threads_num, src_ipv4, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1236,7 +1272,9 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret =
+            tcp_connect_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
 
         // let target: Target = Target::from_subnet("192.168.1.1/24", Some(vec![22]))?;
@@ -1251,7 +1289,8 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
-        let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_syn_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
         // println!("{:#?}", ret.get(&dst_ipv4.into()).unwrap().status);
     }
@@ -1263,7 +1302,8 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_fin_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_fin_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1274,7 +1314,8 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_ack_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1285,7 +1326,8 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = tcp_null_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_null_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1296,7 +1338,8 @@ mod tests {
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
-        let ret = udp_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = udp_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1341,7 +1384,8 @@ mod tests {
         let tests = 2;
 
         let start_time = Instant::now();
-        let ret = tcp_syn_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        let threads_num = Some(8);
+        let ret = tcp_syn_scan(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         // let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         // let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
