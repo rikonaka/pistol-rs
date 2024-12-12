@@ -57,6 +57,8 @@ pub enum PistolErrors {
     FancyRegexError(#[from] fancy_regex::Error),
     #[error("no match found")]
     NoMatchFound,
+    #[error("can not unescape string: {s}, error: {e}")]
+    CanNotUnescapeString { s: String, e: String },
 
     /* LAYERS ERRORS */
     #[error("create datalink channel failed")]
