@@ -29,13 +29,6 @@ pub enum MatchX {
     SoftMatch(SoftMatch),
 }
 
-fn format_send(data: &str) -> String {
-    let new_data = data.replace("\\n", "\n");
-    let new_data = new_data.replace("\\r", "\r");
-    let new_data = new_data.replace("\\t", "\t");
-    new_data
-}
-
 fn tcp_null_probe(
     stream: &mut TcpStream,
     service_probes: &[ServiceProbe],
@@ -83,8 +76,8 @@ fn tcp_continue_probe(
     service_probes: &[ServiceProbe],
 ) -> Result<Vec<MatchX>, PistolErrors> {
     fn run_probe(stream: &mut TcpStream, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolErrors> {
-        let probestring = format_send(&sp.probe.probestring);
-        stream.write(probestring.as_bytes())?;
+        let probestring = &sp.probe.probestring;
+        stream.write(probestring)?;
         let mut recv_buff = [0u8; TCP_BUFF_SIZE];
         let mut recv_all_buff = Vec::new();
         loop {
@@ -156,7 +149,7 @@ fn udp_probe(
 ) -> Result<Vec<MatchX>, PistolErrors> {
     fn run_probe(socket: &UdpSocket, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolErrors> {
         let mut ret = Vec::new();
-        let probestring = sp.probe.probestring.as_bytes();
+        let probestring = &sp.probe.probestring;
         socket.send(probestring)?;
         let mut recv_buff = [0u8; UDP_BUFF_SIZE];
         let n = match socket.recv(&mut recv_buff) {

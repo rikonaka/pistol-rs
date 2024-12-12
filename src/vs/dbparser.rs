@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::fmt;
 
 use crate::errors::PistolErrors;
+use crate::utils::unescape_string;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbeProtocol {
@@ -92,7 +93,7 @@ pub struct Probe {
     /// This is a plain English name for the probe. It is used in service fingerprints to describe which probes elicited responses.
     pub probename: String,
     /// Tells Nmap what to send.
-    pub probestring: String,
+    pub probestring: Vec<u8>,
     /// This keyword is used to instruct Nmap not to use the given probe as a protocol-specific payload during UDP port scanning.
     pub no_payload: bool,
 }
@@ -102,7 +103,7 @@ impl Probe {
         Probe {
             probeprotocol: ProbeProtocol::Tcp,
             probename: String::new(),
-            probestring: String::new(),
+            probestring: Vec::new(),
             no_payload: false,
         }
     }
@@ -333,10 +334,11 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     let probeprotocol = caps.name("probeprotocol").map_or("", |m| m.as_str());
                     let probename = caps.name("probename").map_or("", |m| m.as_str());
                     let probestring = caps.name("probestring").map_or("", |m| m.as_str());
+                    let probestring = unescape_string(&probestring)?;
                     (
                         probeprotocol.trim().to_string(),
                         probename.trim().to_string(),
-                        probestring.trim().to_string(),
+                        probestring,
                     )
                 }
                 None => {

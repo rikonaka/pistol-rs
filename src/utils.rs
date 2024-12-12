@@ -1,3 +1,4 @@
+use escape_bytes;
 use log::warn;
 use num_cpus;
 use pnet::datalink::interfaces;
@@ -290,9 +291,28 @@ impl SpHex {
     }
 }
 
+pub fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
+    let output = match escape_bytes::unescape(input.as_bytes()) {
+        Ok(o) => o,
+        Err(e) => {
+            return Err(PistolErrors::CanNotUnescapeString {
+                s: input.to_string(),
+                e: format!("{:?}", e),
+            })
+        }
+    };
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_unescape() {
+        let test_string = r"\x80\0\0\x28\x72\xFE\x1D\x13\0\0\0\0\0\0\0\x02\0\x01\x86\xA0\0\x01\x97\x7C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        let output = unescape_string(&test_string).unwrap();
+        println!("{:?}", output);
+    }
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
