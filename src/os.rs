@@ -324,12 +324,19 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolErrors> {
 /// Detect target machine OS on IPv4 and IPv6.
 pub fn os_detect(
     target: Target,
+    threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<OSDetectResults, PistolErrors> {
-    let threads_num = target.hosts.len();
-    let threads_num = threads_num_check(threads_num);
+    let threads_num = match threads_num {
+        Some(t) => t,
+        None => {
+            let threads_num = target.hosts.len();
+            let threads_num = threads_num_check(threads_num);
+            threads_num
+        }
+    };
 
     let timeout = match timeout {
         Some(t) => t,
@@ -589,7 +596,8 @@ mod tests {
         let target = Target::new(vec![host1, host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
-        let ret = os_detect(target, src_addr, top_k, timeout).unwrap();
+        let threads_num = Some(8);
+        let ret = os_detect(target, threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let rr = ret.get(&TEST_IPV4_LOCAL.into()).unwrap();
@@ -629,7 +637,8 @@ mod tests {
         let target = Target::new(vec![host1, host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
-        let ret = os_detect(target, src_addr, top_k, timeout).unwrap();
+        let threads_num = Some(8);
+        let ret = os_detect(target, threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]

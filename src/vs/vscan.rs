@@ -1,4 +1,6 @@
 use log::debug;
+use serde::Deserialize;
+use serde::Serialize;
 use std::io::Read;
 use std::io::Write;
 use std::net::IpAddr;
@@ -14,11 +16,18 @@ use std::time::Instant;
 use super::dbparser::Match;
 use super::dbparser::ProbeProtocol;
 use super::dbparser::ServiceProbe;
+use super::dbparser::SoftMatch;
 use crate::errors::PistolErrors;
 use crate::utils::random_port;
 
 const TCP_BUFF_SIZE: usize = 4096;
 const UDP_BUFF_SIZE: usize = 4096;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MatchX {
+    Match(Match),
+    SoftMatch(SoftMatch),
+}
 
 fn format_send(data: &str) -> String {
     let new_data = data.replace("\\n", "\n");
@@ -30,7 +39,7 @@ fn format_send(data: &str) -> String {
 fn tcp_null_probe(
     stream: &mut TcpStream,
     service_probes: &[ServiceProbe],
-) -> Result<Vec<Match>, PistolErrors> {
+) -> Result<Vec<MatchX>, PistolErrors> {
     let mut recv_buff = [0u8; TCP_BUFF_SIZE];
     let mut recv_all_buff = Vec::new();
     loop {
@@ -51,8 +60,15 @@ fn tcp_null_probe(
         // println!("{}", recv_str);
         for s in service_probes {
             if s.probe.probename == "NULL" {
-                let r = s.check(&recv_str);
-                ret.extend(r);
+                let (ms, sms) = s.check(&recv_str);
+                for m in ms {
+                    let mx = MatchX::Match(m);
+                    ret.push(mx);
+                }
+                for sm in sms {
+                    let mx = MatchX::SoftMatch(sm);
+                    ret.push(mx);
+                }
             }
         }
     }
@@ -65,8 +81,8 @@ fn tcp_continue_probe(
     only_tcp_recommended: bool,
     intensity: usize,
     service_probes: &[ServiceProbe],
-) -> Result<Vec<Match>, PistolErrors> {
-    let mut run_probe = |sp: &ServiceProbe| -> Result<Vec<Match>, PistolErrors> {
+) -> Result<Vec<MatchX>, PistolErrors> {
+    fn run_probe(stream: &mut TcpStream, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolErrors> {
         let probestring = format_send(&sp.probe.probestring);
         stream.write(probestring.as_bytes())?;
         let mut recv_buff = [0u8; TCP_BUFF_SIZE];
@@ -85,45 +101,41 @@ fn tcp_continue_probe(
         if recv_all_buff.len() > 0 {
             let recv_str = String::from_utf8_lossy(&recv_all_buff);
             // println!("{}", recv_str);
-            let r = sp.check(&recv_str);
-            Ok(r)
+            let (ms, sms) = sp.check(&recv_str);
+            let mut ret = Vec::new();
+            for m in ms {
+                let mx = MatchX::Match(m);
+                ret.push(mx);
+            }
+            for sm in sms {
+                let mx = MatchX::SoftMatch(sm);
+                ret.push(mx);
+            }
+            Ok(ret)
         } else {
             Ok(vec![])
         }
-    };
+    }
 
     let mut ret = Vec::new();
     // TCP connections continue here if the NULL probe described above fails or soft-matches.
     for sp in service_probes {
-        let rarity = match sp.rarity {
-            Some(r) => r as usize,
-            None => 0,
-        };
-        let mut ports: Vec<u16> = Vec::new();
-        match &sp.ports {
-            Some(p) => ports.extend(p),
-            None => (),
-        }
-        match &sp.sslports {
-            Some(s) => ports.extend(s),
-            None => (),
-        }
         if sp.probe.probename != "NULL"
-            && sp.probe.protocol == ProbeProtocol::Tcp
-            && intensity >= rarity
+            && sp.probe.probeprotocol == ProbeProtocol::Tcp
+            && intensity >= sp.rarity
         {
             // Since the reality is that most ports are used by the service they are registered to in nmap-services,
             // every probe has a list of port numbers that are considered to be most effective.
             if only_tcp_recommended {
-                if ports.contains(&dst_port) {
-                    let r = run_probe(sp);
+                if sp.ports.len() > 0 && sp.ports.contains(&dst_port) {
+                    let r = run_probe(stream, sp);
                     match r {
                         Ok(r) => ret.extend(r),
                         Err(e) => return Err(e.into()),
                     }
                 }
             } else {
-                let r = run_probe(sp);
+                let r = run_probe(stream, sp);
                 match r {
                     Ok(r) => ret.extend(r),
                     Err(e) => return Err(e.into()),
@@ -141,8 +153,8 @@ fn udp_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
-) -> Result<Vec<Match>, PistolErrors> {
-    let run_probe = |socket: &UdpSocket, sp: &ServiceProbe| -> Result<Vec<Match>, PistolErrors> {
+) -> Result<Vec<MatchX>, PistolErrors> {
+    fn run_probe(socket: &UdpSocket, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolErrors> {
         let mut ret = Vec::new();
         let probestring = sp.probe.probestring.as_bytes();
         socket.send(probestring)?;
@@ -153,11 +165,18 @@ fn udp_probe(
         };
         if n > 0 {
             let recv_str = String::from_utf8_lossy(&recv_buff);
-            let r = sp.check(&recv_str);
-            ret.extend(r);
+            let (ms, sms) = sp.check(&recv_str);
+            for m in ms {
+                let mx = MatchX::Match(m);
+                ret.push(mx);
+            }
+            for sm in sms {
+                let mx = MatchX::SoftMatch(sm);
+                ret.push(mx);
+            }
         }
         Ok(ret)
-    };
+    }
 
     let random_port = random_port();
     let src_addr = match dst_addr {
@@ -180,23 +199,14 @@ fn udp_probe(
 
     let mut ret = Vec::new();
     for sp in service_probes {
-        let rarity = match sp.rarity {
-            Some(r) => r as usize,
-            None => 0,
-        };
-        let mut ports: Vec<u16> = Vec::new();
-        match &sp.ports {
-            Some(p) => ports.extend(p),
-            None => (),
-        }
         if sp.probe.probename != "NULL"
-            && sp.probe.protocol == ProbeProtocol::Udp
-            && intensity >= rarity
+            && sp.probe.probeprotocol == ProbeProtocol::Udp
+            && intensity >= sp.rarity
         {
             // Since the reality is that most ports are used by the service they are registered to in nmap-services,
             // every probe has a list of port numbers that are considered to be most effective.
             if only_udp_recommended {
-                if ports.contains(&dst_port) {
+                if sp.ports.contains(&dst_port) {
                     let r = run_probe(&socket, sp);
                     match r {
                         Ok(r) => ret.extend(r),
@@ -222,9 +232,9 @@ pub fn threads_vs_probe(
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
     intensity: usize,
-    service_probes: &[ServiceProbe],
+    service_probes: Vec<ServiceProbe>,
     timeout: Duration,
-) -> Result<(Vec<Match>, Duration), PistolErrors> {
+) -> Result<(Vec<MatchX>, Duration), PistolErrors> {
     // If the port is TCP, Nmap starts by connecting to it.
     let start_time = Instant::now();
     let tcp_dst_addr = SocketAddr::new(dst_addr, dst_port);
@@ -244,7 +254,7 @@ pub fn threads_vs_probe(
             // If the connection succeeds and the port had been in the open|filtered state, it is changed to open.
             // Ignore this step here.
             debug!("send null probe");
-            let null_probe_ret = tcp_null_probe(&mut stream, service_probes)?;
+            let null_probe_ret = tcp_null_probe(&mut stream, &service_probes)?;
             if null_probe_ret.len() > 0 {
                 debug!("null probe work, exit");
                 Ok((null_probe_ret, start_time.elapsed()))
@@ -260,7 +270,7 @@ pub fn threads_vs_probe(
                         dst_port,
                         only_tcp_recommended,
                         intensity,
-                        service_probes,
+                        &service_probes,
                     )?;
                     if tcp_ret.len() > 0 {
                         debug!("tcp continue probe work, exit");
@@ -274,7 +284,7 @@ pub fn threads_vs_probe(
                             dst_port,
                             only_udp_recommended,
                             intensity,
-                            service_probes,
+                            &service_probes,
                             timeout,
                         )?;
                         Ok((udp_ret, start_time.elapsed()))

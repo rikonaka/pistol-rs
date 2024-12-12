@@ -25,8 +25,10 @@ fn main() {
     let target = Target::new(vec![host]);
     // Number of tests
     let tests = 4;
+    let threads_num = Some(8);
     let ret = tcp_syn_scan(
         target,
+        threads_num,
         src_ipv4,
         src_port,
         timeout,

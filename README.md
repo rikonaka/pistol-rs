@@ -197,8 +197,10 @@ fn main() {
     let target = Target::new(hosts);
     // Number of tests
     let tests = 2;
+    let threads_num = Some(8);
     let ret = tcp_syn_scan(
         target,
+        threads_num,
         src_ipv4,
         src_port,
         timeout,
@@ -297,11 +299,13 @@ fn main() {
     let target = Target::new(vec![host]);
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
+    let threads_num = Some(8);
 
     // The `fingerprint` is the obtained fingerprint of the target OS.
     // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
     let ret = os_detect(
         target,
+        threads_num,
         src_ipv4,
         top_k,
         timeout,
@@ -361,7 +365,8 @@ fn main() {
     let target = Target::new(vec![host]);
     let timeout = Some(Duration::new(3, 0));
     let top_k = 3;
-    let ret = os_detect(target, src_ipv6, top_k, timeout).unwrap();
+    let threads_num = Some(8);
+    let ret = os_detect(target, threads_num, src_ipv6, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
@@ -394,7 +399,6 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 
 ```rust
 use pistol::vs::vs_scan;
-use pistol::vs::ExcludePorts;
 use pistol::Target;
 use pistol::Host;
 use std::net::Ipv4Addr;
@@ -409,14 +413,14 @@ fn main() {
     // only_tcp_recommended = true: only try the tcp probe recommended port
     // only_udp_recommended = true: only try the udp probe recommended port
     let (only_null_probe, only_tcp_recommended, only_udp_recomended) = (false, true, true);
-    let exclude_ports = Some(ExcludePorts::new(vec![51, 52]));
     let intensity = 7; // nmap default
+    let threads_num = Some(8);
     let ret = vs_scan(
         target,
+        threads_num,
         only_null_probe,
         only_tcp_recommended,
         only_udp_recommended,
-        exclude_ports,
         intensity,
         timeout,
     )..unwrap();

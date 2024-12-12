@@ -1,3 +1,4 @@
+use kdam::tqdm;
 use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
@@ -702,11 +703,11 @@ impl NmapOSDB {
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
 pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErrors> {
-    let name_reg = Regex::new(r"Fingerprint\s+(?P<name>.+)")?;
+    let name_reg = Regex::new(r"Fingerprint (?P<name>.+)")?;
     let class_reg = Regex::new(
-        r"Class\s+(?P<class1>[^|]+)\s+\|\s+(?P<class2>[^|]+)\s+\|(\|)?\s+(?P<class3>[^|]+)(\s+\|(\|)?\s+(?P<class4>[^|]+))?",
+        r"Class (?P<class1>[^|]+) \|(?P<class2>[^|]+)\|(\|)? (?P<class3>[^|]+)( \|(\|)? (?P<class4>[^|]+))?",
     )?;
-    let cpe_reg = Regex::new(r"CPE\s+(?P<cpe>.+)")?;
+    let cpe_reg = Regex::new(r"CPE (?P<cpe>.+)")?;
     let seq_reg = Regex::new(
         r"SEQ\((SP=(?P<sp>[^%]+))?(R=(?P<r>[^%]+))?(%GCD=(?P<gcd>[^%]+))?(%?ISR=(?P<isr>[^%]+))?(%?TI=(?P<ti>[^%]+))?(%?CI=(?P<ci>[^%]+))?(%?II=(?P<ii>[^%]+))?(%SS=(?P<ss>[^%]+))?(%TS=(?P<ts>[^%]+))?\)",
     )?;
@@ -730,12 +731,13 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
     )?;
 
     let mut ret = Vec::new();
+    let lines_len = lines.len();
     let mut iter = lines.into_iter();
 
-    loop {
+    for _ in tqdm!(0..lines_len) {
         match iter.next() {
             Some(line) => {
-                if line.starts_with("#") {
+                if line.starts_with("#") || line.trim().len() == 0 {
                     continue;
                 }
                 if line.starts_with("Fingerprint") {
@@ -1209,23 +1211,23 @@ mod tests {
     // use super::*;
     // use std::fs::File;
     // use std::io::Write;
-    // use std::time::Instant;
+    use std::time::Instant;
     #[test]
     fn test_parser() {
         /* THIS CODES PERFORMENCE IS SO POORLY THAN MY IMAGEINATION */
         /* SO JUST LEAVE ITS HERE AND NOT USE IT IN OTHER FUNCTIONS */
 
-        // let start = Instant::now();
-        // let nmap_os_file = include_str!("../db/nmap-os-db");
-        // let mut nmap_os_file_lines = Vec::new();
-        // for l in nmap_os_file.lines() {
-        //     nmap_os_file_lines.push(l.to_string());
-        // }
+        let start = Instant::now();
+        let nmap_os_file = include_str!("../db/nmap-os-db");
+        let mut nmap_os_file_lines = Vec::new();
+        for l in nmap_os_file.lines() {
+            nmap_os_file_lines.push(l.to_string());
+        }
         // println!("read os db file finish");
         // let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         // println!("len: {}", ret.len());
 
-        // println!("parse time: {:.3}", start.elapsed().as_secs_f32());
+        println!("parse time: {:.3}", start.elapsed().as_secs_f32());
 
         // let serialized = serde_json::to_string(&ret).unwrap();
         // let mut file_write = File::create("nmap-os-db.pistol").unwrap();

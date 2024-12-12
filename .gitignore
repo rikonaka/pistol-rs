@@ -20,3 +20,4 @@ Cargo.lock
 pistol-libc/
 *.pcap
 *.log
+*.pistol

@@ -1,6 +1,6 @@
 [package]
 name = "pistol"
-version = "3.0.4"
+version = "3.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A Rust Library about Cybersecurity "
@@ -33,3 +33,4 @@ env_logger = "^0"
 regex = "^1"
 thiserror = "^2"
 zip = "^0"
+kdam = "^0"
