@@ -304,6 +304,22 @@ pub fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
     Ok(output)
 }
 
+pub fn vs_data_to_string(input: &[u8]) -> String {
+    let mut ret = String::new();
+    for i in input {
+        if *i >= 32 && *i <= 126 {
+            let s = (*i as char).to_string();
+            ret += &s;
+        } else if *i == 0 {
+            ret += "\\0";
+        } else {
+            let s = format!("\\x{:02x}", i);
+            ret += &s;
+        }
+    }
+    ret
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -257,7 +257,8 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
         None
     }
     fn pattern_fix(pattern: &str) -> String {
-        let pattern = pattern.replace(r"\0", "\0");
+        let pattern = pattern.replace(r"\0", r"\\0");
+        let pattern = pattern.replace(r"\x", r"\\x");
         // The stupid developer wrote a bunch of ambiguous regular expressions,
         // and now I have to fix them one by one.
         let pattern = pattern.replace(r"[][\w._ ]+", r"[\]\[\w._\s]+");
@@ -560,6 +561,8 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::vs_data_to_string;
+    use crate::vs::get_nmap_service_probes;
     use fancy_regex::Regex as FancyRegex;
     use std::fs::File;
     use std::io::Write;
@@ -614,5 +617,33 @@ mod tests {
         let serialized = serde_json::to_string(&ret).unwrap();
         let mut file_write = File::create("nmap-service-probes.pistol").unwrap();
         file_write.write_all(serialized.as_bytes()).unwrap();
+    }
+    #[test]
+    fn test_regex() {
+        let data = vec![0, 0, 0x1b];
+        let data_str = vs_data_to_string(&data);
+        println!("{}", data_str);
+        let regex = FancyRegex::new(r"\\0\\0\\x1b").unwrap();
+        if regex.is_match(&data_str).unwrap() {
+            println!("match");
+        } else {
+            println!("no match");
+        }
+    }
+    #[test]
+    fn test_something() {
+        let service_probes = get_nmap_service_probes().unwrap();
+        let recv_str = r"S\xf5\xc6\x1a{";
+        for s in service_probes {
+            let (ms, sms) = s.check(&recv_str);
+            for m in ms {
+                // let mx = MatchX::Match(m);
+                println!("match: {}", &m.service);
+            }
+            for sm in sms {
+                // let mx = MatchX::SoftMatch(sm);
+                println!("softmatch: {}", &sm.service);
+            }
+        }
     }
 }
