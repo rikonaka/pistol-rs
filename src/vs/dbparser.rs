@@ -257,8 +257,31 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
         None
     }
     fn pattern_fix(pattern: &str) -> String {
-        let pattern = pattern.replace(r"\0", r"\\0");
-        let pattern = pattern.replace(r"\x", r"\\x");
+        // This code convert C style regex format to Rust style regex format.
+        let pattern = pattern.replace(r"[\xfb-\xfe]", r"(\xfb|\xfc|\xfd|\xfe)");
+        let pattern = pattern.replace(r"[\x0a-\x0b]", r"(\x0a|\x0b)");
+        let pattern = pattern.replace(r"[\x5e-\x60]", r"(\x5e|\x5f|\x60)");
+        let pattern = pattern.replace(r"[\x60-\x62]", r"(\x60|\x61|\x62)");
+        let pattern = pattern.replace(r"[\x03-\x05]", r"(\x03|\x04|\x05)");
+        let pattern = pattern.replace(r"[\x8b-\x8f]", r"(\x8b|\x8c|\x8d|\x8e|\x8f)");
+        let pattern = pattern.replace(r"[\x17-\x1a]", r"(\x17|\x18|\x19|\x1a)");
+        let pattern = pattern.replace(r"[\x6d-\x6f]", r"(\x6d|\x6f)");
+        let pattern = pattern.replace(r"[\x6b-\x6d]", r"(\x6b|\x6c|\x6d)");
+        let pattern = pattern.replace(r"[\x69-\x6b]", r"(\x69|\x6a|\x6b)");
+        let pattern = pattern.replace(r"[\x4a-\x4c]", r"(\x4a|\x4b|\x4c)");
+        let pattern = pattern.replace(r"[\x48-\x4a]", r"(\x48|\x49|\x4a)");
+        let pattern = pattern.replace(r"[\x46-\x48]", r"(\x46|\x47|\x48)");
+        // destructive match, too much values if I replace it to below format
+        let pattern = pattern.replace(r"[\x40-\x90]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x3e-\x8e]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x3c-\x8c]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x50-\x90]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x4e-\x8e]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x4c-\x8c]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x90-\xdb]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x90-\xdb]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\x90-\xd8]", r"\x[a-f0-9]{2}");
+        let pattern = pattern.replace(r"[\xad-\xd8]", r"\x[a-f0-9]{2}");
         // The stupid developer wrote a bunch of ambiguous regular expressions,
         // and now I have to fix them one by one.
         let pattern = pattern.replace(r"[][\w._ ]+", r"[\]\[\w._\s]+");
@@ -267,9 +290,14 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
             r"([^[]+) \[[^]]+ ([\d.]+)\]",
             r"([^\[]+) \[[^\]]+ ([\d.]+)\]",
         );
-        let pattern = pattern.replace(r"[][\w._:-]+", r"[\[\]\w._:-]+");
+        let pattern = pattern.replace(r"[][\w._:-]+", r"[\]\[\w._:-]+");
         let pattern = pattern.replace(r"[][\w.:]+", r"[\]\[\w.:]+");
         let pattern = pattern.replace(r"[^[]", r"[^\[]");
+
+        let pattern = pattern.replace(r"\0", r"\\0");
+        let pattern = pattern.replace(r"\x", r"\\x");
+        let pattern = pattern.replace(r"\\\x", r"\\x");
+        let pattern = pattern.replace(r"\\\0", r"\\0");
         pattern
     }
 
@@ -561,8 +589,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::vs_data_to_string;
-    use crate::vs::get_nmap_service_probes;
+    use crate::utils::vs_probe_data_to_string;
     use fancy_regex::Regex as FancyRegex;
     use std::fs::File;
     use std::io::Write;
@@ -621,7 +648,7 @@ mod tests {
     #[test]
     fn test_regex() {
         let data = vec![0, 0, 0x1b];
-        let data_str = vs_data_to_string(&data);
+        let data_str = vs_probe_data_to_string(&data);
         println!("{}", data_str);
         let regex = FancyRegex::new(r"\\0\\0\\x1b").unwrap();
         if regex.is_match(&data_str).unwrap() {
@@ -631,19 +658,27 @@ mod tests {
         }
     }
     #[test]
-    fn test_something() {
-        let service_probes = get_nmap_service_probes().unwrap();
-        let recv_str = r"S\xf5\xc6\x1a{";
-        for s in service_probes {
-            let (ms, sms) = s.check(&recv_str);
-            for m in ms {
-                // let mx = MatchX::Match(m);
-                println!("match: {}", &m.service);
-            }
-            for sm in sms {
-                // let mx = MatchX::SoftMatch(sm);
-                println!("softmatch: {}", &sm.service);
-            }
+    fn test_gen() {
+        let test_str = r"[\x40-\x90]";
+        let test_str = test_str.replace("]", "").replace("[", "");
+        let test_split: Vec<&str> = test_str.split("-").collect();
+        let start = test_split[0];
+        let end = test_split[1];
+
+        let start_ues = unescape_string(&start).unwrap();
+        let end_ues = unescape_string(&end).unwrap();
+
+        let start = start_ues[0];
+        let end = end_ues[0];
+
+        let mut ret_string = String::from("(");
+        for i in start..=end {
+            let tmp = format!("\\x{:02x}", i);
+            ret_string += &tmp;
+            ret_string += "|"
         }
+        ret_string.pop();
+        ret_string += ")";
+        println!("{}", ret_string);
     }
 }
