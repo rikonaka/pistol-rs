@@ -304,13 +304,35 @@ pub fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
     Ok(output)
 }
 
+pub fn vs_probe_data_to_string(input: &[u8]) -> String {
+    let mut ret = String::new();
+    for i in input {
+        if *i >= 32 && *i <= 126 {
+            let s = (*i as char).to_string();
+            ret += &s;
+        } else if *i == 0 {
+            ret += "\\0";
+        } else {
+            let s = format!("\\x{:02x}", i);
+            ret += &s;
+        }
+    }
+    ret
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    fn test_vs_probe_to_string() {
+        let data = vec![0, 0, 0x3f, 0x9f];
+        let data_str = vs_probe_data_to_string(&data);
+        println!("{}", data_str);
+    }
+    #[test]
     fn test_unescape() {
-        let test_string = r"\x80\0\0\x28\x72\xFE\x1D\x13\0\0\0\0\0\0\0\x02\0\x01\x86\xA0\0\x01\x97\x7C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
-        let output = unescape_string(&test_string).unwrap();
+        let test_str = r"\x80\0\0\x28\x72\xFE\x1D\x13\0\0\0\0\0\0\0\x02\0\x01\x86\xA0\0\x01\x97\x7C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        let output = unescape_string(&test_str).unwrap();
         println!("{:?}", output);
     }
     #[test]

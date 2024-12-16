@@ -19,6 +19,7 @@ use super::dbparser::ServiceProbe;
 use super::dbparser::SoftMatch;
 use crate::errors::PistolErrors;
 use crate::utils::random_port;
+use crate::utils::vs_probe_data_to_string;
 
 const TCP_BUFF_SIZE: usize = 4096;
 const UDP_BUFF_SIZE: usize = 4096;
@@ -49,7 +50,8 @@ fn tcp_null_probe(
 
     let mut ret = Vec::new();
     if recv_all_buff.len() > 0 {
-        let recv_str = String::from_utf8_lossy(&recv_buff);
+        // let recv_str = String::from_utf8_lossy(&recv_buff);
+        let recv_str = vs_probe_data_to_string(&recv_buff);
         // println!("{}", recv_str);
         for s in service_probes {
             if s.probe.probename == "NULL" {
@@ -92,7 +94,8 @@ fn tcp_continue_probe(
             }
         }
         if recv_all_buff.len() > 0 {
-            let recv_str = String::from_utf8_lossy(&recv_all_buff);
+            // let recv_str = String::from_utf8_lossy(&recv_all_buff);
+            let recv_str = String::from_utf8_lossy(&recv_buff);
             // println!("{}", recv_str);
             let (ms, sms) = sp.check(&recv_str);
             let mut ret = Vec::new();
@@ -157,6 +160,7 @@ fn udp_probe(
             Err(_) => 0,
         };
         if n > 0 {
+            // let recv_str = String::from_utf8_lossy(&recv_buff);
             let recv_str = String::from_utf8_lossy(&recv_buff);
             let (ms, sms) = sp.check(&recv_str);
             for m in ms {

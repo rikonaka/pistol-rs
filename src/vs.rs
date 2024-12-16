@@ -272,6 +272,7 @@ mod tests {
     use crate::Host;
     // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
+    use fancy_regex::Regex as FancyRegex;
     #[test]
     fn test_vs_detect() {
         // Logger::init_debug_logging()?;
@@ -292,5 +293,39 @@ mod tests {
         )
         .unwrap();
         println!("{}", ret);
+    }
+    #[test]
+    fn test_something() {
+        let recv_str = r"S\xf5\xc6\x1a{123456}";
+        let regex = FancyRegex::new(r"^S\\xf5\\xc6\\x1a{").unwrap();
+        let b = regex.is_match(recv_str).unwrap();
+        assert_eq!(b, true);
+
+        let recv_str = r"\x2a";
+        let regex = FancyRegex::new(r"(\\x2a|\\x2b)").unwrap();
+        let b = regex.is_match(recv_str).unwrap();
+        assert_eq!(b, true);
+
+        let recv_str = r"\x2d";
+        let regex = FancyRegex::new(r"(\\x2a|\\x2b)").unwrap();
+        let b = regex.is_match(recv_str).unwrap();
+        assert_eq!(b, false);
+
+        let test_strs = vec![r"S\xf5\xc6\x1a{123456}"];
+
+        let service_probes = get_nmap_service_probes().unwrap();
+        for s in service_probes {
+            for t in &test_strs {
+                let (ms, sms) = s.check(t);
+                for m in ms {
+                    // let mx = MatchX::Match(m);
+                    println!("match: {}", &m.service);
+                }
+                for sm in sms {
+                    // let mx = MatchX::SoftMatch(sm);
+                    println!("softmatch: {}", &sm.service);
+                }
+            }
+        }
     }
 }
