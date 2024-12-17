@@ -305,18 +305,43 @@ pub fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
 }
 
 pub fn vs_probe_data_to_string(input: &[u8]) -> String {
+    let mut input = input.to_vec();
+    input.retain(|x| *x != 0);
     let mut ret = String::new();
     for i in input {
-        if *i >= 32 && *i <= 126 {
-            let s = (*i as char).to_string();
-            ret += &s;
-        } else if *i == 0 {
-            ret += "\\0";
-        } else {
-            let s = format!("\\x{:02x}", i);
-            ret += &s;
+        match i {
+            0 => {
+                ret += "\\0";
+            }
+            8 => {
+                ret += "\\b";
+            }
+            9 => {
+                ret += "\\t";
+            }
+            10 => {
+                ret += "\\n";
+            }
+            11 => {
+                ret += "\\v";
+            }
+            12 => {
+                ret += "\\f";
+            }
+            13 => {
+                ret += "\\r";
+            }
+            32..=126 => {
+                let s = (i as char).to_string();
+                ret += &s;
+            }
+            _ => {
+                let s = format!("\\x{:02x}", i);
+                ret += &s;
+            }
         }
     }
+    println!(">>> {}", ret);
     ret
 }
 

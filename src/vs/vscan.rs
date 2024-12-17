@@ -49,6 +49,7 @@ fn tcp_null_probe(
     }
 
     let mut ret = Vec::new();
+    println!("recv buff len: {}", recv_all_buff.len());
     if recv_all_buff.len() > 0 {
         // let recv_str = String::from_utf8_lossy(&recv_buff);
         let recv_str = vs_probe_data_to_string(&recv_buff);

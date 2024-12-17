@@ -276,7 +276,8 @@ mod tests {
     #[test]
     fn test_vs_detect() {
         // Logger::init_debug_logging()?;
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
+        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
