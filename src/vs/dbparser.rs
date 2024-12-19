@@ -168,12 +168,42 @@ impl ServiceProbe {
         let pattern = pattern.replace(r"[][\w.:]+", r"[\]\[\w.:]+");
         let pattern = pattern.replace(r"[^[]", r"[^\[]");
 
-        let pattern = pattern.replace(r"\0", r"\\0");
-        let pattern = pattern.replace(r"\x", r"\\x");
-        let pattern = pattern.replace(r"\r", r"\\r");
-        let pattern = pattern.replace(r"\n", r"\\n");
-        let pattern = pattern.replace(r"\\\x", r"\\x");
-        let pattern = pattern.replace(r"\\\0", r"\\0");
+        let pattern = match FancyRegex::new(r"(?<!\\)\\x") {
+            Ok(regex) => regex.replace_all(&pattern, r"\\x").to_string(),
+            Err(e) => {
+                error!("special regex failed: {}", e);
+                pattern
+            }
+        };
+        let pattern = match FancyRegex::new(r"(?<!\\)\\0") {
+            Ok(regex) => regex.replace_all(&pattern, r"\\0").to_string(),
+            Err(e) => {
+                error!("special regex failed: {}", e);
+                pattern
+            }
+        };
+        let pattern = match FancyRegex::new(r"(?<!\\)\\r") {
+            Ok(regex) => regex.replace_all(&pattern, r"\\r").to_string(),
+            Err(e) => {
+                error!("special regex failed: {}", e);
+                pattern
+            }
+        };
+        let pattern = match FancyRegex::new(r"(?<!\\)\\n") {
+            Ok(regex) => regex.replace_all(&pattern, r"\\n").to_string(),
+            Err(e) => {
+                error!("special regex failed: {}", e);
+                pattern
+            }
+        };
+        let pattern = match FancyRegex::new(r"(?<!\\)\\t") {
+            Ok(regex) => regex.replace_all(&pattern, r"\\t").to_string(),
+            Err(e) => {
+                error!("special regex failed: {}", e);
+                pattern
+            }
+        };
+
         pattern
     }
     fn match_pattern(&self, m: &Match, recv_str: &str) -> Result<Match, PistolErrors> {
@@ -606,11 +636,13 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 mod tests {
     use super::*;
     use crate::utils::vs_probe_data_to_string;
+    use crate::Logger;
     use fancy_regex::Regex as FancyRegex;
     use std::fs::File;
     use std::io::Write;
     #[test]
     fn test_parser() {
+        Logger::init_debug_logging().unwrap();
         let nsp_str = include_str!("../db/nmap-service-probes");
         let mut nsp_lines = Vec::new();
         for l in nsp_str.lines() {
@@ -658,5 +690,12 @@ mod tests {
         ret_string.pop();
         ret_string += ")";
         println!("{}", ret_string);
+    }
+    #[test]
+    fn test_new_method() {
+        let text = r"abc\xdef\\xghi\xjkl";
+        let re = FancyRegex::new(r"(?<!\\)\\x").unwrap();
+        let result = re.replace_all(text, r"\\x");
+        println!("{}", result);
     }
 }

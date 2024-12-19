@@ -1,6 +1,7 @@
 // use chrono::Local;
 use dns_lookup::lookup_host;
 use log::debug;
+use log::error;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::DataLinkReceiver;
@@ -616,7 +617,10 @@ pub fn layer2_send(
             }
             let buff = match receiver.next() {
                 Ok(b) => b,
-                Err(_) => &[],
+                Err(e) => {
+                    error!("layer2 send failed: {}", e);
+                    &[]
+                }
             };
             for m in &layers_match {
                 match m.do_match(buff) {
