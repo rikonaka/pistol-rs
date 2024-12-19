@@ -11,6 +11,8 @@ use std::fmt;
 use crate::errors::PistolErrors;
 use crate::utils::unescape_string;
 
+use super::vscan::MatchX;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbeProtocol {
     Tcp,
@@ -30,26 +32,27 @@ pub struct VersionInfo {
 
 impl fmt::Display for VersionInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut versioninfo_vec = Vec::new();
         if self.fix.len() == 0 {
-            let mut versioninfo = String::new();
             if self.p.len() > 0 {
-                versioninfo += &format!("p: {}", self.p);
+                versioninfo_vec.push(format!("p:{}", self.p));
             }
             if self.v.len() > 0 {
-                versioninfo += &format!("v: {}", self.v);
+                versioninfo_vec.push(format!("v:{}", self.v));
             }
             if self.h.len() > 0 {
-                versioninfo += &format!("h: {}", self.h);
+                versioninfo_vec.push(format!("h:{}", self.h));
             }
             if self.i.len() > 0 {
-                versioninfo += &format!("i: {}", self.i);
+                versioninfo_vec.push(format!("i:{}", self.i));
             }
             if self.o.len() > 0 {
-                versioninfo += &format!("o: {}", self.o);
+                versioninfo_vec.push(format!("o:{}", self.o));
             }
             if self.cpe.len() > 0 {
-                versioninfo += &format!("cpe: {}", self.cpe);
+                versioninfo_vec.push(format!("{}", self.cpe));
             }
+            let versioninfo = versioninfo_vec.join("\n");
             write!(f, "{}", versioninfo)
         } else {
             write!(f, "{}", self.fix)
@@ -246,14 +249,17 @@ impl ServiceProbe {
             Err(PistolErrors::NoMatchFound)
         }
     }
-    pub fn check(&self, recv_str: &str) -> (Vec<Match>, Vec<SoftMatch>) {
+    pub fn check(&self, recv_str: &str) -> Option<MatchX> {
         let mut match_ret = Vec::new();
         let mut softmatch_ret = Vec::new();
 
         // match
         for m in &self.matchs {
             match self.match_pattern(&m, recv_str) {
-                Ok(m) => match_ret.push(m),
+                Ok(m) => {
+                    match_ret.push(m);
+                    break;
+                }
                 Err(e) => match e {
                     PistolErrors::NoMatchFound => (),
                     _ => {
@@ -264,17 +270,22 @@ impl ServiceProbe {
             }
         }
 
-        // softmatch
-        for sm in &self.softmatchs {
-            match self.softmatch_function(&sm, recv_str) {
-                Ok(sm) => softmatch_ret.push(sm),
-                Err(e) => match e {
-                    PistolErrors::NoMatchFound => (), // do noting for no match found
-                    _ => {
-                        error!("softmatch pattern error: {}", e);
-                        continue;
+        if match_ret.len() == 0 {
+            // softmatch
+            for sm in &self.softmatchs {
+                match self.softmatch_function(&sm, recv_str) {
+                    Ok(sm) => {
+                        softmatch_ret.push(sm);
+                        break;
                     }
-                },
+                    Err(e) => match e {
+                        PistolErrors::NoMatchFound => (), // do noting for no match found
+                        _ => {
+                            error!("softmatch pattern error: {}", e);
+                            continue;
+                        }
+                    },
+                }
             }
         }
         debug!(
@@ -282,7 +293,13 @@ impl ServiceProbe {
             match_ret.len(),
             softmatch_ret.len()
         );
-        (match_ret, softmatch_ret)
+        if match_ret.len() > 0 {
+            Some(MatchX::Match(match_ret[0].clone()))
+        } else if softmatch_ret.len() > 0 {
+            Some(MatchX::SoftMatch(softmatch_ret[0].clone()))
+        } else {
+            None
+        }
     }
 }
 

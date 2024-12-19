@@ -83,9 +83,10 @@ impl fmt::Display for VsScanResults {
         let mut table = Table::new();
         table.add_row(Row::new(vec![Cell::new("Service Scan Results")
             .style_spec("c")
-            .with_hspan(4)]));
+            .with_hspan(5)]));
 
-        table.add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service"]);
+        table
+            .add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service", c -> "versioninfo"]);
         let vss = &self.vss;
         let vss: BTreeMap<IpAddr, &HashMap<u16, Services>> =
             vss.into_iter().map(|(i, h)| (*i, h)).collect();
@@ -95,20 +96,27 @@ impl fmt::Display for VsScanResults {
                 ports_service.into_iter().map(|(p, s)| (*p, s)).collect();
             for (port, services) in ports_service {
                 let mut sv = Vec::new();
+                let mut vv = Vec::new();
                 for m in &services.matchs {
-                    let service = match m {
-                        MatchX::Match(m) => &m.service,
-                        MatchX::SoftMatch(sm) => &sm.service,
+                    let (service, version) = match m {
+                        MatchX::Match(m) => (&m.service, &m.versioninfo.to_string()),
+                        MatchX::SoftMatch(sm) => (&sm.service, &String::new()),
                     };
-                    if !sv.contains(service) {
-                        sv.push(service.to_string());
+                    if !sv.contains(service) && service.trim().len() > 0 {
+                        sv.push(service.trim().to_string());
+                    }
+                    if !vv.contains(version) && version.trim().len() > 0 {
+                        vv.push(version.trim().to_string());
                     }
                 }
-                let mut services_str = sv.join(",");
+                let mut services_str = sv.join("|");
+                let versioninfo_str = vv.join("|");
                 if services_str.trim().len() == 0 {
                     services_str = String::from("closed|nomatch");
                 }
-                table.add_row(row![c -> i, c -> ip, c -> port, c -> services_str]);
+                table.add_row(
+                    row![c -> i, c -> ip, c -> port, c -> services_str, c -> versioninfo_str],
+                );
                 i += 1;
             }
         }
@@ -117,7 +125,7 @@ impl fmt::Display for VsScanResults {
             self.total_time_cost * 1000.0,
             self.avg_time_cost * 1000.0,
         );
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
     }
 }
@@ -278,8 +286,8 @@ mod tests {
     #[test]
     fn test_vs_detect() {
         Logger::init_debug_logging().unwrap();
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
+        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![8080]));
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
@@ -319,14 +327,12 @@ mod tests {
         let service_probes = get_nmap_service_probes().unwrap();
         for s in service_probes {
             for t in &test_strs {
-                let (ms, sms) = s.check(t);
-                for m in ms {
-                    // let mx = MatchX::Match(m);
-                    println!("match: {}", &m.service);
-                }
-                for sm in sms {
-                    // let mx = MatchX::SoftMatch(sm);
-                    println!("softmatch: {}", &sm.service);
+                match s.check(t) {
+                    Some(mx) => match mx {
+                        MatchX::Match(m) => println!("{}", m.service),
+                        MatchX::SoftMatch(m) => println!("{}", m.service),
+                    },
+                    None => (),
                 }
             }
         }
@@ -348,8 +354,8 @@ mod tests {
 
         let nsp = get_nmap_service_probes().unwrap();
         for n in tqdm!(nsp.into_iter()) {
-            let (m, sm) = n.check(&test_string);
-            if m.len() > 0 || sm.len() > 0 {
+            let mx = n.check(&test_string);
+            if mx.is_some() {
                 println!("{}", n.probe.probename);
             }
         }

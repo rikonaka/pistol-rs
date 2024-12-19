@@ -7,6 +7,7 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
+use std::net::Shutdown;
 use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::net::UdpSocket;
@@ -63,14 +64,9 @@ fn tcp_null_probe(
         let recv_str = vs_probe_data_to_string(&recv_buff);
         for s in service_probes {
             if s.probe.probename == "NULL" {
-                let (ms, sms) = s.check(&recv_str);
-                for m in ms {
-                    let mx = MatchX::Match(m);
-                    ret.push(mx);
-                }
-                for sm in sms {
-                    let mx = MatchX::SoftMatch(sm);
-                    ret.push(mx);
+                match s.check(&recv_str) {
+                    Some(mx) => ret.push(mx),
+                    None => (),
                 }
             }
         }
@@ -112,17 +108,13 @@ fn tcp_continue_probe(
         let mut recv_buff = total_recv_buff;
         recv_buff.retain(|&x| x != 0);
 
+        debug!("tcp continue probe recv buff len: {}", recv_buff.len());
         if recv_buff.len() > 0 {
             let recv_str = vs_probe_data_to_string(&recv_buff);
-            let (ms, sms) = sp.check(&recv_str);
             let mut ret = Vec::new();
-            for m in ms {
-                let mx = MatchX::Match(m);
-                ret.push(mx);
-            }
-            for sm in sms {
-                let mx = MatchX::SoftMatch(sm);
-                ret.push(mx);
+            match sp.check(&recv_str) {
+                Some(mx) => ret.push(mx),
+                None => (),
             }
             Ok(ret)
         } else {
@@ -196,14 +188,9 @@ fn udp_probe(
 
         if recv_buff.len() > 0 {
             let recv_str = vs_probe_data_to_string(&recv_buff);
-            let (ms, sms) = sp.check(&recv_str);
-            for m in ms {
-                let mx = MatchX::Match(m);
-                ret.push(mx);
-            }
-            for sm in sms {
-                let mx = MatchX::SoftMatch(sm);
-                ret.push(mx);
+            match sp.check(&recv_str) {
+                Some(mx) => ret.push(mx),
+                None => (),
             }
         }
         Ok(ret)
@@ -287,6 +274,10 @@ pub fn threads_vs_probe(
             let null_probe_ret = tcp_null_probe(&mut stream, &service_probes)?;
             if null_probe_ret.len() > 0 {
                 debug!("null probe work, exit");
+                match stream.shutdown(Shutdown::Both) {
+                    Ok(_) => (),
+                    Err(e) => error!("shutdown tcp stream failed: {}", e),
+                }
                 Ok((null_probe_ret, start_time.elapsed()))
             } else {
                 stream.set_read_timeout(Some(timeout))?;
@@ -304,6 +295,10 @@ pub fn threads_vs_probe(
                     )?;
                     if tcp_ret.len() > 0 {
                         debug!("tcp continue probe work, exit");
+                        match stream.shutdown(Shutdown::Both) {
+                            Ok(_) => (),
+                            Err(e) => error!("shutdown tcp stream failed: {}", e),
+                        }
                         Ok((tcp_ret, start_time.elapsed()))
                     } else {
                         // This point is where Nmap starts for UDP probes,
@@ -317,9 +312,17 @@ pub fn threads_vs_probe(
                             &service_probes,
                             timeout,
                         )?;
+                        match stream.shutdown(Shutdown::Both) {
+                            Ok(_) => (),
+                            Err(e) => error!("shutdown tcp stream failed: {}", e),
+                        }
                         Ok((udp_ret, start_time.elapsed()))
                     }
                 } else {
+                    match stream.shutdown(Shutdown::Both) {
+                        Ok(_) => (),
+                        Err(e) => error!("shutdown tcp stream failed: {}", e),
+                    }
                     Ok((vec![], start_time.elapsed()))
                 }
             }
