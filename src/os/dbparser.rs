@@ -1,4 +1,5 @@
 use kdam::tqdm;
+use kdam::BarExt;
 use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
@@ -734,9 +735,12 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
     let lines_len = lines.len();
     let mut iter = lines.into_iter();
 
-    for _ in tqdm!(0..lines_len) {
+    let mut pb = tqdm!(total = lines_len);
+
+    for _ in 0..lines_len {
         match iter.next() {
             Some(line) => {
+                let _ = pb.update(1);
                 if line.starts_with("#") || line.trim().len() == 0 {
                     continue;
                 }
@@ -1208,11 +1212,12 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    // use std::fs::File;
-    // use std::io::Write;
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
     use std::time::Instant;
     #[test]
+    #[ignore]
     fn test_parser() {
         /* THIS CODES PERFORMENCE IS SO POORLY THAN MY IMAGEINATION */
         /* SO JUST LEAVE ITS HERE AND NOT USE IT IN OTHER FUNCTIONS */
@@ -1223,14 +1228,14 @@ mod tests {
         for l in nmap_os_file.lines() {
             nmap_os_file_lines.push(l.to_string());
         }
-        // println!("read os db file finish");
-        // let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
-        // println!("len: {}", ret.len());
+        println!("read os db file finish");
+        let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
+        println!("len: {}", ret.len());
 
         println!("parse time: {:.3}", start.elapsed().as_secs_f32());
 
-        // let serialized = serde_json::to_string(&ret).unwrap();
-        // let mut file_write = File::create("nmap-os-db.pistol").unwrap();
-        // file_write.write_all(serialized.as_bytes()).unwrap();
+        let serialized = serde_json::to_string(&ret).unwrap();
+        let mut file_write = File::create("nmap-os-db.pistol").unwrap();
+        file_write.write_all(serialized.as_bytes()).unwrap();
     }
 }

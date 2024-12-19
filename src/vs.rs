@@ -177,6 +177,7 @@ pub fn vs_scan(
         for dst_port in host.ports {
             let tx = tx.clone();
             let service_probes = service_probes.clone();
+            debug!("dst: {}, port: {}", dst_addr, dst_port);
             pool.execute(move || {
                 let ret = threads_vs_probe(
                     dst_addr,
@@ -270,12 +271,13 @@ pub fn vs_scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    // use crate::Logger;
+    use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use fancy_regex::Regex as FancyRegex;
+    use kdam::tqdm;
     #[test]
     fn test_vs_detect() {
-        // Logger::init_debug_logging()?;
+        // Logger::init_debug_logging().unwrap();
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80]));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         let target = Target::new(vec![host]);
@@ -326,6 +328,29 @@ mod tests {
                     // let mx = MatchX::SoftMatch(sm);
                     println!("softmatch: {}", &sm.service);
                 }
+            }
+        }
+    }
+    #[test]
+    #[ignore]
+    fn test_httpd_regex() {
+        Logger::init_debug_logging().unwrap();
+
+        let regex = FancyRegex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+
+        let regex = FancyRegex::new(r"(?s)^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+
+        let nsp = get_nmap_service_probes().unwrap();
+        for n in tqdm!(nsp.into_iter()) {
+            let (m, sm) = n.check(&test_string);
+            if m.len() > 0 || sm.len() > 0 {
+                println!("{}", n.probe.probename);
             }
         }
     }

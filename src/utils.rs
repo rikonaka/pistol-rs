@@ -306,7 +306,7 @@ pub fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
 
 pub fn vs_probe_data_to_string(input: &[u8]) -> String {
     let mut input = input.to_vec();
-    input.retain(|x| *x != 0);
+    input.retain(|&x| x != 0);
     let mut ret = String::new();
     for i in input {
         match i {

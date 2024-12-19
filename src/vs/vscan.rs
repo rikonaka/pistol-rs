@@ -1,4 +1,5 @@
 use log::debug;
+use log::error;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io::Read;
@@ -21,8 +22,8 @@ use crate::errors::PistolErrors;
 use crate::utils::random_port;
 use crate::utils::vs_probe_data_to_string;
 
-const TCP_BUFF_SIZE: usize = 4096;
-const UDP_BUFF_SIZE: usize = 4096;
+const TCP_BUFF_SIZE: usize = 40960;
+const UDP_BUFF_SIZE: usize = 40960;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MatchX {
@@ -34,26 +35,32 @@ fn tcp_null_probe(
     stream: &mut TcpStream,
     service_probes: &[ServiceProbe],
 ) -> Result<Vec<MatchX>, PistolErrors> {
-    let mut recv_buff = [0u8; TCP_BUFF_SIZE];
-    let mut recv_all_buff = Vec::new();
+    let mut total_recv_buff = Vec::new();
     loop {
-        let n = match stream.read(&mut recv_buff) {
-            Ok(n) => n,
-            Err(_) => 0,
+        let mut recv_buff = [0u8; TCP_BUFF_SIZE];
+        match stream.read(&mut recv_buff) {
+            Ok(n) => {
+                debug!("tcp null probe n: {}", n);
+                if n == 0 {
+                    break;
+                } else {
+                    total_recv_buff.extend(recv_buff);
+                }
+            }
+            Err(e) => {
+                error!("tcp null probe stream read failed: {}", e);
+                break;
+            }
         };
-        if n == 0 {
-            break;
-        } else {
-            recv_all_buff.extend(recv_buff);
-        }
     }
 
+    let mut recv_buff = total_recv_buff;
+    recv_buff.retain(|&x| x != 0);
+
     let mut ret = Vec::new();
-    println!("recv buff len: {}", recv_all_buff.len());
-    if recv_all_buff.len() > 0 {
-        // let recv_str = String::from_utf8_lossy(&recv_buff);
+    debug!("null probe recv buff len: {}", recv_buff.len());
+    if recv_buff.len() > 0 {
         let recv_str = vs_probe_data_to_string(&recv_buff);
-        // println!("{}", recv_str);
         for s in service_probes {
             if s.probe.probename == "NULL" {
                 let (ms, sms) = s.check(&recv_str);
@@ -78,26 +85,35 @@ fn tcp_continue_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
 ) -> Result<Vec<MatchX>, PistolErrors> {
-    fn run_probe(stream: &mut TcpStream, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolErrors> {
+    fn send_recv_match(
+        stream: &mut TcpStream,
+        sp: &ServiceProbe,
+    ) -> Result<Vec<MatchX>, PistolErrors> {
         let probestring = &sp.probe.probestring;
         stream.write(probestring)?;
-        let mut recv_buff = [0u8; TCP_BUFF_SIZE];
-        let mut recv_all_buff = Vec::new();
+        let mut total_recv_buff = Vec::new();
         loop {
-            let n = match stream.read(&mut recv_buff) {
-                Ok(n) => n,
-                Err(_) => 0,
+            let mut recv_buff = [0u8; TCP_BUFF_SIZE];
+            match stream.read(&mut recv_buff) {
+                Ok(n) => {
+                    debug!("tcp continue probe n: {}", n);
+                    if n == 0 {
+                        break;
+                    } else {
+                        total_recv_buff.extend(recv_buff);
+                    }
+                }
+                Err(e) => {
+                    error!("tcp continue probe stream read failed: {}", e);
+                    break;
+                }
             };
-            if n == 0 {
-                break;
-            } else {
-                recv_all_buff.extend(recv_buff);
-            }
         }
-        if recv_all_buff.len() > 0 {
-            // let recv_str = String::from_utf8_lossy(&recv_all_buff);
-            let recv_str = String::from_utf8_lossy(&recv_buff);
-            // println!("{}", recv_str);
+        let mut recv_buff = total_recv_buff;
+        recv_buff.retain(|&x| x != 0);
+
+        if recv_buff.len() > 0 {
+            let recv_str = vs_probe_data_to_string(&recv_buff);
             let (ms, sms) = sp.check(&recv_str);
             let mut ret = Vec::new();
             for m in ms {
@@ -125,14 +141,14 @@ fn tcp_continue_probe(
             // every probe has a list of port numbers that are considered to be most effective.
             if only_tcp_recommended {
                 if sp.ports.len() > 0 && sp.ports.contains(&dst_port) {
-                    let r = run_probe(stream, sp);
+                    let r = send_recv_match(stream, sp);
                     match r {
                         Ok(r) => ret.extend(r),
                         Err(e) => return Err(e.into()),
                     }
                 }
             } else {
-                let r = run_probe(stream, sp);
+                let r = send_recv_match(stream, sp);
                 match r {
                     Ok(r) => ret.extend(r),
                     Err(e) => return Err(e.into()),
@@ -155,14 +171,31 @@ fn udp_probe(
         let mut ret = Vec::new();
         let probestring = &sp.probe.probestring;
         socket.send(probestring)?;
-        let mut recv_buff = [0u8; UDP_BUFF_SIZE];
-        let n = match socket.recv(&mut recv_buff) {
-            Ok(n) => n,
-            Err(_) => 0,
-        };
-        if n > 0 {
-            // let recv_str = String::from_utf8_lossy(&recv_buff);
-            let recv_str = String::from_utf8_lossy(&recv_buff);
+
+        let mut total_recv_buff = Vec::new();
+        loop {
+            let mut recv_buff = [0u8; UDP_BUFF_SIZE];
+            match socket.recv(&mut recv_buff) {
+                Ok(n) => {
+                    debug!("udp probe n: {}", n);
+                    if n == 0 {
+                        break;
+                    } else {
+                        total_recv_buff.extend(recv_buff);
+                    }
+                }
+                Err(e) => {
+                    error!("udp probe recv failed: {}", e);
+                    break;
+                }
+            }
+        }
+
+        let mut recv_buff = total_recv_buff;
+        recv_buff.retain(|&x| x != 0);
+
+        if recv_buff.len() > 0 {
+            let recv_str = vs_probe_data_to_string(&recv_buff);
             let (ms, sms) = sp.check(&recv_str);
             for m in ms {
                 let mx = MatchX::Match(m);
@@ -243,7 +276,6 @@ pub fn threads_vs_probe(
             // Once the TCP connection is made, Nmap listens for roughly five seconds.
             let five_seconds = Duration::from_secs(5);
             stream.set_read_timeout(Some(five_seconds))?;
-            stream.set_write_timeout(Some(timeout))?;
             stream.set_nodelay(true).expect("set stream nodelay failed");
             stream
                 .set_nonblocking(false)
@@ -292,6 +324,9 @@ pub fn threads_vs_probe(
                 }
             }
         }
-        Err(_) => Ok((vec![], start_time.elapsed())), // ignore closed port here
+        Err(e) => {
+            error!("connect to dst failed: {}", e);
+            Ok((vec![], start_time.elapsed())) // ignore closed port here
+        }
     }
 }
