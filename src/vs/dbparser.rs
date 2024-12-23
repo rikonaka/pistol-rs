@@ -14,7 +14,7 @@ use crate::utils::unescape_string;
 use super::vscan::MatchX;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum ProbeProtocol {
+pub enum ProbeProtocols {
     Tcp,
     Udp,
 }
@@ -93,7 +93,7 @@ impl fmt::Display for SoftMatch {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Probe {
     /// This must be either TCP or UDP. Nmap only uses probes that match the protocol of the service it is trying to scan.
-    pub probeprotocol: ProbeProtocol,
+    pub probeprotocol: ProbeProtocols,
     /// This is a plain English name for the probe. It is used in service fingerprints to describe which probes elicited responses.
     pub probename: String,
     /// Tells Nmap what to send.
@@ -105,7 +105,7 @@ pub struct Probe {
 impl Probe {
     pub fn empty() -> Probe {
         Probe {
-            probeprotocol: ProbeProtocol::Tcp,
+            probeprotocol: ProbeProtocols::Tcp,
             probename: String::new(),
             probestring: Vec::new(),
             no_payload: false,
@@ -441,8 +441,8 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                 }
             };
             let probeprotocol = match probeprotocol.as_str() {
-                "TCP" => ProbeProtocol::Tcp,
-                "UDP" => ProbeProtocol::Udp,
+                "TCP" => ProbeProtocols::Tcp,
+                "UDP" => ProbeProtocols::Udp,
                 _ => {
                     return Err(PistolErrors::ServiceProbesProtocolUnknown {
                         protocol: probeprotocol,

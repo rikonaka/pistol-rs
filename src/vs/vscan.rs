@@ -16,7 +16,7 @@ use std::time::Instant;
 // use std::fs::File;
 
 use super::dbparser::Match;
-use super::dbparser::ProbeProtocol;
+use super::dbparser::ProbeProtocols;
 use super::dbparser::ServiceProbe;
 use super::dbparser::SoftMatch;
 use crate::errors::PistolErrors;
@@ -126,7 +126,7 @@ fn tcp_continue_probe(
     // TCP connections continue here if the NULL probe described above fails or soft-matches.
     for sp in service_probes {
         if sp.probe.probename != "NULL"
-            && sp.probe.probeprotocol == ProbeProtocol::Tcp
+            && sp.probe.probeprotocol == ProbeProtocols::Tcp
             && intensity >= sp.rarity
         {
             // Since the reality is that most ports are used by the service they are registered to in nmap-services,
@@ -218,7 +218,7 @@ fn udp_probe(
     let mut ret = Vec::new();
     for sp in service_probes {
         if sp.probe.probename != "NULL"
-            && sp.probe.probeprotocol == ProbeProtocol::Udp
+            && sp.probe.probeprotocol == ProbeProtocols::Udp
             && intensity >= sp.rarity
         {
             // Since the reality is that most ports are used by the service they are registered to in nmap-services,

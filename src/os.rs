@@ -42,7 +42,7 @@ pub mod rr;
 
 #[derive(Debug, Clone)]
 pub struct OSDetectResults {
-    pub oss: HashMap<IpAddr, HostOSDetectResult>,
+    pub oss: HashMap<IpAddr, HostOSDetectResults>,
     pub total_time_cost: f64,
     pub avg_time_cost: f64,
     start_time: Instant,
@@ -57,7 +57,7 @@ impl OSDetectResults {
             start_time: Instant::now(),
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HostOSDetectResult> {
+    pub fn get(&self, k: &IpAddr) -> Option<&HostOSDetectResults> {
         self.oss.get(k)
     }
     pub fn enrichment(&mut self) {
@@ -66,8 +66,8 @@ impl OSDetectResults {
         let mut total_num = 0;
         for (_, v) in &self.oss {
             let t = match v {
-                HostOSDetectResult::V4(o) => o.time_cost,
-                HostOSDetectResult::V6(o) => o.time_cost,
+                HostOSDetectResults::V4(o) => o.time_cost,
+                HostOSDetectResults::V6(o) => o.time_cost,
             };
             total_time += t;
             total_num += 1;
@@ -87,12 +87,12 @@ impl fmt::Display for OSDetectResults {
             row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "details", c -> "cpe"],
         );
         let oss = &self.oss;
-        let oss: BTreeMap<IpAddr, &HostOSDetectResult> =
+        let oss: BTreeMap<IpAddr, &HostOSDetectResults> =
             oss.into_iter().map(|(i, h)| (*i, h)).collect();
         let mut id = 1;
         for (ip, o) in oss {
             match o {
-                HostOSDetectResult::V4(o) => {
+                HostOSDetectResults::V4(o) => {
                     if o.alive {
                         for (i, os_info) in o.detects.iter().enumerate() {
                             let rank_str = format!("#{}", i + 1);
@@ -108,7 +108,7 @@ impl fmt::Display for OSDetectResults {
                         id += 1;
                     }
                 }
-                HostOSDetectResult::V6(o) => {
+                HostOSDetectResults::V6(o) => {
                     if o.alive {
                         for (i, os_info6) in o.detects.iter().enumerate() {
                             let number_str = format!("#{}", i + 1);
@@ -172,55 +172,55 @@ pub struct OSDetect6 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum HostOSDetectResult {
+pub enum HostOSDetectResults {
     V4(OSDetect),
     V6(OSDetect6),
 }
 
-impl HostOSDetectResult {
+impl HostOSDetectResults {
     pub fn new(
         fingerprint: TargetFingerprint,
         detects: Vec<OSInfo>,
         time_cost: f64,
-    ) -> HostOSDetectResult {
+    ) -> HostOSDetectResults {
         let h = OSDetect {
             alive: true,
             fingerprint,
             detects,
             time_cost,
         };
-        HostOSDetectResult::V4(h)
+        HostOSDetectResults::V4(h)
     }
-    pub fn new_dead() -> HostOSDetectResult {
+    pub fn new_dead() -> HostOSDetectResults {
         let h = OSDetect {
             alive: false,
             fingerprint: TargetFingerprint::empty(),
             detects: Vec::new(),
             time_cost: 0.0,
         };
-        HostOSDetectResult::V4(h)
+        HostOSDetectResults::V4(h)
     }
     pub fn new6(
         fingerprint: TargetFingerprint6,
         detects: Vec<OSInfo6>,
         time_cost: f64,
-    ) -> HostOSDetectResult {
+    ) -> HostOSDetectResults {
         let h = OSDetect6 {
             alive: true,
             fingerprint,
             detects,
             time_cost,
         };
-        HostOSDetectResult::V6(h)
+        HostOSDetectResults::V6(h)
     }
-    pub fn new6_dead() -> HostOSDetectResult {
+    pub fn new6_dead() -> HostOSDetectResults {
         let h = OSDetect6 {
             alive: false,
             fingerprint: TargetFingerprint6::empty(),
             detects: Vec::new(),
             time_cost: 0.0,
         };
-        HostOSDetectResult::V6(h)
+        HostOSDetectResults::V6(h)
     }
 }
 
@@ -384,7 +384,7 @@ pub fn os_detect(
                     };
                     let hodr = match detect_ret {
                         Ok((fingerprint, ret)) => {
-                            let hodr = HostOSDetectResult::new(
+                            let hodr = HostOSDetectResults::new(
                                 fingerprint,
                                 ret,
                                 start.elapsed().as_secs_f64(),
@@ -429,7 +429,7 @@ pub fn os_detect(
                     };
                     let hodr = match detect_ret {
                         Ok((fingerprint, ret)) => {
-                            let hodr = HostOSDetectResult::new6(
+                            let hodr = HostOSDetectResults::new6(
                                 fingerprint,
                                 ret,
                                 start.elapsed().as_secs_f64(),
@@ -454,8 +454,8 @@ pub fn os_detect(
             }
             Err(_) => {
                 let h = match addr {
-                    IpAddr::V4(_) => HostOSDetectResult::new_dead(),
-                    IpAddr::V6(_) => HostOSDetectResult::new6_dead(),
+                    IpAddr::V4(_) => HostOSDetectResults::new_dead(),
+                    IpAddr::V6(_) => HostOSDetectResults::new6_dead(),
                 };
                 ret.oss.insert(addr, h);
             }
@@ -473,7 +473,7 @@ pub fn os_detect_raw(
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
-) -> Result<HostOSDetectResult, PistolErrors> {
+) -> Result<HostOSDetectResults, PistolErrors> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),
@@ -497,7 +497,7 @@ pub fn os_detect_raw(
                     timeout,
                 ) {
                     Ok((fingerprint, ret)) => {
-                        let oss = HostOSDetectResult::new(
+                        let oss = HostOSDetectResults::new(
                             fingerprint,
                             ret,
                             start.elapsed().as_secs_f64(),
@@ -507,14 +507,14 @@ pub fn os_detect_raw(
                     Err(e) => {
                         // Err(e)
                         warn!("threads os probe error: {}", e);
-                        let h = HostOSDetectResult::new_dead();
+                        let h = HostOSDetectResults::new_dead();
                         Ok(h)
                     }
                 }
             }
             None => {
                 // return Err(PistolErrors::CanNotFoundSourceAddress);
-                let h = HostOSDetectResult::new_dead();
+                let h = HostOSDetectResults::new_dead();
                 Ok(h)
             }
         },
@@ -534,7 +534,7 @@ pub fn os_detect_raw(
                     timeout,
                 ) {
                     Ok((fingerprint, ret)) => {
-                        let oss = HostOSDetectResult::new6(
+                        let oss = HostOSDetectResults::new6(
                             fingerprint,
                             ret,
                             start.elapsed().as_secs_f64(),
@@ -544,14 +544,14 @@ pub fn os_detect_raw(
                     Err(e) => {
                         // Err(e)
                         warn!("threads os probe error: {}", e);
-                        let h = HostOSDetectResult::new_dead();
+                        let h = HostOSDetectResults::new_dead();
                         Ok(h)
                     }
                 }
             }
             None => {
                 // return Err(PistolErrors::CanNotFoundSourceAddress);
-                let h = HostOSDetectResult::new6_dead();
+                let h = HostOSDetectResults::new6_dead();
                 Ok(h)
             }
         },
@@ -602,7 +602,7 @@ mod tests {
 
         let rr = ret.get(&TEST_IPV4_LOCAL.into()).unwrap();
         match rr {
-            HostOSDetectResult::V4(r) => {
+            HostOSDetectResults::V4(r) => {
                 println!("{}", r.fingerprint);
             }
             _ => (),

@@ -34,7 +34,7 @@ use crate::utils::threads_num_check;
 use crate::Target;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ScanMethod {
+pub enum ScanMethods {
     Connect,
     Syn,
     Fin,
@@ -464,7 +464,7 @@ pub fn arp_scan(
 }
 
 fn threads_scan(
-    method: ScanMethod,
+    method: ScanMethods,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -474,31 +474,31 @@ fn threads_scan(
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     let (scan_ret, rtt) = match method {
-        ScanMethod::Connect => {
+        ScanMethods::Connect => {
             tcp::send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Syn => {
+        ScanMethods::Syn => {
             tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Fin => {
+        ScanMethods::Fin => {
             tcp::send_fin_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Ack => {
+        ScanMethods::Ack => {
             tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Null => {
+        ScanMethods::Null => {
             tcp::send_null_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Xmas => {
+        ScanMethods::Xmas => {
             tcp::send_xmas_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Window => {
+        ScanMethods::Window => {
             tcp::send_window_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Maimon => {
+        ScanMethods::Maimon => {
             tcp::send_maimon_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
-        ScanMethod::Idle => {
+        ScanMethods::Idle => {
             let zombie_ipv4 = zombie_ipv4.unwrap();
             let zombie_port = zombie_port.unwrap();
             match tcp::send_idle_scan_packet(
@@ -514,7 +514,7 @@ fn threads_scan(
                 Err(e) => return Err(e.into()),
             }
         }
-        ScanMethod::Udp => {
+        ScanMethods::Udp => {
             udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
     };
@@ -523,7 +523,7 @@ fn threads_scan(
 }
 
 fn threads_scan6(
-    method: ScanMethod,
+    method: ScanMethods,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -531,34 +531,34 @@ fn threads_scan6(
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     let (scan_ret, rtt) = match method {
-        ScanMethod::Connect => {
+        ScanMethods::Connect => {
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Syn => {
+        ScanMethods::Syn => {
             tcp6::send_syn_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Fin => {
+        ScanMethods::Fin => {
             tcp6::send_fin_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Ack => {
+        ScanMethods::Ack => {
             tcp6::send_ack_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Null => {
+        ScanMethods::Null => {
             tcp6::send_null_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Xmas => {
+        ScanMethods::Xmas => {
             tcp6::send_xmas_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Window => {
+        ScanMethods::Window => {
             tcp6::send_window_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Maimon => {
+        ScanMethods::Maimon => {
             tcp6::send_maimon_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Udp => {
+        ScanMethods::Udp => {
             udp6::send_udp_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
-        ScanMethod::Idle => {
+        ScanMethods::Idle => {
             warn!("idel scan not supported the ipv6 address, use connect scan instead now");
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
         }
@@ -571,7 +571,7 @@ fn threads_scan6(
 pub fn scan(
     target: Target,
     threads_num: Option<usize>,
-    method: ScanMethod,
+    method: ScanMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     zombie_ipv4: Option<Ipv4Addr>,
@@ -715,7 +715,7 @@ pub fn tcp_connect_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Connect,
+        ScanMethods::Connect,
         src_addr,
         src_port,
         None,
@@ -734,7 +734,7 @@ pub fn tcp_connect_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Connect,
+        ScanMethods::Connect,
         dst_addr,
         dst_port,
         src_addr,
@@ -768,7 +768,7 @@ pub fn tcp_syn_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Syn,
+        ScanMethods::Syn,
         src_addr,
         src_port,
         None,
@@ -787,7 +787,7 @@ pub fn tcp_syn_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Syn,
+        ScanMethods::Syn,
         dst_addr,
         dst_port,
         src_addr,
@@ -822,7 +822,7 @@ pub fn tcp_fin_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Fin,
+        ScanMethods::Fin,
         src_addr,
         src_port,
         None,
@@ -841,7 +841,7 @@ pub fn tcp_fin_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Fin,
+        ScanMethods::Fin,
         dst_addr,
         dst_port,
         src_addr,
@@ -869,7 +869,7 @@ pub fn tcp_ack_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Ack,
+        ScanMethods::Ack,
         src_addr,
         src_port,
         None,
@@ -888,7 +888,7 @@ pub fn tcp_ack_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Ack,
+        ScanMethods::Ack,
         dst_addr,
         dst_port,
         src_addr,
@@ -915,7 +915,7 @@ pub fn tcp_null_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Null,
+        ScanMethods::Null,
         src_addr,
         src_port,
         None,
@@ -934,7 +934,7 @@ pub fn tcp_null_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Null,
+        ScanMethods::Null,
         dst_addr,
         dst_port,
         src_addr,
@@ -961,7 +961,7 @@ pub fn tcp_xmas_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Xmas,
+        ScanMethods::Xmas,
         src_addr,
         src_port,
         None,
@@ -980,7 +980,7 @@ pub fn tcp_xmas_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Xmas,
+        ScanMethods::Xmas,
         dst_addr,
         dst_port,
         src_addr,
@@ -1008,7 +1008,7 @@ pub fn tcp_window_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Window,
+        ScanMethods::Window,
         src_addr,
         src_port,
         None,
@@ -1027,7 +1027,7 @@ pub fn tcp_window_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Window,
+        ScanMethods::Window,
         dst_addr,
         dst_port,
         src_addr,
@@ -1055,7 +1055,7 @@ pub fn tcp_maimon_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Maimon,
+        ScanMethods::Maimon,
         src_addr,
         src_port,
         None,
@@ -1074,7 +1074,7 @@ pub fn tcp_maimon_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Maimon,
+        ScanMethods::Maimon,
         dst_addr,
         dst_port,
         src_addr,
@@ -1106,7 +1106,7 @@ pub fn tcp_idle_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Idle,
+        ScanMethods::Idle,
         src_addr,
         src_port,
         zombie_ipv4,
@@ -1127,7 +1127,7 @@ pub fn tcp_idle_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Idle,
+        ScanMethods::Idle,
         dst_addr,
         dst_port,
         src_addr,
@@ -1157,7 +1157,7 @@ pub fn udp_scan(
     scan(
         target,
         threads_num,
-        ScanMethod::Udp,
+        ScanMethods::Udp,
         src_addr,
         src_port,
         None,
@@ -1176,7 +1176,7 @@ pub fn udp_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
     scan_raw(
-        ScanMethod::Udp,
+        ScanMethods::Udp,
         dst_addr,
         dst_port,
         src_addr,
@@ -1188,7 +1188,7 @@ pub fn udp_scan_raw(
 }
 
 pub fn scan_raw(
-    method: ScanMethod,
+    method: ScanMethods,
     dst_addr: IpAddr,
     dst_port: u16,
     src_addr: Option<IpAddr>,

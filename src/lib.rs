@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use subnetwork::Ipv4Pool;
 
+pub mod db;
 pub mod flood;
 pub mod hop;
 pub mod os;
