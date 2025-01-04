@@ -9,6 +9,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fmt;
 use std::net::IpAddr;
 use std::process::Command;
 use std::str::FromStr;
@@ -63,6 +64,16 @@ pub struct DefaultRoute {
     pub dev: NetworkInterface, // Device interface name
 }
 
+impl fmt::Display for DefaultRoute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let default_routes_string = format!(
+            "default dst: {}, default interface: {}",
+            self.via, self.dev.name
+        );
+        write!(f, "{}", default_routes_string)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RouteAddr {
     IpNetwork(IpNetwork),
@@ -76,6 +87,39 @@ pub struct RouteTable {
     pub routes: HashMap<RouteAddr, NetworkInterface>,
 }
 
+impl fmt::Display for RouteTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut new_routes = HashMap::new();
+        for (r, n) in &self.routes {
+            let addr = match r {
+                RouteAddr::IpAddr(i) => i.to_string(),
+                RouteAddr::IpNetwork(i) => i.to_string(),
+            };
+            let interface_name = n.name.clone();
+            new_routes.insert(addr, interface_name);
+        }
+        let mut output = String::new();
+        match &self.default_route {
+            Some(r) => {
+                output += &format!("ipv4: {}, ", r);
+            }
+            None => (),
+        }
+        match &self.default_route6 {
+            Some(r) => {
+                output += &format!("ipv6: {}, ", r);
+            }
+            None => (),
+        }
+        let routes_string = format!("{:?}", new_routes);
+        output += &routes_string;
+        match output.strip_suffix(", ") {
+            Some(o) => write!(f, "{}", o),
+            None => write!(f, "{}", output),
+        }
+    }
+}
+
 impl RouteTable {
     #[cfg(target_os = "linux")]
     pub fn init() -> Result<RouteTable, PistolErrors> {
@@ -85,6 +129,7 @@ impl RouteTable {
             // default via 192.168.72.2 dev ens33
             // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
             // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+            // fe80::/64 dev ens33 proto kernel metric 256 pref medium
             // centos7 output:
             // default via 192.168.72.2 dev ens33 proto dhcp metric 100
             // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
@@ -107,8 +152,8 @@ impl RouteTable {
 
         // regex
         let default_route_re =
-            Regex::new(r"default\s+via\s+(?P<via>.+)\s+dev\s+(?P<dev>\w+)\s+.+")?;
-        let route_re = Regex::new(r"(?P<subnet>.+/\d{1,2})\s+dev\s+(?P<dev>\w+)\s+.+")?;
+            Regex::new(r"default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
+        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
 
         for line in system_route_lines()? {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
@@ -123,6 +168,7 @@ impl RouteTable {
                                 continue;
                             }
                         };
+                        // debug!("via: {}", via);
                         let dev_str = caps.name("dev").map_or("", |m| m.as_str());
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
@@ -132,7 +178,7 @@ impl RouteTable {
                                 continue; // not raise error here
                             }
                         };
-
+                        // debug!("dev: {}", dev.name);
                         let mut is_ipv4 = true;
                         if via_str.contains(":") {
                             is_ipv4 = false;
@@ -227,9 +273,8 @@ impl RouteTable {
         let mut routes = HashMap::new();
 
         // regex
-        let default_route_re =
-            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([\s\w]+)?")?;
-        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>\w+)")?;
+        let default_route_re = Regex::new(r"default (?P<via>[^\s]+) \w+ (?P<dev>[^\s]+)([^\s]+)?")?;
+        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
 
         for line in system_route_lines()? {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
@@ -322,8 +367,8 @@ impl RouteTable {
     #[cfg(target_os = "windows")]
     pub fn init() -> Result<RouteTable, PistolErrors> {
         let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
-            // 1 ::1/128 :: 256 75 ActiveStore
-            // 15 ::/0 fe80::ecb5:83ff:fec3:6a6 16 45 ActiveStore
+            // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
+            // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
             let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
             let output = String::from_utf8_lossy(&c.stdout);
             let route_lines: Vec<String> = output
@@ -340,9 +385,8 @@ impl RouteTable {
 
         // regex
         let default_route_re =
-            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./:]+)\s+.+")?;
-        let route_re =
-            Regex::new(r"(?P<index>\d+)\s+(?P<dst>[\d\w\./:]+)\s+(?P<via>[\d\./:]+)\s+.+")?;
+            Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
+        let route_re = Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
 
         for line in system_route_lines()? {
             let default_route_judge =
@@ -621,9 +665,11 @@ pub struct SystemNetCache {
 impl SystemNetCache {
     pub fn init() -> Result<SystemNetCache, PistolErrors> {
         let route_table = RouteTable::init()?;
-        debug!("route table [{}] done", route_table.routes.len());
+        debug!("route table init done");
+        debug!("route table: {}", route_table);
         let neighbor_cache = NeighborCache::init()?;
-        debug!("neighbor cache [{}] done", neighbor_cache.len());
+        debug!("neighbor cache init done");
+        debug!("neighbor cache: {:?}", neighbor_cache);
         let snc = SystemNetCache {
             default_route: route_table.default_route,
             default_route6: route_table.default_route6,
@@ -668,12 +714,16 @@ mod tests {
     use pnet::datalink::interfaces;
     #[test]
     fn test_network_cache() {
-        // use crate::Logger;
-        // let _ = Logger::init_debug_logging();
+        use crate::Logger;
+        let _ = Logger::init_debug_logging();
         let snc = SystemNetCache::init().unwrap();
-        println!("default ipv4 route: {:?}", snc.default_route);
-        println!("default ipv6 route: {:?}", snc.default_route6);
-        println!("neighbor cache: {:?}", snc.neighbor);
+        for (a, n) in snc.routes {
+            println!("a: {:?}, n: {}", a, n.name);
+        }
+        // println!("routes: {:?}", snc.routes);
+        // println!("default ipv4 route: {:?}", snc.default_route);
+        // println!("default ipv6 route: {:?}", snc.default_route6);
+        // println!("neighbor cache: {:?}", snc.neighbor);
         // println!("{:?}", nc);
     }
     #[test]

@@ -29,7 +29,7 @@ use crate::layers::LayersMatch;
 use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
 
-use super::IdleScanResults;
+use super::TcpIdleScans;
 use super::PortStatus;
 
 const TCP_DATA_SIZE: usize = 0;
@@ -834,7 +834,7 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<IdleScanResults>, Duration), PistolErrors> {
+) -> Result<(PortStatus, Option<TcpIdleScans>, Duration), PistolErrors> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
@@ -1038,7 +1038,7 @@ pub fn send_idle_scan_packet(
     } else if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
         Ok((
             PortStatus::Open,
-            Some(IdleScanResults {
+            Some(TcpIdleScans {
                 zombie_ip_id_1,
                 zombie_ip_id_2,
             }),
@@ -1047,7 +1047,7 @@ pub fn send_idle_scan_packet(
     } else {
         Ok((
             PortStatus::ClosedOrFiltered,
-            Some(IdleScanResults {
+            Some(TcpIdleScans {
                 zombie_ip_id_1,
                 zombie_ip_id_2,
             }),

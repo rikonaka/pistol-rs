@@ -235,7 +235,7 @@ fn ipv6_flood(
 }
 
 pub fn flood(
-    target: Target,
+    target: &Target,
     method: FloodMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -252,11 +252,11 @@ pub fn flood(
         None => random_port(),
     };
 
-    for host in target.hosts {
+    for host in &target.hosts {
         let dst_addr = host.addr;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
-                for dst_port in host.ports {
+                for &dst_port in &host.ports {
                     let dst_port = dst_port.clone();
                     let tx = tx.clone();
                     recv_size += 1;
@@ -278,7 +278,7 @@ pub fn flood(
                 }
             }
             IpAddr::V6(dst_ipv6) => {
-                for dst_port in host.ports {
+                for &dst_port in &host.ports {
                     let dst_port = dst_port.clone();
                     let tx = tx.clone();
                     recv_size += 1;
@@ -337,7 +337,7 @@ pub fn flood(
 /// By flooding the target with request packets, the network is forced to respond with an equal number of reply packets.
 /// This causes the target to become inaccessible to normal traffic.
 pub fn icmp_flood(
-    target: Target,
+    target: &Target,
     src_addr: Option<IpAddr>,
     threads_num: usize,
     max_same_packet: usize,
@@ -374,7 +374,7 @@ pub fn icmp_flood_raw(
 /// In a TCP SYN Flood attack, the malicious entity sends a barrage of SYN requests to a target server but intentionally avoids sending the final ACK.
 /// This leaves the server waiting for a response that never comes, consuming resources for each of these half-open connections.
 pub fn tcp_syn_flood(
-    target: Target,
+    target: &Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -418,7 +418,7 @@ pub fn tcp_syn_flood_raw(
 /// the attacker can easily generate a high rate of attacking traffic,
 /// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK, as they look the same.
 pub fn tcp_ack_flood(
-    target: Target,
+    target: &Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -455,7 +455,7 @@ pub fn tcp_ack_flood_raw(
 
 /// TCP ACK flood with PSH flag set.
 pub fn tcp_ack_psh_flood(
-    target: Target,
+    target: &Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -496,7 +496,7 @@ pub fn tcp_ack_psh_flood_raw(
 /// Realize that no application is listening at many of these ports.
 /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
 pub fn udp_flood(
-    target: Target,
+    target: &Target,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -600,7 +600,7 @@ mod tests {
         let threads_num: usize = 128;
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
-        let ret = tcp_syn_flood(target, src_ipv4, src_port, threads_num, 3, 3).unwrap();
+        let ret = tcp_syn_flood(&target, src_ipv4, src_port, threads_num, 3, 3).unwrap();
         println!("{}", ret);
     }
 }

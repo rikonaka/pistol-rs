@@ -127,7 +127,7 @@ impl fmt::Display for OSDetectResults {
             }
         }
         let summary = format!(
-            "total used time: {:.2}ms\navg time cost: {:.2}ms",
+            "total used time: {:.2} ms\navg time cost: {:.2} ms",
             self.total_time_cost * 1000.0,
             self.avg_time_cost * 1000.0,
         );
@@ -323,7 +323,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolErrors> {
 
 /// Detect target machine OS on IPv4 and IPv6.
 pub fn os_detect(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     top_k: usize,
@@ -346,6 +346,7 @@ pub fn os_detect(
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
     let mut ret = OSDetectResults::new();
+    let target = target.clone(); // avoid the lifetime problem
     for h in target.hosts {
         let dst_addr = h.addr;
         let tx = tx.clone();
@@ -597,7 +598,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let threads_num = Some(8);
-        let ret = os_detect(target, threads_num, src_addr, top_k, timeout).unwrap();
+        let ret = os_detect(&target, threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let rr = ret.get(&TEST_IPV4_LOCAL.into()).unwrap();
@@ -638,7 +639,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let threads_num = Some(8);
-        let ret = os_detect(target, threads_num, src_addr, top_k, timeout).unwrap();
+        let ret = os_detect(&target, threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]

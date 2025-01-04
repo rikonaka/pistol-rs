@@ -121,7 +121,7 @@ impl fmt::Display for VsScanResults {
             }
         }
         let summary = format!(
-            "total used time: {:.2}ms\navg time cost: {:.2}ms",
+            "total used time: {:.2} ms\navg time cost: {:.2} ms",
             self.total_time_cost * 1000.0,
             self.avg_time_cost * 1000.0,
         );
@@ -148,7 +148,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolErrors> {
 
 /// Detect target port service.
 pub fn vs_scan(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     only_null_probe: bool,
     only_tcp_recommended: bool,
@@ -180,9 +180,9 @@ pub fn vs_scan(
     debug!("nmap service db load finish");
 
     let mut recv_size = 0;
-    for host in target.hosts {
+    for host in &target.hosts {
         let dst_addr = host.addr;
-        for dst_port in host.ports {
+        for &dst_port in &host.ports {
             let tx = tx.clone();
             let service_probes = service_probes.clone();
             debug!("dst: {}, port: {}", dst_addr, dst_port);
@@ -294,7 +294,7 @@ mod tests {
         let intensity = 7; // nmap default
         let threads_num = Some(8);
         let ret = vs_scan(
-            target,
+            &target,
             threads_num,
             only_null_probe,
             only_tcp_recommended,

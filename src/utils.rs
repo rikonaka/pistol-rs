@@ -1,4 +1,5 @@
 use escape_bytes;
+use log::debug;
 use log::warn;
 use num_cpus;
 use pnet::datalink::interfaces;
@@ -79,7 +80,7 @@ pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
             }
         }
     }
-    warn!("can not found the dst ip in local net: {}", dst_ipv4);
+    debug!("the dst ip {} is not in local net", dst_ipv4);
     false
 }
 
@@ -91,7 +92,7 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
             }
         }
     }
-    warn!("can not found the dst ip in local net: {}", dst_ipv6);
+    debug!("the dst ip {} is not in local net", dst_ipv6);
     false
 }
 

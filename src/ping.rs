@@ -1,3 +1,6 @@
+use chrono::DateTime;
+use chrono::Local;
+use log::debug;
 use log::warn;
 use prettytable::row;
 use prettytable::Cell;
@@ -11,7 +14,6 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use std::time::Instant;
 
 pub mod icmp;
 pub mod icmpv6;
@@ -42,87 +44,86 @@ pub enum PingStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct HostPingResults {
-    pub ping_status: PingStatus,
-    pub ping_time_cost: Duration,
+pub struct HostPings {
+    pub status: PingStatus,
+    pub rtt: Duration,
+    pub stime: DateTime<Local>,
+    pub etime: DateTime<Local>,
 }
 
 #[derive(Debug, Clone)]
-pub struct PingResults {
-    pub pings: HashMap<IpAddr, Vec<HostPingResults>>,
-    pub avg_time_cost: f64,
-    pub total_time_cost: f64,
-    pub alive_hosts: usize,
-    start_time: Instant,
+pub struct Pings {
+    pub pings: HashMap<IpAddr, Vec<HostPings>>,
+    pub avg_cost: f64,
+    pub total_cost: i64,
+    pub alives_num: usize,
+    pub stime: DateTime<Local>,
+    pub etime: DateTime<Local>,
     tests: usize,
 }
 
-impl PingResults {
-    pub fn new() -> PingResults {
-        PingResults {
+impl Pings {
+    pub fn new() -> Pings {
+        Pings {
             pings: HashMap::new(),
-            avg_time_cost: 0.0,
-            alive_hosts: 0,
-            start_time: Instant::now(),
-            total_time_cost: 0.0,
+            avg_cost: 0.0,
+            total_cost: 0,
+            alives_num: 0,
+            stime: Local::now(),
+            etime: Local::now(),
             tests: 0,
         }
     }
-    pub fn get_ping_status(&self, k: &IpAddr) -> Option<Vec<PingStatus>> {
-        match self.pings.get(k) {
-            Some(host_ping_status) => {
-                let mut ping_status = Vec::new();
-                for hps in host_ping_status {
-                    ping_status.push(hps.ping_status.clone());
-                }
-                Some(ping_status)
-            }
-            None => None,
-        }
-    }
-    pub fn get_rtts(&self, k: &IpAddr) -> Option<Vec<Duration>> {
-        match self.pings.get(k) {
-            Some(host_ping_status) => {
-                let mut ping_rtts = Vec::new();
-                for hpr in host_ping_status {
-                    ping_rtts.push(hpr.ping_time_cost);
-                }
-                Some(ping_rtts)
-            }
-            None => None,
-        }
+    pub fn get(&self, k: &IpAddr) -> Option<&Vec<HostPings>> {
+        self.pings.get(k)
     }
     pub fn enrichment(&mut self) {
+        self.etime = Local::now();
         // avg time cost
-        let mut total_cost = 0.0;
+        let mut total_cost = 0;
         let mut total_num = 0;
         // alive hosts
         let mut alive_hosts = 0;
         for (_ip, ps) in &self.pings {
             self.tests = ps.len();
             for p in ps {
-                match p.ping_status {
+                match p.status {
                     PingStatus::Up => {
                         alive_hosts += 1;
                         break;
                     }
                     _ => (),
                 }
-                total_cost += p.ping_time_cost.as_secs_f64();
-                if p.ping_time_cost != Duration::new(0, 0) {
+                let time_cost = p.etime.signed_duration_since(self.stime).num_milliseconds();
+                if time_cost != 0 {
+                    total_cost += time_cost;
                     total_num += 1;
                 }
             }
         }
 
-        self.avg_time_cost = total_cost / total_num as f64;
-        self.alive_hosts = alive_hosts;
-        self.total_time_cost = self.start_time.elapsed().as_secs_f64();
+        debug!("ping total num: {}", total_num);
+        debug!("ping total cost: {}", total_cost);
+        self.avg_cost = total_cost as f64 / total_num as f64;
+        self.alives_num = alive_hosts;
+        self.total_cost = self
+            .etime
+            .signed_duration_since(self.stime)
+            .num_milliseconds();
     }
-    fn insert(&mut self, dst_addr: IpAddr, ping_status: PingStatus, ping_time_cost: Duration) {
-        let hpr = HostPingResults {
-            ping_status,
-            ping_time_cost,
+    fn insert(
+        &mut self,
+        dst_addr: IpAddr,
+        ping_status: PingStatus,
+        rtt: Duration,
+        stime: DateTime<Local>,
+        etime: DateTime<Local>,
+    ) {
+        let hpr = HostPings {
+            status: ping_status,
+            rtt,
+            stime,
+            etime,
         };
 
         match self.pings.get_mut(&dst_addr.into()) {
@@ -137,7 +138,7 @@ impl PingResults {
     }
 }
 
-impl fmt::Display for PingResults {
+impl fmt::Display for Pings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![Cell::new(&format!(
@@ -155,20 +156,21 @@ impl fmt::Display for PingResults {
         ]);
 
         let pings = &self.pings;
-        let pings: BTreeMap<IpAddr, &Vec<HostPingResults>> =
+        let pings: BTreeMap<IpAddr, &Vec<HostPings>> =
             pings.into_iter().map(|(i, p)| (*i, p)).collect();
         for (i, (ip, hpr)) in pings.into_iter().enumerate() {
-            let mut host_avg_time_cost = 0.0;
+            let mut host_total_time_cost = 0;
             let mut host_up_num = 0;
             // let mut host_down_num = 0;
             // let mut host_error_num = 0;
             for h in hpr {
-                match h.ping_status {
+                match h.status {
                     PingStatus::Up => host_up_num += 1,
                     PingStatus::Down => (),  // host_down_num += 1,
                     PingStatus::Error => (), //host_error_num += 1,
                 };
-                host_avg_time_cost += h.ping_time_cost.as_secs_f64();
+                let time_cost = h.etime.signed_duration_since(self.stime).num_milliseconds();
+                host_total_time_cost += time_cost;
             }
 
             let status_str = if host_up_num > 0 {
@@ -177,7 +179,7 @@ impl fmt::Display for PingResults {
                 String::from("down")
             };
 
-            let rtt_str = format!("{:.2}ms", host_avg_time_cost * 1000.0 / self.tests as f64);
+            let rtt_str = format!("{:.2} ms", host_total_time_cost as f64 / self.tests as f64);
             table.add_row(row![c -> (i + 1), c -> ip, c -> status_str, c -> rtt_str]);
         }
 
@@ -185,10 +187,8 @@ impl fmt::Display for PingResults {
         table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
         let summary = format!(
-            "total used time: {:.2}ms\navg time cost: {:.1}ms\nalive hosts: {}",
-            self.total_time_cost * 1000.0,
-            self.avg_time_cost * 1000.0,
-            self.alive_hosts
+            "total cost: {:.2} ms\navg cost: {:.2} ms\nalive hosts: {}",
+            self.total_cost, self.avg_cost, self.alives_num
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
         write!(f, "{}", table)
@@ -315,15 +315,15 @@ fn threads_ping6(
 }
 
 pub fn ping(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     method: PingMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults, PistolErrors> {
-    let mut ping_results = PingResults::new();
+) -> Result<Pings, PistolErrors> {
+    let mut ping_results = Pings::new();
 
     let threads_num = match threads_num {
         Some(t) => t,
@@ -347,7 +347,7 @@ pub fn ping(
         None => get_default_timeout(),
     };
 
-    for host in target.hosts {
+    for host in &target.hosts {
         let dst_addr = host.addr;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
@@ -369,10 +369,10 @@ pub fn ping(
                         None
                     };
                     pool.execute(move || {
-                        let cost = Instant::now(); // for error situation
+                        let stime = Local::now();
                         let ret =
                             threads_ping(method, src_ipv4, src_port, dst_ipv4, dst_port, timeout);
-                        match tx.send((dst_addr, ret, cost)) {
+                        match tx.send((dst_addr, ret, stime)) {
                             _ => (),
                         }
                     });
@@ -397,10 +397,10 @@ pub fn ping(
                         None
                     };
                     pool.execute(move || {
-                        let cost = Instant::now(); // for error situation
+                        let stime = Local::now();
                         let ret =
                             threads_ping6(method, src_ipv6, src_port, dst_ipv6, dst_port, timeout);
-                        match tx.send((dst_addr, ret, cost)) {
+                        match tx.send((dst_addr, ret, stime)) {
                             _ => (),
                         }
                     });
@@ -411,21 +411,24 @@ pub fn ping(
 
     let iter = rx.into_iter().take(recv_size);
 
-    for (dst_ipv4, pr, cost) in iter {
-        let tc = cost.elapsed();
+    for (dst_ipv4, pr, stime) in iter {
+        let etime = Local::now();
         match pr {
             Ok((ping_status, rtt)) => {
-                ping_results.insert(dst_ipv4, ping_status, rtt);
+                ping_results.insert(dst_ipv4, ping_status, rtt, stime, etime);
             }
-            Err(e) => match e {
-                PistolErrors::CanNotFoundMacAddress => {
-                    ping_results.insert(dst_ipv4, PingStatus::Down, tc)
+            Err(e) => {
+                let rtt = Duration::new(0, 0);
+                match e {
+                    PistolErrors::CanNotFoundMacAddress => {
+                        ping_results.insert(dst_ipv4, PingStatus::Down, rtt, stime, etime)
+                    }
+                    _ => {
+                        warn!("ping error: {}", e);
+                        ping_results.insert(dst_ipv4, PingStatus::Error, rtt, stime, etime);
+                    }
                 }
-                _ => {
-                    warn!("ping error: {}", e);
-                    ping_results.insert(dst_ipv4, PingStatus::Error, tc);
-                }
-            },
+            }
         }
     }
 
@@ -437,13 +440,13 @@ pub fn ping(
 /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_syn_ping(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults, PistolErrors> {
+) -> Result<Pings, PistolErrors> {
     ping(
         target,
         threads_num,
@@ -503,13 +506,13 @@ pub fn tcp_syn_ping_raw(
 /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn tcp_ack_ping(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults, PistolErrors> {
+) -> Result<Pings, PistolErrors> {
     ping(
         target,
         threads_num,
@@ -569,13 +572,13 @@ pub fn tcp_ack_ping_raw(
 /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 pub fn udp_ping(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults, PistolErrors> {
+) -> Result<Pings, PistolErrors> {
     ping(
         target,
         threads_num,
@@ -642,13 +645,13 @@ pub fn udp_ping_raw(
 /// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
 pub fn icmp_ping(
-    target: Target,
+    target: &Target,
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<PingResults, PistolErrors> {
+) -> Result<Pings, PistolErrors> {
     ping(
         target,
         threads_num,
@@ -692,10 +695,11 @@ pub fn icmp_ping_raw(
 mod tests {
     use super::*;
     use crate::Host;
+    use crate::Logger;
     use crate::Target;
     use crate::TEST_IPV4_LOCAL;
-    // use crate::TEST_IPV4_REMOTE;
     use crate::TEST_IPV6_LOCAL;
+    use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_tcp_syn_ping() {
@@ -710,7 +714,7 @@ mod tests {
         let target: Target = Target::new(vec![host_1]);
         let tests = 3;
         let threads_num = Some(8);
-        let ret = tcp_syn_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret = tcp_syn_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -732,20 +736,23 @@ mod tests {
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let threads_num = Some(8);
-        let ret = tcp_syn_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret = tcp_syn_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_icmp_ping() {
-        // Logger::init_debug_logging()?;
+        let _ = Logger::init_debug_logging();
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
+        let dst_ipv4 = Ipv4Addr::new(139, 180, 156, 169);
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
+        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
+        let host = Host::new(dst_ipv4.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let threads_num = Some(8);
-        let ret = icmp_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret = icmp_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -759,7 +766,7 @@ mod tests {
         let tests = 4;
         let threads_num = Some(8);
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmp_ping(target, threads_num, src_ipv6, src_port, timeout, tests).unwrap();
+        let ret = icmp_ping(&target, threads_num, src_ipv6, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -778,7 +785,7 @@ mod tests {
         let tests = 2;
         let start = Instant::now();
         let threads_num = Some(8);
-        let ret = icmp_ping(target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret = icmp_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{} - {:.2}s", ret, start.elapsed().as_secs_f64());
     }
     #[test]
@@ -803,7 +810,7 @@ mod tests {
             let host = Host::new(TEST_IPV4_LOCAL.into(), None);
             let target = Target::new(vec![host]);
             let _ret = icmp_ping(
-                target,
+                &target,
                 threads_num,
                 None,
                 None,
