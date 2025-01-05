@@ -1,11 +1,11 @@
+use chrono::DateTime;
+use chrono::Local;
 use dbparser::ServiceProbe;
 use log::debug;
 use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
 use prettytable::Table;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
@@ -14,7 +14,6 @@ use std::io::Read;
 use std::net::IpAddr;
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use std::time::Instant;
 use zip::ZipArchive;
 
 use crate::errors::PistolErrors;
@@ -29,56 +28,62 @@ use crate::Target;
 pub mod dbparser;
 pub mod vscan;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Services {
+#[derive(Debug, Clone)]
+pub struct PortServices {
     pub matchs: Vec<MatchX>,
-    pub elapsed: Duration,
+    pub rtt: Duration,
+    pub stime: DateTime<Local>,
+    pub etime: DateTime<Local>,
 }
 
-impl Services {
-    pub fn new() -> Services {
-        Services {
+impl PortServices {
+    pub fn new() -> PortServices {
+        PortServices {
             matchs: Vec::new(),
-            elapsed: Duration::new(0, 0),
+            rtt: Duration::new(0, 0),
+            stime: Local::now(),
+            etime: Local::now(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct VsScanResults {
-    pub vss: HashMap<IpAddr, HashMap<u16, Services>>,
-    pub total_time_cost: f64,
-    pub avg_time_cost: f64,
-    start_time: Instant,
+pub struct VsScans {
+    pub vss: HashMap<IpAddr, HashMap<u16, PortServices>>,
+    pub total_cost: i64,
+    pub avg_cost: f64,
+    pub stime: DateTime<Local>,
+    pub etime: DateTime<Local>,
 }
 
-impl VsScanResults {
-    pub fn new() -> VsScanResults {
-        VsScanResults {
+impl VsScans {
+    pub fn new() -> VsScans {
+        VsScans {
             vss: HashMap::new(),
-            total_time_cost: 0.0,
-            avg_time_cost: 0.0,
-            start_time: Instant::now(),
+            total_cost: 0,
+            avg_cost: 0.0,
+            stime: Local::now(),
+            etime: Local::now(),
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, Services>> {
+    pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, PortServices>> {
         self.vss.get(k)
     }
     pub fn enrichment(&mut self) {
-        self.total_time_cost = self.start_time.elapsed().as_secs_f64();
-        let mut total_time = 0.0;
+        self.etime = Local::now();
+        self.total_cost = self
+            .etime
+            .signed_duration_since(self.stime)
+            .num_milliseconds();
         let mut total_num = 0;
         for (_, h) in &self.vss {
-            for (_, s) in h {
-                total_time += s.elapsed.as_secs_f64();
-                total_num += 1;
-            }
+            total_num += h.len();
         }
-        self.avg_time_cost = total_time / total_num as f64;
+        self.avg_cost = self.total_cost as f64 / total_num as f64;
     }
 }
 
-impl fmt::Display for VsScanResults {
+impl fmt::Display for VsScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![Cell::new("Service Scan Results")
@@ -88,11 +93,11 @@ impl fmt::Display for VsScanResults {
         table
             .add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service", c -> "versioninfo"]);
         let vss = &self.vss;
-        let vss: BTreeMap<IpAddr, &HashMap<u16, Services>> =
+        let vss: BTreeMap<IpAddr, &HashMap<u16, PortServices>> =
             vss.into_iter().map(|(i, h)| (*i, h)).collect();
         let mut i = 1;
         for (ip, ports_service) in vss {
-            let ports_service: BTreeMap<u16, &Services> =
+            let ports_service: BTreeMap<u16, &PortServices> =
                 ports_service.into_iter().map(|(p, s)| (*p, s)).collect();
             for (port, services) in ports_service {
                 let mut sv = Vec::new();
@@ -122,8 +127,7 @@ impl fmt::Display for VsScanResults {
         }
         let summary = format!(
             "total used time: {:.2} ms\navg time cost: {:.2} ms",
-            self.total_time_cost * 1000.0,
-            self.avg_time_cost * 1000.0,
+            self.total_cost, self.avg_cost,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
@@ -155,7 +159,8 @@ pub fn vs_scan(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<VsScanResults, PistolErrors> {
+) -> Result<VsScans, PistolErrors> {
+    let mut ret = VsScans::new();
     let threads_num = match threads_num {
         Some(t) => t,
         None => {
@@ -187,7 +192,8 @@ pub fn vs_scan(
             let service_probes = service_probes.clone();
             debug!("dst: {}, port: {}", dst_addr, dst_port);
             pool.execute(move || {
-                let ret = threads_vs_probe(
+                let stime = Local::now();
+                let probe_ret = threads_vs_probe(
                     dst_addr,
                     dst_port,
                     only_null_probe,
@@ -197,7 +203,7 @@ pub fn vs_scan(
                     service_probes,
                     timeout,
                 );
-                match tx.send((dst_addr, dst_port, ret)) {
+                match tx.send((dst_addr, dst_port, probe_ret, stime)) {
                     _ => (),
                 }
             });
@@ -205,21 +211,23 @@ pub fn vs_scan(
         }
     }
 
-    let mut ret = VsScanResults::new();
     let rx = rx.into_iter().take(recv_size);
-    for (addr, port, r) in rx {
-        match r {
+    for (addr, port, probe_ret, stime) in rx {
+        match probe_ret {
             Ok((r, rtt)) => {
-                let mut service_status = Services::new();
-                service_status.matchs = r;
-                service_status.elapsed = rtt;
+                let etime = Local::now();
+                let mut port_services = PortServices::new();
+                port_services.stime = stime;
+                port_services.stime = etime;
+                port_services.matchs = r;
+                port_services.rtt = rtt;
                 match ret.vss.get_mut(&addr) {
                     Some(services) => {
-                        services.insert(port, service_status);
+                        services.insert(port, port_services);
                     }
                     None => {
                         let mut host = HashMap::new();
-                        host.insert(port, service_status);
+                        host.insert(port, port_services);
                         ret.vss.insert(addr, host);
                     }
                 }
@@ -239,7 +247,7 @@ pub fn vs_scan_raw(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<Services, PistolErrors> {
+) -> Result<PortServices, PistolErrors> {
     let nsp_str = include_str!("./db/nmap-service-probes");
     let mut nsp_lines = Vec::new();
     for l in nsp_str.lines() {
@@ -266,9 +274,9 @@ pub fn vs_scan_raw(
         timeout,
     ) {
         Ok((r, rtt)) => {
-            let mut service_status = Services::new();
+            let mut service_status = PortServices::new();
             service_status.matchs = r;
-            service_status.elapsed = rtt;
+            service_status.rtt = rtt;
             Ok(service_status)
         }
         Err(e) => Err(e),

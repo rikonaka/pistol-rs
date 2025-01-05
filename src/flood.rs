@@ -1,3 +1,5 @@
+use chrono::DateTime;
+use chrono::Local;
 use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
@@ -8,8 +10,6 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
-use std::time::Duration;
-use std::time::Instant;
 
 pub mod icmp;
 pub mod icmpv6;
@@ -26,28 +26,31 @@ use crate::utils::random_port;
 use crate::Target;
 
 #[derive(Debug, Clone)]
-pub struct FloodAttackDetail {
-    pub send_packets: usize,
-    pub send_traffic: f64,
-    pub elapsed_time: Duration,
+pub struct PortFloods {
+    pub send_packets: usize, // count
+    pub send_traffic: f64,   // KB, MB or GB
+    pub stime: DateTime<Local>,
+    pub etime: DateTime<Local>,
 }
 
-impl FloodAttackDetail {
-    pub fn new() -> FloodAttackDetail {
-        FloodAttackDetail {
+impl PortFloods {
+    pub fn new() -> PortFloods {
+        PortFloods {
             send_packets: 0,
             send_traffic: 0.0,
-            elapsed_time: Duration::new(0, 0),
+            stime: Local::now(),
+            etime: Local::now(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct FloodAttackSummary {
-    pub summary: HashMap<IpAddr, HashMap<u16, FloodAttackDetail>>,
+    pub summary: HashMap<IpAddr, HashMap<u16, PortFloods>>,
     pub total_send_packets: usize,
     pub total_send_traffic: f64,
-    pub total_elapsed_time: Duration,
+    pub stime: DateTime<Local>,
+    pub etime: DateTime<Local>,
 }
 
 impl FloodAttackSummary {
@@ -56,10 +59,12 @@ impl FloodAttackSummary {
             summary: HashMap::new(),
             total_send_packets: 0,
             total_send_traffic: 0.0,
-            total_elapsed_time: Duration::new(0, 0),
+            stime: Local::now(),
+            etime: Local::now(),
         }
     }
     pub fn enrichment(&mut self) {
+        self.etime = Local::now(); // assign etime here
         let mut total_send_packets = 0;
         let mut total_send_traffic = 0.0;
         for (_ip, hm) in &self.summary {
@@ -91,11 +96,13 @@ impl fmt::Display for FloodAttackSummary {
                 } else {
                     format!("{:.1} Bytes", detail.send_traffic)
                 };
+                let time_cost = detail
+                    .etime
+                    .signed_duration_since(detail.stime)
+                    .num_milliseconds();
                 let detail_str = format!(
-                    "packets: {}\ntraffic: {}\ntime: {:.1}",
-                    detail.send_packets,
-                    traffc_str,
-                    detail.elapsed_time.as_secs_f32(),
+                    "packets: {}\ntraffic: {}\ntime: {:.2} ms",
+                    detail.send_packets, traffc_str, time_cost,
                 );
                 table.add_row(row![ip, port, detail_str]);
             }
@@ -122,7 +129,7 @@ fn ipv4_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<(usize, usize, Duration), PistolErrors> {
+) -> Result<(usize, usize), PistolErrors> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
         None => return Err(PistolErrors::CanNotFoundSourceAddress),
@@ -133,7 +140,6 @@ fn ipv4_flood(
         dst_port
     };
 
-    let start_time = Instant::now();
     let func = match method {
         FloodMethods::Icmp => icmp::send_icmp_flood_packet,
         FloodMethods::Syn => tcp::send_syn_flood_packet,
@@ -166,11 +172,7 @@ fn ipv4_flood(
         total_send_buff_size += send_buff_size;
         count += 1;
     }
-    Ok((
-        count * max_flood_packet,
-        total_send_buff_size,
-        start_time.elapsed(),
-    ))
+    Ok((count * max_flood_packet, total_send_buff_size))
 }
 
 fn ipv6_flood(
@@ -182,7 +184,7 @@ fn ipv6_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<(usize, usize, Duration), PistolErrors> {
+) -> Result<(usize, usize), PistolErrors> {
     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
         Some(s) => s,
         None => return Err(PistolErrors::CanNotFoundSourceAddress),
@@ -194,7 +196,6 @@ fn ipv6_flood(
         dst_port
     };
 
-    let start_time = Instant::now();
     let func = match method {
         FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet,
         FloodMethods::Syn => tcp6::send_syn_flood_packet,
@@ -227,11 +228,7 @@ fn ipv6_flood(
         total_send_buff_size += send_buff_size;
         count += 1;
     }
-    Ok((
-        count * max_flood_packet,
-        total_send_buff_size,
-        start_time.elapsed(),
-    ))
+    Ok((count * max_flood_packet, total_send_buff_size))
 }
 
 pub fn flood(
@@ -243,6 +240,7 @@ pub fn flood(
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<FloodAttackSummary, PistolErrors> {
+    let mut flood_attack_summary = FloodAttackSummary::new();
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -261,6 +259,7 @@ pub fn flood(
                     let tx = tx.clone();
                     recv_size += 1;
                     pool.execute(move || {
+                        let stime = Local::now();
                         let ret = ipv4_flood(
                             method,
                             dst_ipv4,
@@ -271,7 +270,7 @@ pub fn flood(
                             max_same_packet,
                             max_flood_packet,
                         );
-                        match tx.send((dst_addr, 0, ret)) {
+                        match tx.send((dst_addr, 0, ret, stime)) {
                             _ => (),
                         }
                     });
@@ -283,6 +282,7 @@ pub fn flood(
                     let tx = tx.clone();
                     recv_size += 1;
                     pool.execute(move || {
+                        let stime = Local::now();
                         let ret = ipv6_flood(
                             method,
                             dst_ipv6,
@@ -293,7 +293,7 @@ pub fn flood(
                             max_same_packet,
                             max_flood_packet,
                         );
-                        match tx.send((dst_addr, 0, ret)) {
+                        match tx.send((dst_addr, 0, ret, stime)) {
                             _ => (),
                         }
                     });
@@ -302,33 +302,34 @@ pub fn flood(
         }
     }
 
-    let mut s = FloodAttackSummary::new();
     let iter = rx.into_iter().take(recv_size);
-    for (ip, port, ret) in iter {
-        let mut detail = FloodAttackDetail::new();
+    for (ip, port, ret, stime) in iter {
+        let mut detail = PortFloods::new();
+        let etime = Local::now();
         match ret {
-            Ok((packets, traffic, elapsed)) => {
+            Ok((packets, traffic)) => {
                 // println!(">>> {}", traffic);
                 detail.send_packets = packets;
                 detail.send_traffic = traffic as f64;
-                detail.elapsed_time = elapsed;
+                detail.stime = stime;
+                detail.etime = etime;
             }
             Err(e) => return Err(e),
         }
 
-        match s.summary.get_mut(&ip.into()) {
+        match flood_attack_summary.summary.get_mut(&ip.into()) {
             Some(hm) => {
                 hm.insert(port, detail);
             }
             None => {
                 let mut hm = HashMap::new();
                 hm.insert(port, detail);
-                s.summary.insert(ip.into(), hm);
+                flood_attack_summary.summary.insert(ip.into(), hm);
             }
         }
     }
-    s.enrichment();
-    Ok(s)
+    flood_attack_summary.enrichment();
+    Ok(flood_attack_summary)
 }
 
 /// An Internet Control Message Protocol (ICMP) flood DDoS attack, also known as a Ping flood attack,
