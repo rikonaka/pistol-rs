@@ -45,7 +45,7 @@ impl PortFloods {
 }
 
 #[derive(Debug, Clone)]
-pub struct FloodAttackSummary {
+pub struct FloodAttacks {
     pub summary: HashMap<IpAddr, HashMap<u16, PortFloods>>,
     pub total_send_packets: usize,
     pub total_send_traffic: f64,
@@ -53,9 +53,9 @@ pub struct FloodAttackSummary {
     pub etime: DateTime<Local>,
 }
 
-impl FloodAttackSummary {
-    pub fn new() -> FloodAttackSummary {
-        FloodAttackSummary {
+impl FloodAttacks {
+    pub fn new() -> FloodAttacks {
+        FloodAttacks {
             summary: HashMap::new(),
             total_send_packets: 0,
             total_send_traffic: 0.0,
@@ -78,7 +78,7 @@ impl FloodAttackSummary {
     }
 }
 
-impl fmt::Display for FloodAttackSummary {
+impl fmt::Display for FloodAttacks {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         const BYTES_PER_GB: u64 = 1024 * 1024;
         const BYTES_PER_MB: u64 = 1024;
@@ -239,8 +239,8 @@ pub fn flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttackSummary, PistolErrors> {
-    let mut flood_attack_summary = FloodAttackSummary::new();
+) -> Result<FloodAttacks, PistolErrors> {
+    let mut flood_attack_summary = FloodAttacks::new();
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -343,7 +343,7 @@ pub fn icmp_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttackSummary, PistolErrors> {
+) -> Result<FloodAttacks, PistolErrors> {
     flood(
         target,
         FloodMethods::Icmp,
@@ -381,7 +381,7 @@ pub fn tcp_syn_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttackSummary, PistolErrors> {
+) -> Result<FloodAttacks, PistolErrors> {
     flood(
         target,
         FloodMethods::Syn,
@@ -425,7 +425,7 @@ pub fn tcp_ack_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttackSummary, PistolErrors> {
+) -> Result<FloodAttacks, PistolErrors> {
     flood(
         target,
         FloodMethods::Ack,
@@ -462,7 +462,7 @@ pub fn tcp_ack_psh_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttackSummary, PistolErrors> {
+) -> Result<FloodAttacks, PistolErrors> {
     flood(
         target,
         FloodMethods::AckPsh,
@@ -503,7 +503,7 @@ pub fn udp_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttackSummary, PistolErrors> {
+) -> Result<FloodAttacks, PistolErrors> {
     flood(
         target,
         FloodMethods::Udp,
