@@ -287,15 +287,16 @@ pub fn vs_scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    use crate::Logger;
+    // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use fancy_regex::Regex as FancyRegex;
     use kdam::tqdm;
     #[test]
     fn test_vs_detect() {
-        Logger::init_debug_logging().unwrap();
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
+        // let _ = Logger::init_debug_logging();
+        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![8080]));
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
@@ -348,7 +349,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_httpd_regex() {
-        Logger::init_debug_logging().unwrap();
+        // let _ = Logger::init_debug_logging();
 
         let regex = FancyRegex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
         let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";

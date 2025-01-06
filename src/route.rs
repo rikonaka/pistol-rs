@@ -714,8 +714,8 @@ mod tests {
     use pnet::datalink::interfaces;
     #[test]
     fn test_network_cache() {
-        use crate::Logger;
-        let _ = Logger::init_debug_logging();
+        // use crate::Logger;
+        // let _ = Logger::init_debug_logging();
         let snc = SystemNetCache::init().unwrap();
         for (a, n) in snc.routes {
             println!("a: {:?}, n: {}", a, n.name);

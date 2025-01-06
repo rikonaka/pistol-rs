@@ -37,7 +37,7 @@ use crate::Target;
 #[derive(Debug, Clone)]
 pub struct AliveHost {
     pub mac_addr: MacAddr,
-    pub ouis: String,
+    pub ouis: String, // productions organization name
 }
 
 #[derive(Debug, Clone)]
@@ -1287,7 +1287,7 @@ pub fn scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    use crate::Logger;
+   //  use crate::Logger;
     use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use std::time::Instant;
@@ -1336,7 +1336,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() {
-        let _ = Logger::init_debug_logging();
+        // let _ = Logger::init_debug_logging();
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));

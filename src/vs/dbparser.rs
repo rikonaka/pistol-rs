@@ -653,13 +653,13 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 mod tests {
     use super::*;
     use crate::utils::vs_probe_data_to_string;
-    use crate::Logger;
     use fancy_regex::Regex as FancyRegex;
     use std::fs::File;
     use std::io::Write;
     #[test]
     fn test_parser() {
-        Logger::init_debug_logging().unwrap();
+        // use crate::Logger;
+        // let _ = Logger::init_debug_logging();
         let nsp_str = include_str!("../db/nmap-service-probes");
         let mut nsp_lines = Vec::new();
         for l in nsp_str.lines() {

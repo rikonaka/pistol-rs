@@ -695,7 +695,7 @@ pub fn icmp_ping_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    use crate::Logger;
+    // use crate::Logger;
     use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV6_LOCAL;
@@ -741,7 +741,7 @@ mod tests {
     }
     #[test]
     fn test_icmp_ping() {
-        let _ = Logger::init_debug_logging();
+        // let _ = Logger::init_debug_logging();
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));

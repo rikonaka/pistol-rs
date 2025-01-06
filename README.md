@@ -167,6 +167,8 @@ If you don't want to use `Target`, you can also use the `_raw` functions we prov
 
 ### 1. SYN Port Scan Example
 
+Additionally, since version `v3.1.6`, pistol has compiled 100 and 1000 commonly used ports (`TOP_100_PORTS`, `TOP_1000_PORTS`, `TOP_100_TCP_PORTS`, `TOP_1000_TCP_PORTS`, `TOP_100_UDP_PORTS`,`TOP_1000_UDP_PORTS`) in nmap to speed up scanning.
+
 ```rust
 use pistol::scan::tcp_syn_scan;
 use pistol::Target;
