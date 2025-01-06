@@ -608,7 +608,6 @@ pub fn scan(
     method: ScanMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    interface: Option<String>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
@@ -1203,7 +1202,6 @@ pub fn udp_scan(
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
-    interface: Option<String>,
     timeout: Option<Duration>,
     tests: usize,
 ) -> Result<TcpUdpScans, PistolErrors> {
@@ -1213,7 +1211,6 @@ pub fn udp_scan(
         ScanMethods::Udp,
         src_addr,
         src_port,
-        interface,
         None,
         None,
         timeout,
