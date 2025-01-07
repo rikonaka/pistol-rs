@@ -211,11 +211,9 @@ impl ServiceProbe {
     }
     fn match_pattern(&self, m: &Match, recv_str: &str) -> Result<Match, PistolErrors> {
         let new_pattern = self.pattern_fix(&m.pattern);
-        // if m.pattern.contains(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)") {
-        //     debug!("match {}", new_pattern);
-        // }
+
         let re = FancyRegex::new(&new_pattern)?;
-        let captures_group = re.captures(&recv_str)?;
+        let captures_group = re.captures(recv_str)?;
         match captures_group {
             Some(v) => {
                 let mut versioninfo_fix = m.versioninfo.to_string();
@@ -230,7 +228,13 @@ impl ServiceProbe {
                 new_m.versioninfo.fix = versioninfo_fix;
                 Ok(new_m)
             }
-            None => Err(PistolErrors::NoMatchFound),
+            None => {
+                if m.pattern.contains(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)") {
+                    debug!("match {}", new_pattern);
+                    debug!("source: {}", recv_str);
+                }
+                Err(PistolErrors::NoMatchFound) // avoid to using Option<'_> here make less code
+            }
         }
     }
     fn softmatch_function(
@@ -243,7 +247,7 @@ impl ServiceProbe {
         //     debug!("match {}", new_pattern);
         // }
         let re = FancyRegex::new(&new_pattern)?;
-        if re.is_match(&recv_str)? {
+        if re.is_match(recv_str)? {
             Ok(sm.clone())
         } else {
             Err(PistolErrors::NoMatchFound)

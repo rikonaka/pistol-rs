@@ -122,30 +122,7 @@ impl fmt::Display for RouteTable {
 
 impl RouteTable {
     #[cfg(target_os = "linux")]
-    pub fn init() -> Result<RouteTable, PistolErrors> {
-        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
-            // Linux
-            // ubuntu22.04 output:
-            // default via 192.168.72.2 dev ens33
-            // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-            // fe80::/64 dev ens33 proto kernel metric 256 pref medium
-            // centos7 output:
-            // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
-            let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
-            let ipv4_output = String::from_utf8_lossy(&c.stdout);
-            let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
-            let ipv6_output = String::from_utf8_lossy(&c.stdout);
-            let output = ipv4_output.to_string() + &ipv6_output;
-            let lines: Vec<String> = output
-                .lines()
-                .map(|x| x.trim().to_string())
-                .filter(|v| v.len() > 0)
-                .collect();
-            Ok(lines)
-        };
-
+    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolErrors> {
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = HashMap::new();
@@ -155,7 +132,7 @@ impl RouteTable {
             Regex::new(r"default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
 
-        for line in system_route_lines()? {
+        for line in system_route_lines {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
@@ -242,32 +219,40 @@ impl RouteTable {
         };
         Ok(rt)
     }
+    #[cfg(target_os = "linux")]
+    pub fn init() -> Result<RouteTable, PistolErrors> {
+        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
+            // Linux
+            // ubuntu22.04 output:
+            // default via 192.168.72.2 dev ens33
+            // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
+            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+            // fe80::/64 dev ens33 proto kernel metric 256 pref medium
+            // centos7 output:
+            // default via 192.168.72.2 dev ens33 proto dhcp metric 100
+            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
+            let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
+            let ipv4_output = String::from_utf8_lossy(&c.stdout);
+            let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
+            let ipv6_output = String::from_utf8_lossy(&c.stdout);
+            let output = ipv4_output.to_string() + &ipv6_output;
+            let lines: Vec<String> = output
+                .lines()
+                .map(|x| x.trim().to_string())
+                .filter(|v| v.len() > 0)
+                .collect();
+            Ok(lines)
+        };
+        let system_route_lines = system_route_lines()?;
+        RouteTable::parser(system_route_lines)
+    }
     #[cfg(any(
         target_os = "macos",
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn init() -> Result<RouteTable, PistolErrors> {
-        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
-            // default 192.168.72.2 UGS em0
-            // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-            // 127.0.0.1          link#2             UH          lo0
-            let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
-            let output = String::from_utf8_lossy(&c.stdout);
-            let lines: Vec<String> = output
-                .lines()
-                .map(|x| x.trim().to_string())
-                .filter(|v| {
-                    v.len() > 0
-                        && !v.contains("Destination")
-                        && !v.contains("Routing tables")
-                        && !v.contains("Internet")
-                })
-                .collect();
-            Ok(lines)
-        };
-
+    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolErrors> {
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = HashMap::new();
@@ -276,7 +261,7 @@ impl RouteTable {
         let default_route_re = Regex::new(r"default (?P<via>[^\s]+) \w+ (?P<dev>[^\s]+)([^\s]+)?")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
 
-        for line in system_route_lines()? {
+        for line in system_route_lines {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
@@ -364,21 +349,36 @@ impl RouteTable {
         };
         Ok(rt)
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
     pub fn init() -> Result<RouteTable, PistolErrors> {
         let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
-            // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
-            // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
-            let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+            // default 192.168.72.2 UGS em0
+            // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
+            // 127.0.0.1          link#2             UH          lo0
+            let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
             let output = String::from_utf8_lossy(&c.stdout);
-            let route_lines: Vec<String> = output
+            let lines: Vec<String> = output
                 .lines()
                 .map(|x| x.trim().to_string())
-                .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
+                .filter(|v| {
+                    v.len() > 0
+                        && !v.contains("Destination")
+                        && !v.contains("Routing tables")
+                        && !v.contains("Internet")
+                })
                 .collect();
-            Ok(route_lines)
+            Ok(lines)
         };
-
+        let system_route_lines = system_route_lines()?;
+        RouteTable::parser(system_route_lines)
+    }
+    #[cfg(target_os = "windows")]
+    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolErrors> {
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = HashMap::new();
@@ -388,7 +388,7 @@ impl RouteTable {
             Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
         let route_re = Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
 
-        for line in system_route_lines()? {
+        for line in system_route_lines {
             let default_route_judge =
                 |line: &str| -> bool { line.contains("0.0.0.0/0") || line.contains("::/0") };
             if default_route_judge(&line) {
@@ -495,6 +495,23 @@ impl RouteTable {
             routes,
         };
         Ok(rt)
+    }
+    #[cfg(target_os = "windows")]
+    pub fn init() -> Result<RouteTable, PistolErrors> {
+        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
+            // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
+            // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
+            let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+            let output = String::from_utf8_lossy(&c.stdout);
+            let route_lines: Vec<String> = output
+                .lines()
+                .map(|x| x.trim().to_string())
+                .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
+                .collect();
+            Ok(route_lines)
+        };
+        let system_route_lines = system_route_lines()?;
+        RouteTable::parser(system_route_lines)
     }
 }
 
@@ -712,6 +729,7 @@ mod tests {
     use super::*;
     // use std::time::Instant;
     use pnet::datalink::interfaces;
+    use std::fs::read_to_string;
     #[test]
     fn test_network_cache() {
         // use crate::Logger;
@@ -753,5 +771,22 @@ mod tests {
         let ipnetwork = IpNetwork::from_str("::/96").unwrap();
         let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
         println!("{}", ipnetwork.contains(test_ipv6));
+    }
+    #[test]
+    fn test_all() {
+        #[cfg(target_os = "linux")]
+        let routetable_str = read_to_string("./tests/linux_routetable.txt").unwrap();
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        let routetable_str = read_to_string("./tests/macos_routetable.txt").unwrap();
+        #[cfg(target_os = "windows")]
+        let routetable_str = read_to_string("./tests/windows_routetable.txt").unwrap();
+        let routetable: Vec<String> = routetable_str.lines().map(|x| x.to_string()).collect();
+        let ret = RouteTable::parser(routetable).unwrap();
+        println!("{}", ret);
     }
 }

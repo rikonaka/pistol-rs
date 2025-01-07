@@ -293,7 +293,8 @@ mod tests {
     use kdam::tqdm;
     #[test]
     fn test_vs_detect() {
-        // let _ = Logger::init_debug_logging();
+        use crate::Logger;
+        let _ = Logger::init_debug_logging();
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![8080]));
         let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
