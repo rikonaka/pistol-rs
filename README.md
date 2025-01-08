@@ -48,6 +48,9 @@ The implementation of the `pistol` host discovery according to the nmap [documen
 
 The implementation of the `pistol` port scan according to the nmap [pdf](https://nmap.org/nmap_doc.html) and [documentation](https://nmap.org/book/scan-methods.html).
 
+Additionally, since version `v3.1.6`, pistol has compiled 100 and 1000 commonly used ports (`TOP_100_PORTS`, `TOP_1000_PORTS`, `TOP_100_TCP_PORTS`, `TOP_1000_TCP_PORTS`, `TOP_100_UDP_PORTS`,`TOP_1000_UDP_PORTS`) in nmap to speed up scanning.
+
+
 | Method                  | Detailed Documentation                                                       | Note                                    |
 | :---------------------- | :--------------------------------------------------------------------------- | :-------------------------------------- |
 | [x] TCP SYN Scan        | [nmap reference](https://nmap.org/book/synscan.html)                         | IPv4 & IPv6                             |
@@ -202,8 +205,6 @@ If you don't want to use `Target`, you can also use the `_raw` functions we prov
 **Note that the `_raw` function is blocking.**
 
 ### 1. SYN Port Scan Example
-
-Additionally, since version `v3.1.6`, pistol has compiled 100 and 1000 commonly used ports (`TOP_100_PORTS`, `TOP_1000_PORTS`, `TOP_100_TCP_PORTS`, `TOP_1000_TCP_PORTS`, `TOP_100_UDP_PORTS`,`TOP_1000_UDP_PORTS`) in nmap to speed up scanning.
 
 ```rust
 use pistol::scan::tcp_syn_scan;
