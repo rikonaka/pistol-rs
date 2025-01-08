@@ -21,10 +21,52 @@ use super::dbparser::ServiceProbe;
 use super::dbparser::SoftMatch;
 use crate::errors::PistolErrors;
 use crate::utils::random_port;
-use crate::utils::vs_probe_data_to_string;
 
 const TCP_BUFF_SIZE: usize = 40960;
 const UDP_BUFF_SIZE: usize = 40960;
+
+fn vs_probe_data_to_string(input: &[u8]) -> String {
+    let mut ret = String::new();
+    for &i in input {
+        match i {
+            // not convert the char below to string anymore
+            10 => {
+                ret += "\n";
+            }
+            13 => {
+                ret += "\r";
+            }
+            9 => {
+                ret += "\t";
+            }
+            // others
+            0 => {
+                ret += r"\0";
+            }
+            8 => {
+                ret += r"\b";
+            }
+            11 => {
+                ret += r"\v";
+            }
+            12 => {
+                ret += r"\f";
+            }
+            32..=126 => {
+                let s = (i as char).to_string();
+                ret += &s;
+            }
+            _ => {
+                if i > 126 {
+                    let s = format!(r"\x{:02x}", i);
+                    ret += &s;
+                }
+            }
+        }
+    }
+    // println!(">>> {}", ret);
+    ret
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MatchX {
@@ -111,6 +153,7 @@ fn tcp_continue_probe(
         debug!("tcp continue probe recv buff len: {}", recv_buff.len());
         if recv_buff.len() > 0 {
             let recv_str = vs_probe_data_to_string(&recv_buff);
+            // debug!("{}", recv_str);
             let mut ret = Vec::new();
             match sp.check(&recv_str) {
                 Some(mx) => ret.push(mx),
@@ -330,6 +373,36 @@ pub fn threads_vs_probe(
         Err(e) => {
             error!("connect to dst failed: {}", e);
             Ok((vec![], start_time.elapsed())) // ignore closed port here
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fancy_regex::Regex as FancyRegex;
+    use regex::bytes::Regex;
+    #[test]
+    fn test_vs_probe_to_string() {
+        let regex = FancyRegex::new(r"\\0\\0\\xae\\xae").unwrap();
+        let data = vec![0, 0, 0xae, 0xae];
+        let data_str = vs_probe_data_to_string(&data);
+        let ret = regex.is_match(&data_str).unwrap();
+        println!("{}", data_str);
+        println!("{}", ret);
+        // let data_str = String::from_utf8_lossy(&data);
+        // let ret = regex.is_match(&data_str).unwrap();
+        // println!("{}", data_str);
+        // println!("{}", ret);
+    }
+    #[test]
+    fn test_xx() {
+        let data: &[u8] = &[72, 101, 108, 108, 111, 0, 87, 111, 114, 108, 100]; // "Hello\0World"
+        let regex = Regex::new(r"\x00").unwrap();
+
+        if regex.is_match(data) {
+            println!("XXX");
+        } else {
         }
     }
 }

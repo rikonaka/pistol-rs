@@ -1,3 +1,4 @@
+use escape_bytes;
 use fancy_regex::Regex as FancyRegex;
 use kdam::tqdm;
 use log::debug;
@@ -9,9 +10,21 @@ use serde::Serialize;
 use std::fmt;
 
 use crate::errors::PistolErrors;
-use crate::utils::unescape_string;
 
 use super::vscan::MatchX;
+
+fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
+    let output = match escape_bytes::unescape(input.as_bytes()) {
+        Ok(o) => o,
+        Err(e) => {
+            return Err(PistolErrors::CanNotUnescapeString {
+                s: input.to_string(),
+                e: format!("{:?}", e),
+            })
+        }
+    };
+    Ok(output)
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ProbeProtocol {
@@ -185,27 +198,28 @@ impl ServiceProbe {
                 pattern
             }
         };
-        let pattern = match FancyRegex::new(r"(?<!\\)\\r") {
-            Ok(regex) => regex.replace_all(&pattern, r"\\r").to_string(),
-            Err(e) => {
-                error!("special regex failed: {}", e);
-                pattern
-            }
-        };
-        let pattern = match FancyRegex::new(r"(?<!\\)\\n") {
-            Ok(regex) => regex.replace_all(&pattern, r"\\n").to_string(),
-            Err(e) => {
-                error!("special regex failed: {}", e);
-                pattern
-            }
-        };
-        let pattern = match FancyRegex::new(r"(?<!\\)\\t") {
-            Ok(regex) => regex.replace_all(&pattern, r"\\t").to_string(),
-            Err(e) => {
-                error!("special regex failed: {}", e);
-                pattern
-            }
-        };
+        // leave this codes here
+        // let pattern = match FancyRegex::new(r"(?<!\\)\\r") {
+        //     Ok(regex) => regex.replace_all(&pattern, r"\\r").to_string(),
+        //     Err(e) => {
+        //         error!("special regex failed: {}", e);
+        //         pattern
+        //     }
+        // };
+        // let pattern = match FancyRegex::new(r"(?<!\\)\\n") {
+        //     Ok(regex) => regex.replace_all(&pattern, r"\\n").to_string(),
+        //     Err(e) => {
+        //         error!("special regex failed: {}", e);
+        //         pattern
+        //     }
+        // };
+        // let pattern = match FancyRegex::new(r"(?<!\\)\\t") {
+        //     Ok(regex) => regex.replace_all(&pattern, r"\\t").to_string(),
+        //     Err(e) => {
+        //         error!("special regex failed: {}", e);
+        //         pattern
+        //     }
+        // };
 
         pattern
     }
@@ -229,10 +243,10 @@ impl ServiceProbe {
                 Ok(new_m)
             }
             None => {
-                if m.pattern.contains(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)") {
-                    debug!("match {}", new_pattern);
-                    debug!("source: {}", recv_str);
-                }
+                // if m.pattern.contains(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)") {
+                //     debug!("match {}", new_pattern);
+                //     debug!("source: {}", recv_str);
+                // }
                 Err(PistolErrors::NoMatchFound) // avoid to using Option<'_> here make less code
             }
         }
@@ -243,9 +257,6 @@ impl ServiceProbe {
         recv_str: &str,
     ) -> Result<SoftMatch, PistolErrors> {
         let new_pattern = self.pattern_fix(&sm.pattern);
-        // if sm.pattern.contains(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)") {
-        //     debug!("match {}", new_pattern);
-        // }
         let re = FancyRegex::new(&new_pattern)?;
         if re.is_match(recv_str)? {
             Ok(sm.clone())
@@ -656,11 +667,11 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::vs_probe_data_to_string;
     use fancy_regex::Regex as FancyRegex;
     use std::fs::File;
     use std::io::Write;
     #[test]
+    #[ignore]
     fn test_parser() {
         // use crate::Logger;
         // let _ = Logger::init_debug_logging();
@@ -675,18 +686,6 @@ mod tests {
         let serialized = serde_json::to_string(&ret).unwrap();
         let mut file_write = File::create("nmap-service-probes.pistol").unwrap();
         file_write.write_all(serialized.as_bytes()).unwrap();
-    }
-    #[test]
-    fn test_regex() {
-        let data = vec![0, 0, 0x1b];
-        let data_str = vs_probe_data_to_string(&data);
-        println!("{}", data_str);
-        let regex = FancyRegex::new(r"\\0\\0\\x1b").unwrap();
-        if regex.is_match(&data_str).unwrap() {
-            println!("match");
-        } else {
-            println!("no match");
-        }
     }
     #[test]
     fn test_gen() {
@@ -718,5 +717,11 @@ mod tests {
         let re = FancyRegex::new(r"(?<!\\)\\x").unwrap();
         let result = re.replace_all(text, r"\\x");
         println!("{}", result);
+    }
+    #[test]
+    fn test_unescape() {
+        let test_str = r"\x80\0\0\x28\x72\xFE\x1D\x13\0\0\0\0\0\0\0\x02\0\x01\x86\xA0\0\x01\x97\x7C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        let output = unescape_string(&test_str).unwrap();
+        println!("{:?}", output);
     }
 }

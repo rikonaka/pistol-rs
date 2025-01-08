@@ -290,14 +290,14 @@ mod tests {
     // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use fancy_regex::Regex as FancyRegex;
-    use kdam::tqdm;
+    // use kdam::tqdm;
     #[test]
     fn test_vs_detect() {
-        use crate::Logger;
-        let _ = Logger::init_debug_logging();
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
+        // use crate::Logger;
+        // let _ = Logger::init_debug_logging();
+        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![8080]));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
+        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
@@ -352,22 +352,74 @@ mod tests {
     fn test_httpd_regex() {
         // let _ = Logger::init_debug_logging();
 
+        // let regex = FancyRegex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        // let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        // let ret = regex.is_match(&test_string).unwrap();
+        // println!("{}", ret);
+
+        // let regex = FancyRegex::new(r"(?s)^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        // let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        // let ret = regex.is_match(&test_string).unwrap();
+        // println!("{}", ret);
+
         let regex = FancyRegex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        let test_string = r"HTTP/1.1 200 OK\r\nDate: Tue, 07 Jan 2025 07:07:16 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
         let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
         let ret = regex.is_match(&test_string).unwrap();
         println!("{}", ret);
 
-        let regex = FancyRegex::new(r"(?s)^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        // let nsp = get_nmap_service_probes().unwrap();
+        // for n in tqdm!(nsp.into_iter()) {
+        //     let mx = n.check(&test_string);
+        //     if mx.is_some() {
+        //         println!("{}", n.probe.probename);
+        //     }
+        // }
+    }
+    #[test]
+    fn test_fancy_regex() {
+        let regex = FancyRegex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\\r\\n]*\\r\\n(?!\\r\\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)").unwrap();
+        let test_string = r"HTTP/1.1 200 OK\r\nDate: Tue, 07 Jan 2025 07:07:16 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
         let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
         let ret = regex.is_match(&test_string).unwrap();
         println!("{}", ret);
 
-        let nsp = get_nmap_service_probes().unwrap();
-        for n in tqdm!(nsp.into_iter()) {
-            let mx = n.check(&test_string);
-            if mx.is_some() {
-                println!("{}", n.probe.probename);
-            }
-        }
+        let regex =
+            FancyRegex::new(r"^HTTP/1\.[01] \d\d\d .*Server: Apache[/ ](\d[-.\w]+) ([^\\r\\n]+)")
+                .unwrap();
+        let test_string = r"HTTP/1.1 200 OK\r\nDate: Tue, 07 Jan 2025 07:07:16 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+        let test_string = r"HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_fancy_regex_github_issues_149() {
+        let regex = FancyRegex::new(r"^HTTP/1\.[01] \d\d\d (?:[^\r\n]*\r\n(?!\r\n))*?Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)").unwrap();
+        let test_string = "HTTP/1.1 200 OK\r\nDate: Tue, 07 Jan 2025 07:07:16 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+        let test_string = "HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+        let test_string = "HTTP/1.1 200 OK\r\nDate: Wed, 08 Jan 2025 01:50:56 GMT\r\nServer: Apache/2.4.62 (Debian)\r\nLast-Modified: Fri, 07 Jun 2024 03:51:06 GMTETag";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+
+        let regex = FancyRegex::new(
+            r"^HTTP/1\.[01] \d\d\d (?s:.)*Server: Apache[/ ](\d[-.\w]+) ([^\r\n]+)",
+        )
+        .unwrap();
+        let test_string = "HTTP/1.1 200 OK\r\nDate: Tue, 07 Jan 2025 07:07:16 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
+        let test_string = "HTTP/1.1 200 OK\r\nDate: Wed, 18 Dec 2024 03:54:01 GMT\r\nServer: Apache/2.4.62 (Debian)\r\n";
+        let ret = regex.is_match(&test_string).unwrap();
+        println!("{}", ret);
     }
 }

@@ -26,3 +26,6 @@ jobs:
       # only build and not test due to env limits
       # - name: Run tests
       #   run: cargo test
+
+      - name: Test doc
+        run: cargo test --doc

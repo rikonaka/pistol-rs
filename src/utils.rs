@@ -1,4 +1,3 @@
-use escape_bytes;
 use log::debug;
 use log::warn;
 use num_cpus;
@@ -292,75 +291,9 @@ impl SpHex {
     }
 }
 
-pub fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
-    let output = match escape_bytes::unescape(input.as_bytes()) {
-        Ok(o) => o,
-        Err(e) => {
-            return Err(PistolErrors::CanNotUnescapeString {
-                s: input.to_string(),
-                e: format!("{:?}", e),
-            })
-        }
-    };
-    Ok(output)
-}
-
-pub fn vs_probe_data_to_string(input: &[u8]) -> String {
-    let mut input = input.to_vec();
-    input.retain(|&x| x != 0);
-    let mut ret = String::new();
-    for i in input {
-        match i {
-            0 => {
-                ret += "\\0";
-            }
-            8 => {
-                ret += "\\b";
-            }
-            9 => {
-                ret += "\\t";
-            }
-            10 => {
-                ret += "\\n";
-            }
-            11 => {
-                ret += "\\v";
-            }
-            12 => {
-                ret += "\\f";
-            }
-            13 => {
-                ret += "\\r";
-            }
-            32..=126 => {
-                let s = (i as char).to_string();
-                ret += &s;
-            }
-            _ => {
-                let s = format!("\\x{:02x}", i);
-                ret += &s;
-            }
-        }
-    }
-    // println!(">>> {}", ret);
-    ret
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_vs_probe_to_string() {
-        let data = vec![0, 0, 0x3f, 0x9f];
-        let data_str = vs_probe_data_to_string(&data);
-        println!("{}", data_str);
-    }
-    #[test]
-    fn test_unescape() {
-        let test_str = r"\x80\0\0\x28\x72\xFE\x1D\x13\0\0\0\0\0\0\0\x02\0\x01\x86\xA0\0\x01\x97\x7C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
-        let output = unescape_string(&test_str).unwrap();
-        println!("{:?}", output);
-    }
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];
