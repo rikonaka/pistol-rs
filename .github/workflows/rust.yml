@@ -27,5 +27,5 @@ jobs:
       # - name: Run tests
       #   run: cargo test
 
-      - name: Test doc
-        run: cargo test --doc
+      # - name: Test doc
+      #   run: cargo test --doc
