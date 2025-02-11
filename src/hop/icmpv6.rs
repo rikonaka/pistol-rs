@@ -28,7 +28,7 @@ pub fn send_icmpv6_ping_packet(
     timeout: Duration,
 ) -> Result<bool, PistolErrors> {
     const ICMPV6_DATA_SIZE: usize = 16;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
@@ -48,7 +48,7 @@ pub fn send_icmpv6_ping_packet(
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
     icmpv6_header.set_sequence_number(1);
-    icmpv6_header.set_identifier(rng.gen());
+    icmpv6_header.set_identifier(rng.random());
     let mut tv_sec = Utc::now().timestamp().to_be_bytes();
     tv_sec.reverse(); // Big-Endian
     let mut tv_usec = Utc::now().timestamp_subsec_millis().to_be_bytes();

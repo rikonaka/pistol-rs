@@ -109,7 +109,7 @@ pub fn seq_packet_1_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -122,7 +122,7 @@ pub fn seq_packet_1_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -135,9 +135,9 @@ pub fn seq_packet_1_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv4_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -169,7 +169,7 @@ pub fn seq_packet_2_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
 
@@ -181,7 +181,7 @@ pub fn seq_packet_2_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -194,9 +194,9 @@ pub fn seq_packet_2_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -227,7 +227,7 @@ pub fn seq_packet_3_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
@@ -240,7 +240,7 @@ pub fn seq_packet_3_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -253,9 +253,9 @@ pub fn seq_packet_3_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -288,7 +288,7 @@ pub fn seq_packet_4_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
 
@@ -300,7 +300,7 @@ pub fn seq_packet_4_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -313,9 +313,9 @@ pub fn seq_packet_4_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -345,7 +345,7 @@ pub fn seq_packet_5_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
 
@@ -357,7 +357,7 @@ pub fn seq_packet_5_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -370,9 +370,9 @@ pub fn seq_packet_5_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -403,7 +403,7 @@ pub fn seq_packet_6_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
 
@@ -415,7 +415,7 @@ pub fn seq_packet_6_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -428,9 +428,9 @@ pub fn seq_packet_6_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -459,7 +459,7 @@ pub fn ie_packet_1_layer3(
     dst_ipv4: Ipv4Addr,
     idtf: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const ICMP_DATA_SIZE: usize = 120; // and 120 bytes of 0x00 for the data payload
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
@@ -469,7 +469,7 @@ pub fn ie_packet_1_layer3(
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     // a random IP ID and ICMP request identifier
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     // the first one has the IP DF bit set
     ip_header.set_flags(Ipv4Flags::DontFragment);
@@ -508,7 +508,7 @@ pub fn ie_packet_2_layer3(
     idtf: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
     // 150 bytes of data is sent
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const ICMP_DATA_SIZE: usize = 150; // 150 bytes of data is sent
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
@@ -517,7 +517,7 @@ pub fn ie_packet_2_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     // the first one has the IP DF bit set
     ip_header.set_flags(Ipv4Flags::DontFragment);
@@ -556,7 +556,7 @@ pub fn ecn_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize = WSCALE_SIZE
         + 1
@@ -578,7 +578,7 @@ pub fn ecn_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_ttl(TTL);
     ip_header.set_ecn(0);
@@ -593,7 +593,7 @@ pub fn ecn_packet_layer3(
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
     // The acknowledgment number is zero.
     tcp_header.set_acknowledgement(0);
@@ -631,7 +631,7 @@ pub fn t2_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -644,7 +644,7 @@ pub fn t2_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -658,9 +658,9 @@ pub fn t2_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     tcp_header.set_flags(0);
@@ -690,7 +690,7 @@ pub fn t3_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -703,7 +703,7 @@ pub fn t3_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     // ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF not set
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -717,9 +717,9 @@ pub fn t3_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T3 sends a TCP packet with the SYN, FIN, URG, and PSH flags set and a window field of 256 to an open port. The IP DF bit is not set.
     tcp_header.set_flags(TcpFlags::SYN | TcpFlags::FIN | TcpFlags::URG | TcpFlags::PSH);
@@ -749,7 +749,7 @@ pub fn t4_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -762,7 +762,7 @@ pub fn t4_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -776,9 +776,9 @@ pub fn t4_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T4 sends a TCP ACK packet with IP DF and a window field of 1024 to an open port.
     tcp_header.set_flags(TcpFlags::ACK);
@@ -808,7 +808,7 @@ pub fn t5_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -821,7 +821,7 @@ pub fn t5_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     // ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF not set
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -835,9 +835,9 @@ pub fn t5_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T5 sends a TCP SYN packet without IP DF and a window field of 31337 to a closed port.
     tcp_header.set_flags(TcpFlags::SYN);
@@ -867,7 +867,7 @@ pub fn t6_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -880,7 +880,7 @@ pub fn t6_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -894,9 +894,9 @@ pub fn t6_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T6 sends a TCP ACK packet with IP DF and a window field of 32768 to a closed port.
     tcp_header.set_flags(TcpFlags::ACK);
@@ -926,7 +926,7 @@ pub fn t7_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_LEN: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -939,7 +939,7 @@ pub fn t7_packet_layer3(
     ip_header.set_total_length(
         (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
     );
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     // ip_header.set_flags(Ipv4Flags::DontFragment); // IP DF not set
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
@@ -953,9 +953,9 @@ pub fn t7_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T7 sends a TCP packet with the FIN, PSH, and URG flags set and a window field of 65535 to a closed port.
     // The IP DF bit is not set.

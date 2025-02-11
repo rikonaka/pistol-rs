@@ -223,13 +223,13 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
 
 /// Returns the random port.
 pub fn random_port() -> u16 {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(10000..=65535)
+    let mut rng = rand::rng();
+    rng.random_range(10000..=65535)
 }
 
 pub fn random_port_sp(start: u16, end: u16) -> u16 {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(start..=end)
+    let mut rng = rand::rng();
+    rng.random_range(start..=end)
 }
 
 /// Returns the number of CPUs in the machine.

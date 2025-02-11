@@ -503,10 +503,13 @@ pub use flood::tcp_syn_flood_raw;
 pub use flood::udp_flood;
 pub use flood::udp_flood_raw;
 
-/* Finger Printing */
+/* OS Detect */
 
 pub use os::os_detect;
 pub use os::os_detect_raw;
+
+/* Service Detect */
+
 pub use vs::vs_scan;
 pub use vs::vs_scan_raw;
 

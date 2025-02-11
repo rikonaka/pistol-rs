@@ -33,14 +33,14 @@ pub fn send_udp_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);

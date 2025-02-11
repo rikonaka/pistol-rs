@@ -24,7 +24,7 @@ pub fn send_syn_flood_packet(
     src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
@@ -33,7 +33,7 @@ pub fn send_syn_flood_packet(
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -45,8 +45,8 @@ pub fn send_syn_flood_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     tcp_header.set_urgent_ptr(0);
@@ -71,7 +71,7 @@ pub fn send_ack_flood_packet(
     src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
@@ -80,7 +80,7 @@ pub fn send_ack_flood_packet(
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -92,8 +92,8 @@ pub fn send_ack_flood_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -118,7 +118,7 @@ pub fn send_ack_psh_flood_packet(
     src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
@@ -127,7 +127,7 @@ pub fn send_ack_psh_flood_packet(
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -139,8 +139,8 @@ pub fn send_ack_psh_flood_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK | TcpFlags::PSH);
     tcp_header.set_urgent_ptr(0);

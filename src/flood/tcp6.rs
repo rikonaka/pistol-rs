@@ -22,7 +22,7 @@ pub fn send_syn_flood_packet(
     src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
@@ -41,8 +41,8 @@ pub fn send_syn_flood_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     tcp_header.set_urgent_ptr(0);
@@ -67,7 +67,7 @@ pub fn send_ack_flood_packet(
     src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
@@ -86,8 +86,8 @@ pub fn send_ack_flood_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -112,7 +112,7 @@ pub fn send_ack_psh_flood_packet(
     src_port: u16,
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
@@ -131,8 +131,8 @@ pub fn send_ack_psh_flood_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK | TcpFlags::PSH);
     tcp_header.set_urgent_ptr(0);

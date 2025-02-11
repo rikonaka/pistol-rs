@@ -372,8 +372,8 @@ fn send_ie_probes(
 ) -> Result<IERR, PistolErrors> {
     let (tx, rx) = channel();
 
-    let mut rng = rand::thread_rng();
-    let id_1 = rng.gen();
+    let mut rng = rand::rng();
+    let id_1 = rng.random();
     // and the ICMP request ID and sequence numbers are incremented by one from the previous query values
     let id_2 = id_1 + 1;
     let buff_1 = packet::ie_packet_1_layer3(src_ipv4, dst_ipv4, id_1)?;

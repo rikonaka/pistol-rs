@@ -27,7 +27,7 @@ pub fn send_icmp_flood_packet(
     max_same_packet: usize,
 ) -> Result<usize, PistolErrors> {
     const ICMP_DATA_SIZE: usize = 16;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
@@ -36,7 +36,7 @@ pub fn send_icmp_flood_packet(
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
     ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -49,7 +49,7 @@ pub fn send_icmp_flood_packet(
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_sequence_number(1);
     // icmp_header.set_identifier(2);
-    icmp_header.set_identifier(rng.gen());
+    icmp_header.set_identifier(rng.random());
     let mut tv_sec = Utc::now().timestamp().to_be_bytes();
     tv_sec.reverse(); // Big-Endian
     let mut tv_usec = Utc::now().timestamp_subsec_millis().to_be_bytes();

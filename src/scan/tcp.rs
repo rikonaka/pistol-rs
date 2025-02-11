@@ -51,7 +51,7 @@ pub fn send_syn_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
@@ -60,7 +60,7 @@ pub fn send_syn_scan_packet(
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -72,8 +72,8 @@ pub fn send_syn_scan_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
     tcp_header.set_urgent_ptr(0);
@@ -164,14 +164,14 @@ pub fn send_fin_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -185,8 +185,8 @@ pub fn send_fin_scan_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::FIN);
     tcp_header.set_urgent_ptr(0);
@@ -277,14 +277,14 @@ pub fn send_ack_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -298,8 +298,8 @@ pub fn send_ack_scan_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -387,14 +387,14 @@ pub fn send_null_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -408,8 +408,8 @@ pub fn send_null_scan_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(0);
     tcp_header.set_urgent_ptr(0);
@@ -497,14 +497,14 @@ pub fn send_xmas_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -515,12 +515,12 @@ pub fn send_xmas_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::FIN | TcpFlags::PSH | TcpFlags::URG);
     tcp_header.set_urgent_ptr(0);
@@ -608,14 +608,14 @@ pub fn send_window_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -629,8 +629,8 @@ pub fn send_window_scan_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -723,14 +723,14 @@ pub fn send_maimon_scan_packet(
     dst_port: u16,
     timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.gen();
+    let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
@@ -744,8 +744,8 @@ pub fn send_maimon_scan_packet(
     let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.gen());
-    tcp_header.set_acknowledgement(rng.gen());
+    tcp_header.set_sequence(rng.random());
+    tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::FIN | TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -841,7 +841,7 @@ pub fn send_idle_scan_packet(
         src_port: u16,
         dst_port: u16,
     ) -> Result<Vec<u8>, PistolErrors> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         // ip header
         let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
         let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
@@ -850,7 +850,7 @@ pub fn send_idle_scan_packet(
         ip_header.set_source(src_ipv4);
         ip_header.set_destination(dst_ipv4);
         ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-        let id = rng.gen();
+        let id = rng.random();
         ip_header.set_identification(id);
         ip_header.set_flags(Ipv4Flags::DontFragment);
         ip_header.set_ttl(TTL);
@@ -862,8 +862,8 @@ pub fn send_idle_scan_packet(
         let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
         tcp_header.set_source(src_port);
         tcp_header.set_destination(dst_port);
-        tcp_header.set_sequence(rng.gen());
-        tcp_header.set_acknowledgement(rng.gen());
+        tcp_header.set_sequence(rng.random());
+        tcp_header.set_acknowledgement(rng.random());
         tcp_header.set_reserved(0);
         tcp_header.set_flags(TcpFlags::SYN);
         tcp_header.set_urgent_ptr(0);

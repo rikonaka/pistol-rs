@@ -117,7 +117,7 @@ pub fn seq_packet_1_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
     const TCP_DATA_SIZE: usize = 0;
@@ -132,7 +132,7 @@ pub fn seq_packet_1_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -142,9 +142,9 @@ pub fn seq_packet_1_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -176,7 +176,7 @@ pub fn seq_packet_2_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
@@ -189,7 +189,7 @@ pub fn seq_packet_2_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -199,9 +199,9 @@ pub fn seq_packet_2_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -232,7 +232,7 @@ pub fn seq_packet_3_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
     const TCP_DATA_SIZE: usize = 0;
@@ -246,7 +246,7 @@ pub fn seq_packet_3_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -256,9 +256,9 @@ pub fn seq_packet_3_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -291,7 +291,7 @@ pub fn seq_packet_4_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
     const TCP_DATA_SIZE: usize = 0;
 
@@ -304,7 +304,7 @@ pub fn seq_packet_4_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -314,9 +314,9 @@ pub fn seq_packet_4_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -346,7 +346,7 @@ pub fn seq_packet_5_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
     const TCP_DATA_SIZE: usize = 0;
 
@@ -359,7 +359,7 @@ pub fn seq_packet_5_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -369,9 +369,9 @@ pub fn seq_packet_5_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -402,7 +402,7 @@ pub fn seq_packet_6_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
@@ -415,7 +415,7 @@ pub fn seq_packet_6_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -425,9 +425,9 @@ pub fn seq_packet_6_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::SYN);
@@ -452,7 +452,7 @@ pub fn seq_packet_6_layer3(
 }
 
 pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 120;
     const HOPBYHOP_OPTION_SIZE: usize = 8;
 
@@ -471,7 +471,7 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_payload_length(payload_length as u16);
     // Hop-by-Hop Options
     ipv6_header.set_next_header(IpNextHeaderProtocol(0));
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -509,7 +509,7 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
 
 pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
     // 150 bytes of data is sent
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 0;
     const HOPBYHOP_OPTION_SIZE: usize = 8;
     const DESTINATION_OPTION_SIZE: usize = 8;
@@ -539,7 +539,7 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_payload_length(payload_length as u16);
     // Hop-by-Hop Options
     ipv6_header.set_next_header(IpNextHeaderProtocol(0));
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -624,7 +624,7 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
 }
 
 pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE];
@@ -638,7 +638,7 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     let payload_length = ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -717,7 +717,7 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
         None => return Err(PistolErrors::CanNotFoundMacAddress),
     };
 
-    // let mut rng = rand::thread_rng();
+    // let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
 
     // ipv6
@@ -765,7 +765,7 @@ pub fn udp_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const UDP_DATA_SIZE: usize = 300;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -777,7 +777,7 @@ pub fn udp_packet_layer3(
     let payload_length = UDP_HEADER_SIZE + UDP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Udp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -804,7 +804,7 @@ pub fn tecn_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = WSCALE_SIZE
         + 1
@@ -828,7 +828,7 @@ pub fn tecn_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -839,7 +839,7 @@ pub fn tecn_packet_layer3(
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
     // The acknowledgment number is zero.
     tcp_header.set_acknowledgement(0);
@@ -877,7 +877,7 @@ pub fn t2_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -892,7 +892,7 @@ pub fn t2_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -902,9 +902,9 @@ pub fn t2_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     tcp_header.set_flags(0);
@@ -934,7 +934,7 @@ pub fn t3_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -949,7 +949,7 @@ pub fn t3_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -959,9 +959,9 @@ pub fn t3_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T3 sends a TCP packet with the SYN, FIN, URG, and PSH flags set and a window field of 256 to an open port. The IP DF bit is not set.
     tcp_header.set_flags(TcpFlags::SYN | TcpFlags::FIN | TcpFlags::URG | TcpFlags::PSH);
@@ -991,7 +991,7 @@ pub fn t4_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -1006,7 +1006,7 @@ pub fn t4_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1016,9 +1016,9 @@ pub fn t4_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T4 sends a TCP ACK packet with IP DF and a window field of 1024 to an open port.
     tcp_header.set_flags(TcpFlags::ACK);
@@ -1048,7 +1048,7 @@ pub fn t5_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -1063,7 +1063,7 @@ pub fn t5_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1073,9 +1073,9 @@ pub fn t5_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T5 sends a TCP SYN packet without IP DF and a window field of 31337 to a closed port.
     tcp_header.set_flags(TcpFlags::SYN);
@@ -1105,7 +1105,7 @@ pub fn t6_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -1120,7 +1120,7 @@ pub fn t6_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1130,9 +1130,9 @@ pub fn t6_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T6 sends a TCP ACK packet with IP DF and a window field of 32768 to a closed port.
     tcp_header.set_flags(TcpFlags::ACK);
@@ -1162,7 +1162,7 @@ pub fn t7_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
 ) -> Result<Vec<u8>, PistolErrors> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -1177,7 +1177,7 @@ pub fn t7_packet_layer3(
     let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    let hop_limit = rng.gen_range(30..=50);
+    let hop_limit = rng.random_range(30..=50);
     // hop limits are set randomly
     ipv6_header.set_hop_limit(hop_limit);
     ipv6_header.set_source(src_ipv6);
@@ -1187,9 +1187,9 @@ pub fn t7_packet_layer3(
     let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    let sequence = rng.gen();
+    let sequence = rng.random();
     tcp_header.set_sequence(sequence);
-    let acknowledgement = rng.gen();
+    let acknowledgement = rng.random();
     tcp_header.set_acknowledgement(acknowledgement);
     // T7 sends a TCP packet with the FIN, PSH, and URG flags set and a window field of 65535 to a closed port.
     // The IP DF bit is not set.
