@@ -82,7 +82,7 @@ pub enum PistolError {
     #[error("std error")]
     IOError(#[from] std::io::Error),
     #[error("subnetwork error")]
-    SubnetworkErrors(#[from] subnetwork::SubnetworkErrors),
+    SubnetworkError(#[from] subnetwork::SubnetworkError),
     #[error("log error")]
     SetLoggerError(#[from] log::SetLoggerError),
     #[error("hex error")]

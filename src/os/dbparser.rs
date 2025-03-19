@@ -1092,7 +1092,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(Some(ie))
                             }
                             None => {
-                                // return Err(PistolErrors::OSDBParseError {
+                                // return Err(PistolError::OSDBParseError {
                                 //     name: format!("IE"),
                                 //     line,
                                 // })

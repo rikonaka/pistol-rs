@@ -516,7 +516,7 @@ pub fn os_detect_raw(
                 }
             }
             None => {
-                // return Err(PistolErrors::CanNotFoundSourceAddress);
+                // return Err(PistolError::CanNotFoundSourceAddress);
                 let h = HostOSDetects::new_offline();
                 Ok(h)
             }
@@ -550,7 +550,7 @@ pub fn os_detect_raw(
                 }
             }
             None => {
-                // return Err(PistolErrors::CanNotFoundSourceAddress);
+                // return Err(PistolError::CanNotFoundSourceAddress);
                 let h = HostOSDetects::new6_offline();
                 Ok(h)
             }
