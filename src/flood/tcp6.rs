@@ -7,7 +7,7 @@ use rand::Rng;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
@@ -21,7 +21,7 @@ pub fn send_syn_flood_packet(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -66,7 +66,7 @@ pub fn send_ack_flood_packet(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -111,7 +111,7 @@ pub fn send_ack_psh_flood_packet(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];

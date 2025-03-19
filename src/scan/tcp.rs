@@ -20,7 +20,7 @@ use std::net::SocketAddrV4;
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv4_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
@@ -50,7 +50,7 @@ pub fn send_syn_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -163,7 +163,7 @@ pub fn send_fin_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -276,7 +276,7 @@ pub fn send_ack_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -386,7 +386,7 @@ pub fn send_null_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -496,7 +496,7 @@ pub fn send_xmas_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -607,7 +607,7 @@ pub fn send_window_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -722,7 +722,7 @@ pub fn send_maimon_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -834,13 +834,13 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Option<TcpIdleScans>, Duration), PistolErrors> {
+) -> Result<(PortStatus, Option<TcpIdleScans>, Duration), PistolError> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
         src_port: u16,
         dst_port: u16,
-    ) -> Result<Vec<u8>, PistolErrors> {
+    ) -> Result<Vec<u8>, PistolError> {
         let mut rng = rand::rng();
         // ip header
         let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -1031,7 +1031,7 @@ pub fn send_idle_scan_packet(
         None => (),
     }
     if zombie_ip_id_1 == 0 && zombie_ip_id_2 == 0 {
-        return Err(PistolErrors::IdleScanAllZeroError {
+        return Err(PistolError::IdleScanAllZeroError {
             zombie_ipv4,
             zombie_port,
         });
@@ -1062,7 +1062,7 @@ pub fn send_connect_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
     let start_time = Instant::now();
     match TcpStream::connect_timeout(&addr, timeout) {

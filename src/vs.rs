@@ -16,7 +16,7 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use zip::ZipArchive;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::threads_num_check;
@@ -134,7 +134,7 @@ impl fmt::Display for VsScans {
     }
 }
 
-fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolErrors> {
+fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
     let data = include_bytes!("./db/nmap-service-probes.zip");
     let reader = Cursor::new(data);
     let mut archive = ZipArchive::new(reader)?;
@@ -146,7 +146,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolErrors> {
         let ret: Vec<ServiceProbe> = serde_json::from_str(&contents)?;
         Ok(ret)
     } else {
-        Err(PistolErrors::ZipEmptyError)
+        Err(PistolError::ZipEmptyError)
     }
 }
 
@@ -159,7 +159,7 @@ pub fn vs_scan(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<VsScans, PistolErrors> {
+) -> Result<VsScans, PistolError> {
     let mut ret = VsScans::new();
     let threads_num = match threads_num {
         Some(t) => t,
@@ -247,7 +247,7 @@ pub fn vs_scan_raw(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<PortServices, PistolErrors> {
+) -> Result<PortServices, PistolError> {
     let nsp_str = include_str!("./db/nmap-service-probes");
     let mut nsp_lines = Vec::new();
     for l in nsp_str.lines() {

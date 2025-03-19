@@ -15,7 +15,7 @@ use std::process::Command;
 use std::str::FromStr;
 
 // use crate::errors::InvalidRouteFormat;
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 #[cfg(any(
     target_os = "macos",
     target_os = "freebsd",
@@ -31,7 +31,7 @@ use crate::utils::find_interface_by_name;
     target_os = "openbsd",
     target_os = "netbsd",
 ))]
-fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolErrors> {
+fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
     // Remove the %em0 .etc
     // fe80::%lo0/10 => fe80::/10
     // fe80::20c:29ff:fe1f:6f71%lo0 => fe80::20c:29ff:fe1f:6f71
@@ -122,7 +122,7 @@ impl fmt::Display for RouteTable {
 
 impl RouteTable {
     #[cfg(target_os = "linux")]
-    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolErrors> {
+    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolError> {
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = HashMap::new();
@@ -220,8 +220,8 @@ impl RouteTable {
         Ok(rt)
     }
     #[cfg(target_os = "linux")]
-    pub fn init() -> Result<RouteTable, PistolErrors> {
-        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
+    pub fn init() -> Result<RouteTable, PistolError> {
+        let system_route_lines = || -> Result<Vec<String>, PistolError> {
             // Linux
             // ubuntu22.04 output:
             // default via 192.168.72.2 dev ens33
@@ -252,7 +252,7 @@ impl RouteTable {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolErrors> {
+    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolError> {
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = HashMap::new();
@@ -355,8 +355,8 @@ impl RouteTable {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn init() -> Result<RouteTable, PistolErrors> {
-        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
+    pub fn init() -> Result<RouteTable, PistolError> {
+        let system_route_lines = || -> Result<Vec<String>, PistolError> {
             // default 192.168.72.2 UGS em0
             // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
             // 127.0.0.1          link#2             UH          lo0
@@ -378,7 +378,7 @@ impl RouteTable {
         RouteTable::parser(system_route_lines)
     }
     #[cfg(target_os = "windows")]
-    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolErrors> {
+    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolError> {
         let mut default_ipv4_route = None;
         let mut default_ipv6_route = None;
         let mut routes = HashMap::new();
@@ -497,8 +497,8 @@ impl RouteTable {
         Ok(rt)
     }
     #[cfg(target_os = "windows")]
-    pub fn init() -> Result<RouteTable, PistolErrors> {
-        let system_route_lines = || -> Result<Vec<String>, PistolErrors> {
+    pub fn init() -> Result<RouteTable, PistolError> {
+        let system_route_lines = || -> Result<Vec<String>, PistolError> {
             // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
             // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
             let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
@@ -520,7 +520,7 @@ pub struct NeighborCache {}
 
 impl NeighborCache {
     #[cfg(target_os = "linux")]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolErrors> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
         // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
         // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
@@ -572,7 +572,7 @@ impl NeighborCache {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolErrors> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // # arp -a
         // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
         // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
@@ -625,7 +625,7 @@ impl NeighborCache {
         Ok(ret)
     }
     #[cfg(target_os = "windows")]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolErrors> {
+    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
         // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
         let c = Command::new("powershell")
@@ -680,7 +680,7 @@ pub struct SystemNetCache {
 }
 
 impl SystemNetCache {
-    pub fn init() -> Result<SystemNetCache, PistolErrors> {
+    pub fn init() -> Result<SystemNetCache, PistolError> {
         let route_table = RouteTable::init()?;
         debug!("route table init done");
         debug!("route table: {}", route_table);

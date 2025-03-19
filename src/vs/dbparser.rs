@@ -9,15 +9,15 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 
 use super::vscan::MatchX;
 
-fn unescape_string(input: &str) -> Result<Vec<u8>, PistolErrors> {
+fn unescape_string(input: &str) -> Result<Vec<u8>, PistolError> {
     let output = match escape_bytes::unescape(input.as_bytes()) {
         Ok(o) => o,
         Err(e) => {
-            return Err(PistolErrors::CanNotUnescapeString {
+            return Err(PistolError::CanNotUnescapeString {
                 s: input.to_string(),
                 e: format!("{:?}", e),
             })
@@ -223,7 +223,7 @@ impl ServiceProbe {
 
         pattern
     }
-    fn match_pattern(&self, m: &Match, recv_str: &str) -> Result<Match, PistolErrors> {
+    fn match_pattern(&self, m: &Match, recv_str: &str) -> Result<Match, PistolError> {
         let new_pattern = self.pattern_fix(&m.pattern);
 
         let re = FancyRegex::new(&new_pattern)?;
@@ -247,7 +247,7 @@ impl ServiceProbe {
                 //     debug!("match {}", new_pattern);
                 //     debug!("source: {}", recv_str);
                 // }
-                Err(PistolErrors::NoMatchFound) // avoid to using Option<'_> here make less code
+                Err(PistolError::NoMatchFound) // avoid to using Option<'_> here make less code
             }
         }
     }
@@ -255,13 +255,13 @@ impl ServiceProbe {
         &self,
         sm: &SoftMatch,
         recv_str: &str,
-    ) -> Result<SoftMatch, PistolErrors> {
+    ) -> Result<SoftMatch, PistolError> {
         let new_pattern = self.pattern_fix(&sm.pattern);
         let re = FancyRegex::new(&new_pattern)?;
         if re.is_match(recv_str)? {
             Ok(sm.clone())
         } else {
-            Err(PistolErrors::NoMatchFound)
+            Err(PistolError::NoMatchFound)
         }
     }
     pub fn check(&self, recv_str: &str) -> Option<MatchX> {
@@ -276,7 +276,7 @@ impl ServiceProbe {
                     break;
                 }
                 Err(e) => match e {
-                    PistolErrors::NoMatchFound => (),
+                    PistolError::NoMatchFound => (),
                     _ => {
                         error!("match pattern error: {}", e);
                         continue;
@@ -294,7 +294,7 @@ impl ServiceProbe {
                         break;
                     }
                     Err(e) => match e {
-                        PistolErrors::NoMatchFound => (), // do noting for no match found
+                        PistolError::NoMatchFound => (), // do noting for no match found
                         _ => {
                             error!("softmatch pattern error: {}", e);
                             continue;
@@ -318,7 +318,7 @@ impl ServiceProbe {
     }
 }
 
-fn ports_parser(ports: &str) -> Result<Vec<u16>, PistolErrors> {
+fn ports_parser(ports: &str) -> Result<Vec<u16>, PistolError> {
     let mut ret = Vec::new();
     let ports_split: Vec<&str> = ports.split(",").map(|s| s.trim()).collect();
     for ps in ports_split {
@@ -339,7 +339,7 @@ fn ports_parser(ports: &str) -> Result<Vec<u16>, PistolErrors> {
 
 /// Instead of getting the `Exclude` port based on the `nmap-service-probes` file,
 /// we expect the user to provide a parameter to specify this value themselves.
-pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe>, PistolErrors> {
+pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe>, PistolError> {
     let probe_name_reg = Regex::new(
         r"Probe (?P<probeprotocol>[^\s]+) (?P<probename>[^\s]+) q\|(?P<probestring>[^\|]+|)\|(.+)?",
     )?;
@@ -449,7 +449,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     )
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("Probe"),
                         line: line.to_string(),
                     })
@@ -459,7 +459,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                 "TCP" => ProbeProtocol::Tcp,
                 "UDP" => ProbeProtocol::Udp,
                 _ => {
-                    return Err(PistolErrors::ServiceProbesProtocolUnknown {
+                    return Err(PistolError::ServiceProbesProtocolUnknown {
                         protocol: probeprotocol,
                     })
                 }
@@ -484,7 +484,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     ports_str
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("ports"),
                         line: line.to_string(),
                     })
@@ -498,7 +498,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     ports_str
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("ports"),
                         line: line.to_string(),
                     })
@@ -512,7 +512,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     totalwaitms_str
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("totalwaitms"),
                         line: line.to_string(),
                     })
@@ -527,7 +527,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     tcpwrappedms_str
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("tcpwrappedms"),
                         line: line.to_string(),
                     })
@@ -542,7 +542,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     rarity_str
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("rarity"),
                         line: line.to_string(),
                     })
@@ -554,7 +554,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
             let caps = match do_regex_match(&match_regs, &line) {
                 Some(caps) => caps,
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("match"),
                         line: line.to_string(),
                     })
@@ -597,7 +597,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
             let caps = match do_regex_match(&softmatch_regs, &line) {
                 Some(caps) => caps,
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("match"),
                         line: line.to_string(),
                     })
@@ -627,7 +627,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     fallback_str
                 }
                 None => {
-                    return Err(PistolErrors::ServiceProbesParseError {
+                    return Err(PistolError::ServiceProbesParseError {
                         name: String::from("fallback"),
                         line: line.to_string(),
                     })

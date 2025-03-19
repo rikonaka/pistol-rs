@@ -19,7 +19,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv4_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
@@ -34,7 +34,7 @@ pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
-) -> Result<(PingStatus, Duration), PistolErrors> {
+) -> Result<(PingStatus, Duration), PistolError> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ip header

@@ -19,7 +19,7 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use zip::ZipArchive;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::os::dbparser::NmapOSDB;
 use crate::os::osscan::threads_os_probe;
 use crate::os::osscan::TargetFingerprint;
@@ -257,7 +257,7 @@ pub struct Linear {
     pub cpe: Vec<CPE>,
 }
 
-fn gen_linear() -> Result<Linear, PistolErrors> {
+fn gen_linear() -> Result<Linear, PistolError> {
     let variance_json_data = include_str!("./db/nmap-os-db-ipv6/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
 
@@ -315,7 +315,7 @@ fn gen_linear() -> Result<Linear, PistolErrors> {
     Ok(linear)
 }
 
-fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolErrors> {
+fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
     let data = include_bytes!("./db/nmap-os-db.zip");
     let reader = Cursor::new(data);
     let mut archive = ZipArchive::new(reader)?;
@@ -327,7 +327,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolErrors> {
         let ret: Vec<NmapOSDB> = serde_json::from_str(&contents)?;
         Ok(ret)
     } else {
-        Err(PistolErrors::ZipEmptyError)
+        Err(PistolError::ZipEmptyError)
     }
 }
 
@@ -338,7 +338,7 @@ pub fn os_detect(
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
-) -> Result<OSDetects, PistolErrors> {
+) -> Result<OSDetects, PistolError> {
     let threads_num = match threads_num {
         Some(t) => t,
         None => {
@@ -366,7 +366,7 @@ pub fn os_detect(
                 let dst_ports = h.ports;
                 let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
                     Some(s) => s,
-                    None => return Err(PistolErrors::CanNotFoundSourceAddress),
+                    None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
 
                 let nmap_os_db = get_nmap_os_db()?;
@@ -390,7 +390,7 @@ pub fn os_detect(
                         );
                         os_detect_ret
                     } else {
-                        Err(PistolErrors::OSDetectPortsNotEnough)
+                        Err(PistolError::OSDetectPortsNotEnough)
                     };
                     let hodr = match detect_ret {
                         Ok((fingerprint, ret)) => {
@@ -408,7 +408,7 @@ pub fn os_detect(
                 let dst_ports = h.ports;
                 let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
                     Some(s) => s,
-                    None => return Err(PistolErrors::CanNotFoundSourceAddress),
+                    None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
 
                 let linear = gen_linear()?;
@@ -433,7 +433,7 @@ pub fn os_detect(
                         );
                         os_detect_ret
                     } else {
-                        Err(PistolErrors::OSDetectPortsNotEnough)
+                        Err(PistolError::OSDetectPortsNotEnough)
                     };
                     let hodr = match detect_ret {
                         Ok((fingerprint, ret)) => {
@@ -479,7 +479,7 @@ pub fn os_detect_raw(
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
-) -> Result<HostOSDetects, PistolErrors> {
+) -> Result<HostOSDetects, PistolError> {
     let timeout = match timeout {
         Some(t) => t,
         None => get_default_timeout(),

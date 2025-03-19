@@ -5,7 +5,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
@@ -19,7 +19,7 @@ pub fn send_udp_flood_packet(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();

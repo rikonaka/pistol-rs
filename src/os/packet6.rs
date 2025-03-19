@@ -22,7 +22,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
 use std::net::Ipv6Addr;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::ICMPV6_ER_HEADER_SIZE;
 use crate::layers::ICMPV6_NI_HEADER_SIZE;
 use crate::layers::ICMPV6_NS_HEADER_SIZE;
@@ -116,7 +116,7 @@ pub fn seq_packet_1_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
@@ -175,7 +175,7 @@ pub fn seq_packet_2_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
@@ -231,7 +231,7 @@ pub fn seq_packet_3_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
@@ -290,7 +290,7 @@ pub fn seq_packet_4_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
     const TCP_DATA_SIZE: usize = 0;
@@ -345,7 +345,7 @@ pub fn seq_packet_5_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
     const TCP_DATA_SIZE: usize = 0;
@@ -401,7 +401,7 @@ pub fn seq_packet_6_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
@@ -451,7 +451,7 @@ pub fn seq_packet_6_layer3(
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
+pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 120;
     const HOPBYHOP_OPTION_SIZE: usize = 8;
@@ -507,7 +507,7 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
+pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     // 150 bytes of data is sent
     let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 0;
@@ -623,7 +623,7 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
+pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
     // ipv6 header
@@ -706,15 +706,15 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolErrors> {
+pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     // This probe is only sent to hosts on the same subnet.
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
-        None => return Err(PistolErrors::CanNotFoundInterface),
+        None => return Err(PistolError::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(PistolErrors::CanNotFoundMacAddress),
+        None => return Err(PistolError::CanNotFoundMacAddress),
     };
 
     // let mut rng = rand::rng();
@@ -764,7 +764,7 @@ pub fn udp_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const UDP_DATA_SIZE: usize = 300;
 
@@ -803,7 +803,7 @@ pub fn tecn_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = WSCALE_SIZE
@@ -876,7 +876,7 @@ pub fn t2_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -933,7 +933,7 @@ pub fn t3_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -990,7 +990,7 @@ pub fn t4_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -1047,7 +1047,7 @@ pub fn t5_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -1104,7 +1104,7 @@ pub fn t6_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -1161,7 +1161,7 @@ pub fn t7_packet_layer3(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-) -> Result<Vec<u8>, PistolErrors> {
+) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =

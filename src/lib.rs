@@ -18,12 +18,12 @@ pub mod ping;
 pub mod scan;
 pub mod vs;
 // inner use only
-mod errors;
+mod error;
 mod layers;
 mod route;
 mod utils;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::route::SystemNetCache;
 
 // debug code
@@ -289,7 +289,7 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 pub struct Logger {}
 
 impl Logger {
-    pub fn init_debug_logging() -> Result<(), PistolErrors> {
+    pub fn init_debug_logging() -> Result<(), PistolError> {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Debug)
@@ -297,7 +297,7 @@ impl Logger {
             .try_init()?;
         Ok(())
     }
-    pub fn init_warn_logging() -> Result<(), PistolErrors> {
+    pub fn init_warn_logging() -> Result<(), PistolError> {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Warn)
@@ -305,7 +305,7 @@ impl Logger {
             .try_init()?;
         Ok(())
     }
-    pub fn init_info_logging() -> Result<(), PistolErrors> {
+    pub fn init_info_logging() -> Result<(), PistolError> {
         let _ = env_logger::builder()
             // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Info)
@@ -437,7 +437,7 @@ impl Target {
     ///     let target = Target::from_subnet("192.168.1.0/24", Some(vec![22])).unwrap();
     /// }
     /// ```
-    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target, PistolErrors> {
+    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target, PistolError> {
         let ipv4_pool = Ipv4Pool::from(subnet)?;
         let mut hosts = Vec::new();
         for ipv4_addr in ipv4_pool {
@@ -519,7 +519,7 @@ pub use layers::dns_query;
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn simple_parser(ports_str: &str) -> Result<Vec<u16>, PistolErrors> {
+    fn simple_parser(ports_str: &str) -> Result<Vec<u16>, PistolError> {
         let mut ret = Vec::new();
         let ports_str_split: Vec<&str> = ports_str.split(",").collect();
         for p in ports_str_split {

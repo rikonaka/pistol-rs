@@ -15,7 +15,7 @@ use rand::Rng;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
@@ -30,7 +30,7 @@ pub fn send_icmpv6_ping_packet(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
-) -> Result<(PingStatus, Duration), PistolErrors> {
+) -> Result<(PingStatus, Duration), PistolError> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ipv6 header

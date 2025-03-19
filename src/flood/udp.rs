@@ -8,7 +8,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv4_send;
 use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
@@ -22,7 +22,7 @@ pub fn send_udp_flood_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];

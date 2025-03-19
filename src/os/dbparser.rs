@@ -12,7 +12,7 @@ use super::osscan::SEQX;
 use super::osscan::TXX;
 use super::osscan::U1X;
 use super::osscan::WINX;
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::utils::SpHex;
 
 fn bool_score(bool_vec: Vec<bool>) -> usize {
@@ -104,7 +104,7 @@ pub enum NmapData {
 }
 
 impl NmapData {
-    pub fn parser_usize(input: &str) -> Result<NmapData, PistolErrors> {
+    pub fn parser_usize(input: &str) -> Result<NmapData, PistolError> {
         let input = input.trim();
         if input.len() == 0 {
             Ok(NmapData::empty())
@@ -703,7 +703,7 @@ impl NmapOSDB {
 /// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
-pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErrors> {
+pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolError> {
     let name_reg = Regex::new(r"Fingerprint (?P<name>.+)")?;
     let class_reg = Regex::new(
         r"Class (?P<class1>[^|]+) \|(?P<class2>[^|]+)\|(\|)? (?P<class3>[^|]+)( \|(\|)? (?P<class4>[^|]+))?",
@@ -752,7 +752,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             name.to_string()
                         }
                         None => {
-                            return Err(PistolErrors::OSDBParseError {
+                            return Err(PistolError::OSDBParseError {
                                 name: String::from("Fingerprint"),
                                 line,
                             })
@@ -760,7 +760,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                     };
                     // println!("{}", name);
                     /* class part */
-                    let class_parser = |line: String| -> Result<Vec<String>, PistolErrors> {
+                    let class_parser = |line: String| -> Result<Vec<String>, PistolError> {
                         match class_reg.captures(&line) {
                             Some(caps) => {
                                 let class1 = caps.name("class1").map_or("", |m| m.as_str());
@@ -784,21 +784,21 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 class_push(class4);
                                 Ok(class)
                             }
-                            None => Err(PistolErrors::OSDBParseError {
+                            None => Err(PistolError::OSDBParseError {
                                 name: String::from("Class"),
                                 line,
                             }),
                         }
                     };
                     /* cpe part */
-                    let cpe_parser = |line: String| -> Result<String, PistolErrors> {
+                    let cpe_parser = |line: String| -> Result<String, PistolError> {
                         match cpe_reg.captures(&line) {
                             Some(caps) => {
                                 let cpe = caps.name("cpe").map_or("", |m| m.as_str());
                                 Ok(cpe.to_string())
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: String::from("CPE"),
                                     line,
                                 })
@@ -806,7 +806,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* seq part */
-                    let seq_parser = |line: String| -> Result<SEQDB, PistolErrors> {
+                    let seq_parser = |line: String| -> Result<SEQDB, PistolError> {
                         match seq_reg.captures(&line) {
                             Some(caps) => {
                                 let sp = caps.name("sp").map_or("", |m| m.as_str());
@@ -843,7 +843,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(seq)
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: String::from("SEQ"),
                                     line,
                                 })
@@ -851,7 +851,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* ops part */
-                    let ops_parser = |line: String| -> Result<OPSDB, PistolErrors> {
+                    let ops_parser = |line: String| -> Result<OPSDB, PistolError> {
                         match ops_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
@@ -882,7 +882,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(ops)
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: String::from("OPS"),
                                     line,
                                 })
@@ -890,7 +890,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* win part */
-                    let win_parser = |line: String| -> Result<WINDB, PistolErrors> {
+                    let win_parser = |line: String| -> Result<WINDB, PistolError> {
                         match win_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
@@ -921,7 +921,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(win)
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: String::from("WIN"),
                                     line,
                                 })
@@ -929,7 +929,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* ecn part */
-                    let ecn_parser = |line: String| -> Result<ECNDB, PistolErrors> {
+                    let ecn_parser = |line: String| -> Result<ECNDB, PistolError> {
                         match ecn_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
@@ -963,7 +963,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(ecn)
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: String::from("ECN"),
                                     line,
                                 })
@@ -971,7 +971,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* tx part */
-                    let tx_parser = |line: String| -> Result<TXDB, PistolErrors> {
+                    let tx_parser = |line: String| -> Result<TXDB, PistolError> {
                         match tx_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
@@ -1014,7 +1014,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(txdb)
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: format!("TX"),
                                     line,
                                 })
@@ -1022,7 +1022,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* u1 part */
-                    let u1_parser = |line: String| -> Result<U1DB, PistolErrors> {
+                    let u1_parser = |line: String| -> Result<U1DB, PistolError> {
                         match u1_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());
@@ -1065,7 +1065,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 Ok(u1)
                             }
                             None => {
-                                return Err(PistolErrors::OSDBParseError {
+                                return Err(PistolError::OSDBParseError {
                                     name: format!("U1"),
                                     line,
                                 })
@@ -1073,7 +1073,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                         }
                     };
                     /* ie part */
-                    let ie_parser = |line: String| -> Result<Option<IEDB>, PistolErrors> {
+                    let ie_parser = |line: String| -> Result<Option<IEDB>, PistolError> {
                         match ie_reg.captures(&line) {
                             Some(caps) => {
                                 let r = caps.name("r").map_or("", |m| m.as_str());

@@ -11,7 +11,7 @@ use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::route::DefaultRoute;
 use crate::Ipv6CheckMethods;
 use crate::DEFAULT_TIMEOUT;
@@ -98,7 +98,7 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
 pub fn find_source_addr(
     src_addr: Option<IpAddr>,
     dst_ipv4: Ipv4Addr,
-) -> Result<Option<Ipv4Addr>, PistolErrors> {
+) -> Result<Option<Ipv4Addr>, PistolError> {
     match src_addr {
         Some(s) => match s {
             IpAddr::V6(_) => (),
@@ -122,7 +122,7 @@ pub fn find_source_addr(
                     // return the route ip
                     let route = match system_cache_default_route() {
                         Some(d) => d,
-                        None => return Err(PistolErrors::CanNotFoundRouterAddress),
+                        None => return Err(PistolError::CanNotFoundRouterAddress),
                     };
                     if let IpAddr::V4(route_ipv4) = route.via {
                         for interface in interfaces() {
@@ -145,7 +145,7 @@ pub fn find_source_addr(
 pub fn find_source_addr6(
     src_addr: Option<IpAddr>,
     dst_ipv6: Ipv6Addr,
-) -> Result<Option<Ipv6Addr>, PistolErrors> {
+) -> Result<Option<Ipv6Addr>, PistolError> {
     match src_addr {
         Some(s) => match s {
             IpAddr::V4(_) => (),
@@ -173,7 +173,7 @@ pub fn find_source_addr6(
                     // return the route ip
                     let route = match system_cache_default_route6() {
                         Some(d) => d,
-                        None => return Err(PistolErrors::CanNotFoundRouterAddress),
+                        None => return Err(PistolError::CanNotFoundRouterAddress),
                     };
                     if let IpAddr::V6(route_ipv6) = route.via {
                         for interface in interfaces() {
@@ -280,7 +280,7 @@ impl SpHex {
         }
         ret
     }
-    pub fn decode(&self) -> Result<u32, PistolErrors> {
+    pub fn decode(&self) -> Result<u32, PistolError> {
         match &self.hex {
             Some(hex_str) => match hex::decode(hex_str) {
                 Ok(d) => Ok(SpHex::vec_4u8_to_u32(&d)),

@@ -19,7 +19,7 @@ use super::dbparser::Match;
 use super::dbparser::ProbeProtocol;
 use super::dbparser::ServiceProbe;
 use super::dbparser::SoftMatch;
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::utils::random_port;
 
 const TCP_BUFF_SIZE: usize = 40960;
@@ -77,7 +77,7 @@ pub enum MatchX {
 fn tcp_null_probe(
     stream: &mut TcpStream,
     service_probes: &[ServiceProbe],
-) -> Result<Vec<MatchX>, PistolErrors> {
+) -> Result<Vec<MatchX>, PistolError> {
     let mut total_recv_buff = Vec::new();
     loop {
         let mut recv_buff = [0u8; TCP_BUFF_SIZE];
@@ -122,11 +122,11 @@ fn tcp_continue_probe(
     only_tcp_recommended: bool,
     intensity: usize,
     service_probes: &[ServiceProbe],
-) -> Result<Vec<MatchX>, PistolErrors> {
+) -> Result<Vec<MatchX>, PistolError> {
     fn send_recv_match(
         stream: &mut TcpStream,
         sp: &ServiceProbe,
-    ) -> Result<Vec<MatchX>, PistolErrors> {
+    ) -> Result<Vec<MatchX>, PistolError> {
         let probestring = &sp.probe.probestring;
         stream.write(probestring)?;
         let mut total_recv_buff = Vec::new();
@@ -201,8 +201,8 @@ fn udp_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
     timeout: Duration,
-) -> Result<Vec<MatchX>, PistolErrors> {
-    fn run_probe(socket: &UdpSocket, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolErrors> {
+) -> Result<Vec<MatchX>, PistolError> {
+    fn run_probe(socket: &UdpSocket, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolError> {
         let mut ret = Vec::new();
         let probestring = &sp.probe.probestring;
         socket.send(probestring)?;
@@ -295,7 +295,7 @@ pub fn threads_vs_probe(
     intensity: usize,
     service_probes: Vec<ServiceProbe>,
     timeout: Duration,
-) -> Result<(Vec<MatchX>, Duration), PistolErrors> {
+) -> Result<(Vec<MatchX>, Duration), PistolError> {
     // If the port is TCP, Nmap starts by connecting to it.
     let start_time = Instant::now();
     let tcp_dst_addr = SocketAddr::new(dst_addr, dst_port);

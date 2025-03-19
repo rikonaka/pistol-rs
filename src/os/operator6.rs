@@ -7,7 +7,7 @@ use pnet::packet::Packet;
 use std::iter::zip;
 
 use super::rr::AllPacketRR6;
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::utils::SpHex;
 
 const CWR_MASK: u8 = 0b10000000;
@@ -43,7 +43,7 @@ fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Vec<u8> {
     }
 }
 
-fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolErrors> {
+fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolError> {
     // println!("{}", ipv6_buff.len());
     if ipv6_buff.len() > 0 {
         match Ipv6Packet::new(ipv6_buff) {
@@ -51,32 +51,32 @@ fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolErrors> {
             None => (),
         }
     }
-    Err(PistolErrors::GetIpv6PacketFailed)
+    Err(PistolError::GetIpv6PacketFailed)
 }
 
-fn get_icmpv6_packet(icmpv6_buff: &[u8]) -> Result<Icmpv6Packet, PistolErrors> {
+fn get_icmpv6_packet(icmpv6_buff: &[u8]) -> Result<Icmpv6Packet, PistolError> {
     if icmpv6_buff.len() > 0 {
         match Icmpv6Packet::new(icmpv6_buff) {
             Some(p) => return Ok(p),
             None => (),
         }
     }
-    Err(PistolErrors::GetIcmpv6PacketFailed)
+    Err(PistolError::GetIcmpv6PacketFailed)
 }
 
-fn get_tcp_packet(tcp_buff: &[u8]) -> Result<TcpPacket, PistolErrors> {
+fn get_tcp_packet(tcp_buff: &[u8]) -> Result<TcpPacket, PistolError> {
     if tcp_buff.len() > 0 {
         match TcpPacket::new(tcp_buff) {
             Some(p) => return Ok(p),
             None => (),
         }
     }
-    Err(PistolErrors::GetTcpPacketFailed)
+    Err(PistolError::GetTcpPacketFailed)
 }
 
 /// IPv6 Payload Length field.
 /// IPv6 Traffic Class field.
-fn ipv6_plen_tc(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolErrors> {
+fn ipv6_plen_tc(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolError> {
     let (plen, tc) = match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => (
             ipv6_packet.get_payload_length() as f64,
@@ -91,7 +91,7 @@ fn ipv6_plen_tc(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolErrors> {
 }
 
 /// Get tcp sequence number.
-fn tcp_seq(ipv6_buff: &[u8]) -> Result<u32, PistolErrors> {
+fn tcp_seq(ipv6_buff: &[u8]) -> Result<u32, PistolError> {
     let ipv6_packet = get_ipv6_packet(ipv6_buff)?;
     let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
     Ok(tcp_packet.get_sequence())
@@ -99,7 +99,7 @@ fn tcp_seq(ipv6_buff: &[u8]) -> Result<u32, PistolErrors> {
 
 /// TCP ISN counter rate. This is derived from the S1–S6 sequence probes, which are sent 100 ms apart.
 /// The differences between consecutive sequence responses are added up, then this sum is divided by the time elapsed between the first and last probe.
-fn tcp_isr(ap: &AllPacketRR6) -> Result<f64, PistolErrors> {
+fn tcp_isr(ap: &AllPacketRR6) -> Result<f64, PistolError> {
     let mut seq_vec = Vec::new();
     let s1 = tcp_seq(&ap.seq.seq1.response)?;
     let s2 = tcp_seq(&ap.seq.seq2.response)?;
@@ -137,7 +137,7 @@ fn tcp_isr(ap: &AllPacketRR6) -> Result<f64, PistolErrors> {
 }
 
 /// A guess at the original value of the IPv6 Hop Limit field.
-fn ipv6_hlim(ipv6_response: &[u8]) -> Result<f64, PistolErrors> {
+fn ipv6_hlim(ipv6_response: &[u8]) -> Result<f64, PistolError> {
     let hlim = match get_ipv6_packet(ipv6_response) {
         Ok(ipv6_response_packet) => ipv6_response_packet.get_hop_limit() as f64,
         Err(_) => {
@@ -161,7 +161,7 @@ fn ipv6_hlim(ipv6_response: &[u8]) -> Result<f64, PistolErrors> {
 }
 
 /// TCP window size.
-fn tcp_window(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
+fn tcp_window(ipv6_buff: &[u8]) -> Result<f64, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -176,7 +176,7 @@ fn tcp_window(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
 
 /// TCP flags. Each flag becomes a feature with the value 0 or 1.
 /// TCP_FLAG_F, TCP_FLAG_S, TCP_FLAG_R, TCP_FLAG_P, TCP_FLAG_A, TCP_FLAG_U, TCP_FLAG_E, TCP_FLAG_C.
-fn tcp_flags(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
+fn tcp_flags(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -202,7 +202,7 @@ fn tcp_flags(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
 /// These are the four bits of the reserved part of the TCP header.
 /// RFC 3540 defines TCP_FLAG_RES8 as the nonce sum (NS) bit.
 /// TCP_FLAG_RES8, TCP_FLAG_RES9, TCP_FLAG_RES10, TCP_FLAG_RES11.
-fn tcp_reserved(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
+fn tcp_reserved(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -226,7 +226,7 @@ fn tcp_reserved(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
 }
 
 /// Type codes for the first 16 TCP options.
-fn tcp_option_code(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
+fn tcp_option_code(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -253,7 +253,7 @@ fn tcp_option_code(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
 }
 
 /// Lengths of the first 16 TCP options.
-fn tcp_option_len(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
+fn tcp_option_len(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -287,7 +287,7 @@ fn tcp_option_len(ipv6_buff: &[u8]) -> Result<Vec<f64>, PistolErrors> {
 }
 
 /// Value of the first MSS option, if present.
-fn tcp_option_mss(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
+fn tcp_option_mss(ipv6_buff: &[u8]) -> Result<f64, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -311,7 +311,7 @@ fn tcp_option_mss(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
 }
 
 /// 1 if the SACK-permitted option is present, 0 otherwise.
-fn tcp_option_sackok(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
+fn tcp_option_sackok(ipv6_buff: &[u8]) -> Result<f64, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -333,7 +333,7 @@ fn tcp_option_sackok(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
     }
 }
 
-fn tcp_option_wscale(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
+fn tcp_option_wscale(ipv6_buff: &[u8]) -> Result<f64, PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let tcp_packet = get_tcp_packet(ipv6_packet.payload())?;
@@ -357,7 +357,7 @@ fn tcp_option_wscale(ipv6_buff: &[u8]) -> Result<f64, PistolErrors> {
     }
 }
 
-fn icmpv6_type_code(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolErrors> {
+fn icmpv6_type_code(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolError> {
     match get_ipv6_packet(ipv6_buff) {
         Ok(ipv6_packet) => {
             let icmpv6_packet = get_icmpv6_packet(ipv6_packet.payload())?;
@@ -373,7 +373,7 @@ fn icmpv6_type_code(ipv6_buff: &[u8]) -> Result<(f64, f64), PistolErrors> {
     }
 }
 
-pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolErrors> {
+pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolError> {
     let ipv6_probe_names: Vec<&str> = vec![
         "S1", "S2", "S3", "S4", "S5", "S6", "IE1", "IE2", "NS", "U1", "TECN", "T2", "T3", "T4",
         "T5", "T6", "T7",

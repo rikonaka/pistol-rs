@@ -12,7 +12,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv4_send;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
@@ -32,7 +32,7 @@ pub fn send_udp_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];

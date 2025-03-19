@@ -7,7 +7,7 @@ use pnet::packet::ethernet::EtherTypes;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::get_mac_from_arp;
 use crate::layers::layer2_send;
 use crate::layers::Layer2Match;
@@ -21,7 +21,7 @@ pub fn send_arp_scan_packet(
     src_mac: MacAddr,
     interface: NetworkInterface,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let mut arp_buffer = [0u8; 28];
     let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
 

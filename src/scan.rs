@@ -24,7 +24,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::utils::find_interface_by_ip;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
@@ -136,18 +136,18 @@ fn ipv4_arp_scan(
     dst_mac: MacAddr,
     src_addr: Option<IpAddr>,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Duration), PistolErrors> {
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(PistolErrors::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
-        None => return Err(PistolErrors::CanNotFoundInterface),
+        None => return Err(PistolError::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(PistolErrors::CanNotFoundMacAddress),
+        None => return Err(PistolError::CanNotFoundMacAddress),
     };
     arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
 }
@@ -156,19 +156,19 @@ pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
     timeout: Duration,
-) -> Result<Option<MacAddr>, PistolErrors> {
+) -> Result<Option<MacAddr>, PistolError> {
     let dst_mac = MacAddr::broadcast();
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(PistolErrors::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
-        None => return Err(PistolErrors::CanNotFoundInterface),
+        None => return Err(PistolError::CanNotFoundInterface),
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(PistolErrors::CanNotFoundMacAddress),
+        None => return Err(PistolError::CanNotFoundMacAddress),
     };
     match arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
         Ok((mac, _)) => Ok(mac),
@@ -183,7 +183,7 @@ pub fn arp_scan(
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
-) -> Result<ArpScans, PistolErrors> {
+) -> Result<ArpScans, PistolError> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut ret = ArpScans::new();
     ret.tests = target.hosts.len();
@@ -506,7 +506,7 @@ fn threads_scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let (scan_ret, rtt) = match method {
         ScanMethods::Connect => {
             tcp::send_connect_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
@@ -563,7 +563,7 @@ fn threads_scan6(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let (scan_ret, rtt) = match method {
         ScanMethods::Connect => {
             tcp6::send_connect_scan_packet(src_ipv6, src_port, dst_ipv6, dst_port, timeout)?
@@ -612,7 +612,7 @@ pub fn scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     let mut port_scan_ret = TcpUdpScans::new();
 
     let threads_num = match threads_num {
@@ -654,7 +654,7 @@ pub fn scan(
                             Some(s) => s,
                             None => {
                                 warn!("can not found src addr");
-                                return Err(PistolErrors::CanNotFoundSourceAddress);
+                                return Err(PistolError::CanNotFoundSourceAddress);
                             }
                         };
 
@@ -684,7 +684,7 @@ pub fn scan(
                         recv_size += 1;
                         let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
                             Some(s) => s,
-                            None => return Err(PistolErrors::CanNotFoundSourceAddress),
+                            None => return Err(PistolError::CanNotFoundSourceAddress),
                         };
                         pool.execute(move || {
                             let stime = Local::now();
@@ -713,7 +713,7 @@ pub fn scan(
             Err(e) => {
                 let rtt = Duration::new(0, 0);
                 match e {
-                    PistolErrors::CanNotFoundMacAddress => {
+                    PistolError::CanNotFoundMacAddress => {
                         port_scan_ret.insert(
                             dst_ipv4.into(),
                             dst_port,
@@ -762,7 +762,7 @@ pub fn tcp_connect_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -783,7 +783,7 @@ pub fn tcp_connect_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Connect,
         dst_addr,
@@ -815,7 +815,7 @@ pub fn tcp_syn_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -836,7 +836,7 @@ pub fn tcp_syn_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Syn,
         dst_addr,
@@ -869,7 +869,7 @@ pub fn tcp_fin_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -890,7 +890,7 @@ pub fn tcp_fin_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Fin,
         dst_addr,
@@ -916,7 +916,7 @@ pub fn tcp_ack_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -937,7 +937,7 @@ pub fn tcp_ack_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Ack,
         dst_addr,
@@ -962,7 +962,7 @@ pub fn tcp_null_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -983,7 +983,7 @@ pub fn tcp_null_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Null,
         dst_addr,
@@ -1008,7 +1008,7 @@ pub fn tcp_xmas_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -1029,7 +1029,7 @@ pub fn tcp_xmas_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Xmas,
         dst_addr,
@@ -1055,7 +1055,7 @@ pub fn tcp_window_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -1076,7 +1076,7 @@ pub fn tcp_window_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Window,
         dst_addr,
@@ -1102,7 +1102,7 @@ pub fn tcp_maimon_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -1123,7 +1123,7 @@ pub fn tcp_maimon_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Maimon,
         dst_addr,
@@ -1153,7 +1153,7 @@ pub fn tcp_idle_scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -1176,7 +1176,7 @@ pub fn tcp_idle_scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Idle,
         dst_addr,
@@ -1204,7 +1204,7 @@ pub fn udp_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     tests: usize,
-) -> Result<TcpUdpScans, PistolErrors> {
+) -> Result<TcpUdpScans, PistolError> {
     scan(
         target,
         threads_num,
@@ -1225,7 +1225,7 @@ pub fn udp_scan_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         ScanMethods::Udp,
         dst_addr,
@@ -1247,7 +1247,7 @@ pub fn scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolErrors> {
+) -> Result<(PortStatus, Duration), PistolError> {
     let src_port = match src_port {
         Some(s) => s,
         None => random_port(),
@@ -1260,7 +1260,7 @@ pub fn scan_raw(
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
                 Some(s) => s,
-                None => return Err(PistolErrors::CanNotFoundSourceAddress),
+                None => return Err(PistolError::CanNotFoundSourceAddress),
             };
             threads_scan(
                 method,
@@ -1276,7 +1276,7 @@ pub fn scan_raw(
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
                 Some(s) => s,
-                None => return Err(PistolErrors::CanNotFoundSourceAddress),
+                None => return Err(PistolError::CanNotFoundSourceAddress),
             };
             threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
         }

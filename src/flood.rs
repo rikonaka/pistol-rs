@@ -18,7 +18,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
 use crate::utils::get_threads_pool;
@@ -129,10 +129,10 @@ fn ipv4_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<(usize, usize), PistolErrors> {
+) -> Result<(usize, usize), PistolError> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
-        None => return Err(PistolErrors::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSourceAddress),
     };
     let dst_port = if method == FloodMethods::Icmp {
         0
@@ -184,10 +184,10 @@ fn ipv6_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<(usize, usize), PistolErrors> {
+) -> Result<(usize, usize), PistolError> {
     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
         Some(s) => s,
-        None => return Err(PistolErrors::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSourceAddress),
     };
 
     let dst_port = if method == FloodMethods::Icmp {
@@ -239,7 +239,7 @@ pub fn flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttacks, PistolErrors> {
+) -> Result<FloodAttacks, PistolError> {
     let mut flood_attack_summary = FloodAttacks::new();
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
@@ -343,7 +343,7 @@ pub fn icmp_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttacks, PistolErrors> {
+) -> Result<FloodAttacks, PistolError> {
     flood(
         target,
         FloodMethods::Icmp,
@@ -359,7 +359,7 @@ pub fn icmp_flood_raw(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     let dst_port = 0;
     let src_port = None;
     flood_raw(
@@ -381,7 +381,7 @@ pub fn tcp_syn_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttacks, PistolErrors> {
+) -> Result<FloodAttacks, PistolError> {
     flood(
         target,
         FloodMethods::Syn,
@@ -399,7 +399,7 @@ pub fn tcp_syn_flood_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     flood_raw(
         FloodMethods::Syn,
         dst_addr,
@@ -425,7 +425,7 @@ pub fn tcp_ack_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttacks, PistolErrors> {
+) -> Result<FloodAttacks, PistolError> {
     flood(
         target,
         FloodMethods::Ack,
@@ -443,7 +443,7 @@ pub fn tcp_ack_flood_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     flood_raw(
         FloodMethods::Ack,
         dst_addr,
@@ -462,7 +462,7 @@ pub fn tcp_ack_psh_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttacks, PistolErrors> {
+) -> Result<FloodAttacks, PistolError> {
     flood(
         target,
         FloodMethods::AckPsh,
@@ -480,7 +480,7 @@ pub fn tcp_ack_psh_flood_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     flood_raw(
         FloodMethods::AckPsh,
         dst_addr,
@@ -503,7 +503,7 @@ pub fn udp_flood(
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
-) -> Result<FloodAttacks, PistolErrors> {
+) -> Result<FloodAttacks, PistolError> {
     flood(
         target,
         FloodMethods::Udp,
@@ -521,7 +521,7 @@ pub fn udp_flood_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     flood_raw(
         FloodMethods::Udp,
         dst_addr,
@@ -539,7 +539,7 @@ pub fn flood_raw(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     let func = match method {
         FloodMethods::Icmp => icmp::send_icmp_flood_packet,
         FloodMethods::Syn => tcp::send_syn_flood_packet,
@@ -569,7 +569,7 @@ pub fn flood_raw(
                         };
                     Ok(send_buff_size)
                 }
-                None => Err(PistolErrors::CanNotFoundSourceAddress),
+                None => Err(PistolError::CanNotFoundSourceAddress),
             }
         }
         IpAddr::V6(dst_ipv6) => {
@@ -582,7 +582,7 @@ pub fn flood_raw(
                         };
                     Ok(send_buff_size)
                 }
-                None => Err(PistolErrors::CanNotFoundSourceAddress),
+                None => Err(PistolError::CanNotFoundSourceAddress),
             }
         }
     }

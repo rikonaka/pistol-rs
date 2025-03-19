@@ -13,7 +13,7 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::errors::PistolErrors;
+use crate::error::PistolError;
 use crate::layers::layer3_ipv4_send;
 use crate::layers::ICMP_HEADER_SIZE;
 use crate::layers::IPV4_HEADER_SIZE;
@@ -25,7 +25,7 @@ pub fn send_icmp_flood_packet(
     src_ipv4: Ipv4Addr,
     _: u16, // unified interface
     max_same_packet: usize,
-) -> Result<usize, PistolErrors> {
+) -> Result<usize, PistolError> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ip header
