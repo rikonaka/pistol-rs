@@ -42,7 +42,7 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 use std::time::Instant;
-use subnetwork::Ipv6;
+use subnetwork::SubnetworkIpv6;
 
 use crate::error::PistolError;
 // use crate::route::SystemNetCache;
@@ -852,7 +852,7 @@ fn ndp_ns(
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    let dst_multicast = Ipv6::new(dst_ipv6).link_multicast();
+    let dst_multicast = SubnetworkIpv6::new(dst_ipv6).link_multicast();
     ipv6_header.set_destination(dst_multicast);
 
     // icmpv6
