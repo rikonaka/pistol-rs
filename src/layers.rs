@@ -542,7 +542,7 @@ impl LayersMatch {
 fn datalink_channel(
     interface: &NetworkInterface,
 ) -> Result<Option<(Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>)>, PistolError> {
-    let cfg = pnet::datalink::Config::default();
+    let cfg = datalink::Config::default();
     match datalink::channel(&interface, cfg) {
         Ok(Ethernet(tx, rx)) => Ok(Some((tx, rx))),
         Ok(_) => Ok(None),
