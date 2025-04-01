@@ -1,22 +1,21 @@
 use chrono::Utc;
 use pnet::packet::icmp;
-use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpType;
 use pnet::packet::icmp::MutableIcmpPacket;
+use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use rand::Rng;
-
 use std::net::Ipv4Addr;
-use std::time::Duration;
+use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv4_send;
 use crate::layers::ICMP_HEADER_SIZE;
 use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::layer3_ipv4_send;
 
 const TTL: u8 = 64;
 pub fn send_icmp_flood_packet(
@@ -30,7 +29,14 @@ pub fn send_icmp_flood_packet(
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
@@ -44,7 +50,14 @@ pub fn send_icmp_flood_packet(
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     icmp_header.set_icmp_type(IcmpType(8));
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_sequence_number(1);
@@ -60,14 +73,21 @@ pub fn send_icmp_flood_packet(
     // println!("{:?}", timestamp);
     icmp_header.set_payload(&timestamp);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    let timeout = Duration::new(0, 0); // not wait the result
+    let timeout = None; // not wait the result
 
     let mut count = 0;
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout)?;
+        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout, false)?;
         count += 1;
     }
 

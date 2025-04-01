@@ -4,10 +4,11 @@ use log::debug;
 use log::error;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::DataLinkReceiver;
-use pnet::datalink::DataLinkSender;
+use pnet::datalink::ChannelType;
+use pnet::datalink::Config;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+use pnet::packet::Packet;
 use pnet::packet::arp::ArpHardwareTypes;
 use pnet::packet::arp::ArpOperations;
 use pnet::packet::arp::ArpPacket;
@@ -20,26 +21,26 @@ use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpType;
 use pnet::packet::icmpv6;
-use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
-use pnet::packet::icmpv6::ndp::MutableRouterSolicitPacket;
-use pnet::packet::icmpv6::ndp::NdpOption;
-use pnet::packet::icmpv6::ndp::NdpOptionTypes;
-use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Type;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
+use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
+use pnet::packet::icmpv6::ndp::MutableRouterSolicitPacket;
+use pnet::packet::icmpv6::ndp::NdpOption;
+use pnet::packet::icmpv6::ndp::NdpOptionTypes;
+use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
-use pnet::packet::Packet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
+use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::SubnetworkIpv6;
@@ -539,17 +540,6 @@ impl LayersMatch {
     }
 }
 
-fn datalink_channel(
-    interface: &NetworkInterface,
-) -> Result<Option<(Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>)>, PistolError> {
-    let cfg = datalink::Config::default();
-    match datalink::channel(&interface, cfg) {
-        Ok(Ethernet(tx, rx)) => Ok(Some((tx, rx))),
-        Ok(_) => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-
 pub fn _print_packet_as_wireshark_format(buff: &[u8]) {
     let mut i = 0;
     for b in buff {
@@ -575,12 +565,27 @@ pub fn layer2_send(
     send_buff: &[u8],
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
-    timeout: Duration,
+    timeout: Option<Duration>,
+    need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
-    let (mut sender, mut receiver) = match datalink_channel(&interface)? {
-        Some((s, r)) => (s, r),
-        None => return Err(PistolError::CreateDatalinkChannelFailed),
+    let config = Config {
+        write_buffer_size: ETHERNET_BUFF_SIZE,
+        read_buffer_size: ETHERNET_BUFF_SIZE,
+        read_timeout: timeout,
+        write_timeout: timeout,
+        channel_type: ChannelType::Layer2,
+        bpf_fd_attempts: 1000,
+        linux_fanout: None,
+        promiscuous: true,
+        socket_fd: None,
     };
+
+    let (mut sender, mut receiver) = match datalink::channel(&interface, config) {
+        Ok(Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
+        Err(e) => return Err(e.into()),
+    };
+
     let src_mac = if dst_mac == MacAddr::zero() {
         MacAddr::zero()
     } else {
@@ -592,7 +597,14 @@ pub fn layer2_send(
 
     let mut ethernet_buff = [0u8; ETHERNET_BUFF_SIZE];
     // let mut ethernet_buff = [0u8; ETHERNET_HEADER_SIZE + send_buff.len()];
-    let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buff).unwrap();
+    let mut ethernet_packet = match MutableEthernetPacket::new(&mut ethernet_buff) {
+        Some(e) => e,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ethernet_packet.set_destination(dst_mac);
     ethernet_packet.set_source(src_mac);
     ethernet_packet.set_ethertype(ethernet_type);
@@ -609,28 +621,23 @@ pub fn layer2_send(
         None => (),
     }
 
-    let start_time = Instant::now();
-    if timeout != Duration::new(0, 0) {
-        loop {
-            if start_time.elapsed() > timeout {
-                break;
+    if need_return {
+        let start_time = Instant::now();
+        let buff = match receiver.next() {
+            Ok(b) => b,
+            Err(e) => {
+                error!("layer2 send failed: {}", e);
+                &[]
             }
-            let buff = match receiver.next() {
-                Ok(b) => b,
-                Err(e) => {
-                    error!("layer2 send failed: {}", e);
-                    &[]
+        };
+        for m in &layers_match {
+            match m.do_match(buff) {
+                true => {
+                    debug!("match found: {:?}", m);
+                    let rtt = send_time.elapsed();
+                    return Ok((buff.to_vec(), rtt));
                 }
-            };
-            for m in &layers_match {
-                match m.do_match(buff) {
-                    true => {
-                        debug!("match found: {:?}", m);
-                        let rtt = send_time.elapsed();
-                        return Ok((buff.to_vec(), rtt));
-                    }
-                    false => (),
-                }
+                false => (),
             }
         }
         Ok((vec![], start_time.elapsed()))
@@ -640,23 +647,30 @@ pub fn layer2_send(
     }
 }
 
-pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Option<MacAddr> {
+pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
     match EthernetPacket::new(ethernet_buff) {
         Some(re) => match re.get_ethertype() {
             EtherTypes::Arp => {
-                let arp = ArpPacket::new(re.payload()).unwrap();
-                Some(arp.get_sender_hw_addr())
+                let arp = match ArpPacket::new(re.payload()) {
+                    Some(a) => a,
+                    None => {
+                        return Err(PistolError::BuildPacketError {
+                            path: format!("{}", Location::caller()),
+                        });
+                    }
+                };
+                Ok(Some(arp.get_sender_hw_addr()))
             }
-            _ => None,
+            _ => Ok(None),
         },
-        None => None,
+        None => Ok(None),
     }
 }
 
 fn arp(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
@@ -669,7 +683,14 @@ fn arp(
     };
 
     let mut arp_buff = [0u8; 28];
-    let mut arp_packet = MutableArpPacket::new(&mut arp_buff).unwrap();
+    let mut arp_packet = match MutableArpPacket::new(&mut arp_buff) {
+        Some(a) => a,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
 
     arp_packet.set_hardware_type(ArpHardwareTypes::Ethernet);
     arp_packet.set_protocol_type(EtherTypes::Ipv4);
@@ -701,14 +722,16 @@ fn arp(
         ethernet_type,
         vec![layers_match],
         timeout,
+        true,
     )?;
-    Ok((get_mac_from_arp(&ret), rtt))
+    let mac = get_mac_from_arp(&ret)?;
+    Ok((mac, rtt))
 }
 
 pub fn system_route(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
@@ -772,25 +795,10 @@ pub fn layer3_ipv4_send(
     dst_ipv4: Ipv4Addr,
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
-    timeout: Duration,
+    timeout: Option<Duration>,
+    need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
-    // use chrono::Local;
-    // let system_time = Local::now();
-    // println!(
-    //     "layer3 {}, start: {}",
-    //     dst_ipv4,
-    //     system_time.timestamp_millis()
-    // );
     let (dst_mac, interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
-    // let ret = system_route(src_ipv4, dst_ipv4, timeout);
-    // let system_time2 = Local::now();
-    // println!(
-    //     "layer3 {}, end: {}",
-    //     dst_ipv4,
-    //     system_time2.timestamp_millis()
-    // );
-    // let (dst_mac, interface) = ret?;
-
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
@@ -802,6 +810,7 @@ pub fn layer3_ipv4_send(
         ethernet_type,
         layers_match,
         timeout,
+        need_return,
     )?;
     Ok((layer2_payload(&layer2_buff), rtt))
 }
@@ -812,25 +821,46 @@ pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])
 }
 
-fn get_mac_from_ndp_ns(buff: &[u8]) -> Option<MacAddr> {
+fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
     // return mac address from ndp
-    let ethernet_packet = EthernetPacket::new(buff).unwrap();
-    let ipv6_packet = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
-    let icmpv6_packet = NeighborAdvertPacket::new(ipv6_packet.payload()).unwrap();
+    let ethernet_packet = match EthernetPacket::new(buff) {
+        Some(e) => e,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
+    let ipv6_packet = match Ipv6Packet::new(ethernet_packet.payload()) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
+    let icmpv6_packet = match NeighborAdvertPacket::new(ipv6_packet.payload()) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     for o in icmpv6_packet.get_options() {
         let mac = MacAddr::new(
             o.data[0], o.data[1], o.data[2], o.data[3], o.data[4], o.data[5],
         );
         // println!("{:?}", mac);
-        return Some(mac);
+        return Ok(Some(mac));
     }
-    None
+    Ok(None)
 }
 
 fn ndp_ns(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     // same as arp in ipv4
     let interface = match find_interface_by_ip(src_ipv6.into()) {
@@ -844,7 +874,14 @@ fn ndp_ns(
 
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     ipv6_header.set_traffic_class(0);
     ipv6_header.set_flow_label(0);
@@ -857,7 +894,14 @@ fn ndp_ns(
 
     // icmpv6
     let mut icmpv6_header =
-        MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+        match MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+            Some(i) => i,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    path: format!("{}", Location::caller()),
+                });
+            }
+        };
     // Neighbor Solicitation
     icmpv6_header.set_icmpv6_type(Icmpv6Types::NeighborSolicit);
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -870,7 +914,14 @@ fn ndp_ns(
     };
     icmpv6_header.set_options(&vec![ndp_option]);
 
-    let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_multicast);
     icmpv6_header.set_checksum(checksum);
 
@@ -894,9 +945,10 @@ fn ndp_ns(
         ethernet_type,
         vec![layers_match],
         timeout,
+        true,
     )?;
     let mac = match layer4_icmpv6.do_match(&r) {
-        true => get_mac_from_ndp_ns(&r),
+        true => get_mac_from_ndp_ns(&r)?,
         false => None,
     };
     Ok((mac, rtt))
@@ -915,7 +967,7 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
 
 fn ndp_rs(
     src_ipv6: Ipv6Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     // router solicitation
     let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
@@ -931,7 +983,14 @@ fn ndp_rs(
 
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     ipv6_header.set_traffic_class(0);
     ipv6_header.set_flow_label(0);
@@ -943,7 +1002,14 @@ fn ndp_rs(
 
     // icmpv6
     let mut icmpv6_header =
-        MutableRouterSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+        match MutableRouterSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+            Some(i) => i,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    path: format!("{}", Location::caller()),
+                });
+            }
+        };
     // Neighbor Solicitation
     icmpv6_header.set_icmpv6_type(Icmpv6Types::RouterSolicit);
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -955,7 +1021,14 @@ fn ndp_rs(
     };
     icmpv6_header.set_options(&vec![ndp_option]);
 
-    let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &route_addr_2);
     icmpv6_header.set_checksum(checksum);
 
@@ -985,6 +1058,7 @@ fn ndp_rs(
         ethernet_type,
         vec![layers_match],
         timeout,
+        true,
     )?;
 
     let mac = get_mac_from_ndp_rs(&r);
@@ -1001,7 +1075,7 @@ fn layer2_payload(buff: &[u8]) -> Vec<u8> {
 pub fn system_route6(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
@@ -1065,7 +1139,8 @@ pub fn layer3_ipv6_send(
     dst_ipv6: Ipv6Addr,
     payload: &[u8],
     layers_match: Vec<LayersMatch>,
-    timeout: Duration,
+    timeout: Option<Duration>,
+    need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
     let (dst_mac, interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
@@ -1078,6 +1153,7 @@ pub fn layer3_ipv6_send(
         ethernet_type,
         layers_match,
         timeout,
+        need_return,
     )?;
     Ok((layer2_payload(&layer2_buff), rtt))
 }

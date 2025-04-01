@@ -2,10 +2,10 @@ use chrono::DateTime;
 use chrono::Local;
 use log::debug;
 use log::warn;
-use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
 use prettytable::Table;
+use prettytable::row;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
@@ -18,19 +18,18 @@ use std::time::Duration;
 pub mod icmp;
 pub mod icmpv6;
 
+use crate::Target;
 use crate::error::PistolError;
+use crate::scan::PortStatus;
 use crate::scan::tcp;
 use crate::scan::tcp6;
 use crate::scan::udp;
 use crate::scan::udp6;
-use crate::scan::PortStatus;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
-use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::threads_num_check;
-use crate::Target;
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
 const ACK_PING_DEFAULT_PORT: u16 = 80;
@@ -141,12 +140,11 @@ impl Pings {
 impl fmt::Display for Pings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new(&format!(
-            "Ping Results (tests:{})",
-            self.tests
-        ))
-        .style_spec("c")
-        .with_hspan(4)]));
+        table.add_row(Row::new(vec![
+            Cell::new(&format!("Ping Results (tests:{})", self.tests))
+                .style_spec("c")
+                .with_hspan(4),
+        ]));
 
         table.add_row(row![
             c -> "id",
@@ -209,7 +207,7 @@ fn threads_ping(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
@@ -266,7 +264,7 @@ fn threads_ping6(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     let (ping_status, rtt) = match method {
         PingMethods::Syn => {
@@ -342,10 +340,6 @@ pub fn ping(
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
 
     for host in &target.hosts {
         let dst_addr = host.addr;
@@ -470,10 +464,6 @@ pub fn tcp_syn_ping_raw(
         Some(p) => p,
         None => random_port(),
     };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
@@ -536,10 +526,6 @@ pub fn tcp_ack_ping_raw(
         Some(p) => p,
         None => random_port(),
     };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
@@ -601,10 +587,6 @@ pub fn udp_ping_raw(
     let src_port = match src_port {
         Some(p) => p,
         None => random_port(),
-    };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
@@ -669,10 +651,6 @@ pub fn icmp_ping_raw(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
@@ -696,9 +674,9 @@ mod tests {
     use super::*;
     use crate::Host;
     // use crate::Logger;
-    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV6_LOCAL;
+    use crate::Target;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     #[test]

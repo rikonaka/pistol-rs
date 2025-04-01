@@ -1,31 +1,32 @@
 use chrono::Utc;
+use pnet::packet::Packet;
 use pnet::packet::icmp;
-use pnet::packet::icmp::destination_unreachable;
-use pnet::packet::icmp::echo_reply;
-use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpType;
 use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::icmp::MutableIcmpPacket;
+use pnet::packet::icmp::destination_unreachable;
+use pnet::packet::icmp::echo_reply;
+use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::packet::Packet;
 use rand::Rng;
+use std::panic::Location;
 
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv4_send;
+use crate::layers::ICMP_HEADER_SIZE;
+use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::LayersMatch;
-use crate::layers::ICMP_HEADER_SIZE;
-use crate::layers::IPV4_HEADER_SIZE;
+use crate::layers::layer3_ipv4_send;
 use crate::ping::PingStatus;
 
 const TTL: u8 = 64;
@@ -33,13 +34,20 @@ const TTL: u8 = 64;
 pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
@@ -53,7 +61,14 @@ pub fn send_icmp_ping_packet(
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     icmp_header.set_icmp_type(IcmpType(8));
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_sequence_number(1);
@@ -68,7 +83,14 @@ pub fn send_icmp_ping_packet(
     // println!("{:?}", timestamp);
     icmp_header.set_payload(&timestamp);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
@@ -93,7 +115,14 @@ pub fn send_icmp_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let (ret, rtt) = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![layers_match], timeout)?;
+    let (ret, rtt) = layer3_ipv4_send(
+        src_ipv4,
+        dst_ipv4,
+        &ip_buff,
+        vec![layers_match],
+        timeout,
+        true,
+    )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
             match ipv4_packet.get_next_level_protocol() {

@@ -248,7 +248,7 @@ pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
 }
 
 pub fn get_default_timeout() -> Duration {
-    Duration::new(DEFAULT_TIMEOUT, 0)
+    Duration::from_secs_f32(DEFAULT_TIMEOUT)
 }
 
 pub struct SpHex {

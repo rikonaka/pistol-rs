@@ -1,36 +1,39 @@
-use pnet::packet::icmp::destination_unreachable;
+use pnet::packet::Packet;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
+use pnet::packet::icmp::destination_unreachable;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
-use pnet::packet::ipv4::checksum;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
+use pnet::packet::ipv4::checksum;
 use pnet::packet::tcp;
-use pnet::packet::tcp::ipv4_checksum;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
-use pnet::packet::Packet;
+use pnet::packet::tcp::ipv4_checksum;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::TcpStream;
-use std::time::{Duration, Instant};
+use std::panic::Location;
+use std::time::Duration;
+use std::time::Instant;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv4_send;
+use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
+use crate::layers::layer3_ipv4_send;
+use crate::utils;
 
-use super::TcpIdleScans;
 use super::PortStatus;
+use super::TcpIdleScans;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
@@ -49,12 +52,19 @@ pub fn send_syn_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
@@ -69,7 +79,14 @@ pub fn send_syn_scan_packet(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -106,6 +123,7 @@ pub fn send_syn_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -162,12 +180,19 @@ pub fn send_fin_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
@@ -182,7 +207,14 @@ pub fn send_fin_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -219,6 +251,7 @@ pub fn send_fin_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -275,12 +308,19 @@ pub fn send_ack_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
@@ -295,7 +335,14 @@ pub fn send_ack_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -332,6 +379,7 @@ pub fn send_ack_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -385,12 +433,19 @@ pub fn send_null_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
@@ -405,7 +460,14 @@ pub fn send_null_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -442,6 +504,7 @@ pub fn send_null_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -495,12 +558,19 @@ pub fn send_xmas_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
@@ -516,7 +586,14 @@ pub fn send_xmas_scan_packet(
 
     // tcp header
     let mut rng = rand::rng();
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -553,6 +630,7 @@ pub fn send_xmas_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -606,12 +684,19 @@ pub fn send_window_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
@@ -626,7 +711,14 @@ pub fn send_window_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -663,6 +755,7 @@ pub fn send_window_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -721,12 +814,19 @@ pub fn send_maimon_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
@@ -741,7 +841,14 @@ pub fn send_maimon_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -778,6 +885,7 @@ pub fn send_maimon_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {
@@ -833,7 +941,7 @@ pub fn send_idle_scan_packet(
     dst_port: u16,
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Option<TcpIdleScans>, Duration), PistolError> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
@@ -844,7 +952,14 @@ pub fn send_idle_scan_packet(
         let mut rng = rand::rng();
         // ip header
         let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-        let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+        let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    path: format!("{}", Location::caller()),
+                });
+            }
+        };
         ip_header.set_version(4);
         ip_header.set_header_length(5);
         ip_header.set_source(src_ipv4);
@@ -859,7 +974,14 @@ pub fn send_idle_scan_packet(
         ip_header.set_checksum(c);
 
         // tcp header
-        let mut tcp_header = MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+        let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    path: format!("{}", Location::caller()),
+                });
+            }
+        };
         tcp_header.set_source(src_port);
         tcp_header.set_destination(dst_port);
         tcp_header.set_sequence(rng.random());
@@ -901,6 +1023,7 @@ pub fn send_idle_scan_packet(
         &ip_buff,
         vec![layers_match_zombie_1, layers_match_zombie_2],
         timeout,
+        true,
     )?;
 
     let mut zombie_ip_id_1 = 0;
@@ -953,7 +1076,7 @@ pub fn send_idle_scan_packet(
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = _forge_syn_packet(zombie_ipv4, dst_ipv4, zombie_port, dst_port)?;
     // ignore the response
-    let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff_2, vec![], timeout)?;
+    let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff_2, vec![], timeout, true)?;
 
     // 4. probe the zombie's ip id again
     let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
@@ -981,6 +1104,7 @@ pub fn send_idle_scan_packet(
         &ip_buff_3,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     let mut zombie_ip_id_2 = 0;
@@ -1061,11 +1185,15 @@ pub fn send_connect_scan_packet(
     _: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
     let start_time = Instant::now();
-    match TcpStream::connect_timeout(&addr, timeout) {
+    let t = match timeout {
+        Some(t) => t,
+        None => utils::get_default_timeout(),
+    };
+    match TcpStream::connect_timeout(&addr, t) {
         Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
         Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
     }

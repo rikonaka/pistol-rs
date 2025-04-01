@@ -1,25 +1,26 @@
-use pnet::packet::icmp::destination_unreachable;
+use pnet::packet::Packet;
 use pnet::packet::icmp::IcmpPacket;
+use pnet::packet::icmp::destination_unreachable;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::packet::udp::ipv4_checksum;
 use pnet::packet::udp::MutableUdpPacket;
-use pnet::packet::Packet;
+use pnet::packet::udp::ipv4_checksum;
 use rand::Rng;
 use std::net::Ipv4Addr;
+use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv4_send;
+use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
+use crate::layers::layer3_ipv4_send;
 
 use super::PortStatus;
 
@@ -31,12 +32,19 @@ pub fn send_udp_scan_packet(
     src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
-    let mut ip_header = MutableIpv4Packet::new(&mut ip_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
@@ -51,7 +59,14 @@ pub fn send_udp_scan_packet(
     ip_header.set_destination(dst_ipv4);
 
     // udp header
-    let mut udp_header = MutableUdpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut udp_header = match MutableUdpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
@@ -94,6 +109,7 @@ pub fn send_udp_scan_packet(
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => {

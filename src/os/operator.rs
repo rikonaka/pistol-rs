@@ -1,6 +1,7 @@
 use crc32fast;
 use gcdx::gcdx;
 use log::warn;
+use pnet::packet::Packet;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::ipv4;
@@ -8,7 +9,7 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
-use pnet::packet::Packet;
+use std::panic::Location;
 
 use super::rr::IERR;
 use super::rr::SEQRR;
@@ -139,7 +140,10 @@ pub fn tcp_gcd(seqrr: &SEQRR) -> Result<(u32, Vec<u32>), PistolError> {
 
     let diff = get_diff_u32(&seq_vec);
     if diff.len() > 1 {
-        let gcd = gcdx(&diff).unwrap();
+        let gcd = match gcdx(&diff) {
+            Some(g) => g,
+            None => return Err(PistolError::CalcDiffFailed),
+        };
         Ok((gcd, diff))
     } else if diff.len() == 1 {
         let gcd = diff[0];
@@ -244,11 +248,7 @@ pub fn tcp_ti_ci_ii(
             sum += v;
         }
 
-        if sum == 0 {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        if sum == 0 { Ok(true) } else { Ok(false) }
     };
     let ri_judgement = |diff: &[u16]| -> bool {
         let mut condition_1 = true; // any of the differences exceeds 1000
@@ -775,7 +775,14 @@ pub fn tcp_udp_df(ipv4_response: &[u8]) -> Result<String, PistolError> {
 /// IP initial time-to-live (T)
 pub fn tcp_udp_icmp_t(ipv4_response: &[u8], u1rr: &U1RR) -> Result<u16, PistolError> {
     let hops = udp_hops(u1rr)?;
-    let response = Ipv4Packet::new(ipv4_response).unwrap();
+    let response = match Ipv4Packet::new(ipv4_response) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let response_ttl = response.get_ttl();
     // Avoid overflow in integer addition.
     Ok(hops as u16 + response_ttl as u16)

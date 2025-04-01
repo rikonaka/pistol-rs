@@ -1,22 +1,23 @@
+use pnet::packet::Packet;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::udp::ipv6_checksum;
 use pnet::packet::udp::MutableUdpPacket;
-use pnet::packet::Packet;
+use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
+use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv6_send;
+use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::UDP_HEADER_SIZE;
+use crate::layers::layer3_ipv6_send;
 
 use super::PortStatus;
 
@@ -28,11 +29,18 @@ pub fn send_udp_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -45,7 +53,14 @@ pub fn send_udp_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // udp header
-    let mut udp_header = MutableUdpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut udp_header = match MutableUdpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
@@ -84,6 +99,7 @@ pub fn send_udp_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
     match Ipv6Packet::new(&ret) {
         Some(ipv6_packet) => {

@@ -3,10 +3,10 @@ use chrono::Local;
 /* Remote OS Detection */
 use log::debug;
 use log::warn;
-use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
 use prettytable::Table;
+use prettytable::row;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -19,18 +19,17 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use zip::ZipArchive;
 
+use crate::Target;
 use crate::error::PistolError;
 use crate::os::dbparser::NmapOSDB;
-use crate::os::osscan::threads_os_probe;
 use crate::os::osscan::TargetFingerprint;
-use crate::os::osscan6::threads_os_probe6;
+use crate::os::osscan::threads_os_probe;
 use crate::os::osscan6::TargetFingerprint6;
+use crate::os::osscan6::threads_os_probe6;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
-use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::threads_num_check;
-use crate::Target;
 
 pub mod dbparser;
 pub mod operator;
@@ -77,9 +76,9 @@ impl OSDetects {
 impl fmt::Display for OSDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("OS Detect Results")
-            .style_spec("c")
-            .with_hspan(6)]));
+        table.add_row(Row::new(vec![
+            Cell::new("OS Detect Results").style_spec("c").with_hspan(6),
+        ]));
 
         table.add_row(
             row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "details", c -> "cpe"],
@@ -348,10 +347,6 @@ pub fn os_detect(
         }
     };
 
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
     let (tx, rx) = channel();
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
@@ -480,10 +475,6 @@ pub fn os_detect_raw(
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<HostOSDetects, PistolError> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
     let stime = Local::now();
     match dst_addr {
         IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {

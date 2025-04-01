@@ -1,12 +1,12 @@
 use pnet::packet::icmpv6;
-use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
-use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
-use pnet::packet::icmpv6::ndp::NdpOption;
-use pnet::packet::icmpv6::ndp::NdpOptionTypes;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Type;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
+use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
+use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
+use pnet::packet::icmpv6::ndp::NdpOption;
+use pnet::packet::icmpv6::ndp::NdpOptionTypes;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableDestinationPacket;
@@ -21,6 +21,7 @@ use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
 use std::net::Ipv6Addr;
+use std::panic::Location;
 
 use crate::error::PistolError;
 use crate::layers::ICMPV6_ER_HEADER_SIZE;
@@ -124,7 +125,14 @@ pub fn seq_packet_1_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -139,7 +147,14 @@ pub fn seq_packet_1_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -181,7 +196,14 @@ pub fn seq_packet_2_layer3(
     const TCP_DATA_SIZE: usize = 0;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -196,7 +218,14 @@ pub fn seq_packet_2_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -238,7 +267,14 @@ pub fn seq_packet_3_layer3(
     const TCP_DATA_SIZE: usize = 0;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -253,7 +289,14 @@ pub fn seq_packet_3_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -296,7 +339,14 @@ pub fn seq_packet_4_layer3(
     const TCP_DATA_SIZE: usize = 0;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -311,7 +361,14 @@ pub fn seq_packet_4_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -351,7 +408,14 @@ pub fn seq_packet_5_layer3(
     const TCP_DATA_SIZE: usize = 0;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -366,7 +430,14 @@ pub fn seq_packet_5_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -407,7 +478,14 @@ pub fn seq_packet_6_layer3(
     const TCP_DATA_SIZE: usize = 0;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -422,7 +500,14 @@ pub fn seq_packet_6_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -461,7 +546,14 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
         + HOPBYHOP_OPTION_SIZE
         + ICMPV6_ER_HEADER_SIZE
         + ICMPV6_PROBE_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -478,16 +570,30 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_destination(dst_ipv6);
 
     // there is one Hop-By-Hop extension header containing only padding
-    let mut hop_option = MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut hop_option = match MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     hop_option.set_next_header(IpNextHeaderProtocols::Icmpv6);
     hop_option.set_hdr_ext_len(0);
     let options = [0x01, 0x04, 0x00, 0x00, 0x00, 0x00];
     hop_option.set_options(&options);
 
     // icmp header
-    let mut icmpv6_header =
-        MutableEchoRequestPacket::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
-            .unwrap();
+    let mut icmpv6_header = match MutableEchoRequestPacket::new(
+        &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..],
+    ) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // The type is 128 (Echo Request) and the code is 9, though it should be 0.
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(9));
@@ -499,8 +605,15 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     icmpv6_header.set_payload(&icmp_data);
 
     let mut icmpv6_header =
-        MutableIcmpv6Packet::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
-            .unwrap();
+        match MutableIcmpv6Packet::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
+        {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    path: format!("{}", Location::caller()),
+                });
+            }
+        };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
 
@@ -524,7 +637,14 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
         + ICMPV6_ER_HEADER_SIZE
         + ICMPV6_PROBE_DATA_SIZE];
 
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -553,7 +673,14 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     // 4) Hop-By-Hop
 
     // Hop-By-Hop
-    let mut hop_option = MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut hop_option = match MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // Destination Options (before upper-layer header)
     hop_option.set_next_header(IpNextHeaderProtocol(60));
     hop_option.set_hdr_ext_len(0);
@@ -561,19 +688,32 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     hop_option.set_options(&padn);
 
     // Destination Options
-    let mut dest_option =
-        MutableDestinationPacket::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
-            .unwrap();
+    let mut dest_option = match MutableDestinationPacket::new(
+        &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..],
+    ) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // Routing
     dest_option.set_next_header(IpNextHeaderProtocol(43));
     dest_option.set_hdr_ext_len(0);
     dest_option.set_options(&padn);
 
     // Routing
-    let mut routing_option = MutableRoutingPacket::new(
+    let mut routing_option = match MutableRoutingPacket::new(
         &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE + DESTINATION_OPTION_SIZE)..],
-    )
-    .unwrap();
+    ) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // Hop-by-Hop Options
     routing_option.set_next_header(IpNextHeaderProtocol(0));
     routing_option.set_hdr_ext_len(0);
@@ -581,27 +721,39 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     routing_option.set_segments_left(0x00);
 
     // Hop-By-Hop
-    let mut hop_option = MutableHopByHopPacket::new(
+    let mut hop_option = match MutableHopByHopPacket::new(
         &mut ipv6_buff[(IPV6_HEADER_SIZE
             + HOPBYHOP_OPTION_SIZE
             + DESTINATION_OPTION_SIZE
             + ROUTING_OPTION_SIZE)..],
-    )
-    .unwrap();
+    ) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // Destination Options (before upper-layer header)
     hop_option.set_next_header(IpNextHeaderProtocols::Icmpv6);
     hop_option.set_hdr_ext_len(0);
     hop_option.set_options(&padn);
 
     // ICMPV6
-    let mut icmpv6_header = MutableEchoRequestPacket::new(
+    let mut icmpv6_header = match MutableEchoRequestPacket::new(
         &mut ipv6_buff[(IPV6_HEADER_SIZE
             + HOPBYHOP_OPTION_SIZE
             + DESTINATION_OPTION_SIZE
             + ROUTING_OPTION_SIZE
             + HOPBYHOP_OPTION_SIZE)..],
-    )
-    .unwrap();
+    ) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // This is an echo request with a type of 128 (Echo Request) and a code of 0.
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -609,14 +761,20 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     icmpv6_header.set_identifier(0xabcd);
     icmpv6_header.set_sequence_number(1);
 
-    let mut icmpv6_header = MutableIcmpv6Packet::new(
+    let mut icmpv6_header = match MutableIcmpv6Packet::new(
         &mut ipv6_buff[(IPV6_HEADER_SIZE
             + HOPBYHOP_OPTION_SIZE
             + DESTINATION_OPTION_SIZE
             + ROUTING_OPTION_SIZE
             + HOPBYHOP_OPTION_SIZE)..],
-    )
-    .unwrap();
+    ) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
 
@@ -629,7 +787,14 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE];
 
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -677,8 +842,15 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
      */
 
     // icmp header
-    let mut icmpv6_header =
-        MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmpv6_header = match MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..])
+    {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // The NI probe has type 139 (ICMP Node Information Query) and code 0 (indicating that the subject is an IPv6 address).
     icmpv6_header.set_icmpv6_type(Icmpv6Type(139));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -699,7 +871,14 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     // The nonce is set to the fixed string "\x01\x02\x03\x04\x05\x06\x07\x0a".
     icmpv6_header.set_payload(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0a]);
 
-    let mut icmp_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
 
@@ -722,7 +901,14 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
 
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE + ICMPV6_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     ipv6_header.set_traffic_class(0);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
@@ -739,7 +925,14 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
 
     // icmpv6
     let mut icmpv6_header =
-        MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+        match MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    path: format!("{}", Location::caller()),
+                });
+            }
+        };
     // Neighbor Solicitation
     icmpv6_header.set_icmpv6_type(Icmpv6Types::NeighborSolicit);
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -752,7 +945,14 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     };
     icmpv6_header.set_options(&vec![ndp_option]);
 
-    let mut icmpv6_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
 
@@ -769,7 +969,14 @@ pub fn udp_packet_layer3(
     const UDP_DATA_SIZE: usize = 300;
 
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -784,7 +991,14 @@ pub fn udp_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // udp header
-    let mut udp_header = MutableUdpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut udp_header = match MutableUdpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
@@ -820,7 +1034,14 @@ pub fn tecn_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -835,7 +1056,14 @@ pub fn tecn_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
@@ -884,7 +1112,14 @@ pub fn t2_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -899,7 +1134,14 @@ pub fn t2_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -941,7 +1183,14 @@ pub fn t3_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -956,7 +1205,14 @@ pub fn t3_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -998,7 +1254,14 @@ pub fn t4_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -1013,7 +1276,14 @@ pub fn t4_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -1055,7 +1325,14 @@ pub fn t5_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -1070,7 +1347,14 @@ pub fn t5_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -1112,7 +1396,14 @@ pub fn t6_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -1127,7 +1418,14 @@ pub fn t6_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -1169,7 +1467,14 @@ pub fn t7_packet_layer3(
 
     let mut ipv6_buff =
         [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -1184,7 +1489,14 @@ pub fn t7_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();

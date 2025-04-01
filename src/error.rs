@@ -42,7 +42,9 @@ pub enum PistolError {
     ZipEmptyError,
 
     /* SCAN ERROR */
-    #[error("idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is: all zeros, try another proxy")]
+    #[error(
+        "idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is: all zeros, try another proxy"
+    )]
     IdleScanAllZeroError {
         zombie_ipv4: Ipv4Addr,
         zombie_port: u16,
@@ -57,7 +59,7 @@ pub enum PistolError {
     FancyRegexError(#[from] fancy_regex::Error),
     #[error("no match found")]
     NoMatchFound,
-    #[error("can not unescape string: {s}, error: {e}")]
+    #[error("can not unescape string [{s}]: {e}")]
     CanNotUnescapeString { s: String, e: String },
 
     /* LAYERS ERROR */
@@ -73,6 +75,8 @@ pub enum PistolError {
     CanNotFoundSourceAddress,
     #[error("can not found router address")]
     CanNotFoundRouterAddress,
+    #[error("build packet error occurret at [{path}]")]
+    BuildPacketError { path: String },
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]

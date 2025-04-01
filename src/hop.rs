@@ -13,7 +13,7 @@ pub mod icmpv6;
 pub fn ipv4_get_hops(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     for ttl in 1..=30 {
         let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, ttl, timeout)?;
@@ -28,7 +28,7 @@ pub fn ipv4_get_hops(
 pub fn ipv6_get_hops(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     for ttl in 1..=30 {
         let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, ttl, timeout)?;
@@ -56,7 +56,7 @@ mod tests {
         let src_ipv4 = find_source_addr(None, dst_ipv4).unwrap();
         match src_ipv4 {
             Some(src_ipv4) => {
-                let timeout = Duration::new(1, 0);
+                let timeout = Some(Duration::new(1, 0));
                 let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout).unwrap();
                 println!("{}", hops);
             }
@@ -69,7 +69,7 @@ mod tests {
         match src_ipv6 {
             Some(src_ipv6) => {
                 let dst_ipv6 = TEST_IPV6_LOCAL;
-                let timeout = Duration::new(1, 0);
+                let timeout = Some(Duration::new(1, 0));
                 let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout).unwrap();
                 println!("{}", hops);
             }

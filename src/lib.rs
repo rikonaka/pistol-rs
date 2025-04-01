@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
@@ -8,6 +7,7 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::Mutex;
 use subnetwork::Ipv4Pool;
 
@@ -51,12 +51,12 @@ const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 
 // dead host
 const TEST_IPV6_LOCAL_DEAD: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e5);
 
-static SYSTEM_NET_CACHE: Lazy<Arc<Mutex<SystemNetCache>>> = Lazy::new(|| {
+static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(|| {
     let snc = SystemNetCache::init().expect("can not init the system net cache");
     Arc::new(Mutex::new(snc))
 });
 
-const DEFAULT_TIMEOUT: u64 = 3;
+const DEFAULT_TIMEOUT: f32 = 3.0;
 
 pub const TOP_100_PORTS: [u16; 100] = [
     7, 9, 13, 21, 22, 23, 25, 26, 37, 53, 79, 80, 81, 88, 106, 110, 111, 113, 119, 135, 139, 143,

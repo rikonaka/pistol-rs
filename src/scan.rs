@@ -3,10 +3,10 @@ use chrono::DateTime;
 use chrono::Local;
 use log::warn;
 use pnet::datalink::MacAddr;
-use prettytable::row;
 use prettytable::Cell;
 use prettytable::Row;
 use prettytable::Table;
+use prettytable::row;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -24,15 +24,14 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
+use crate::Target;
 use crate::error::PistolError;
 use crate::utils::find_interface_by_ip;
 use crate::utils::find_source_addr;
 use crate::utils::find_source_addr6;
-use crate::utils::get_default_timeout;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::threads_num_check;
-use crate::Target;
 
 #[derive(Debug, Clone)]
 pub struct AliveHost {
@@ -81,9 +80,9 @@ impl ArpScans {
 impl fmt::Display for ArpScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("ARP Scan Results")
-            .style_spec("c")
-            .with_hspan(3)]));
+        table.add_row(Row::new(vec![
+            Cell::new("ARP Scan Results").style_spec("c").with_hspan(3),
+        ]));
 
         let ah = &self.alives;
         let ah: BTreeMap<Ipv4Addr, &AliveHost> = ah.into_iter().map(|(i, a)| (*i, a)).collect();
@@ -135,7 +134,7 @@ fn ipv4_arp_scan(
     dst_ipv4: Ipv4Addr,
     dst_mac: MacAddr,
     src_addr: Option<IpAddr>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
@@ -155,7 +154,7 @@ fn ipv4_arp_scan(
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<Option<MacAddr>, PistolError> {
     let dst_mac = MacAddr::broadcast();
     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
@@ -198,11 +197,6 @@ pub fn arp_scan(
     };
 
     let pool = get_threads_pool(threads_num);
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
-
     let dst_mac = MacAddr::broadcast();
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -413,12 +407,11 @@ impl TcpUdpScans {
 impl fmt::Display for TcpUdpScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new(&format!(
-            "Scan Results (tests:{})",
-            self.tests
-        ))
-        .style_spec("c")
-        .with_hspan(5)]));
+        table.add_row(Row::new(vec![
+            Cell::new(&format!("Scan Results (tests:{})", self.tests))
+                .style_spec("c")
+                .with_hspan(5),
+        ]));
 
         table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "avg cost"]);
 
@@ -479,7 +472,9 @@ impl fmt::Display for TcpUdpScans {
             }
         }
 
-        let help_info = format!("NOTE:\nO: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,\nUF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,\nCF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE.");
+        let help_info = format!(
+            "NOTE:\nO: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,\nUF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,\nCF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE."
+        );
         table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
         let summary = format!(
@@ -505,7 +500,7 @@ fn threads_scan(
     src_port: u16,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let (scan_ret, rtt) = match method {
         ScanMethods::Connect => {
@@ -533,6 +528,7 @@ fn threads_scan(
             tcp::send_maimon_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?
         }
         ScanMethods::Idle => {
+            // here is always has value, so just use unwrap is fine
             let zombie_ipv4 = zombie_ipv4.unwrap();
             let zombie_port = zombie_port.unwrap();
             match tcp::send_idle_scan_packet(
@@ -562,7 +558,7 @@ fn threads_scan6(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let (scan_ret, rtt) = match method {
         ScanMethods::Connect => {
@@ -630,10 +626,7 @@ pub fn scan(
     let pool = get_threads_pool(threads_num);
     let (tx, rx) = channel();
     let mut recv_size = 0;
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
+
     let src_port = match src_port {
         Some(s) => s,
         None => {
@@ -1252,10 +1245,6 @@ pub fn scan_raw(
         Some(s) => s,
         None => random_port(),
     };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_default_timeout(),
-    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
@@ -1287,9 +1276,9 @@ pub fn scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
-   //  use crate::Logger;
-    use crate::Target;
+    //  use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
+    use crate::Target;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     use subnetwork::Ipv4Pool;

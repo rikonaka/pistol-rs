@@ -15,19 +15,19 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
 
+use crate::IpCheckMethods;
 use crate::error::PistolError;
 use crate::hop::ipv4_get_hops;
-use crate::layers::layer3_ipv4_send;
-use crate::layers::system_route;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
+use crate::layers::layer3_ipv4_send;
+use crate::layers::system_route;
 use crate::os::OSInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_sp;
-use crate::IpCheckMethods;
 
 use super::dbparser::NmapOSDB;
 use super::operator::icmp_cd;
@@ -61,9 +61,9 @@ use super::operator::udp_rud;
 use super::operator::udp_un;
 use super::packet;
 use super::rr::AllPacketRR;
-use super::rr::RequestAndResponse;
 use super::rr::ECNRR;
 use super::rr::IERR;
+use super::rr::RequestAndResponse;
 use super::rr::SEQRR;
 use super::rr::TXRR;
 use super::rr::U1RR;
@@ -178,7 +178,7 @@ impl TargetFingerprint {
 }
 
 pub fn get_scan_line(
-    dst_mac: Option<MacAddr>,
+    dst_mac: MacAddr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
@@ -216,7 +216,7 @@ pub fn get_scan_line(
     // Target MAC prefix (M) is the first six hex digits of the target MAC address, which correspond to the vendor name.
     // Leading zeros are not included. This field is omitted unless the target is on the same ethernet network (DS=1).
     let m = if ds == 1 {
-        let mut dst_mac_vec: [u8; 6] = dst_mac.unwrap().octets();
+        let mut dst_mac_vec: [u8; 6] = dst_mac.octets();
         let mut dst_mac_str = String::new();
         for m in &mut dst_mac_vec[0..3] {
             dst_mac_str = format!("{}{:X}", dst_mac_str, m);
@@ -235,17 +235,25 @@ pub fn get_scan_line(
     let info_str = match dst_addr {
         IpAddr::V4(_) => {
             let info_str = if m.len() > 0 {
-                format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
+                format!(
+                    "SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})",
+                )
             } else {
-                format!("SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+                format!(
+                    "SCAN(V={v}%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})",
+                )
             };
             info_str
         }
         IpAddr::V6(_) => {
             let info_str = if m.len() > 0 {
-                format!("SCAN(V={v}%E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})", )
+                format!(
+                    "SCAN(V={v}%E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%M={m}%TM={tm}%P={p})",
+                )
             } else {
-                format!("SCAN(V={v}%E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})", )
+                format!(
+                    "SCAN(V={v}%E=6%D={date}%OT={dst_open_tcp_port}%CT={dst_closed_tcp_port}%CU={dst_closed_udp_port}PV={pv}%DS={ds}%DC={dc}%G={g}%TM={tm}%P={p})",
+                )
             };
             info_str
         }
@@ -257,7 +265,7 @@ fn send_seq_probes(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<SEQRR, PistolError> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
@@ -296,7 +304,7 @@ fn send_seq_probes(
         let tx = tx.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
+                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -368,7 +376,7 @@ fn send_seq_probes(
 fn send_ie_probes(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<IERR, PistolError> {
     let (tx, rx) = channel();
 
@@ -398,7 +406,7 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout);
+            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
@@ -447,7 +455,7 @@ fn send_ecn_probe(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Match {
@@ -468,7 +476,7 @@ fn send_ecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let (response, _) =
-            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
+            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true)?;
         if response.len() > 0 {
             let rr = RequestAndResponse {
                 request: buff,
@@ -494,7 +502,7 @@ fn send_tx_probes(
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<TXRR, PistolError> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
@@ -576,7 +584,7 @@ fn send_tx_probes(
         let m = ms[i];
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], timeout);
+                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -645,7 +653,7 @@ fn send_u1_probe(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Match {
@@ -666,7 +674,7 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let (response, _) =
-            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout)?;
+            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true)?;
 
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -693,7 +701,7 @@ fn send_all_probes(
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<AllPacketRR, PistolError> {
     let seq = send_seq_probes(src_ipv4, dst_ipv4, dst_open_tcp_port, timeout)?;
     let ie = send_ie_probes(src_ipv4, dst_ipv4, timeout)?;
@@ -1807,7 +1815,7 @@ pub fn threads_os_probe(
     dst_closed_udp_port: u16,
     nmap_os_db: Vec<NmapOSDB>,
     top_k: usize,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(TargetFingerprint, Vec<OSInfo>), PistolError> {
     // exec this line first to return error for host which dead
     let (dst_mac, _interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
@@ -1838,7 +1846,7 @@ pub fn threads_os_probe(
         true => {
             let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout)?;
             get_scan_line(
-                Some(dst_mac),
+                dst_mac,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
@@ -1850,7 +1858,7 @@ pub fn threads_os_probe(
         false => {
             let hops = 0;
             get_scan_line(
-                Some(dst_mac),
+                dst_mac,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,

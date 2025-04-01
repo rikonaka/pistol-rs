@@ -1,30 +1,32 @@
+use pnet::packet::Packet;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::tcp::ipv6_checksum;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
-use pnet::packet::Packet;
+use pnet::packet::tcp::ipv6_checksum;
 use rand::Rng;
 use std::net::Ipv6Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV6;
 use std::net::TcpStream;
+use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv6_send;
+use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
 use crate::layers::LayersMatch;
-use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
+use crate::layers::layer3_ipv6_send;
+use crate::utils;
 
 use super::PortStatus;
 
@@ -45,12 +47,19 @@ pub fn send_syn_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -63,7 +72,14 @@ pub fn send_syn_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -100,6 +116,7 @@ pub fn send_syn_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -154,12 +171,19 @@ pub fn send_fin_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -172,7 +196,14 @@ pub fn send_fin_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -209,6 +240,7 @@ pub fn send_fin_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -263,12 +295,19 @@ pub fn send_ack_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -281,7 +320,14 @@ pub fn send_ack_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -318,6 +364,7 @@ pub fn send_ack_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -369,12 +416,19 @@ pub fn send_null_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -387,7 +441,14 @@ pub fn send_null_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -424,6 +485,7 @@ pub fn send_null_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -475,12 +537,19 @@ pub fn send_xmas_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -493,7 +562,14 @@ pub fn send_xmas_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -530,6 +606,7 @@ pub fn send_xmas_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -581,12 +658,19 @@ pub fn send_window_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -599,7 +683,14 @@ pub fn send_window_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -636,6 +727,7 @@ pub fn send_window_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -692,12 +784,19 @@ pub fn send_maimon_scan_packet(
     src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -710,7 +809,14 @@ pub fn send_maimon_scan_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -747,6 +853,7 @@ pub fn send_maimon_scan_packet(
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
+        true,
     )?;
 
     match Ipv6Packet::new(&ret) {
@@ -798,11 +905,15 @@ pub fn send_connect_scan_packet(
     _: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
     let start_time = Instant::now();
-    match TcpStream::connect_timeout(&addr, timeout) {
+    let t = match timeout {
+        Some(t) => t,
+        None => utils::get_default_timeout(),
+    };
+    match TcpStream::connect_timeout(&addr, t) {
         Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
         Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
     }

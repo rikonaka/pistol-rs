@@ -1,8 +1,8 @@
 use pnet::packet::icmp;
-use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpType;
 use pnet::packet::icmp::MutableIcmpPacket;
+use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
@@ -15,6 +15,7 @@ use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
 use rand::Rng;
 use std::net::Ipv4Addr;
+use std::panic::Location;
 
 use crate::error::PistolError;
 use crate::layers::ICMP_HEADER_SIZE;
@@ -116,7 +117,14 @@ pub fn seq_packet_1_layer3(
 
     let mut ipv4_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut ipv4_buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut ipv4_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -132,7 +140,14 @@ pub fn seq_packet_1_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv4_buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv4_buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -175,7 +190,14 @@ pub fn seq_packet_2_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -191,7 +213,14 @@ pub fn seq_packet_2_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -234,7 +263,14 @@ pub fn seq_packet_3_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -250,7 +286,14 @@ pub fn seq_packet_3_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -294,7 +337,14 @@ pub fn seq_packet_4_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -310,7 +360,14 @@ pub fn seq_packet_4_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -351,7 +408,14 @@ pub fn seq_packet_5_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -367,7 +431,14 @@ pub fn seq_packet_5_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -409,7 +480,14 @@ pub fn seq_packet_6_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -425,7 +503,14 @@ pub fn seq_packet_6_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -464,7 +549,14 @@ pub fn ie_packet_1_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
@@ -484,7 +576,14 @@ pub fn ie_packet_1_layer3(
     ip_header.set_checksum(c);
 
     // icmp header
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // a code of nine (even though it should be zero)
     icmp_header.set_icmp_code(IcmpCode(9));
     icmp_header.set_icmp_type(IcmpType(8));
@@ -495,7 +594,14 @@ pub fn ie_packet_1_layer3(
     let icmp_data: Vec<u8> = vec![0x00; ICMP_DATA_SIZE];
     icmp_header.set_payload(&icmp_data);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableIcmpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
@@ -513,7 +619,14 @@ pub fn ie_packet_2_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
@@ -533,7 +646,14 @@ pub fn ie_packet_2_layer3(
     ip_header.set_checksum(c);
 
     // icmp header
-    let mut icmp_header = MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableEchoRequestPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     // the code is zero
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_icmp_type(IcmpType(8));
@@ -543,7 +663,14 @@ pub fn ie_packet_2_layer3(
     let icmp_data: Vec<u8> = vec![0x00; ICMP_DATA_SIZE];
     icmp_header.set_payload(&icmp_data);
 
-    let mut icmp_header = MutableIcmpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableIcmpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
@@ -572,7 +699,14 @@ pub fn ecn_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -589,7 +723,14 @@ pub fn ecn_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     // Sequence number is random.
@@ -638,7 +779,14 @@ pub fn t2_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -655,7 +803,14 @@ pub fn t2_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -697,7 +852,14 @@ pub fn t3_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -714,7 +876,14 @@ pub fn t3_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -756,7 +925,14 @@ pub fn t4_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -773,7 +949,14 @@ pub fn t4_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -815,7 +998,14 @@ pub fn t5_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -832,7 +1022,14 @@ pub fn t5_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -874,7 +1071,14 @@ pub fn t6_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -891,7 +1095,14 @@ pub fn t6_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -933,7 +1144,14 @@ pub fn t7_packet_layer3(
 
     let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
@@ -950,7 +1168,14 @@ pub fn t7_packet_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     let sequence = rng.random();
@@ -990,7 +1215,14 @@ pub fn udp_packet_layer3(
     const UDP_DATA_SIZE: usize = 300;
     let mut buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     // ip header
-    let mut ip_header = MutableIpv4Packet::new(&mut buff).unwrap();
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
@@ -1005,7 +1237,14 @@ pub fn udp_packet_layer3(
     ip_header.set_checksum(c);
 
     // udp header
-    let mut udp_header = MutableUdpPacket::new(&mut buff[IPV4_HEADER_SIZE..]).unwrap();
+    let mut udp_header = match MutableUdpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);

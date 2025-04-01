@@ -1,27 +1,28 @@
 use chrono::Utc;
+use pnet::packet::Packet;
 use pnet::packet::icmpv6;
-use pnet::packet::icmpv6::echo_reply;
-use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Type;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
+use pnet::packet::icmpv6::echo_reply;
+use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
+use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv6_send;
+use crate::layers::ICMPV6_ER_HEADER_SIZE;
+use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::LayersMatch;
-use crate::layers::ICMPV6_ER_HEADER_SIZE;
-use crate::layers::IPV6_HEADER_SIZE;
+use crate::layers::layer3_ipv6_send;
 use crate::ping::PingStatus;
 
 const TTL: u8 = 255;
@@ -29,13 +30,20 @@ const TTL: u8 = 255;
 pub fn send_icmpv6_ping_packet(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -47,8 +55,15 @@ pub fn send_icmpv6_ping_packet(
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
-    let mut icmpv6_header =
-        MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmpv6_header = match MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..])
+    {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
     icmpv6_header.set_sequence_number(1);
@@ -63,7 +78,14 @@ pub fn send_icmpv6_ping_packet(
     // println!("{:?}", timestamp);
     icmpv6_header.set_payload(&timestamp);
 
-    let mut icmp_header = MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut icmp_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
 
@@ -88,7 +110,14 @@ pub fn send_icmpv6_ping_packet(
     };
     let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
-    let (ret, rtt) = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![layers_match], timeout)?;
+    let (ret, rtt) = layer3_ipv6_send(
+        src_ipv6,
+        dst_ipv6,
+        &ipv6_buff,
+        vec![layers_match],
+        timeout,
+        true,
+    )?;
     match Ipv6Packet::new(&ret) {
         Some(ipv6_packet) => {
             match ipv6_packet.get_next_header() {

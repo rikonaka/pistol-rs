@@ -5,14 +5,15 @@ use pnet::packet::arp::ArpOperations;
 use pnet::packet::arp::MutableArpPacket;
 use pnet::packet::ethernet::EtherTypes;
 use std::net::Ipv4Addr;
+use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::get_mac_from_arp;
-use crate::layers::layer2_send;
 use crate::layers::Layer2Match;
 use crate::layers::Layer3Match;
 use crate::layers::LayersMatch;
+use crate::layers::get_mac_from_arp;
+use crate::layers::layer2_send;
 
 pub fn send_arp_scan_packet(
     dst_ipv4: Ipv4Addr,
@@ -20,10 +21,17 @@ pub fn send_arp_scan_packet(
     src_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     interface: NetworkInterface,
-    timeout: Duration,
+    timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let mut arp_buffer = [0u8; 28];
-    let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
+    let mut arp_packet = match MutableArpPacket::new(&mut arp_buffer) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
 
     arp_packet.set_hardware_type(ArpHardwareTypes::Ethernet);
     arp_packet.set_protocol_type(EtherTypes::Ipv4);
@@ -55,6 +63,8 @@ pub fn send_arp_scan_packet(
         ethernet_type,
         vec![layers_match],
         timeout,
+        true,
     )?;
-    Ok((get_mac_from_arp(&ret), rtt))
+    let mac = get_mac_from_arp(&ret)?;
+    Ok((mac, rtt))
 }

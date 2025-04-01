@@ -1,16 +1,16 @@
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use pnet::packet::tcp::ipv6_checksum;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
+use pnet::packet::tcp::ipv6_checksum;
 use rand::Rng;
 use std::net::Ipv6Addr;
-use std::time::Duration;
+use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::layer3_ipv6_send;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::TCP_HEADER_SIZE;
+use crate::layers::layer3_ipv6_send;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
@@ -25,7 +25,14 @@ pub fn send_syn_flood_packet(
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -38,7 +45,14 @@ pub fn send_syn_flood_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -50,11 +64,11 @@ pub fn send_syn_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    let timeout = Duration::new(0, 0);
+    let timeout = None;
 
     let mut count = 0;
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
         count += 1;
     }
     Ok(ipv6_buff.len() * count)
@@ -70,7 +84,14 @@ pub fn send_ack_flood_packet(
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -83,7 +104,14 @@ pub fn send_ack_flood_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -95,11 +123,11 @@ pub fn send_ack_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    let timeout = Duration::new(0, 0);
+    let timeout = None;
 
     let mut count = 0;
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
         count += 1;
     }
     Ok(ipv6_buff.len() * count)
@@ -115,7 +143,14 @@ pub fn send_ack_psh_flood_packet(
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = MutableIpv6Packet::new(&mut ipv6_buff).unwrap();
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     ipv6_header.set_version(6);
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
@@ -128,7 +163,14 @@ pub fn send_ack_psh_flood_packet(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]).unwrap();
+    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                path: format!("{}", Location::caller()),
+            });
+        }
+    };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
     tcp_header.set_sequence(rng.random());
@@ -140,11 +182,11 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    let timeout = Duration::new(0, 0);
+    let timeout = None;
 
     let mut count = 0;
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout)?;
+        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
         count += 1;
     }
     Ok(ipv6_buff.len() * count)
