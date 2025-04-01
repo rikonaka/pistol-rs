@@ -598,7 +598,7 @@ pub fn layer2_send(
     let mut ethernet_buff = [0u8; ETHERNET_BUFF_SIZE];
     // let mut ethernet_buff = [0u8; ETHERNET_HEADER_SIZE + send_buff.len()];
     let mut ethernet_packet = match MutableEthernetPacket::new(&mut ethernet_buff) {
-        Some(e) => e,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -652,7 +652,7 @@ pub fn get_mac_from_arp(ethernet_buff: &[u8]) -> Result<Option<MacAddr>, PistolE
         Some(re) => match re.get_ethertype() {
             EtherTypes::Arp => {
                 let arp = match ArpPacket::new(re.payload()) {
-                    Some(a) => a,
+                    Some(p) => p,
                     None => {
                         return Err(PistolError::BuildPacketError {
                             path: format!("{}", Location::caller()),
@@ -684,7 +684,7 @@ fn arp(
 
     let mut arp_buff = [0u8; 28];
     let mut arp_packet = match MutableArpPacket::new(&mut arp_buff) {
-        Some(a) => a,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -824,7 +824,7 @@ pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
 fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
     // return mac address from ndp
     let ethernet_packet = match EthernetPacket::new(buff) {
-        Some(e) => e,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -832,7 +832,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
         }
     };
     let ipv6_packet = match Ipv6Packet::new(ethernet_packet.payload()) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -840,7 +840,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
         }
     };
     let icmpv6_packet = match NeighborAdvertPacket::new(ipv6_packet.payload()) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -875,7 +875,7 @@ fn ndp_ns(
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -895,7 +895,7 @@ fn ndp_ns(
     // icmpv6
     let mut icmpv6_header =
         match MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-            Some(i) => i,
+            Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
                     path: format!("{}", Location::caller()),
@@ -915,7 +915,7 @@ fn ndp_ns(
     icmpv6_header.set_options(&vec![ndp_option]);
 
     let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -984,7 +984,7 @@ fn ndp_rs(
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
-        Some(i) => i,
+        Some(p) => p
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -1003,7 +1003,7 @@ fn ndp_rs(
     // icmpv6
     let mut icmpv6_header =
         match MutableRouterSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-            Some(i) => i,
+            Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
                     path: format!("{}", Location::caller()),
@@ -1022,7 +1022,7 @@ fn ndp_rs(
     icmpv6_header.set_options(&vec![ndp_option]);
 
     let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),

@@ -28,7 +28,7 @@ pub fn send_syn_flood_packet(
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -50,7 +50,7 @@ pub fn send_syn_flood_packet(
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
-        Some(t) => t,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -89,7 +89,7 @@ pub fn send_ack_flood_packet(
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -111,7 +111,7 @@ pub fn send_ack_flood_packet(
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
-        Some(t) => t,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),

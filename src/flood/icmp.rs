@@ -30,7 +30,7 @@ pub fn send_icmp_flood_packet(
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -51,7 +51,7 @@ pub fn send_icmp_flood_packet(
     ip_header.set_checksum(c);
 
     let mut icmp_header = match MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -74,7 +74,7 @@ pub fn send_icmp_flood_packet(
     icmp_header.set_payload(&timestamp);
 
     let mut icmp_header = match MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),

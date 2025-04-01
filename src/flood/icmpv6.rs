@@ -29,7 +29,7 @@ pub fn send_icmpv6_flood_packet(
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -49,7 +49,7 @@ pub fn send_icmpv6_flood_packet(
 
     let mut icmpv6_header = match MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..])
     {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
@@ -71,7 +71,7 @@ pub fn send_icmpv6_flood_packet(
     icmpv6_header.set_payload(&timestamp);
 
     let mut icmp_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-        Some(i) => i,
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
