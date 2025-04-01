@@ -984,7 +984,7 @@ fn ndp_rs(
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
-        Some(p) => p
+        Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
                 path: format!("{}", Location::caller()),
