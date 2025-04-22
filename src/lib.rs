@@ -6,6 +6,7 @@ use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
+use std::result;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
@@ -25,6 +26,8 @@ mod utils;
 
 use crate::error::PistolError;
 use crate::route::SystemNetCache;
+
+pub type Result<T, E = error::PistolError> = result::Result<T, E>;
 
 // debug code
 // #[cfg(test)]
