@@ -18,11 +18,10 @@ pub mod os;
 pub mod ping;
 pub mod scan;
 pub mod vs;
-// inner use only
-mod error;
-mod layers;
-mod route;
-mod utils;
+pub mod error;
+pub mod layers;
+pub mod route;
+pub mod utils;
 
 use crate::error::PistolError;
 use crate::route::SystemNetCache;
@@ -453,37 +452,55 @@ impl Target {
 }
 
 /* Scan */
-
+#[cfg(feature = "scan")]
 pub use scan::arp_scan;
+#[cfg(feature = "scan")]
 pub use scan::arp_scan_raw;
-pub use scan::scan;
-pub use scan::scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_ack_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_ack_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_connect_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_connect_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_fin_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_fin_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_idle_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_idle_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_maimon_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_maimon_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_null_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_null_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_syn_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_syn_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_window_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_window_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_xmas_scan;
+#[cfg(feature = "scan")]
 pub use scan::tcp_xmas_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::udp_scan;
+#[cfg(feature = "scan")]
 pub use scan::udp_scan_raw;
 
 /* Ping */
 
 pub use ping::icmp_ping;
 pub use ping::icmp_ping_raw;
-pub use ping::ping;
 pub use ping::tcp_ack_ping;
 pub use ping::tcp_ack_ping_raw;
 pub use ping::tcp_syn_ping;

@@ -1,44 +1,77 @@
-use chrono::DateTime;
 /* Scan */
+#[cfg(feature = "scan")]
+use chrono::DateTime;
+#[cfg(feature = "scan")]
 use chrono::Local;
+#[cfg(feature = "scan")]
 use log::warn;
+#[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
+#[cfg(feature = "scan")]
 use prettytable::Cell;
+#[cfg(feature = "scan")]
 use prettytable::Row;
+#[cfg(feature = "scan")]
 use prettytable::Table;
+#[cfg(feature = "scan")]
 use prettytable::row;
+#[cfg(feature = "scan")]
 use serde::Deserialize;
+#[cfg(feature = "scan")]
 use serde::Serialize;
+#[cfg(feature = "scan")]
 use std::collections::BTreeMap;
+#[cfg(feature = "scan")]
 use std::collections::HashMap;
+#[cfg(feature = "scan")]
 use std::fmt;
+#[cfg(feature = "scan")]
 use std::net::IpAddr;
+#[cfg(feature = "scan")]
 use std::net::Ipv4Addr;
+#[cfg(feature = "scan")]
 use std::net::Ipv6Addr;
+#[cfg(feature = "scan")]
 use std::sync::mpsc::channel;
+#[cfg(feature = "scan")]
 use std::time::Duration;
 
+#[cfg(feature = "scan")]
 pub mod arp;
+#[cfg(any(feature = "scan", feature = "ping"))]
 pub mod tcp;
+#[cfg(any(feature = "scan", feature = "ping"))]
 pub mod tcp6;
+#[cfg(any(feature = "scan", feature = "ping"))]
 pub mod udp;
+#[cfg(any(feature = "scan", feature = "ping"))]
 pub mod udp6;
 
+#[cfg(feature = "scan")]
 use crate::Target;
+#[cfg(feature = "scan")]
 use crate::error::PistolError;
+#[cfg(feature = "scan")]
 use crate::utils::find_interface_by_ip;
+#[cfg(feature = "scan")]
 use crate::utils::find_source_addr;
+#[cfg(feature = "scan")]
 use crate::utils::find_source_addr6;
+#[cfg(feature = "scan")]
 use crate::utils::get_threads_pool;
+#[cfg(feature = "scan")]
 use crate::utils::random_port;
+#[cfg(feature = "scan")]
 use crate::utils::threads_num_check;
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct AliveHost {
     pub mac_addr: MacAddr,
     pub ouis: String, // productions organization name
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct ArpScans {
     pub alives: HashMap<Ipv4Addr, AliveHost>, // only ipv4 has arp scan
@@ -50,6 +83,7 @@ pub struct ArpScans {
     tests: usize,
 }
 
+#[cfg(feature = "scan")]
 impl ArpScans {
     pub fn new() -> ArpScans {
         ArpScans {
@@ -77,6 +111,7 @@ impl ArpScans {
     }
 }
 
+#[cfg(feature = "scan")]
 impl fmt::Display for ArpScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -100,12 +135,14 @@ impl fmt::Display for ArpScans {
     }
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapMacPrefix {
     pub prefix: String,
     pub ouis: String,
 }
 
+#[cfg(feature = "scan")]
 fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
     let nmap_mac_prefixes_file = include_str!("./db/nmap-mac-prefixes");
     let mut nmap_mac_prefixes = Vec::new();
@@ -130,6 +167,7 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
     ret
 }
 
+#[cfg(feature = "scan")]
 fn ipv4_arp_scan(
     dst_ipv4: Ipv4Addr,
     dst_mac: MacAddr,
@@ -151,6 +189,7 @@ fn ipv4_arp_scan(
     arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
 }
 
+#[cfg(feature = "scan")]
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
@@ -177,6 +216,7 @@ pub fn arp_scan_raw(
 
 /// ARP Scan.
 /// This will sends ARP packets to hosts on the local network and displays any responses that are received.
+#[cfg(feature = "scan")]
 pub fn arp_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -270,6 +310,7 @@ pub fn arp_scan(
     Ok(ret)
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScanMethods {
     Connect,
@@ -284,6 +325,7 @@ pub enum ScanMethods {
     Udp,
 }
 
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PortStatus {
     Open,
@@ -298,6 +340,7 @@ pub enum PortStatus {
     Offline,
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone, Copy)]
 pub struct PortScans {
     pub status: PortStatus,
@@ -306,6 +349,7 @@ pub struct PortScans {
     pub etime: DateTime<Local>, // end date time
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct TcpUdpScans {
     pub scans: HashMap<IpAddr, HashMap<u16, Vec<PortScans>>>,
@@ -317,6 +361,7 @@ pub struct TcpUdpScans {
     tests: usize,
 }
 
+#[cfg(feature = "scan")]
 impl TcpUdpScans {
     pub fn new() -> TcpUdpScans {
         TcpUdpScans {
@@ -404,6 +449,7 @@ impl TcpUdpScans {
     }
 }
 
+#[cfg(feature = "scan")]
 impl fmt::Display for TcpUdpScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -486,12 +532,14 @@ impl fmt::Display for TcpUdpScans {
     }
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone, Copy)]
 pub struct TcpIdleScans {
     pub zombie_ip_id_1: u16,
     pub zombie_ip_id_2: u16,
 }
 
+#[cfg(feature = "scan")]
 fn threads_scan(
     method: ScanMethods,
     dst_ipv4: Ipv4Addr,
@@ -552,6 +600,7 @@ fn threads_scan(
     Ok((scan_ret, rtt))
 }
 
+#[cfg(feature = "scan")]
 fn threads_scan6(
     method: ScanMethods,
     dst_ipv6: Ipv6Addr,
@@ -598,7 +647,8 @@ fn threads_scan6(
 }
 
 /// General scan function.
-pub fn scan(
+#[cfg(feature = "scan")]
+fn scan(
     target: &Target,
     threads_num: Option<usize>,
     method: ScanMethods,
@@ -748,6 +798,7 @@ pub fn scan(
 /// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
 /// The big downside is that this sort of scan is easily detectable and filterable.
 /// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
+#[cfg(feature = "scan")]
 pub fn tcp_connect_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -770,6 +821,7 @@ pub fn tcp_connect_scan(
 }
 
 /// TCP connect() Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_connect_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -801,6 +853,7 @@ pub fn tcp_connect_scan_raw(
 /// It can be performed quickly,
 /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
 /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
+#[cfg(feature = "scan")]
 pub fn tcp_syn_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -823,6 +876,7 @@ pub fn tcp_syn_scan(
 }
 
 /// TCP SYN Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_syn_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -855,6 +909,7 @@ pub fn tcp_syn_scan_raw(
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+#[cfg(feature = "scan")]
 pub fn tcp_fin_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -877,6 +932,7 @@ pub fn tcp_fin_scan(
 }
 
 /// TCP FIN Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_fin_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -902,6 +958,7 @@ pub fn tcp_fin_scan_raw(
 /// When scanning unfiltered systems, open and closed ports will both return a RST packet.
 /// We then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined.
 /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
+#[cfg(feature = "scan")]
 pub fn tcp_ack_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -924,6 +981,7 @@ pub fn tcp_ack_scan(
 }
 
 /// TCP ACK Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_ack_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -948,6 +1006,7 @@ pub fn tcp_ack_scan_raw(
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+#[cfg(feature = "scan")]
 pub fn tcp_null_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -970,6 +1029,7 @@ pub fn tcp_null_scan(
 }
 
 /// TCP Null Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_null_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -994,6 +1054,7 @@ pub fn tcp_null_scan_raw(
 /// When scanning systems compliant with this RFC text,
 /// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
 /// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
+#[cfg(feature = "scan")]
 pub fn tcp_xmas_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -1016,6 +1077,7 @@ pub fn tcp_xmas_scan(
 }
 
 /// TCP Xmas Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_xmas_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -1041,6 +1103,7 @@ pub fn tcp_xmas_scan_raw(
 /// It does this by examining the TCP Window value of the RST packets returned.
 /// On some systems, open ports use a positive window size (even for RST packets) while closed ones have a zero window.
 /// Window scan sends the same bare ACK probe as ACK scan.
+#[cfg(feature = "scan")]
 pub fn tcp_window_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -1063,6 +1126,7 @@ pub fn tcp_window_scan(
 }
 
 /// TCP Window Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_window_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -1088,6 +1152,7 @@ pub fn tcp_window_scan_raw(
 /// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
 /// According to RFC 793 (TCP), a RST packet should be generated in response to such a probe whether the port is open or closed.
 /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
+#[cfg(feature = "scan")]
 pub fn tcp_maimon_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -1110,6 +1175,7 @@ pub fn tcp_maimon_scan(
 }
 
 /// TCP Maimon Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_maimon_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -1137,6 +1203,7 @@ pub fn tcp_maimon_scan_raw(
 /// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
 /// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
 /// Besides being extraordinarily stealthy, this scan type permits discovery of IP-based trust relationships between machines.
+#[cfg(feature = "scan")]
 pub fn tcp_idle_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -1161,6 +1228,7 @@ pub fn tcp_idle_scan(
 }
 
 /// TCP Idle Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn tcp_idle_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -1190,6 +1258,7 @@ pub fn tcp_idle_scan_raw(
 /// UDP scan works by sending a UDP packet to every targeted port.
 /// For most ports, this packet will be empty (no payload), but for a few of the more common ports a protocol-specific payload will be sent.
 /// Based on the response, or lack thereof, the port is assigned to one of four states.
+#[cfg(feature = "scan")]
 pub fn udp_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -1212,6 +1281,7 @@ pub fn udp_scan(
 }
 
 /// UDP Scan, raw version.
+#[cfg(feature = "scan")]
 pub fn udp_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -1231,7 +1301,8 @@ pub fn udp_scan_raw(
     )
 }
 
-pub fn scan_raw(
+#[cfg(feature = "scan")]
+fn scan_raw(
     method: ScanMethods,
     dst_addr: IpAddr,
     dst_port: u16,
@@ -1272,6 +1343,7 @@ pub fn scan_raw(
     }
 }
 
+#[cfg(feature = "scan")]
 #[cfg(test)]
 mod tests {
     use super::*;

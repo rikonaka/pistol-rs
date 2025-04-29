@@ -1,40 +1,74 @@
+#[cfg(feature = "ping")]
 use chrono::DateTime;
+#[cfg(feature = "ping")]
 use chrono::Local;
+#[cfg(feature = "ping")]
 use log::debug;
+#[cfg(feature = "ping")]
 use log::warn;
+#[cfg(feature = "ping")]
 use prettytable::Cell;
+#[cfg(feature = "ping")]
 use prettytable::Row;
+#[cfg(feature = "ping")]
 use prettytable::Table;
+#[cfg(feature = "ping")]
 use prettytable::row;
+#[cfg(feature = "ping")]
 use std::collections::BTreeMap;
+#[cfg(feature = "ping")]
 use std::collections::HashMap;
+#[cfg(feature = "ping")]
 use std::fmt;
+#[cfg(feature = "ping")]
 use std::net::IpAddr;
+#[cfg(feature = "ping")]
 use std::net::Ipv4Addr;
+#[cfg(feature = "ping")]
 use std::net::Ipv6Addr;
+#[cfg(feature = "ping")]
 use std::sync::mpsc::channel;
+#[cfg(feature = "ping")]
 use std::time::Duration;
 
+#[cfg(feature = "ping")]
 pub mod icmp;
+#[cfg(feature = "ping")]
 pub mod icmpv6;
 
+#[cfg(feature = "ping")]
 use crate::Target;
+#[cfg(feature = "ping")]
 use crate::error::PistolError;
+#[cfg(feature = "ping")]
 use crate::scan::PortStatus;
+#[cfg(feature = "ping")]
 use crate::scan::tcp;
+#[cfg(feature = "ping")]
 use crate::scan::tcp6;
+#[cfg(feature = "ping")]
 use crate::scan::udp;
+#[cfg(feature = "ping")]
 use crate::scan::udp6;
+#[cfg(feature = "ping")]
 use crate::utils::find_source_addr;
+#[cfg(feature = "ping")]
 use crate::utils::find_source_addr6;
+#[cfg(feature = "ping")]
 use crate::utils::get_threads_pool;
+#[cfg(feature = "ping")]
 use crate::utils::random_port;
+#[cfg(feature = "ping")]
 use crate::utils::threads_num_check;
 
+#[cfg(feature = "ping")]
 const SYN_PING_DEFAULT_PORT: u16 = 80;
+#[cfg(feature = "ping")]
 const ACK_PING_DEFAULT_PORT: u16 = 80;
+#[cfg(feature = "ping")]
 const UDP_PING_DEFAULT_PORT: u16 = 125;
 
+#[cfg(feature = "ping")]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PingStatus {
     Up,
@@ -42,6 +76,7 @@ pub enum PingStatus {
     Error,
 }
 
+#[cfg(feature = "ping")]
 #[derive(Debug, Clone)]
 pub struct HostPings {
     pub status: PingStatus,
@@ -50,6 +85,7 @@ pub struct HostPings {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "ping")]
 #[derive(Debug, Clone)]
 pub struct Pings {
     pub pings: HashMap<IpAddr, Vec<HostPings>>,
@@ -61,6 +97,7 @@ pub struct Pings {
     tests: usize,
 }
 
+#[cfg(feature = "ping")]
 impl Pings {
     pub fn new() -> Pings {
         Pings {
@@ -137,6 +174,7 @@ impl Pings {
     }
 }
 
+#[cfg(feature = "ping")]
 impl fmt::Display for Pings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -193,6 +231,7 @@ impl fmt::Display for Pings {
     }
 }
 
+#[cfg(feature = "ping")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingMethods {
     Syn,
@@ -201,6 +240,7 @@ pub enum PingMethods {
     Icmp,
 }
 
+#[cfg(feature = "ping")]
 fn threads_ping(
     method: PingMethods,
     src_ipv4: Ipv4Addr,
@@ -258,6 +298,7 @@ fn threads_ping(
     Ok((ping_status, rtt))
 }
 
+#[cfg(feature = "ping")]
 fn threads_ping6(
     method: PingMethods,
     src_ipv6: Ipv6Addr,
@@ -312,7 +353,8 @@ fn threads_ping6(
     Ok((ping_status, rtt))
 }
 
-pub fn ping(
+#[cfg(feature = "ping")]
+fn ping(
     target: &Target,
     threads_num: Option<usize>,
     method: PingMethods,
@@ -433,6 +475,7 @@ pub fn ping(
 /// TCP SYN Ping.
 /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
+#[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
     target: &Target,
     threads_num: Option<usize>,
@@ -453,6 +496,7 @@ pub fn tcp_syn_ping(
 }
 
 /// TCP SYN Ping, raw version.
+#[cfg(feature = "ping")]
 pub fn tcp_syn_ping_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -495,6 +539,7 @@ pub fn tcp_syn_ping_raw(
 /// TCP ACK Ping.
 /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
+#[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
     target: &Target,
     threads_num: Option<usize>,
@@ -515,6 +560,7 @@ pub fn tcp_ack_ping(
 }
 
 /// TCP ACK Ping, raw version.
+#[cfg(feature = "ping")]
 pub fn tcp_ack_ping_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -557,6 +603,7 @@ pub fn tcp_ack_ping_raw(
 /// UDP Ping.
 /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
+#[cfg(feature = "ping")]
 pub fn udp_ping(
     target: &Target,
     threads_num: Option<usize>,
@@ -577,6 +624,7 @@ pub fn udp_ping(
 }
 
 /// UDP Ping, raw version.
+#[cfg(feature = "ping")]
 pub fn udp_ping_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -626,6 +674,7 @@ pub fn udp_ping_raw(
 /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
 /// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
+#[cfg(feature = "ping")]
 pub fn icmp_ping(
     target: &Target,
     threads_num: Option<usize>,
@@ -646,6 +695,7 @@ pub fn icmp_ping(
 }
 
 /// ICMP ping, raw version.
+#[cfg(feature = "ping")]
 pub fn icmp_ping_raw(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
@@ -669,6 +719,7 @@ pub fn icmp_ping_raw(
     }
 }
 
+#[cfg(feature = "ping")]
 #[cfg(test)]
 mod tests {
     use super::*;

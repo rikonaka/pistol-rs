@@ -1,6 +1,6 @@
 [package]
 name = "pistol"
-version = "3.1.10"
+version = "3.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A Rust Library about Cybersecurity"
@@ -34,3 +34,11 @@ thiserror = "^2"
 zip = "^0"
 kdam = "^0"
 escape-bytes = "^0"
+
+[features]
+default = ["scan"]
+scan = []
+ping = []
+flood = []
+os = []
+vs = []
