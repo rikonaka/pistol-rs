@@ -1,72 +1,41 @@
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::Packet;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::icmp::IcmpPacket;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::icmp::IcmpTypes;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::icmp::destination_unreachable;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ip::IpNextHeaderProtocols;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ipv4;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ipv4::Ipv4Flags;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ipv4::Ipv4Packet;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ipv4::MutableIpv4Packet;
-#[cfg(feature = "scan")]
 use pnet::packet::ipv4::checksum;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::tcp;
 use pnet::packet::tcp::MutableTcpPacket;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::tcp::TcpFlags;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::tcp::TcpPacket;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::tcp::ipv4_checksum;
 use rand::Rng;
 use std::net::Ipv4Addr;
-#[cfg(feature = "scan")]
 use std::net::SocketAddr;
-#[cfg(feature = "scan")]
 use std::net::SocketAddrV4;
-#[cfg(feature = "scan")]
 use std::net::TcpStream;
 use std::panic::Location;
 use std::time::Duration;
-#[cfg(feature = "scan")]
 use std::time::Instant;
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::IPV4_HEADER_SIZE;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::Layer3Match;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::Layer4MatchIcmp;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::Layer4MatchTcpUdp;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::LayersMatch;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::TCP_HEADER_SIZE;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layers::layer3_ipv4_send;
-#[cfg(feature = "scan")]
 use crate::utils;
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 use super::PortStatus;
-#[cfg(feature = "scan")]
 use super::TcpIdleScans;
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 const TCP_DATA_SIZE: usize = 0;
-#[cfg(any(feature = "scan", feature = "ping"))]
 const TTL: u8 = 64;
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
@@ -74,12 +43,10 @@ const TTL: u8 = 64;
 // const TCP_FLAGS_URG_MASK: u8 = 0b00100000;
 // const TCP_FLAGS_ACK_MASK: u8 = 0b00010000;
 // const TCP_FLAGS_PSH_MASK: u8 = 0b00001000;
-#[cfg(any(feature = "scan", feature = "ping"))]
 const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_SYN_MASK: u8 = 0b00000010;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub fn send_syn_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -208,7 +175,6 @@ pub fn send_syn_scan_packet(
     Ok((PortStatus::Filtered, rtt))
 }
 
-#[cfg(feature = "scan")]
 pub fn send_fin_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -337,7 +303,6 @@ pub fn send_fin_scan_packet(
     Ok((PortStatus::OpenOrFiltered, rtt))
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub fn send_ack_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -463,7 +428,6 @@ pub fn send_ack_scan_packet(
     Ok((PortStatus::Filtered, rtt))
 }
 
-#[cfg(feature = "scan")]
 pub fn send_null_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -589,7 +553,6 @@ pub fn send_null_scan_packet(
     Ok((PortStatus::OpenOrFiltered, rtt))
 }
 
-#[cfg(feature = "scan")]
 pub fn send_xmas_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -716,7 +679,6 @@ pub fn send_xmas_scan_packet(
     Ok((PortStatus::OpenOrFiltered, rtt))
 }
 
-#[cfg(feature = "scan")]
 pub fn send_window_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -847,7 +809,6 @@ pub fn send_window_scan_packet(
     Ok((PortStatus::Filtered, rtt))
 }
 
-#[cfg(feature = "scan")]
 pub fn send_maimon_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -973,7 +934,6 @@ pub fn send_maimon_scan_packet(
     Ok((PortStatus::OpenOrFiltered, rtt))
 }
 
-#[cfg(feature = "scan")]
 pub fn send_idle_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
@@ -1220,7 +1180,6 @@ pub fn send_idle_scan_packet(
     }
 }
 
-#[cfg(feature = "scan")]
 pub fn send_connect_scan_packet(
     _: Ipv4Addr,
     _: u16,

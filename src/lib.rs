@@ -12,16 +12,16 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use subnetwork::Ipv4Pool;
 
+pub mod error;
 pub mod flood;
 pub mod hop;
+pub mod layers;
 pub mod os;
 pub mod ping;
-pub mod scan;
-pub mod vs;
-pub mod error;
-pub mod layers;
 pub mod route;
+pub mod scan;
 pub mod utils;
+pub mod vs;
 
 use crate::error::PistolError;
 use crate::route::SystemNetCache;
@@ -499,28 +499,46 @@ pub use scan::udp_scan_raw;
 
 /* Ping */
 
+#[cfg(feature = "ping")]
 pub use ping::icmp_ping;
+#[cfg(feature = "ping")]
 pub use ping::icmp_ping_raw;
+#[cfg(feature = "ping")]
 pub use ping::tcp_ack_ping;
+#[cfg(feature = "ping")]
 pub use ping::tcp_ack_ping_raw;
+#[cfg(feature = "ping")]
 pub use ping::tcp_syn_ping;
+#[cfg(feature = "ping")]
 pub use ping::tcp_syn_ping_raw;
+#[cfg(feature = "ping")]
 pub use ping::udp_ping;
+#[cfg(feature = "ping")]
 pub use ping::udp_ping_raw;
 
 /* Flood */
 
-pub use flood::flood;
+#[cfg(feature = "flood")]
 pub use flood::flood_raw;
+#[cfg(feature = "flood")]
 pub use flood::icmp_flood;
+#[cfg(feature = "flood")]
 pub use flood::icmp_flood_raw;
+#[cfg(feature = "flood")]
 pub use flood::tcp_ack_flood;
+#[cfg(feature = "flood")]
 pub use flood::tcp_ack_flood_raw;
+#[cfg(feature = "flood")]
 pub use flood::tcp_ack_psh_flood;
+#[cfg(feature = "flood")]
 pub use flood::tcp_ack_psh_flood_raw;
+#[cfg(feature = "flood")]
 pub use flood::tcp_syn_flood;
+#[cfg(feature = "flood")]
 pub use flood::tcp_syn_flood_raw;
+#[cfg(feature = "flood")]
 pub use flood::udp_flood;
+#[cfg(feature = "flood")]
 pub use flood::udp_flood_raw;
 
 /* OS Detect */

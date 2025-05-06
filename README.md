@@ -21,6 +21,11 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 | Unix (*BSD, MacOS) | supported                    |
 | Windows            | supported (winpcap or npcap) |
 
+## Cargo Feature Flags
+
+Since version v3.2.0, features fields are supported, including `scan` (default), `ping`, `flood`, `os`, `vs`.
+
+
 **libpnet bug on Windows**
 
 Bug issues: https://github.com/libpnet/libpnet/issues/707, the `libpnet` cannot get IPv6 address on Windows.

@@ -25,6 +25,7 @@ use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::Target;
 
+#[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
 pub struct PortFloods {
     pub send_packets: usize, // count
@@ -33,6 +34,7 @@ pub struct PortFloods {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "flood")]
 impl PortFloods {
     pub fn new() -> PortFloods {
         PortFloods {
@@ -44,6 +46,7 @@ impl PortFloods {
     }
 }
 
+#[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
 pub struct FloodAttacks {
     pub summary: HashMap<IpAddr, HashMap<u16, PortFloods>>,
@@ -53,6 +56,7 @@ pub struct FloodAttacks {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "flood")]
 impl FloodAttacks {
     pub fn new() -> FloodAttacks {
         FloodAttacks {
@@ -78,6 +82,7 @@ impl FloodAttacks {
     }
 }
 
+#[cfg(feature = "flood")]
 impl fmt::Display for FloodAttacks {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         const BYTES_PER_GB: u64 = 1024 * 1024;
@@ -111,6 +116,7 @@ impl fmt::Display for FloodAttacks {
     }
 }
 
+#[cfg(feature = "flood")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FloodMethods {
     Icmp,
@@ -120,6 +126,7 @@ pub enum FloodMethods {
     Udp,
 }
 
+#[cfg(feature = "flood")]
 fn ipv4_flood(
     method: FloodMethods,
     dst_ipv4: Ipv4Addr,
@@ -175,6 +182,7 @@ fn ipv4_flood(
     Ok((count * max_flood_packet, total_send_buff_size))
 }
 
+#[cfg(feature = "flood")]
 fn ipv6_flood(
     method: FloodMethods,
     dst_ipv6: Ipv6Addr,
@@ -231,7 +239,8 @@ fn ipv6_flood(
     Ok((count * max_flood_packet, total_send_buff_size))
 }
 
-pub fn flood(
+#[cfg(feature = "flood")]
+fn flood(
     target: &Target,
     method: FloodMethods,
     src_addr: Option<IpAddr>,
@@ -337,6 +346,7 @@ pub fn flood(
 /// Normally, ICMP echo-request and echo-reply messages are used to ping a network device in order to diagnose the health and connectivity of the device and the connection between the sender and the device.
 /// By flooding the target with request packets, the network is forced to respond with an equal number of reply packets.
 /// This causes the target to become inaccessible to normal traffic.
+#[cfg(feature = "flood")]
 pub fn icmp_flood(
     target: &Target,
     src_addr: Option<IpAddr>,
@@ -355,6 +365,7 @@ pub fn icmp_flood(
     )
 }
 
+#[cfg(feature = "flood")]
 pub fn icmp_flood_raw(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
@@ -374,6 +385,7 @@ pub fn icmp_flood_raw(
 
 /// In a TCP SYN Flood attack, the malicious entity sends a barrage of SYN requests to a target server but intentionally avoids sending the final ACK.
 /// This leaves the server waiting for a response that never comes, consuming resources for each of these half-open connections.
+#[cfg(feature = "flood")]
 pub fn tcp_syn_flood(
     target: &Target,
     src_addr: Option<IpAddr>,
@@ -393,6 +405,7 @@ pub fn tcp_syn_flood(
     )
 }
 
+#[cfg(feature = "flood")]
 pub fn tcp_syn_flood_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -418,6 +431,7 @@ pub fn tcp_syn_flood_raw(
 /// ACK flood is tricky to mitigate for several reasons. It can be spoofed;
 /// the attacker can easily generate a high rate of attacking traffic,
 /// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK, as they look the same.
+#[cfg(feature = "flood")]
 pub fn tcp_ack_flood(
     target: &Target,
     src_addr: Option<IpAddr>,
@@ -437,6 +451,7 @@ pub fn tcp_ack_flood(
     )
 }
 
+#[cfg(feature = "flood")]
 pub fn tcp_ack_flood_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -455,6 +470,7 @@ pub fn tcp_ack_flood_raw(
 }
 
 /// TCP ACK flood with PSH flag set.
+#[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood(
     target: &Target,
     src_addr: Option<IpAddr>,
@@ -474,6 +490,7 @@ pub fn tcp_ack_psh_flood(
     )
 }
 
+#[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -496,6 +513,7 @@ pub fn tcp_ack_psh_flood_raw(
 /// Check for applications listening at each port.
 /// Realize that no application is listening at many of these ports.
 /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
+#[cfg(feature = "flood")]
 pub fn udp_flood(
     target: &Target,
     src_addr: Option<IpAddr>,
@@ -515,6 +533,7 @@ pub fn udp_flood(
     )
 }
 
+#[cfg(feature = "flood")]
 pub fn udp_flood_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -532,6 +551,7 @@ pub fn udp_flood_raw(
     )
 }
 
+#[cfg(feature = "flood")]
 pub fn flood_raw(
     method: FloodMethods,
     dst_addr: IpAddr,
@@ -588,6 +608,7 @@ pub fn flood_raw(
     }
 }
 
+#[cfg(feature = "flood")]
 #[cfg(test)]
 mod tests {
     use super::*;

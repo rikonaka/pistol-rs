@@ -36,7 +36,7 @@ kdam = "^0"
 escape-bytes = "^0"
 
 [features]
-default = ["scan"]
+default = ["flood"]
 scan = []
 ping = []
 flood = []
