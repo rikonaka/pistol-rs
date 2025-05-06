@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 use std::net::IpAddr;
+#[cfg(any(test, feature = "os",))]
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::result;
@@ -28,29 +29,36 @@ use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
 
-// debug code
-// #[cfg(test)]
-// const TEST_IPV4_REMOTE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
-#[cfg(test)]
 // debian
-const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
-// kali
-// const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 128);
-
+#[cfg(any(
+    feature = "scan",
+    feature = "ping",
+    feature = "flood",
+    feature = "os",
+    feature = "vs"
+))]
 #[cfg(test)]
+const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
+
 // dead host
+#[cfg(feature = "os")]
+#[cfg(test)]
 const TEST_IPV4_LOCAL_DEAD: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 99);
 
-#[cfg(test)]
 // debian
-const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e4);
-// centos
-// const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x4cec, 0xac70, 0x46eb, 0xea21);
-// kali
-// const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x3fa1, 0x587a, 0x3738, 0x345);
-
+#[cfg(any(
+    feature = "scan",
+    feature = "ping",
+    feature = "flood",
+    feature = "os",
+    feature = "vs"
+))]
 #[cfg(test)]
+const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
+
 // dead host
+#[cfg(feature = "os")]
+#[cfg(test)]
 const TEST_IPV6_LOCAL_DEAD: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e5);
 
 static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(|| {
@@ -319,10 +327,12 @@ impl Logger {
 
 // Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API.
 // Use this trait instead until its become stable function.
+#[cfg(feature = "os")]
 trait Ipv4CheckMethods {
     fn is_global_x(&self) -> bool;
 }
 
+#[cfg(feature = "os")]
 impl Ipv4CheckMethods for Ipv4Addr {
     fn is_global_x(&self) -> bool {
         let octets = self.octets();
@@ -355,10 +365,12 @@ impl Ipv6CheckMethods for Ipv6Addr {
     }
 }
 
+#[cfg(feature = "os")]
 trait IpCheckMethods {
     fn is_global_x(&self) -> bool;
 }
 
+#[cfg(feature = "os")]
 impl IpCheckMethods for IpAddr {
     fn is_global_x(&self) -> bool {
         match self {
@@ -543,12 +555,16 @@ pub use flood::udp_flood_raw;
 
 /* OS Detect */
 
+#[cfg(feature = "os")]
 pub use os::os_detect;
+#[cfg(feature = "os")]
 pub use os::os_detect_raw;
 
 /* Service Detect */
 
+#[cfg(feature = "vs")]
 pub use vs::vs_scan;
+#[cfg(feature = "vs")]
 pub use vs::vs_scan_raw;
 
 /* DNS */

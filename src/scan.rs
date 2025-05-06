@@ -1,39 +1,39 @@
 /* Scan */
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::DateTime;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::Local;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use log::warn;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::Cell;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::Row;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::Table;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::row;
 #[cfg(feature = "scan")]
 use serde::Deserialize;
 #[cfg(feature = "scan")]
 use serde::Serialize;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::collections::BTreeMap;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::collections::HashMap;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::fmt;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::IpAddr;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::Ipv4Addr;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::Ipv6Addr;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::mpsc::channel;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
 
 #[cfg(feature = "scan")]
@@ -47,21 +47,21 @@ pub mod udp;
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub mod udp6;
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::Target;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
 #[cfg(feature = "scan")]
 use crate::utils::find_interface_by_ip;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::find_source_addr;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::find_source_addr6;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::random_port;
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::threads_num_check;
 
 #[cfg(feature = "scan")]
@@ -310,7 +310,7 @@ pub fn arp_scan(
     Ok(ret)
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScanMethods {
     Connect,
@@ -340,7 +340,7 @@ pub enum PortStatus {
     Offline,
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
 pub struct PortScans {
     pub status: PortStatus,
@@ -349,7 +349,7 @@ pub struct PortScans {
     pub etime: DateTime<Local>, // end date time
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone)]
 pub struct TcpUdpScans {
     pub scans: HashMap<IpAddr, HashMap<u16, Vec<PortScans>>>,
@@ -361,7 +361,7 @@ pub struct TcpUdpScans {
     tests: usize,
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 impl TcpUdpScans {
     pub fn new() -> TcpUdpScans {
         TcpUdpScans {
@@ -449,7 +449,7 @@ impl TcpUdpScans {
     }
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 impl fmt::Display for TcpUdpScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -532,14 +532,14 @@ impl fmt::Display for TcpUdpScans {
     }
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
 pub struct TcpIdleScans {
     pub zombie_ip_id_1: u16,
     pub zombie_ip_id_2: u16,
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 fn threads_scan(
     method: ScanMethods,
     dst_ipv4: Ipv4Addr,
@@ -600,7 +600,7 @@ fn threads_scan(
     Ok((scan_ret, rtt))
 }
 
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 fn threads_scan6(
     method: ScanMethods,
     dst_ipv6: Ipv6Addr,
@@ -647,7 +647,7 @@ fn threads_scan6(
 }
 
 /// General scan function.
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 fn scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -853,7 +853,7 @@ pub fn tcp_connect_scan_raw(
 /// It can be performed quickly,
 /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
 /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 pub fn tcp_syn_scan(
     target: &Target,
     threads_num: Option<usize>,

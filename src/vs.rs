@@ -1,33 +1,61 @@
+#[cfg(feature = "vs")]
 use chrono::DateTime;
+#[cfg(feature = "vs")]
 use chrono::Local;
+#[cfg(feature = "vs")]
 use dbparser::ServiceProbe;
+#[cfg(feature = "vs")]
 use log::debug;
+#[cfg(feature = "vs")]
 use prettytable::row;
+#[cfg(feature = "vs")]
 use prettytable::Cell;
+#[cfg(feature = "vs")]
 use prettytable::Row;
+#[cfg(feature = "vs")]
 use prettytable::Table;
+#[cfg(feature = "vs")]
 use std::collections::BTreeMap;
+#[cfg(feature = "vs")]
 use std::collections::HashMap;
+#[cfg(feature = "vs")]
 use std::fmt;
+#[cfg(feature = "vs")]
 use std::io::Cursor;
+#[cfg(feature = "vs")]
 use std::io::Read;
+#[cfg(feature = "vs")]
 use std::net::IpAddr;
+#[cfg(feature = "vs")]
 use std::sync::mpsc::channel;
+#[cfg(feature = "vs")]
 use std::time::Duration;
+#[cfg(feature = "vs")]
 use zip::ZipArchive;
 
+#[cfg(feature = "vs")]
 use crate::error::PistolError;
+#[cfg(feature = "vs")]
 use crate::utils::get_default_timeout;
+#[cfg(feature = "vs")]
 use crate::utils::get_threads_pool;
+#[cfg(feature = "vs")]
 use crate::utils::threads_num_check;
+#[cfg(feature = "vs")]
 use crate::vs::dbparser::nmap_service_probes_parser;
+#[cfg(feature = "vs")]
 use crate::vs::vscan::threads_vs_probe;
+#[cfg(feature = "vs")]
 use crate::vs::vscan::MatchX;
+#[cfg(feature = "vs")]
 use crate::Target;
 
+#[cfg(feature = "vs")]
 pub mod dbparser;
+#[cfg(feature = "vs")]
 pub mod vscan;
 
+#[cfg(feature = "vs")]
 #[derive(Debug, Clone)]
 pub struct PortServices {
     pub matchs: Vec<MatchX>,
@@ -36,6 +64,7 @@ pub struct PortServices {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "vs")]
 impl PortServices {
     pub fn new() -> PortServices {
         PortServices {
@@ -47,6 +76,7 @@ impl PortServices {
     }
 }
 
+#[cfg(feature = "vs")]
 #[derive(Debug, Clone)]
 pub struct VsScans {
     pub vss: HashMap<IpAddr, HashMap<u16, PortServices>>,
@@ -56,6 +86,7 @@ pub struct VsScans {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "vs")]
 impl VsScans {
     pub fn new() -> VsScans {
         VsScans {
@@ -83,6 +114,7 @@ impl VsScans {
     }
 }
 
+#[cfg(feature = "vs")]
 impl fmt::Display for VsScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -134,6 +166,7 @@ impl fmt::Display for VsScans {
     }
 }
 
+#[cfg(feature = "vs")]
 fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
     let data = include_bytes!("./db/nmap-service-probes.zip");
     let reader = Cursor::new(data);
@@ -151,6 +184,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 }
 
 /// Detect target port service.
+#[cfg(feature = "vs")]
 pub fn vs_scan(
     target: &Target,
     threads_num: Option<usize>,
@@ -239,6 +273,7 @@ pub fn vs_scan(
     Ok(ret)
 }
 
+#[cfg(feature = "vs")]
 pub fn vs_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -283,6 +318,7 @@ pub fn vs_scan_raw(
     }
 }
 
+#[cfg(feature = "vs")]
 #[cfg(test)]
 mod tests {
     use super::*;

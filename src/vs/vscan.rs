@@ -1,5 +1,6 @@
 use log::debug;
 use log::error;
+use log::warn;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io::Read;
@@ -91,7 +92,7 @@ fn tcp_null_probe(
                 }
             }
             Err(e) => {
-                error!("tcp null probe stream read failed: {}", e);
+                warn!("tcp null probe stream read failed: {}", e);
                 break;
             }
         };

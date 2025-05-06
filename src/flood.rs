@@ -1,29 +1,53 @@
+#[cfg(feature = "flood")]
 use chrono::DateTime;
+#[cfg(feature = "flood")]
 use chrono::Local;
-use prettytable::row;
+#[cfg(feature = "flood")]
 use prettytable::Cell;
+#[cfg(feature = "flood")]
 use prettytable::Row;
+#[cfg(feature = "flood")]
 use prettytable::Table;
+#[cfg(feature = "flood")]
+use prettytable::row;
+#[cfg(feature = "flood")]
 use std::collections::HashMap;
+#[cfg(feature = "flood")]
 use std::fmt;
+#[cfg(feature = "flood")]
 use std::net::IpAddr;
+#[cfg(feature = "flood")]
 use std::net::Ipv4Addr;
+#[cfg(feature = "flood")]
 use std::net::Ipv6Addr;
+#[cfg(feature = "flood")]
 use std::sync::mpsc::channel;
 
+#[cfg(feature = "flood")]
 pub mod icmp;
+#[cfg(feature = "flood")]
 pub mod icmpv6;
+#[cfg(feature = "flood")]
 pub mod tcp;
+#[cfg(feature = "flood")]
 pub mod tcp6;
+#[cfg(feature = "flood")]
 pub mod udp;
+#[cfg(feature = "flood")]
 pub mod udp6;
 
-use crate::error::PistolError;
-use crate::utils::find_source_addr;
-use crate::utils::find_source_addr6;
-use crate::utils::get_threads_pool;
-use crate::utils::random_port;
+#[cfg(feature = "flood")]
 use crate::Target;
+#[cfg(feature = "flood")]
+use crate::error::PistolError;
+#[cfg(feature = "flood")]
+use crate::utils::find_source_addr;
+#[cfg(feature = "flood")]
+use crate::utils::find_source_addr6;
+#[cfg(feature = "flood")]
+use crate::utils::get_threads_pool;
+#[cfg(feature = "flood")]
+use crate::utils::random_port;
 
 #[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
@@ -88,9 +112,11 @@ impl fmt::Display for FloodAttacks {
         const BYTES_PER_GB: u64 = 1024 * 1024;
         const BYTES_PER_MB: u64 = 1024;
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("Flood Attack Summary")
-            .style_spec("c")
-            .with_hspan(3)]));
+        table.add_row(Row::new(vec![
+            Cell::new("Flood Attack Summary")
+                .style_spec("c")
+                .with_hspan(3),
+        ]));
         table.add_row(row!["Addr", "Port", "Details"]);
         for (ip, hm) in &self.summary {
             for (port, detail) in hm {
@@ -613,8 +639,8 @@ pub fn flood_raw(
 mod tests {
     use super::*;
     use crate::Host;
-    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
+    use crate::Target;
     #[test]
     fn test_flood() {
         let src_ipv4 = None;

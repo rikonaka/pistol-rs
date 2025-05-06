@@ -1,45 +1,84 @@
-use chrono::DateTime;
-use chrono::Local;
 /* Remote OS Detection */
+#[cfg(feature = "os")]
+use chrono::DateTime;
+#[cfg(feature = "os")]
+use chrono::Local;
+#[cfg(feature = "os")]
 use log::debug;
+#[cfg(feature = "os")]
 use log::warn;
+#[cfg(feature = "os")]
 use prettytable::Cell;
+#[cfg(feature = "os")]
 use prettytable::Row;
+#[cfg(feature = "os")]
 use prettytable::Table;
+#[cfg(feature = "os")]
 use prettytable::row;
+#[cfg(feature = "os")]
 use serde::Deserialize;
+#[cfg(feature = "os")]
 use serde::Serialize;
+#[cfg(feature = "os")]
 use std::collections::BTreeMap;
+#[cfg(feature = "os")]
 use std::collections::HashMap;
+#[cfg(feature = "os")]
 use std::fmt;
+#[cfg(feature = "os")]
 use std::io::Cursor;
+#[cfg(feature = "os")]
 use std::io::Read;
+#[cfg(feature = "os")]
 use std::net::IpAddr;
+#[cfg(feature = "os")]
 use std::sync::mpsc::channel;
+#[cfg(feature = "os")]
 use std::time::Duration;
+#[cfg(feature = "os")]
 use zip::ZipArchive;
 
+#[cfg(feature = "os")]
 use crate::Target;
+#[cfg(feature = "os")]
 use crate::error::PistolError;
+#[cfg(feature = "os")]
 use crate::os::dbparser::NmapOSDB;
+#[cfg(feature = "os")]
 use crate::os::osscan::TargetFingerprint;
+#[cfg(feature = "os")]
 use crate::os::osscan::threads_os_probe;
+#[cfg(feature = "os")]
 use crate::os::osscan6::TargetFingerprint6;
+#[cfg(feature = "os")]
 use crate::os::osscan6::threads_os_probe6;
+#[cfg(feature = "os")]
 use crate::utils::find_source_addr;
+#[cfg(feature = "os")]
 use crate::utils::find_source_addr6;
+#[cfg(feature = "os")]
 use crate::utils::get_threads_pool;
+#[cfg(feature = "os")]
 use crate::utils::threads_num_check;
 
+#[cfg(feature = "os")]
 pub mod dbparser;
+#[cfg(feature = "os")]
 pub mod operator;
+#[cfg(feature = "os")]
 pub mod operator6;
+#[cfg(feature = "os")]
 pub mod osscan;
+#[cfg(feature = "os")]
 pub mod osscan6;
+#[cfg(feature = "os")]
 pub mod packet;
+#[cfg(feature = "os")]
 pub mod packet6;
+#[cfg(feature = "os")]
 pub mod rr;
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub struct OSDetects {
     pub oss: HashMap<IpAddr, HostOSDetects>,
@@ -49,6 +88,7 @@ pub struct OSDetects {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "os")]
 impl OSDetects {
     pub fn new() -> OSDetects {
         OSDetects {
@@ -73,6 +113,7 @@ impl OSDetects {
     }
 }
 
+#[cfg(feature = "os")]
 impl fmt::Display for OSDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -131,6 +172,7 @@ impl fmt::Display for OSDetects {
     }
 }
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OSInfo {
     pub name: String,
@@ -141,6 +183,7 @@ pub struct OSInfo {
     pub db: NmapOSDB,
 }
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OSInfo6 {
     pub name: String,
@@ -150,6 +193,7 @@ pub struct OSInfo6 {
     pub label: usize,
 }
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub struct OSDetect {
     pub alive: bool,
@@ -159,6 +203,7 @@ pub struct OSDetect {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub struct OSDetect6 {
     pub alive: bool,
@@ -168,12 +213,14 @@ pub struct OSDetect6 {
     pub etime: DateTime<Local>,
 }
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub enum HostOSDetects {
     V4(OSDetect),
     V6(OSDetect6),
 }
 
+#[cfg(feature = "os")]
 impl HostOSDetects {
     pub fn set_etime(&mut self, etime: DateTime<Local>) {
         match self {
@@ -233,12 +280,14 @@ impl HostOSDetects {
     }
 }
 
+#[cfg(feature = "os")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NmapJsonParameters {
     pub name: String,
     pub value: Vec<f64>,
 }
 
+#[cfg(feature = "os")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CPE {
     pub name: String,
@@ -246,6 +295,7 @@ pub struct CPE {
     pub cpe: Vec<String>,
 }
 
+#[cfg(feature = "os")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Linear {
     pub infolist: Vec<String>,
@@ -256,6 +306,7 @@ pub struct Linear {
     pub cpe: Vec<CPE>,
 }
 
+#[cfg(feature = "os")]
 fn gen_linear() -> Result<Linear, PistolError> {
     let variance_json_data = include_str!("./db/nmap-os-db-ipv6/variance.json");
     let variance_json: Vec<NmapJsonParameters> = serde_json::from_str(variance_json_data)?;
@@ -314,6 +365,7 @@ fn gen_linear() -> Result<Linear, PistolError> {
     Ok(linear)
 }
 
+#[cfg(feature = "os")]
 fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
     let data = include_bytes!("./db/nmap-os-db.zip");
     let reader = Cursor::new(data);
@@ -331,6 +383,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
 }
 
 /// Detect target machine OS on IPv4 and IPv6.
+#[cfg(feature = "os")]
 pub fn os_detect(
     target: &Target,
     threads_num: Option<usize>,
@@ -466,6 +519,7 @@ pub fn os_detect(
     Ok(ret)
 }
 
+#[cfg(feature = "os")]
 pub fn os_detect_raw(
     dst_addr: IpAddr,
     dst_open_tcp_port: u16,
@@ -549,6 +603,7 @@ pub fn os_detect_raw(
     }
 }
 
+#[cfg(feature = "os")]
 #[cfg(test)]
 mod tests {
     use super::*;
