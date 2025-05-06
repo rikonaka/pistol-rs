@@ -183,7 +183,7 @@ fn main() {
 
 If you don't want to use `Target`, you can also use the `_raw` functions we provide, for example, the corresponding raw function for `tcp_syn_scan` is `tcp_syn_scan_raw`.
 
-| Rich Functions    | Raw Functions         |
+| Rich Function     | Raw Function          |
 | :---------------- | :-------------------- |
 | arp_scan          | arp_scan_raw          |
 | tcp_syn_scan      | tcp_syn_scan_raw      |
