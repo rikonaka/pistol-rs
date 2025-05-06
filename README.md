@@ -25,6 +25,7 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 
 Since version v3.2.0, features fields are supported, including `scan` (default), `ping`, `flood`, `os`, `vs`.
 
+## Bugs About libpnet
 
 **libpnet bug on Windows**
 
