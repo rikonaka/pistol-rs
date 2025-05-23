@@ -8,6 +8,7 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::result;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
@@ -452,7 +453,7 @@ impl Target {
     /// }
     /// ```
     pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target, PistolError> {
-        let ipv4_pool = Ipv4Pool::from(subnet)?;
+        let ipv4_pool = Ipv4Pool::from_str(subnet)?;
         let mut hosts = Vec::new();
         for ipv4_addr in ipv4_pool {
             let h = Host::new(ipv4_addr.into(), ports.clone());

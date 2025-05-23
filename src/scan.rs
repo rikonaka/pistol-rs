@@ -1351,12 +1351,13 @@ mod tests {
     //  use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use crate::Target;
+    use std::str::FromStr;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() {
-        let subnet: Ipv4Pool = Ipv4Pool::from("192.168.1.0/24").unwrap();
+        let subnet: Ipv4Pool = Ipv4Pool::from_str("192.168.1.0/24").unwrap();
         let mut hosts: Vec<Host> = vec![];
         for ip in subnet {
             let host = Host::new(ip.into(), None);
