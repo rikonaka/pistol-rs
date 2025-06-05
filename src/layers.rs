@@ -278,9 +278,7 @@ impl Layer4MatchTcpUdp {
         if m1 {
             let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
                 Some(ethernet_packet) => ethernet_packet,
-                None => {
-                    return false;
-                }
+                None => return false,
             };
             let (r_src_port, r_dst_port) = match ethernet_packet.get_ethertype() {
                 EtherTypes::Ipv4 => {
