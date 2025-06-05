@@ -1,9 +1,9 @@
 use log::debug;
 use log::warn;
 use num_cpus;
-use pnet::datalink::interfaces;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+use pnet::datalink::interfaces;
 use rand::Rng;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -11,11 +11,11 @@ use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
 
+use crate::DEFAULT_TIMEOUT;
+use crate::Ipv6CheckMethods;
+use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 use crate::route::DefaultRoute;
-use crate::Ipv6CheckMethods;
-use crate::DEFAULT_TIMEOUT;
-use crate::SYSTEM_NET_CACHE;
 
 const MAX_THREADS_NUM: usize = 1000;
 
