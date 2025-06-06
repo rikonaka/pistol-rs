@@ -341,6 +341,24 @@ pub enum PortStatus {
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
+impl fmt::Display for PortStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            PortStatus::Open => "open",
+            PortStatus::Closed => "closed",
+            PortStatus::Filtered => "filtered",
+            PortStatus::OpenOrFiltered => "open_or_filtered",
+            PortStatus::Unfiltered => "unfiltered",
+            PortStatus::Unreachable => "unreachable",
+            PortStatus::ClosedOrFiltered => "closed_or_filtered",
+            PortStatus::Error => "error",
+            PortStatus::Offline => "offline",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
 pub struct PortScans {
     pub status: PortStatus,
