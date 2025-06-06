@@ -1401,8 +1401,11 @@ mod tests {
     fn test_tcp_connect_scan() {
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(0, 500));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let timeout = Some(Duration::new(1, 0));
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 7, 1);
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
+        let host = Host::new(dst_ipv4.into(), Some(vec![22, 80]));
+        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let threads_num = Some(8);
@@ -1421,9 +1424,9 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let dst_ipv4 = Ipv4Addr::new(139, 180, 156, 169);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 7, 1);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let host = Host::new(dst_ipv4.into(), Some(vec![22, 99]));
+        let host = Host::new(dst_ipv4.into(), Some(vec![22, 80]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let threads_num = Some(8);
