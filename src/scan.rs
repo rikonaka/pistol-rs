@@ -1424,7 +1424,7 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 7, 1);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let host = Host::new(dst_ipv4.into(), Some(vec![22, 80]));
         let target: Target = Target::new(vec![host]);

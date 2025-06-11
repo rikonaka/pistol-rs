@@ -23,7 +23,7 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 
 ## Cargo Feature Flags
 
-Since version v3.2.0, features fields are supported, including `scan` (default), `ping`, `flood`, `os`, `vs`.
+Since version v3.2.0, features fields are supported, including `scan`, `ping`, `flood`, `os`, `vs`.
 
 ## Bugs About libpnet
 

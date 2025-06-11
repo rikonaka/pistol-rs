@@ -12,6 +12,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use pcapture::Capture;
+use pcapture::PcapNg;
 use subnetwork::Ipv4Pool;
 
 pub mod error;
@@ -297,7 +299,23 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
-pub struct Logger {}
+static PISTOL_PCAP_NG: LazyLock<Arc<Mutex<PcapNg>>> = LazyLock::new(|| {
+    Arc::new(Mutex::new(PcapNg::new(iface, pbo)))
+});
+
+/// Save the sent traffic locally in pcapng format.
+/// Note that this method does not read the traffic from the network card,
+/// but to save the traffic before the it is sent.
+pub struct TrafficSaver;
+
+impl TrafficSaver {
+    pub fn init() {
+
+    }
+}
+
+
+pub struct Logger;
 
 impl Logger {
     pub fn init_debug_logging() -> Result<(), PistolError> {

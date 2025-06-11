@@ -34,9 +34,10 @@ thiserror = "^2"
 zip = "^0"
 kdam = "^0"
 escape-bytes = "^0"
+pcapture = "^0"
 
 [features]
-default = ["scan"]
+default = ["scan", "ping", "flood", "os", "vs"]
 scan = []
 ping = []
 flood = []
