@@ -10,7 +10,6 @@ use pnet::datalink::ChannelType;
 use pnet::datalink::Config;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
-use pnet::packet::Packet;
 use pnet::packet::arp::ArpHardwareTypes;
 use pnet::packet::arp::ArpOperations;
 use pnet::packet::arp::ArpPacket;
@@ -23,22 +22,23 @@ use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpType;
 use pnet::packet::icmpv6;
-use pnet::packet::icmpv6::Icmpv6Code;
-use pnet::packet::icmpv6::Icmpv6Packet;
-use pnet::packet::icmpv6::Icmpv6Type;
-use pnet::packet::icmpv6::Icmpv6Types;
-use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
 use pnet::packet::icmpv6::ndp::MutableRouterSolicitPacket;
 use pnet::packet::icmpv6::ndp::NdpOption;
 use pnet::packet::icmpv6::ndp::NdpOptionTypes;
 use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
+use pnet::packet::icmpv6::Icmpv6Code;
+use pnet::packet::icmpv6::Icmpv6Packet;
+use pnet::packet::icmpv6::Icmpv6Type;
+use pnet::packet::icmpv6::Icmpv6Types;
+use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
+use pnet::packet::Packet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
@@ -47,11 +47,9 @@ use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6AddrExt;
 
-use crate::DEFAULT_TIMEOUT;
 use crate::error::PistolError;
+use crate::DEFAULT_TIMEOUT;
 // use crate::route::SystemNetCache;
-use crate::PISTOL_PCAPNG;
-use crate::PISTOL_PCAPNG_FLAG;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
@@ -60,6 +58,8 @@ use crate::utils::system_cache_default_route6;
 use crate::utils::system_cache_search_mac;
 use crate::utils::system_cache_search_route;
 use crate::utils::system_cache_update;
+use crate::PISTOL_PCAPNG;
+use crate::PISTOL_PCAPNG_FLAG;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const ARP_HEADER_SIZE: usize = 28;
@@ -681,7 +681,7 @@ pub fn layer2_send(
             }
         }
         // no match packet found
-        Ok((vec![], start_time.elapsed()))
+        Ok((vec![], send_time.elapsed()))
     } else {
         // not recv any response for flood attack enffience
         Ok((vec![], Duration::new(0, 0)))

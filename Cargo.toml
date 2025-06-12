@@ -34,8 +34,8 @@ thiserror = "^2"
 zip = "^0"
 kdam = "^0"
 escape-bytes = "^0"
-# pcapture = "^0"
-pcapture = { version = "^0", path = "../pcapture-rs/" }
+pcapture = "^0"
+# pcapture = { version = "^0", path = "../pcapture-rs/" }
 
 [features]
 default = ["scan", "ping", "flood", "os", "vs"]
