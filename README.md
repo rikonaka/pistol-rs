@@ -145,6 +145,8 @@ The existing method can only keep the regular expressions of nmap basically usab
 
 ## Debugs
 
+### Show Logging Infomations
+
 ```rust
 use pistol::Logger;
 
@@ -152,7 +154,20 @@ fn main() {
     let _ = Logger::init_debug_logging();
     // let _ = Logger::init_warn_logging();
     // your code below
-    ...
+}
+```
+
+### Capture and Analyse All Traffic
+
+This method is used to capture all packets sent and recv by pistol into pcapng format (which means you can open it with Wireshark).
+
+```rust
+use pistol::TrafficSaver;
+
+fn main() {
+    let mut ts = TrafficSaver::init("pistol_traffic_captured.pcapng").unwrap();
+    // your scan or ping code
+    ts.save_to_file().unwrap();
 }
 ```
 

@@ -9,6 +9,7 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
+use crate::layers::ARP_HEADER_SIZE;
 use crate::layers::Layer2Match;
 use crate::layers::Layer3Match;
 use crate::layers::LayersMatch;
@@ -23,7 +24,7 @@ pub fn send_arp_scan_packet(
     interface: NetworkInterface,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let mut arp_buffer = [0u8; 28];
+    let mut arp_buffer = [0u8; ARP_HEADER_SIZE];
     let mut arp_packet = match MutableArpPacket::new(&mut arp_buffer) {
         Some(p) => p,
         None => {
@@ -60,6 +61,7 @@ pub fn send_arp_scan_packet(
         dst_mac,
         interface,
         &arp_buffer,
+        ARP_HEADER_SIZE,
         ethernet_type,
         vec![layers_match],
         timeout,

@@ -1,9 +1,9 @@
 use log::debug;
 use log::warn;
-#[cfg(target_os = "windows")]
-use pnet::datalink::interfaces;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+#[cfg(target_os = "windows")]
+use pnet::datalink::interfaces;
 use pnet::ipnetwork::IpNetwork;
 use regex::Regex;
 use serde::Deserialize;
@@ -521,6 +521,7 @@ pub struct NeighborCache {}
 impl NeighborCache {
     #[cfg(target_os = "linux")]
     pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+        // Examples:
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
         // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
         // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
@@ -573,6 +574,7 @@ impl NeighborCache {
         target_os = "netbsd"
     ))]
     pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+        // Examples:
         // # arp -a
         // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
         // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
@@ -626,6 +628,7 @@ impl NeighborCache {
     }
     #[cfg(target_os = "windows")]
     pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+        // Examples:
         // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
         // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
         let c = Command::new("powershell")
@@ -655,6 +658,8 @@ impl NeighborCache {
                         }
                     };
                     let mac = caps.name("mac").map_or("", |m| m.as_str());
+                    // 33-33-00-01-00-02 => 33:33:00:01:00:02
+                    let mac = mac.replace("-", ":");
                     let mac: MacAddr = match mac.parse() {
                         Ok(m) => m,
                         Err(e) => {
@@ -727,9 +732,16 @@ impl SystemNetCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use std::time::Instant;
     use pnet::datalink::interfaces;
     use std::fs::read_to_string;
+    #[test]
+    fn test_neighbor() {
+        let n = NeighborCache::init().unwrap();
+        println!("{:?}", n);
+
+        let r = RouteTable::init().unwrap();
+        println!("{:?}", r);
+    }
     #[test]
     fn test_network_cache() {
         // use crate::Logger;

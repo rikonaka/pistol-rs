@@ -91,4 +91,10 @@ pub enum PistolError {
     SetLoggerError(#[from] log::SetLoggerError),
     #[error("hex error")]
     FromHexError(#[from] hex::FromHexError),
+    #[error("init the capture function error: {e}")]
+    InitCaptureError { e: String },
+    #[error("save the traffic error: {e}")]
+    SaveCaptureError { e: String },
+    #[error("pcapture error")]
+    PcaptureError(#[from] pcapture::PcaptureError),
 }

@@ -2,6 +2,8 @@
 use dns_lookup::lookup_host;
 use log::debug;
 use log::error;
+use pcapture::pcapng::EnhancedPacketBlock;
+use pcapture::pcapng::GeneralBlock;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::ChannelType;
@@ -45,8 +47,11 @@ use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6AddrExt;
 
+use crate::DEFAULT_TIMEOUT;
 use crate::error::PistolError;
 // use crate::route::SystemNetCache;
+use crate::PISTOL_PCAPNG;
+use crate::PISTOL_PCAPNG_FLAG;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
@@ -57,6 +62,7 @@ use crate::utils::system_cache_search_route;
 use crate::utils::system_cache_update;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
+pub const ARP_HEADER_SIZE: usize = 28;
 pub const IPV4_HEADER_SIZE: usize = 20;
 pub const IPV6_HEADER_SIZE: usize = 40;
 pub const TCP_HEADER_SIZE: usize = 20;
@@ -528,39 +534,25 @@ pub enum LayersMatch {
 
 impl LayersMatch {
     pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
-        match self {
-            LayersMatch::Layer2Match(l2) => l2.do_match(ethernet_buff),
-            LayersMatch::Layer3Match(l3) => l3.do_match(ethernet_buff),
-            LayersMatch::Layer4MatchTcpUdp(l4tcpudp) => l4tcpudp.do_match(ethernet_buff),
-            LayersMatch::Layer4MatchIcmp(l4icmp) => l4icmp.do_match(ethernet_buff),
-            LayersMatch::Layer4MatchIcmpv6(l4icmpv6) => l4icmpv6.do_match(ethernet_buff),
-        }
-    }
-}
-
-pub fn _print_packet_as_wireshark_format(buff: &[u8]) {
-    let mut i = 0;
-    for b in buff {
-        if i % 16 == 0 {
-            print!("\n");
-        }
-        let mut x = format!("{:X}", b);
-        // println!("{}", x.len());
-        if x.len() == 1 {
-            x = format!("0{x} ");
+        if ethernet_buff.len() > 0 {
+            match self {
+                LayersMatch::Layer2Match(l2) => l2.do_match(ethernet_buff),
+                LayersMatch::Layer3Match(l3) => l3.do_match(ethernet_buff),
+                LayersMatch::Layer4MatchTcpUdp(l4tcpudp) => l4tcpudp.do_match(ethernet_buff),
+                LayersMatch::Layer4MatchIcmp(l4icmp) => l4icmp.do_match(ethernet_buff),
+                LayersMatch::Layer4MatchIcmpv6(l4icmpv6) => l4icmpv6.do_match(ethernet_buff),
+            }
         } else {
-            x = format!("{x} ");
+            false
         }
-        print!("{x}");
-        i += 1;
     }
-    println!("");
 }
 
 pub fn layer2_send(
     dst_mac: MacAddr,
     interface: NetworkInterface,
-    send_buff: &[u8],
+    payload: &[u8],
+    payload_len: usize,
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
     timeout: Option<Duration>,
@@ -593,8 +585,15 @@ pub fn layer2_send(
         }
     };
 
-    let mut ethernet_buff = [0u8; ETHERNET_BUFF_SIZE];
-    // let mut ethernet_buff = [0u8; ETHERNET_HEADER_SIZE + send_buff.len()];
+    // let mut ethernet_buff = [0u8; ETHERNET_BUFF_SIZE];
+    let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
+    let ethernet_buff_len = if ethernet_buff_len < 60 {
+        // padding
+        60
+    } else {
+        ethernet_buff_len
+    };
+    let mut ethernet_buff = vec![0u8; ethernet_buff_len];
     let mut ethernet_packet = match MutableEthernetPacket::new(&mut ethernet_buff) {
         Some(p) => p,
         None => {
@@ -606,12 +605,44 @@ pub fn layer2_send(
     ethernet_packet.set_destination(dst_mac);
     ethernet_packet.set_source(src_mac);
     ethernet_packet.set_ethertype(ethernet_type);
-    ethernet_packet.set_payload(send_buff);
+    ethernet_packet.set_payload(payload);
 
-    let final_buff = ethernet_buff[..(ETHERNET_HEADER_SIZE + send_buff.len())].to_vec();
-    // _print_packet_as_wireshark_format(&final_buff);
+    // for capture the traffic then debug
+
+    let capture_traffic = |buff: &[u8]| {
+        match PISTOL_PCAPNG_FLAG.lock() {
+            Ok(ppf) => {
+                if *ppf {
+                    match PISTOL_PCAPNG.lock() {
+                        Ok(mut pp) => {
+                            // interface_id = 0 means we use the first interface we builed in fake pcapng headers
+                            const INTERFACE_ID: u32 = 0;
+                            // this is the default value of pcapture
+                            const SNAPLEN: usize = 65535;
+                            match EnhancedPacketBlock::new(INTERFACE_ID, buff, SNAPLEN) {
+                                Ok(block) => {
+                                    let gb = GeneralBlock::EnhancedPacketBlock(block);
+                                    pp.append(gb);
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "build EnhancedPacketBlock in layer2_send() failed: {}",
+                                        e
+                                    )
+                                }
+                            }
+                        }
+                        Err(e) => error!("unlock PISTOL_PCAPNG in layer2_send() failed: {}", e),
+                    }
+                }
+            }
+            Err(e) => error!("unlock PISTOL_PCAPNG_FLAG in layer2_send() failed: {}", e),
+        }
+    };
+    // capture send packet
+    capture_traffic(&ethernet_buff);
     let send_time = Instant::now();
-    match sender.send_to(&final_buff, Some(interface)) {
+    match sender.send_to(&ethernet_buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),
             _ => (),
@@ -621,23 +652,35 @@ pub fn layer2_send(
 
     if need_return {
         let start_time = Instant::now();
-        let buff = match receiver.next() {
-            Ok(b) => b,
-            Err(e) => {
-                error!("layer2 send failed: {}", e);
-                &[]
-            }
+        let timeout = match timeout {
+            Some(t) => t,
+            None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
         };
-        for m in &layers_match {
-            match m.do_match(buff) {
-                true => {
-                    debug!("match found: {:?}", m);
-                    let rtt = send_time.elapsed();
-                    return Ok((buff.to_vec(), rtt));
+        loop {
+            if start_time.elapsed() >= timeout {
+                break;
+            }
+            let buff = match receiver.next() {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("layer2 send failed: {}", e);
+                    break;
                 }
-                false => (),
+            };
+            // capture recv packet during probe packet send and target packet recved
+            capture_traffic(buff);
+            for m in &layers_match {
+                match m.do_match(buff) {
+                    true => {
+                        debug!("match found: {:?}", m);
+                        let rtt = send_time.elapsed();
+                        return Ok((buff.to_vec(), rtt));
+                    }
+                    false => (),
+                }
             }
         }
+        // no match packet found
         Ok((vec![], start_time.elapsed()))
     } else {
         // not recv any response for flood attack enffience
@@ -680,7 +723,7 @@ fn arp(
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
 
-    let mut arp_buff = [0u8; 28];
+    let mut arp_buff = [0u8; ARP_HEADER_SIZE];
     let mut arp_packet = match MutableArpPacket::new(&mut arp_buff) {
         Some(p) => p,
         None => {
@@ -717,6 +760,7 @@ fn arp(
         MacAddr::broadcast(),
         interface,
         &arp_buff,
+        ARP_HEADER_SIZE,
         ethernet_type,
         vec![layers_match],
         timeout,
@@ -800,11 +844,12 @@ pub fn layer3_ipv4_send(
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
-
+    let payload_len = payload.len();
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
         interface,
         payload,
+        payload_len,
         ethernet_type,
         layers_match,
         timeout,
@@ -941,6 +986,7 @@ fn ndp_ns(
         multicast_mac(dst_ipv6),
         interface.clone(),
         &ipv6_buff,
+        IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE,
         ethernet_type,
         vec![layers_match],
         timeout,
@@ -1054,6 +1100,7 @@ fn ndp_rs(
         dst_mac,
         interface.clone(),
         &ipv6_buff,
+        IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE,
         ethernet_type,
         vec![layers_match],
         timeout,
@@ -1145,10 +1192,12 @@ pub fn layer3_ipv6_send(
     debug!("convert dst ipv6: {} to mac: {}", dst_ipv6, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv6;
+    let payload_len = payload.len();
     let (layer2_buff, rtt) = layer2_send(
         dst_mac,
         interface,
         payload,
+        payload_len,
         ethernet_type,
         layers_match,
         timeout,

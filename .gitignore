@@ -21,3 +21,4 @@ pistol-libc/
 *.pcap
 *.log
 *.pistol
+*.pcapng

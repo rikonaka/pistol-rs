@@ -1366,6 +1366,7 @@ fn scan_raw(
 mod tests {
     use super::*;
     use crate::Host;
+    use crate::TrafficSaver;
     //  use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use crate::Target;
@@ -1419,20 +1420,22 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() {
+        let mut ts = TrafficSaver::init("windows_tcp_syn_scan.pcapng").unwrap();
         // let _ = Logger::init_debug_logging();
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(3, 0));
+        let timeout = Some(Duration::new(1, 0));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let host = Host::new(dst_ipv4.into(), Some(vec![22, 80]));
         let target: Target = Target::new(vec![host]);
-        let tests = 4;
+        let tests = 1;
         let threads_num = Some(8);
         let ret = tcp_syn_scan(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
         // println!("{:#?}", ret.get(&dst_ipv4.into()).unwrap().status);
+        ts.save_to_file().unwrap();
     }
     #[test]
     fn test_tcp_fin_scan() {
