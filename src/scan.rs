@@ -248,9 +248,11 @@ pub fn arp_scan(
                 recv_size += 1;
                 pool.execute(move || {
                     let scan_ret = ipv4_arp_scan(dst_ipv4, dst_mac, src_addr, timeout);
-                    match tx.send(Ok((dst_ipv4, scan_ret))) {
-                        _ => (),
-                    }
+                    tx.send(Ok((dst_ipv4, scan_ret))).expect(&format!(
+                        "tx send failed: {}-{}",
+                        file!(),
+                        line!()
+                    ));
                 });
             }
             IpAddr::V6(_) => {
@@ -684,7 +686,7 @@ fn scan(
         None => {
             let mut threads_num = 0;
             for host in &target.hosts {
-                threads_num += host.ports.len() * tests;
+                threads_num += host.ports.len();
             }
             let threads_num = threads_num_check(threads_num);
             threads_num
@@ -708,19 +710,19 @@ fn scan(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for &dst_port in &host.ports {
-                    for _ in 0..tests {
-                        let tx = tx.clone();
-                        recv_size += 1;
-                        let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
-                            Some(s) => s,
-                            None => {
-                                warn!("can not found src addr");
-                                return Err(PistolError::CanNotFoundSourceAddress);
-                            }
-                        };
+                    let tx = tx.clone();
+                    recv_size += 1;
+                    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+                        Some(s) => s,
+                        None => {
+                            warn!("can not found src addr");
+                            return Err(PistolError::CanNotFoundSourceAddress);
+                        }
+                    };
 
-                        pool.execute(move || {
-                            let stime = Local::now();
+                    pool.execute(move || {
+                        let stime = Local::now();
+                        for ind in 0..tests {
                             let scan_ret = threads_scan(
                                 method,
                                 dst_ipv4,
@@ -731,32 +733,53 @@ fn scan(
                                 zombie_port,
                                 timeout,
                             );
-                            match tx.send((dst_addr, dst_port, scan_ret, stime)) {
-                                _ => (),
+                            if ind == tests - 1 {
+                                // last attempt
+                                tx.send((dst_addr, dst_port, scan_ret, stime))
+                                    .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                            } else {
+                                match scan_ret {
+                                    Ok((port_status, _)) => {
+                                        match port_status {
+                                            PortStatus::Open | PortStatus::OpenOrFiltered => {
+                                                tx.send((dst_addr, dst_port, scan_ret, stime))
+                                                    .expect(&format!(
+                                                        "tx send failed: {}-{}",
+                                                        file!(),
+                                                        line!()
+                                                    ));
+                                                break; // quit loop now
+                                            }
+                                            _ => (), // continue probing
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // stop probe immediately if an error occurs
+                                        tx.send((dst_addr, dst_port, scan_ret, stime)).expect(
+                                            &format!("tx send failed: {}-{}", file!(), line!()),
+                                        );
+                                    }
+                                }
                             }
-                        });
-                    }
+                        }
+                    });
                 }
             }
             IpAddr::V6(dst_ipv6) => {
                 for &dst_port in &host.ports {
-                    for _ in 0..tests {
-                        let tx = tx.clone();
-                        recv_size += 1;
-                        let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
-                            Some(s) => s,
-                            None => return Err(PistolError::CanNotFoundSourceAddress),
-                        };
-                        pool.execute(move || {
-                            let stime = Local::now();
-                            let scan_ret = threads_scan6(
-                                method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
-                            );
-                            match tx.send((dst_addr, dst_port, scan_ret, stime)) {
-                                _ => (),
-                            }
-                        });
-                    }
+                    let tx = tx.clone();
+                    recv_size += 1;
+                    let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
+                        Some(s) => s,
+                        None => return Err(PistolError::CanNotFoundSourceAddress),
+                    };
+                    pool.execute(move || {
+                        let stime = Local::now();
+                        let scan_ret =
+                            threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
+                        tx.send((dst_addr, dst_port, scan_ret, stime))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                    });
                 }
             }
         }
@@ -1428,7 +1451,7 @@ mod tests {
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let host = Host::new(dst_ipv4.into(), Some(vec![22, 80]));
+        let host = Host::new(dst_ipv4.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let tests = 1;
         let threads_num = Some(8);

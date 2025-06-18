@@ -447,9 +447,11 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    match tx.send((dst_addr, hodr)) {
-                        _ => (),
-                    }
+                    tx.send((dst_addr, hodr)).expect(&format!(
+                        "tx send failed: {}-{}",
+                        file!(),
+                        line!()
+                    ));
                 });
             }
             IpAddr::V6(dst_ipv6) => {
@@ -490,9 +492,11 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    match tx.send((dst_addr, hodr)) {
-                        _ => (),
-                    }
+                    tx.send((dst_addr, hodr)).expect(&format!(
+                        "tx send failed: {}-{}",
+                        file!(),
+                        line!()
+                    ));
                 });
             }
         }

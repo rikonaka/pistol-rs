@@ -195,9 +195,8 @@ fn ipv4_flood(
                 Ok(s) => s + 14, // Ethernet frame header length.
                 Err(_) => 0,
             };
-            match tx.send(send_buff_size) {
-                _ => (),
-            }
+            tx.send(send_buff_size)
+                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
         });
     }
     let iter = rx.into_iter().take(recv_size);
@@ -252,9 +251,8 @@ fn ipv6_flood(
                 Ok(s) => s + 14, // Ethernet frame header length.
                 Err(_) => 0,
             };
-            match tx.send(send_buff_size) {
-                _ => (),
-            }
+            tx.send(send_buff_size)
+                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
         });
     }
     let iter = rx.into_iter().take(recv_size);
@@ -305,9 +303,11 @@ fn flood(
                             max_same_packet,
                             max_flood_packet,
                         );
-                        match tx.send((dst_addr, 0, ret, stime)) {
-                            _ => (),
-                        }
+                        tx.send((dst_addr, 0, ret, stime)).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     });
                 }
             }
@@ -328,9 +328,11 @@ fn flood(
                             max_same_packet,
                             max_flood_packet,
                         );
-                        match tx.send((dst_addr, 0, ret, stime)) {
-                            _ => (),
-                        }
+                        tx.send((dst_addr, 0, ret, stime)).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     });
                 }
             }

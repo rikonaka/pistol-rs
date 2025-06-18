@@ -540,21 +540,21 @@ fn send_seq_probes(
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                                _ => (),
-                            };
+                            tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
-                                _ => (),
-                            };
+                            tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
+                                "tx send failed: {}-{}",
+                                file!(),
+                                line!()
+                            ));
                         }
                     }
                 }
@@ -673,21 +673,21 @@ fn send_ie_probes(
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
-                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                            _ => (),
-                        };
+                        tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         break;
                     } else if retry_time == MAX_RETRY - 1 {
-                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                            _ => (),
-                        }
+                        tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
-                            _ => (),
-                        };
+                        tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     }
                 }
             }
@@ -769,21 +769,21 @@ fn send_nx_probes(
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
-                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                            _ => (),
-                        };
+                        tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         break;
                     } else if retry_time == MAX_RETRY - 1 {
-                        match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                            _ => (),
-                        }
+                        tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
-                            _ => (),
-                        };
+                        tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     }
                 }
             }
@@ -1003,21 +1003,21 @@ fn send_tx_probes(
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                                _ => (),
-                            };
+                            tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt)) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Err(e), st, rt)) {
-                                _ => (),
-                            };
+                            tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
+                                "tx send failed: {}-{}",
+                                file!(),
+                                line!()
+                            ));
                         }
                     }
                 }

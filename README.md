@@ -255,7 +255,8 @@ fn main() {
         hosts.push(host);
     }
     let target = Target::new(hosts);
-    // Number of tests
+    // Number of tests, it can also be understood as the maximum number of unsuccessful retries.
+    // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
     let tests = 2;
     let threads_num = Some(8);
     let ret = tcp_syn_scan(

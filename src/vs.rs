@@ -7,13 +7,13 @@ use dbparser::ServiceProbe;
 #[cfg(feature = "vs")]
 use log::debug;
 #[cfg(feature = "vs")]
-use prettytable::row;
-#[cfg(feature = "vs")]
 use prettytable::Cell;
 #[cfg(feature = "vs")]
 use prettytable::Row;
 #[cfg(feature = "vs")]
 use prettytable::Table;
+#[cfg(feature = "vs")]
+use prettytable::row;
 #[cfg(feature = "vs")]
 use std::collections::BTreeMap;
 #[cfg(feature = "vs")]
@@ -34,6 +34,8 @@ use std::time::Duration;
 use zip::ZipArchive;
 
 #[cfg(feature = "vs")]
+use crate::Target;
+#[cfg(feature = "vs")]
 use crate::error::PistolError;
 #[cfg(feature = "vs")]
 use crate::utils::get_default_timeout;
@@ -44,11 +46,9 @@ use crate::utils::threads_num_check;
 #[cfg(feature = "vs")]
 use crate::vs::dbparser::nmap_service_probes_parser;
 #[cfg(feature = "vs")]
-use crate::vs::vscan::threads_vs_probe;
-#[cfg(feature = "vs")]
 use crate::vs::vscan::MatchX;
 #[cfg(feature = "vs")]
-use crate::Target;
+use crate::vs::vscan::threads_vs_probe;
 
 #[cfg(feature = "vs")]
 pub mod dbparser;
@@ -118,9 +118,11 @@ impl VsScans {
 impl fmt::Display for VsScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("Service Scan Results")
-            .style_spec("c")
-            .with_hspan(5)]));
+        table.add_row(Row::new(vec![
+            Cell::new("Service Scan Results")
+                .style_spec("c")
+                .with_hspan(5),
+        ]));
 
         table
             .add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service", c -> "versioninfo"]);
@@ -237,9 +239,8 @@ pub fn vs_scan(
                     service_probes,
                     timeout,
                 );
-                match tx.send((dst_addr, dst_port, probe_ret, stime)) {
-                    _ => (),
-                }
+                tx.send((dst_addr, dst_port, probe_ret, stime))
+                    .expect(&format!("tx send failed: {}-{}", file!(), line!()));
             });
             recv_size += 1;
         }

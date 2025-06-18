@@ -408,9 +408,11 @@ fn ping(
                         let stime = Local::now();
                         let ret =
                             threads_ping(method, src_ipv4, src_port, dst_ipv4, dst_port, timeout);
-                        match tx.send((dst_addr, ret, stime)) {
-                            _ => (),
-                        }
+                        tx.send((dst_addr, ret, stime)).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     });
                 }
             }
@@ -436,9 +438,7 @@ fn ping(
                         let stime = Local::now();
                         let ret =
                             threads_ping6(method, src_ipv6, src_port, dst_ipv6, dst_port, timeout);
-                        match tx.send((dst_addr, ret, stime)) {
-                            _ => (),
-                        }
+                        tx.send((dst_addr, ret, stime)).expect(&format!("tx send failed: {}-{}", file!(), line!()));
                     });
                 }
             }

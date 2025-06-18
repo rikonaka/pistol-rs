@@ -1,6 +1,6 @@
 [package]
 name = "pistol"
-version = "3.2.3"
+version = "3.2.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A Rust Library about Cybersecurity"
@@ -9,6 +9,14 @@ documentation = "https://docs.rs/pistol"
 repository = "https://github.com/rikonaka/pistol-rs"
 readme = "README.md"
 keywords = ["penetration-test", "cybersecurity", "nmap"]
+
+[lib]
+name = "pistol"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pistol"
+path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

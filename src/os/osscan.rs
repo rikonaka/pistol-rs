@@ -304,25 +304,26 @@ fn send_seq_probes(
         let tx = tx.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
+                let ret =
+                    layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Err(e))) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Err(e))).expect(&format!(
+                                "tx send failed: {}-{}",
+                                file!(),
+                                line!()
+                            ));
                         }
                     }
                 }
@@ -406,25 +407,26 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
+            let ret =
+                layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
-                        match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
-                            _ => (),
-                        }
+                        tx.send((i, buff.to_vec(), Ok((response, rtt))))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         break;
                     } else if retry_time == MAX_RETRY - 1 {
-                        match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
-                            _ => (),
-                        }
+                        tx.send((i, buff.to_vec(), Ok((response, rtt))))
+                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        match tx.send((i, buff.to_vec(), Err(e))) {
-                            _ => (),
-                        }
+                        tx.send((i, buff.to_vec(), Err(e))).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     }
                 }
             }
@@ -588,21 +590,21 @@ fn send_tx_probes(
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Ok((response, rtt)))) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
+                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            match tx.send((i, buff.to_vec(), Err(e))) {
-                                _ => (),
-                            }
+                            tx.send((i, buff.to_vec(), Err(e))).expect(&format!(
+                                "tx send failed: {}-{}",
+                                file!(),
+                                line!()
+                            ));
                         }
                     }
                 }
