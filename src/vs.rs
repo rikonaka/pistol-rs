@@ -323,7 +323,7 @@ pub fn vs_scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Host;
+    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use fancy_regex::Regex as FancyRegex;
     use std::net::Ipv4Addr;
@@ -334,7 +334,7 @@ mod tests {
         let _ = Logger::init_debug_logging();
         // let dst_addr = Ipv4Addr::new(47, 104, 100, 200);
         let dst_addr = Ipv4Addr::new(45, 33, 32, 156); // scanme.nmap.org
-        let host = Host::new(dst_addr.into(), Some(vec![80, 8099]));
+        let host = Target::new(dst_addr.into(), Some(vec![80, 8099]));
         let target = Target::new(vec![host]);
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
@@ -356,7 +356,7 @@ mod tests {
     fn test_vs_detect() {
         // use crate::Logger;
         // let _ = Logger::init_debug_logging();
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
+        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![8080]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         let target = Target::new(vec![host]);

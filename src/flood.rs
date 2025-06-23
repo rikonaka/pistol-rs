@@ -640,7 +640,7 @@ pub fn flood_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Host;
+    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use crate::Target;
     #[test]
@@ -648,7 +648,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let threads_num: usize = 128;
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
+        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let ret = tcp_syn_flood(&target, src_ipv4, src_port, threads_num, 3, 3).unwrap();
         println!("{}", ret);

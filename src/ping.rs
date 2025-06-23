@@ -438,7 +438,11 @@ fn ping(
                         let stime = Local::now();
                         let ret =
                             threads_ping6(method, src_ipv6, src_port, dst_ipv6, dst_port, timeout);
-                        tx.send((dst_addr, ret, stime)).expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                        tx.send((dst_addr, ret, stime)).expect(&format!(
+                            "tx send failed: {}-{}",
+                            file!(),
+                            line!()
+                        ));
                     });
                 }
             }
@@ -723,7 +727,7 @@ pub fn icmp_ping_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Host;
+    use crate::Target;
     // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV6_LOCAL;
@@ -737,7 +741,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let host_1 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
+        let host_1 = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         // let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         // let target: Target = Target::new(vec![host_1, host_2]);
         let target: Target = Target::new(vec![host_1]);
@@ -761,7 +765,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
+        let host = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let threads_num = Some(8);
@@ -777,7 +781,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(139, 180, 156, 169);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
-        let host = Host::new(dst_ipv4.into(), Some(vec![]));
+        let host = Target::new(dst_ipv4.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let threads_num = Some(8);
@@ -790,7 +794,7 @@ mod tests {
         let src_port: Option<u16> = None;
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse().unwrap();
         let src_ipv6 = Some(src_ipv6.into());
-        let host = Host::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
+        let host = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
         let target: Target = Target::new(vec![host]);
         let tests = 4;
         let threads_num = Some(8);
@@ -808,7 +812,7 @@ mod tests {
         let pool = CrossIpv4Pool::new(start_ip, end_ip).unwrap();
         let mut hosts = vec![];
         for ip in pool {
-            hosts.push(Host::new(ip.into(), None));
+            hosts.push(Target::new(ip.into(), None));
         }
         let target: Target = Target::new(hosts);
         let tests = 2;
@@ -836,7 +840,7 @@ mod tests {
                 String::from_utf8_lossy(&c2.stdout)
             );
 
-            let host = Host::new(TEST_IPV4_LOCAL.into(), None);
+            let host = Target::new(TEST_IPV4_LOCAL.into(), None);
             let target = Target::new(vec![host]);
             let _ret = icmp_ping(
                 &target,

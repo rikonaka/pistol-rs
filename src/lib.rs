@@ -11,11 +11,9 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::result;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use subnetwork::Ipv4Pool;
 
 pub mod error;
 pub mod flood;
@@ -430,16 +428,16 @@ impl IpCheckMethods for IpAddr {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Host {
+pub struct Target {
     pub addr: IpAddr,
     pub ports: Vec<u16>,
 }
 
-impl Host {
-    pub fn new(addr: IpAddr, ports: Option<Vec<u16>>) -> Host {
+impl Target {
+    pub fn new(addr: IpAddr, ports: Option<Vec<u16>>) -> Target {
         let h = match ports {
-            Some(p) => Host { addr, ports: p },
-            None => Host {
+            Some(p) => Target { addr, ports: p },
+            None => Target {
                 addr,
                 ports: vec![],
             },
@@ -448,67 +446,10 @@ impl Host {
     }
 }
 
-impl fmt::Display for Host {
+impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let output_str = format!("{} {:?}", self.addr, self.ports);
         write!(f, "{}", output_str)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Target {
-    pub hosts: Vec<Host>,
-}
-
-impl fmt::Display for Target {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output_str = String::new();
-        for host in &self.hosts {
-            let s = format!("{}\n", host);
-            output_str += &s;
-        }
-        write!(f, "{}", output_str)
-    }
-}
-
-impl Target {
-    /// Scan different ports for different targets,
-    /// for example, we want to scan ports 22 and 23 of "192.168.1.1" and ports 80 and 81 of "192.168.1.2",
-    /// you can define the address and port range of each host yourself.
-    /// ```rust
-    /// use pistol::Target;
-    /// use pistol::Host;
-    /// use std::net::Ipv4Addr;
-    /// use std::net::Ipv6Addr;
-    ///
-    /// fn test() {
-    ///     let host1 = Host::new(Ipv4Addr::new(192, 168, 72, 135).into(), Some(vec![22, 23]));
-    ///     let host2 = Host::new(Ipv6Addr::new(0xfe80, 0x0000, 0x0000, 0x0000, 0x020c, 0x29ff, 0xfeb6, 0x8d99).into(), Some(vec![80, 81]));
-    ///     let target = Target::new(vec![host1, host2]);
-    /// }
-    /// ```
-    pub fn new(hosts: Vec<Host>) -> Target {
-        Target { hosts }
-    }
-    /// Scan a IPv4 subnet with same ports.
-    /// ```rust
-    /// use pistol::Target;
-    /// use pistol::Host;
-    /// use std::net::Ipv4Addr;
-    ///
-    /// fn test() {
-    ///     let target = Target::from_subnet("192.168.1.0/24", Some(vec![22])).unwrap();
-    /// }
-    /// ```
-    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Target, PistolError> {
-        let ipv4_pool = Ipv4Pool::from_str(subnet)?;
-        let mut hosts = Vec::new();
-        for ipv4_addr in ipv4_pool {
-            let h = Host::new(ipv4_addr.into(), ports.clone());
-            hosts.push(h);
-        }
-        let target = Target { hosts };
-        Ok(target)
     }
 }
 

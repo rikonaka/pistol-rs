@@ -775,10 +775,33 @@ fn scan(
                     };
                     pool.execute(move || {
                         let stime = Local::now();
-                        let scan_ret =
-                            threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
-                        tx.send((dst_addr, dst_port, scan_ret, stime))
-                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                        for ind in 0..tests {
+                            let scan_ret = threads_scan6(
+                                method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
+                            );
+                            if ind == tests - 1 {
+                                tx.send((dst_addr, dst_port, scan_ret, stime))
+                                    .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                            } else {
+                                match scan_ret {
+                                    Ok((port_status, _)) => match port_status {
+                                        PortStatus::Open | PortStatus::OpenOrFiltered => {
+                                            tx.send((dst_addr, dst_port, scan_ret, stime)).expect(
+                                                &format!("tx send failed: {}-{}", file!(), line!()),
+                                            );
+                                            break; // quit loop now
+                                        }
+                                        _ => (), // continue probing
+                                    },
+                                    Err(_) => {
+                                        // stop probe immediately if an error occurs
+                                        tx.send((dst_addr, dst_port, scan_ret, stime)).expect(
+                                            &format!("tx send failed: {}-{}", file!(), line!()),
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     });
                 }
             }
@@ -1388,7 +1411,7 @@ fn scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Host;
+    use crate::Target;
     use crate::TrafficSaver;
     //  use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
@@ -1400,9 +1423,9 @@ mod tests {
     #[test]
     fn test_arp_scan_subnet() {
         let subnet: Ipv4Pool = Ipv4Pool::from_str("192.168.1.0/24").unwrap();
-        let mut hosts: Vec<Host> = vec![];
+        let mut hosts: Vec<Target> = vec![];
         for ip in subnet {
-            let host = Host::new(ip.into(), None);
+            let host = Target::new(ip.into(), None);
             hosts.push(host);
         }
         let target: Target = Target::new(hosts);
@@ -1428,7 +1451,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 7, 1);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let host = Host::new(dst_ipv4.into(), Some(vec![22, 80]));
+        let host = Target::new(dst_ipv4.into(), Some(vec![22, 80]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
@@ -1451,7 +1474,7 @@ mod tests {
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let host = Host::new(dst_ipv4.into(), Some(vec![22]));
+        let host = Target::new(dst_ipv4.into(), Some(vec![22]));
         let target: Target = Target::new(vec![host]);
         let tests = 1;
         let threads_num = Some(8);
@@ -1465,7 +1488,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let threads_num = Some(8);
@@ -1477,7 +1500,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let threads_num = Some(8);
@@ -1489,7 +1512,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let threads_num = Some(8);
@@ -1501,7 +1524,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let target: Target = Target::new(vec![host]);
         let tests = 8;
         let threads_num = Some(8);
@@ -1543,7 +1566,7 @@ mod tests {
         // let subnet = Ipv4Pool::from("192.168.5.0/24").unwrap();
         let mut hosts = vec![];
         for ip in subnet {
-            let host = Host::new(ip.into(), Some(vec![22]));
+            let host = Target::new(ip.into(), Some(vec![22]));
             hosts.push(host);
         }
         let target = Target::new(hosts);

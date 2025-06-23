@@ -611,7 +611,7 @@ pub fn os_detect_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Host;
+    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV4_LOCAL_DEAD;
     use crate::TEST_IPV6_LOCAL;
@@ -625,7 +625,7 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
-        let host1 = Host::new(
+        let host1 = Target::new(
             TEST_IPV4_LOCAL.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -634,7 +634,7 @@ mod tests {
             ]),
         );
 
-        let host2 = Host::new(
+        let host2 = Target::new(
             TEST_IPV4_LOCAL_DEAD.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -666,7 +666,7 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let host1 = Host::new(
+        let host1 = Target::new(
             TEST_IPV6_LOCAL.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -675,7 +675,7 @@ mod tests {
             ]),
         );
 
-        let host2 = Host::new(
+        let host2 = Target::new(
             TEST_IPV6_LOCAL_DEAD.into(),
             Some(vec![
                 dst_open_tcp_port,
