@@ -21,6 +21,8 @@ use std::net::Ipv4Addr;
 #[cfg(feature = "flood")]
 use std::net::Ipv6Addr;
 #[cfg(feature = "flood")]
+use std::panic::Location;
+#[cfg(feature = "flood")]
 use std::sync::mpsc::channel;
 
 #[cfg(feature = "flood")]
@@ -196,7 +198,7 @@ fn ipv4_flood(
                 Err(_) => 0,
             };
             tx.send(send_buff_size)
-                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                .expect(&format!("tx send failed at {}", Location::caller()));
         });
     }
     let iter = rx.into_iter().take(recv_size);
@@ -252,7 +254,7 @@ fn ipv6_flood(
                 Err(_) => 0,
             };
             tx.send(send_buff_size)
-                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                .expect(&format!("tx send failed at {}", Location::caller()));
         });
     }
     let iter = rx.into_iter().take(recv_size);
@@ -265,7 +267,7 @@ fn ipv6_flood(
 
 #[cfg(feature = "flood")]
 fn flood(
-    target: &Target,
+    targets: &[Target],
     method: FloodMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -283,7 +285,7 @@ fn flood(
         None => random_port(),
     };
 
-    for host in &target.hosts {
+    for host in targets {
         let dst_addr = host.addr;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
@@ -303,11 +305,8 @@ fn flood(
                             max_same_packet,
                             max_flood_packet,
                         );
-                        tx.send((dst_addr, 0, ret, stime)).expect(&format!(
-                            "tx send failed: {}-{}",
-                            file!(),
-                            line!()
-                        ));
+                        tx.send((dst_addr, 0, ret, stime))
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                     });
                 }
             }
@@ -328,11 +327,8 @@ fn flood(
                             max_same_packet,
                             max_flood_packet,
                         );
-                        tx.send((dst_addr, 0, ret, stime)).expect(&format!(
-                            "tx send failed: {}-{}",
-                            file!(),
-                            line!()
-                        ));
+                        tx.send((dst_addr, 0, ret, stime))
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                     });
                 }
             }
@@ -376,14 +372,14 @@ fn flood(
 /// This causes the target to become inaccessible to normal traffic.
 #[cfg(feature = "flood")]
 pub fn icmp_flood(
-    target: &Target,
+    targets: &[Target],
     src_addr: Option<IpAddr>,
     threads_num: usize,
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<FloodAttacks, PistolError> {
     flood(
-        target,
+        targets,
         FloodMethods::Icmp,
         src_addr,
         Some(0),
@@ -415,7 +411,7 @@ pub fn icmp_flood_raw(
 /// This leaves the server waiting for a response that never comes, consuming resources for each of these half-open connections.
 #[cfg(feature = "flood")]
 pub fn tcp_syn_flood(
-    target: &Target,
+    targets: &[Target],
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -423,7 +419,7 @@ pub fn tcp_syn_flood(
     max_flood_packet: usize,
 ) -> Result<FloodAttacks, PistolError> {
     flood(
-        target,
+        targets,
         FloodMethods::Syn,
         src_addr,
         src_port,
@@ -461,7 +457,7 @@ pub fn tcp_syn_flood_raw(
 /// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK, as they look the same.
 #[cfg(feature = "flood")]
 pub fn tcp_ack_flood(
-    target: &Target,
+    targets: &[Target],
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -469,7 +465,7 @@ pub fn tcp_ack_flood(
     max_flood_packet: usize,
 ) -> Result<FloodAttacks, PistolError> {
     flood(
-        target,
+        targets,
         FloodMethods::Ack,
         src_addr,
         src_port,
@@ -500,7 +496,7 @@ pub fn tcp_ack_flood_raw(
 /// TCP ACK flood with PSH flag set.
 #[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood(
-    target: &Target,
+    targets: &[Target],
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -508,7 +504,7 @@ pub fn tcp_ack_psh_flood(
     max_flood_packet: usize,
 ) -> Result<FloodAttacks, PistolError> {
     flood(
-        target,
+        targets,
         FloodMethods::AckPsh,
         src_addr,
         src_port,
@@ -543,7 +539,7 @@ pub fn tcp_ack_psh_flood_raw(
 /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
 #[cfg(feature = "flood")]
 pub fn udp_flood(
-    target: &Target,
+    targets: &[Target],
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     threads_num: usize,
@@ -551,7 +547,7 @@ pub fn udp_flood(
     max_flood_packet: usize,
 ) -> Result<FloodAttacks, PistolError> {
     flood(
-        target,
+        targets,
         FloodMethods::Udp,
         src_addr,
         src_port,
@@ -640,7 +636,6 @@ pub fn flood_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use crate::Target;
     #[test]
@@ -648,9 +643,8 @@ mod tests {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let threads_num: usize = 128;
-        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
-        let target: Target = Target::new(vec![host]);
-        let ret = tcp_syn_flood(&target, src_ipv4, src_port, threads_num, 3, 3).unwrap();
+        let target = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
+        let ret = tcp_syn_flood(&[target], src_ipv4, src_port, threads_num, 3, 3).unwrap();
         println!("{}", ret);
     }
 }

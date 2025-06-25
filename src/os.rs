@@ -32,6 +32,8 @@ use std::io::Read;
 #[cfg(feature = "os")]
 use std::net::IpAddr;
 #[cfg(feature = "os")]
+use std::panic::Location;
+#[cfg(feature = "os")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "os")]
 use std::time::Duration;
@@ -385,7 +387,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
 /// Detect target machine OS on IPv4 and IPv6.
 #[cfg(feature = "os")]
 pub fn os_detect(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     top_k: usize,
@@ -394,7 +396,7 @@ pub fn os_detect(
     let threads_num = match threads_num {
         Some(t) => t,
         None => {
-            let threads_num = target.hosts.len();
+            let threads_num = targets.len();
             let threads_num = threads_num_check(threads_num);
             threads_num
         }
@@ -404,8 +406,8 @@ pub fn os_detect(
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
     let mut ret = OSDetects::new();
-    let target = target.clone(); // avoid the lifetime problem
-    for h in target.hosts {
+    let targets = targets.clone(); // avoid the lifetime problem
+    for h in targets {
         let dst_addr = h.addr;
         let tx = tx.clone();
         recv_size += 1;
@@ -447,11 +449,8 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    tx.send((dst_addr, hodr)).expect(&format!(
-                        "tx send failed: {}-{}",
-                        file!(),
-                        line!()
-                    ));
+                    tx.send((dst_addr, hodr))
+                        .expect(&format!("tx send failed at {}", Location::caller()));
                 });
             }
             IpAddr::V6(dst_ipv6) => {
@@ -492,11 +491,8 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    tx.send((dst_addr, hodr)).expect(&format!(
-                        "tx send failed: {}-{}",
-                        file!(),
-                        line!()
-                    ));
+                    tx.send((dst_addr, hodr))
+                        .expect(&format!("tx send failed at {}", Location::caller()));
                 });
             }
         }
@@ -611,11 +607,11 @@ pub fn os_detect_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV4_LOCAL_DEAD;
     use crate::TEST_IPV6_LOCAL;
     use crate::TEST_IPV6_LOCAL_DEAD;
+    use crate::Target;
     #[test]
     fn test_os_detect() {
         // use crate::Logger;

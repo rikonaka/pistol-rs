@@ -6,6 +6,7 @@ use std::fmt;
 use std::iter::zip;
 use std::net::IpAddr;
 use std::net::Ipv6Addr;
+use std::panic::Location;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
@@ -541,20 +542,17 @@ fn send_seq_probes(
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
                             tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                                .expect(&format!("tx send failed at {}", Location::caller()));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
                             tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                                .expect(&format!("tx send failed at {}", Location::caller()));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
-                                "tx send failed: {}-{}",
-                                file!(),
-                                line!()
-                            ));
+                            tx.send((i, buff.to_vec(), Err(e), st, rt))
+                                .expect(&format!("tx send failed at {}", Location::caller()));
                         }
                     }
                 }
@@ -674,20 +672,17 @@ fn send_ie_probes(
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
                         tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                         break;
                     } else if retry_time == MAX_RETRY - 1 {
                         tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
-                            "tx send failed: {}-{}",
-                            file!(),
-                            line!()
-                        ));
+                        tx.send((i, buff.to_vec(), Err(e), st, rt))
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                     }
                 }
             }
@@ -770,20 +765,17 @@ fn send_nx_probes(
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
                         tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                         break;
                     } else if retry_time == MAX_RETRY - 1 {
                         tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                            .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
-                            "tx send failed: {}-{}",
-                            file!(),
-                            line!()
-                        ));
+                        tx.send((i, buff.to_vec(), Err(e), st, rt))
+                            .expect(&format!("tx send failed at {}", Location::caller()));
                     }
                 }
             }
@@ -1004,20 +996,17 @@ fn send_tx_probes(
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
                             tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                                .expect(&format!("tx send failed at {}", Location::caller()));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
                             tx.send((i, buff.to_vec(), Ok((response, rtt)), st, rt))
-                                .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                                .expect(&format!("tx send failed at {}", Location::caller()));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            tx.send((i, buff.to_vec(), Err(e), st, rt)).expect(&format!(
-                                "tx send failed: {}-{}",
-                                file!(),
-                                line!()
-                            ));
+                            tx.send((i, buff.to_vec(), Err(e), st, rt))
+                                .expect(&format!("tx send failed at {}", Location::caller()));
                         }
                     }
                 }

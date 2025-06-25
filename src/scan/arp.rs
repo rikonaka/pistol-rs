@@ -1,9 +1,12 @@
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+use pnet::packet::Packet;
 use pnet::packet::arp::ArpHardwareTypes;
 use pnet::packet::arp::ArpOperations;
+use pnet::packet::arp::ArpPacket;
 use pnet::packet::arp::MutableArpPacket;
 use pnet::packet::ethernet::EtherTypes;
+use pnet::packet::ethernet::EthernetPacket;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
@@ -13,8 +16,27 @@ use crate::layers::ARP_HEADER_SIZE;
 use crate::layers::Layer2Match;
 use crate::layers::Layer3Match;
 use crate::layers::LayersMatch;
-use crate::layers::get_mac_from_arp;
 use crate::layers::layer2_send;
+
+fn get_mac_from_arp(ethernet_buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
+    match EthernetPacket::new(ethernet_buff) {
+        Some(re) => match re.get_ethertype() {
+            EtherTypes::Arp => {
+                let arp = match ArpPacket::new(re.payload()) {
+                    Some(p) => p,
+                    None => {
+                        return Err(PistolError::BuildPacketError {
+                            path: format!("{}", Location::caller()),
+                        });
+                    }
+                };
+                Ok(Some(arp.get_sender_hw_addr()))
+            }
+            _ => Ok(None),
+        },
+        None => Ok(None),
+    }
+}
 
 pub fn send_arp_scan_packet(
     dst_ipv4: Ipv4Addr,

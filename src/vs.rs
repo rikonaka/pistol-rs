@@ -27,6 +27,8 @@ use std::io::Read;
 #[cfg(feature = "vs")]
 use std::net::IpAddr;
 #[cfg(feature = "vs")]
+use std::panic::Location;
+#[cfg(feature = "vs")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "vs")]
 use std::time::Duration;
@@ -188,7 +190,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 /// Detect target port service.
 #[cfg(feature = "vs")]
 pub fn vs_scan(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     only_null_probe: bool,
     only_tcp_recommended: bool,
@@ -200,10 +202,7 @@ pub fn vs_scan(
     let threads_num = match threads_num {
         Some(t) => t,
         None => {
-            let mut threads_num = 0;
-            for h in &target.hosts {
-                threads_num += h.ports.len();
-            }
+            let threads_num = targets.len();
             let threads_num = threads_num_check(threads_num);
             threads_num
         }
@@ -221,7 +220,7 @@ pub fn vs_scan(
     debug!("nmap service db load finish");
 
     let mut recv_size = 0;
-    for host in &target.hosts {
+    for host in targets {
         let dst_addr = host.addr;
         for &dst_port in &host.ports {
             let tx = tx.clone();
@@ -240,7 +239,7 @@ pub fn vs_scan(
                     timeout,
                 );
                 tx.send((dst_addr, dst_port, probe_ret, stime))
-                    .expect(&format!("tx send failed: {}-{}", file!(), line!()));
+                    .expect(&format!("tx send failed at {}", Location::caller()));
             });
             recv_size += 1;
         }
@@ -323,8 +322,8 @@ pub fn vs_scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Target;
     use crate::TEST_IPV4_LOCAL;
+    use crate::Target;
     use fancy_regex::Regex as FancyRegex;
     use std::net::Ipv4Addr;
     // use kdam::tqdm;
@@ -334,14 +333,13 @@ mod tests {
         let _ = Logger::init_debug_logging();
         // let dst_addr = Ipv4Addr::new(47, 104, 100, 200);
         let dst_addr = Ipv4Addr::new(45, 33, 32, 156); // scanme.nmap.org
-        let host = Target::new(dst_addr.into(), Some(vec![80, 8099]));
-        let target = Target::new(vec![host]);
+        let target = Target::new(dst_addr.into(), Some(vec![80, 8099]));
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
         let threads_num = Some(8);
         let ret = vs_scan(
-            &target,
+            &[target],
             threads_num,
             only_null_probe,
             only_tcp_recommended,
@@ -356,16 +354,13 @@ mod tests {
     fn test_vs_detect() {
         // use crate::Logger;
         // let _ = Logger::init_debug_logging();
-        let host = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![8080]));
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
-        let target = Target::new(vec![host]);
+        let target = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 80, 8080]));
         let timeout = Some(Duration::new(1, 0));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
         let threads_num = Some(8);
         let ret = vs_scan(
-            &target,
+            &[target],
             threads_num,
             only_null_probe,
             only_tcp_recommended,

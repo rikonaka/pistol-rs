@@ -2,8 +2,6 @@
 #![doc = include_str!("lib.md")]
 use log::warn;
 use pcapture::PcapNg;
-use serde::Deserialize;
-use serde::Serialize;
 use std::fmt;
 use std::fs::File;
 use std::net::IpAddr;
@@ -11,9 +9,12 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::result;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use subnetwork::Ipv4Pool;
+use subnetwork::Ipv6Pool;
 
 pub mod error;
 pub mod flood;
@@ -427,7 +428,7 @@ impl IpCheckMethods for IpAddr {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Target {
     pub addr: IpAddr,
     pub ports: Vec<u16>,
@@ -444,6 +445,26 @@ impl Target {
         };
         h
     }
+    // Only supported the IPv4 target.
+    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
+        let ip_pool = Ipv4Pool::from_str(subnet)?;
+        let mut targets = Vec::new();
+        for ip in ip_pool {
+            let target = Target::new(ip.into(), ports.clone());
+            targets.push(target);
+        }
+        Ok(targets)
+    }
+    // Only supported the IPv6 target.
+    pub fn from_subnet6(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
+        let ip_pool = Ipv6Pool::from_str(subnet)?;
+        let mut targets = Vec::new();
+        for ip in ip_pool {
+            let target = Target::new(ip.into(), ports.clone());
+            targets.push(target);
+        }
+        Ok(targets)
+    }
 }
 
 impl fmt::Display for Target {
@@ -455,9 +476,9 @@ impl fmt::Display for Target {
 
 /* Scan */
 #[cfg(feature = "scan")]
-pub use scan::arp_scan;
-#[cfg(feature = "scan")]
 pub use scan::arp_scan_raw;
+#[cfg(feature = "scan")]
+pub use scan::mac_scan;
 #[cfg(feature = "scan")]
 pub use scan::tcp_ack_scan;
 #[cfg(feature = "scan")]

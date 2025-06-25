@@ -23,7 +23,7 @@ pub fn threads_num_check(threads_num: usize) -> usize {
     let mut threads_num = threads_num;
     if threads_num > MAX_THREADS_NUM {
         warn!(
-            "too many targets (real: {} => now: {}), consider using the _raw function",
+            "system try to create too many threads (current threads num: {}, fixed threads num: {}), consider set the `threads_num` manual",
             threads_num, MAX_THREADS_NUM
         );
         threads_num = MAX_THREADS_NUM;
