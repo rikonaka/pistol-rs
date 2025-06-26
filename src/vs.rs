@@ -162,7 +162,7 @@ impl fmt::Display for VsScans {
             }
         }
         let summary = format!(
-            "total used time: {:.2} ms\navg time cost: {:.2} ms",
+            "total used time: {:.3}s\navg time cost: {:.3}s",
             self.total_cost, self.avg_cost,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));

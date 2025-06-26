@@ -166,7 +166,7 @@ impl fmt::Display for OSDetects {
             }
         }
         let summary = format!(
-            "total used time: {:.2} ms\navg time cost: {:.2} ms",
+            "total used time: {:.3}s\navg time cost: {:.3}s",
             self.total_cost, self.avg_cost,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
@@ -406,14 +406,13 @@ pub fn os_detect(
     let pool = get_threads_pool(threads_num);
     let mut recv_size = 0;
     let mut ret = OSDetects::new();
-    let targets = targets.clone(); // avoid the lifetime problem
     for h in targets {
         let dst_addr = h.addr;
         let tx = tx.clone();
         recv_size += 1;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
-                let dst_ports = h.ports;
+                let dst_ports = h.ports.clone();
                 let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
                     Some(s) => s,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
@@ -454,7 +453,7 @@ pub fn os_detect(
                 });
             }
             IpAddr::V6(dst_ipv6) => {
-                let dst_ports = h.ports;
+                let dst_ports = h.ports.clone();
                 let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
                     Some(s) => s,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
@@ -621,7 +620,7 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
-        let host1 = Target::new(
+        let target1 = Target::new(
             TEST_IPV4_LOCAL.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -630,7 +629,7 @@ mod tests {
             ]),
         );
 
-        let host2 = Target::new(
+        let target2 = Target::new(
             TEST_IPV4_LOCAL_DEAD.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -639,11 +638,10 @@ mod tests {
             ]),
         );
 
-        let target = Target::new(vec![host1, host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let threads_num = Some(8);
-        let ret = os_detect(&target, threads_num, src_addr, top_k, timeout).unwrap();
+        let ret = os_detect(&[target1, target2], threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let rr = ret.get(&TEST_IPV4_LOCAL.into()).unwrap();
@@ -662,7 +660,7 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let host1 = Target::new(
+        let target1 = Target::new(
             TEST_IPV6_LOCAL.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -671,7 +669,7 @@ mod tests {
             ]),
         );
 
-        let host2 = Target::new(
+        let target2 = Target::new(
             TEST_IPV6_LOCAL_DEAD.into(),
             Some(vec![
                 dst_open_tcp_port,
@@ -680,11 +678,10 @@ mod tests {
             ]),
         );
 
-        let target = Target::new(vec![host1, host2]);
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let threads_num = Some(8);
-        let ret = os_detect(&target, threads_num, src_addr, top_k, timeout).unwrap();
+        let ret = os_detect(&[target1, target2], threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]

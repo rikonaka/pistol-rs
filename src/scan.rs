@@ -75,8 +75,8 @@ pub struct ArpScanReport {
 #[derive(Debug, Clone)]
 pub struct PistolArpScanReport {
     pub arp_scan_reports: Vec<ArpScanReport>,
-    pub stime: DateTime<Local>,
-    pub etime: DateTime<Local>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
     tests: usize,
 }
 
@@ -85,8 +85,8 @@ impl PistolArpScanReport {
     pub fn new(tests: usize) -> PistolArpScanReport {
         PistolArpScanReport {
             arp_scan_reports: Vec::new(),
-            stime: Local::now(),
-            etime: Local::now(),
+            start_time: Local::now(),
+            end_time: Local::now(),
             tests,
         }
     }
@@ -94,30 +94,37 @@ impl PistolArpScanReport {
         self.arp_scan_reports.clone()
     }
     pub fn finish(&mut self) {
-        self.etime = Local::now();
+        self.end_time = Local::now();
     }
 }
 
 #[cfg(feature = "scan")]
 impl fmt::Display for PistolArpScanReport {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let total_cost = self.end_time - self.start_time;
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new("ARP Scan Results").style_spec("c").with_hspan(5),
+            Cell::new(&format!(
+                "ARP Scan Results (tests:{}, total cost:{:.3}s)",
+                self.tests,
+                total_cost.as_seconds_f32()
+            ))
+            .style_spec("c")
+            .with_hspan(5),
         ]));
 
         table.add_row(row![c -> "id", c -> "addr", c -> "mac", c -> "oui", c-> "rtt"]);
 
         let mut total_cost = 0.0;
         for (i, arp_scan_report) in self.arp_scan_reports.iter().enumerate() {
-            let rtt_str = format!("{:.2} ms", arp_scan_report.rtt.as_secs_f32());
+            let rtt_str = format!("{:.3}s", arp_scan_report.rtt.as_secs_f32());
             total_cost += arp_scan_report.rtt.as_secs_f32();
             table.add_row(row![c -> (i + 1), c -> arp_scan_report.addr, c -> arp_scan_report.mac, c -> arp_scan_report.ouis, c -> rtt_str]);
         }
         let avg_cost = total_cost / self.arp_scan_reports.len() as f32;
 
         let summary = format!(
-            "total cost: {:.2} ms\navg cost: {:.2} ms\nalive hosts: {}",
+            "total cost: {:.3}s\navg cost: {:.3}s\nalive hosts: {}",
             total_cost,
             avg_cost,
             self.arp_scan_reports.len(),
@@ -459,52 +466,31 @@ impl PistolPortScanReport {
 #[cfg(any(feature = "scan", feature = "ping"))]
 impl fmt::Display for PistolPortScanReport {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut open_num = 0;
-        let mut open_or_filtered_num = 0;
-        let mut filtered_num = 0;
-        let mut unfiltered_num = 0;
-        let mut closed_num = 0;
-        let mut unreachable_num = 0;
-        let mut close_or_filtered_num = 0;
-        let mut error_num = 0;
-        let mut offline_num = 0;
+        let total_cost = self.end_time - self.start_time;
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Scan Results (tests:{})", self.tests))
-                .style_spec("c")
-                .with_hspan(5),
+            Cell::new(&format!(
+                "Scan Results (tests:{}, total cost:{:.3}s)",
+                self.tests,
+                total_cost.as_seconds_f32()
+            ))
+            .style_spec("c")
+            .with_hspan(5),
         ]));
 
-        table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "avg cost"]);
+        table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "rtt"]);
 
+        let mut open_ports_num = 0;
         let mut total_cost = 0.0;
         for (i, scan_report) in self.scan_reports.iter().enumerate() {
             total_cost += scan_report.rtt.as_secs_f32();
             match scan_report.status {
-                PortStatus::Open => open_num += 1,
-                PortStatus::OpenOrFiltered => open_or_filtered_num += 1,
-                PortStatus::Filtered => filtered_num += 1,
-                PortStatus::Unfiltered => unfiltered_num += 1,
-                PortStatus::Closed => closed_num += 1,
-                PortStatus::Unreachable => unreachable_num += 1,
-                PortStatus::ClosedOrFiltered => close_or_filtered_num += 1,
-                PortStatus::Error => error_num += 1,
-                PortStatus::Offline => offline_num += 1,
-            };
-            let status_str = format!(
-                "O({})OF({})F({})UF({})C({})UR({})CF({})E({})OL({})",
-                open_num,
-                open_or_filtered_num,
-                filtered_num,
-                unfiltered_num,
-                closed_num,
-                unreachable_num,
-                close_or_filtered_num,
-                error_num,
-                offline_num
-            );
-            let rtt_str = format!("{:.2} ms", scan_report.rtt.as_secs_f32());
+                PortStatus::Open => open_ports_num += 1,
+                _ => (),
+            }
+            let status_str = format!("{}", scan_report.status);
+            let rtt_str = format!("{:.3}s", scan_report.rtt.as_secs_f32());
             table.add_row(row![c -> (i + 1), c -> scan_report.addr, c-> scan_report.port, c -> status_str, c-> rtt_str ]);
         }
 
@@ -515,8 +501,8 @@ impl fmt::Display for PistolPortScanReport {
 
         let avg_cost = total_cost / self.scan_reports.len() as f32;
         let summary = format!(
-            "total cost: {:.2} ms\navg cost: {:.2} ms\nopen ports: {}",
-            total_cost, avg_cost, open_num,
+            "total cost: {:.3}s\navg cost: {:.3}s\nopen ports: {}",
+            total_cost, avg_cost, open_ports_num,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
@@ -784,7 +770,7 @@ fn scan(
     for (dst_addr, dst_port, v) in iter {
         match v {
             Ok((port_status, rtt)) => {
-                // println!("rtt: {:.2}", rtt.as_secs_f32());
+                // println!("rtt: {:.3}", rtt.as_secs_f32());
                 let scan_report = ScanReport {
                     addr: dst_addr,
                     port: dst_port,
@@ -1506,7 +1492,7 @@ mod tests {
         match tcp_syn_scan_raw(dst_ip.into(), 80, None, None, timeout) {
             Ok((status, dura)) => {
                 println!(
-                    "status: {:?}, dura: {:?}, elapsed: {:.2}",
+                    "status: {:?}, dura: {:?}, elapsed: {:.3}",
                     status,
                     dura,
                     start_time.elapsed().as_secs_f32()
@@ -1514,7 +1500,7 @@ mod tests {
             }
             Err(e) => {
                 println!("{}", e);
-                println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
+                println!("elapsed: {:.3}", start_time.elapsed().as_secs_f32());
             }
         };
     }
@@ -1543,6 +1529,6 @@ mod tests {
         // let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         // let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
-        println!("elapsed: {:.2}", start_time.elapsed().as_secs_f32());
+        println!("elapsed: {:.3}", start_time.elapsed().as_secs_f32());
     }
 }

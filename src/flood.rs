@@ -134,7 +134,7 @@ impl fmt::Display for FloodAttacks {
                     .signed_duration_since(detail.stime)
                     .num_milliseconds();
                 let detail_str = format!(
-                    "packets: {}\ntraffic: {}\ntime: {:.2} ms",
+                    "packets: {}\ntraffic: {}\ntime: {:.3}s",
                     detail.send_packets, traffc_str, time_cost,
                 );
                 table.add_row(row![ip, port, detail_str]);

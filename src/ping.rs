@@ -27,6 +27,8 @@ use std::net::Ipv4Addr;
 #[cfg(feature = "ping")]
 use std::net::Ipv6Addr;
 #[cfg(feature = "ping")]
+use std::panic::Location;
+#[cfg(feature = "ping")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "ping")]
 use std::time::Duration;
@@ -215,7 +217,7 @@ impl fmt::Display for Pings {
                 String::from("down")
             };
 
-            let rtt_str = format!("{:.2} ms", host_total_time_cost as f64 / self.tests as f64);
+            let rtt_str = format!("{:.3}s", host_total_time_cost as f64 / self.tests as f64);
             table.add_row(row![c -> (i + 1), c -> ip, c -> status_str, c -> rtt_str]);
         }
 
@@ -223,7 +225,7 @@ impl fmt::Display for Pings {
         table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
         let summary = format!(
-            "total cost: {:.2} ms\navg cost: {:.2} ms\nalive hosts: {}",
+            "total cost: {:.3}s\navg cost: {:.3}s\nalive hosts: {}",
             self.total_cost, self.avg_cost, self.alives_num
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
@@ -355,7 +357,7 @@ fn threads_ping6(
 
 #[cfg(feature = "ping")]
 fn ping(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     method: PingMethods,
     src_addr: Option<IpAddr>,
@@ -368,7 +370,7 @@ fn ping(
     let threads_num = match threads_num {
         Some(t) => t,
         None => {
-            let threads_num = target.hosts.len() * tests;
+            let threads_num = targets.len() * tests;
             let threads_num = threads_num_check(threads_num);
             threads_num
         }
@@ -383,8 +385,8 @@ fn ping(
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
-    for host in &target.hosts {
-        let dst_addr = host.addr;
+    for target in targets {
+        let dst_addr = target.addr;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for _ in 0..tests {
@@ -394,8 +396,8 @@ fn ping(
                         Some(s) => s,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
-                    let dst_port = if host.ports.len() > 0 {
-                        Some(host.ports[0])
+                    let dst_port = if target.ports.len() > 0 {
+                        Some(target.ports[0])
                     } else {
                         None
                     };
@@ -421,8 +423,8 @@ fn ping(
                         Some(s) => s,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
-                    let dst_port = if host.ports.len() > 0 {
-                        Some(host.ports[0])
+                    let dst_port = if target.ports.len() > 0 {
+                        Some(target.ports[0])
                     } else {
                         None
                     };
@@ -475,7 +477,7 @@ fn ping(
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -483,7 +485,7 @@ pub fn tcp_syn_ping(
     tests: usize,
 ) -> Result<Pings, PistolError> {
     ping(
-        target,
+        targets,
         threads_num,
         PingMethods::Syn,
         src_addr,
@@ -539,7 +541,7 @@ pub fn tcp_syn_ping_raw(
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -547,7 +549,7 @@ pub fn tcp_ack_ping(
     tests: usize,
 ) -> Result<Pings, PistolError> {
     ping(
-        target,
+        targets,
         threads_num,
         PingMethods::Ack,
         src_addr,
@@ -603,7 +605,7 @@ pub fn tcp_ack_ping_raw(
 /// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 #[cfg(feature = "ping")]
 pub fn udp_ping(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -611,7 +613,7 @@ pub fn udp_ping(
     tests: usize,
 ) -> Result<Pings, PistolError> {
     ping(
-        target,
+        targets,
         threads_num,
         PingMethods::Udp,
         src_addr,
@@ -674,7 +676,7 @@ pub fn udp_ping_raw(
 /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
 #[cfg(feature = "ping")]
 pub fn icmp_ping(
-    target: &Target,
+    targets: &[Target],
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
@@ -682,7 +684,7 @@ pub fn icmp_ping(
     tests: usize,
 ) -> Result<Pings, PistolError> {
     ping(
-        target,
+        targets,
         threads_num,
         PingMethods::Icmp,
         src_addr,
@@ -725,7 +727,6 @@ mod tests {
     // use crate::Logger;
     use crate::TEST_IPV4_LOCAL;
     use crate::TEST_IPV6_LOCAL;
-    use crate::Target;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     #[test]
@@ -735,13 +736,13 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let host_1 = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
+        let target1 = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
         // let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         // let target: Target = Target::new(vec![host_1, host_2]);
-        let target: Target = Target::new(vec![host_1]);
         let tests = 3;
         let threads_num = Some(8);
-        let ret = tcp_syn_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret =
+            tcp_syn_ping(&[target1], threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -759,11 +760,10 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let host = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
-        let target: Target = Target::new(vec![host]);
+        let target = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
         let tests = 4;
         let threads_num = Some(8);
-        let ret = tcp_syn_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret = tcp_syn_ping(&[target], threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -775,11 +775,10 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(139, 180, 156, 169);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![]));
-        let host = Target::new(dst_ipv4.into(), Some(vec![]));
-        let target: Target = Target::new(vec![host]);
+        let target = Target::new(dst_ipv4.into(), Some(vec![]));
         let tests = 4;
         let threads_num = Some(8);
-        let ret = icmp_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        let ret = icmp_ping(&[target], threads_num, src_ipv4, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -788,12 +787,11 @@ mod tests {
         let src_port: Option<u16> = None;
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse().unwrap();
         let src_ipv6 = Some(src_ipv6.into());
-        let host = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
-        let target: Target = Target::new(vec![host]);
+        let target = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
         let tests = 4;
         let threads_num = Some(8);
         let timeout = Some(Duration::new(3, 0));
-        let ret = icmp_ping(&target, threads_num, src_ipv6, src_port, timeout, tests).unwrap();
+        let ret = icmp_ping(&[target], threads_num, src_ipv6, src_port, timeout, tests).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -804,16 +802,15 @@ mod tests {
         let start_ip = Ipv4Addr::new(192, 168, 5, 1);
         let end_ip = Ipv4Addr::new(192, 168, 5, 10);
         let pool = CrossIpv4Pool::new(start_ip, end_ip).unwrap();
-        let mut hosts = vec![];
+        let mut targets = vec![];
         for ip in pool {
-            hosts.push(Target::new(ip.into(), None));
+            targets.push(Target::new(ip.into(), None));
         }
-        let target: Target = Target::new(hosts);
         let tests = 2;
         let start = Instant::now();
         let threads_num = Some(8);
-        let ret = icmp_ping(&target, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
-        println!("{} - {:.2}s", ret, start.elapsed().as_secs_f64());
+        let ret = icmp_ping(&targets, threads_num, src_ipv4, src_port, timeout, tests).unwrap();
+        println!("{} - {:.3}s", ret, start.elapsed().as_secs_f64());
     }
     #[test]
     #[ignore]
@@ -834,10 +831,9 @@ mod tests {
                 String::from_utf8_lossy(&c2.stdout)
             );
 
-            let host = Target::new(TEST_IPV4_LOCAL.into(), None);
-            let target = Target::new(vec![host]);
+            let target = Target::new(TEST_IPV4_LOCAL.into(), None);
             let _ret = icmp_ping(
-                &target,
+                &[target],
                 threads_num,
                 None,
                 None,
