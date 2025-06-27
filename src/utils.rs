@@ -19,6 +19,14 @@ use crate::route::DefaultRoute;
 
 const MAX_THREADS_NUM: usize = 1000;
 
+pub fn rtt_to_string(rtt: Duration) -> String {
+    if rtt.as_secs_f32() > 1.0 {
+        format!("{:.2}s", rtt.as_secs_f32())
+    } else {
+        format!("{:.2}ms", rtt.as_secs_f32() * 1000.0)
+    }
+}
+
 pub fn threads_num_check(threads_num: usize) -> usize {
     let mut threads_num = threads_num;
     if threads_num > MAX_THREADS_NUM {

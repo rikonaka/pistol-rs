@@ -323,7 +323,8 @@ impl TrafficSaver {
             Err(e) => Err(PistolError::InitCaptureError { e: e.to_string() }),
         }
     }
-    pub fn save_to_file(&mut self) -> Result<(), PistolError> {
+    /// The program will automatically call this module when the function ends, without manual setting.
+    fn save_to_file(&mut self) -> Result<(), PistolError> {
         match PISTOL_PCAPNG_FLAG.lock() {
             Ok(ppf) => {
                 if *ppf {
@@ -341,6 +342,12 @@ impl TrafficSaver {
             }
             Err(e) => Err(PistolError::SaveCaptureError { e: e.to_string() }),
         }
+    }
+}
+
+impl Drop for TrafficSaver {
+    fn drop(&mut self) {
+        self.save_to_file().expect("auto save to file failed");
     }
 }
 

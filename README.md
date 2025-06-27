@@ -165,9 +165,8 @@ This method is used to capture all packets sent and recv by pistol into pcapng f
 use pistol::TrafficSaver;
 
 fn main() {
-    let mut ts = TrafficSaver::init("pistol_traffic_captured.pcapng").unwrap();
+    let _ts = TrafficSaver::init("pistol.pcapng").unwrap();
     // your scan or ping code
-    ts.save_to_file().unwrap();
 }
 ```
 

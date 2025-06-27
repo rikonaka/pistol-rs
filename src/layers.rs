@@ -562,7 +562,7 @@ pub fn layer2_send(
         channel_type: ChannelType::Layer2,
         bpf_fd_attempts: 1000,
         linux_fanout: None,
-        promiscuous: true,
+        promiscuous: false,
         socket_fd: None,
     };
 
@@ -1030,11 +1030,41 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     #[test]
     fn test_dns_query() {
         let hostname = "ipv6.sjtu.edu.cn";
         let ret = dns_query(hostname).unwrap();
         println!("{:?}", ret);
+    }
+    #[test]
+    fn test_layer_match() {
+        let data = vec![
+            0x6c, 0x1f, 0xf7, 0x15, 0x6e, 0x8e, 0x40, 0xf2, 0xe9, 0x64, 0x8, 0x64, 0x8, 0x6, 0x0,
+            0x1, 0x8, 0x0, 0x6, 0x4, 0x0, 0x2, 0x40, 0xf2, 0xe9, 0x64, 0x8, 0x64, 0xc0, 0xa8, 0x1,
+            0x2, 0x6c, 0x1f, 0xf7, 0x15, 0x6e, 0x8e, 0xc0, 0xa8, 0x1, 0xe9, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        ];
+        let src_mac_str = "6c:1f:f7:15:6e:8e";
+        let src_mac = MacAddr::from_str(src_mac_str).unwrap();
+        let ethernet_type = EtherTypes::Arp;
+        let dst_ipv4 = Ipv4Addr::from_str("192.168.1.2").unwrap();
+        let src_ipv4 = Ipv4Addr::from_str("192.168.1.233").unwrap();
+        let layer2 = Layer2Match {
+            src_mac: None,
+            dst_mac: Some(src_mac),
+            ethernet_type: Some(ethernet_type),
+        };
+        let layer3 = Layer3Match {
+            layer2: Some(layer2),
+            src_addr: Some(dst_ipv4.into()),
+            dst_addr: Some(src_ipv4.into()),
+        };
+        let layers_match = LayersMatch::Layer3Match(layer3);
+
+        let x = layers_match.do_match(&data);
+        println!("{}", x);
     }
 }

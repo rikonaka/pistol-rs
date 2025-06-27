@@ -17,8 +17,4 @@ Cargo.lock
 *.lib
 
 # My libc raw socket test
-pistol-libc/
-*.pcap
-*.log
-*.pistol
 *.pcapng
