@@ -544,6 +544,75 @@ impl LayersMatch {
     }
 }
 
+/// Capture the traffic and save into file.
+fn layer2_capture(packet: &[u8]) {
+    match PISTOL_PCAPNG_FLAG.lock() {
+        Ok(ppf) => {
+            if *ppf {
+                match PISTOL_PCAPNG.lock() {
+                    Ok(mut pp) => {
+                        // interface_id = 0 means we use the first interface we builed in fake pcapng headers
+                        const INTERFACE_ID: u32 = 0;
+                        // this is the default value of pcapture
+                        const SNAPLEN: usize = 65535;
+                        match EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN) {
+                            Ok(block) => {
+                                let gb = GeneralBlock::EnhancedPacketBlock(block);
+                                pp.append(gb);
+                            }
+                            Err(e) => {
+                                error!("build EnhancedPacketBlock in layer2_send() failed: {}", e)
+                            }
+                        }
+                    }
+                    Err(e) => error!("unlock PISTOL_PCAPNG in layer2_send() failed: {}", e),
+                }
+            }
+        }
+        Err(e) => error!("unlock PISTOL_PCAPNG_FLAG in layer2_send() failed: {}", e),
+    }
+}
+
+pub fn layer2_recv(timeout: Option<Duration>) {
+    let send_time = Instant::now();
+
+    let loop_timeout = Instant::now();
+    let timeout = match timeout {
+        Some(t) => t,
+        None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
+    };
+    loop {
+        if loop_timeout.elapsed() >= timeout {
+            break;
+        }
+        let buff = match receiver.next() {
+            Ok(b) => b,
+            Err(e) => {
+                error!("layer2 send failed: {}", e);
+                break;
+            }
+        };
+        // capture recv packet during probe packet send and target packet recved
+        capture_traffic(buff);
+        for m in &layers_match {
+            match m.do_match(buff) {
+                true => {
+                    debug!("match found: {:?}", m);
+                    let rtt = send_time.elapsed();
+                    return Ok((buff.to_vec(), rtt));
+                }
+                false => (),
+            }
+        }
+    }
+    // no match packet found
+    Ok((vec![], send_time.elapsed()))
+}
+
+/// In order to prevent other threads from reading and discarding data packets
+/// that do not belong to them during the multi-threaded multi-packet sending process,
+/// and to improve the stability of the scan, I decided to put the reception of
+/// all data packets into one thread.
 pub fn layer2_send(
     dst_mac: MacAddr,
     interface: NetworkInterface,
@@ -552,8 +621,7 @@ pub fn layer2_send(
     ethernet_type: EtherType,
     layers_match: Vec<LayersMatch>,
     timeout: Option<Duration>,
-    need_return: bool,
-) -> Result<(Vec<u8>, Duration), PistolError> {
+) -> Result<(), PistolError> {
     let config = Config {
         write_buffer_size: ETHERNET_BUFF_SIZE,
         read_buffer_size: ETHERNET_BUFF_SIZE,
@@ -602,85 +670,14 @@ pub fn layer2_send(
     ethernet_packet.set_source(src_mac);
     ethernet_packet.set_ethertype(ethernet_type);
     ethernet_packet.set_payload(payload);
+    layer2_capture(&ethernet_buff);
 
-    // for capture the traffic then debug
-
-    let capture_traffic = |buff: &[u8]| {
-        match PISTOL_PCAPNG_FLAG.lock() {
-            Ok(ppf) => {
-                if *ppf {
-                    match PISTOL_PCAPNG.lock() {
-                        Ok(mut pp) => {
-                            // interface_id = 0 means we use the first interface we builed in fake pcapng headers
-                            const INTERFACE_ID: u32 = 0;
-                            // this is the default value of pcapture
-                            const SNAPLEN: usize = 65535;
-                            match EnhancedPacketBlock::new(INTERFACE_ID, buff, SNAPLEN) {
-                                Ok(block) => {
-                                    let gb = GeneralBlock::EnhancedPacketBlock(block);
-                                    pp.append(gb);
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "build EnhancedPacketBlock in layer2_send() failed: {}",
-                                        e
-                                    )
-                                }
-                            }
-                        }
-                        Err(e) => error!("unlock PISTOL_PCAPNG in layer2_send() failed: {}", e),
-                    }
-                }
-            }
-            Err(e) => error!("unlock PISTOL_PCAPNG_FLAG in layer2_send() failed: {}", e),
-        }
-    };
-    // capture send packet
-    capture_traffic(&ethernet_buff);
-    let send_time = Instant::now();
     match sender.send_to(&ethernet_buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),
-            _ => (),
+            _ => Ok(()),
         },
-        None => (),
-    }
-
-    if need_return {
-        let loop_timeout = Instant::now();
-        let timeout = match timeout {
-            Some(t) => t,
-            None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
-        };
-        loop {
-            if loop_timeout.elapsed() >= timeout {
-                break;
-            }
-            let buff = match receiver.next() {
-                Ok(b) => b,
-                Err(e) => {
-                    error!("layer2 send failed: {}", e);
-                    break;
-                }
-            };
-            // capture recv packet during probe packet send and target packet recved
-            capture_traffic(buff);
-            for m in &layers_match {
-                match m.do_match(buff) {
-                    true => {
-                        debug!("match found: {:?}", m);
-                        let rtt = send_time.elapsed();
-                        return Ok((buff.to_vec(), rtt));
-                    }
-                    false => (),
-                }
-            }
-        }
-        // no match packet found
-        Ok((vec![], send_time.elapsed()))
-    } else {
-        // not recv any response for flood attack enffience
-        Ok((vec![], Duration::new(0, 0)))
+        None => Ok(()),
     }
 }
 
