@@ -28,6 +28,7 @@ pub mod utils;
 pub mod vs;
 
 use crate::error::PistolError;
+use crate::layers::LayersMatch;
 use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
@@ -69,6 +70,12 @@ static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(||
     Arc::new(Mutex::new(snc))
 });
 
+static UNIFIED_RECV_MATCHS: LazyLock<Arc<Mutex<Vec<LayersMatch>>>> = LazyLock::new(|| {
+    let v = Vec::new();
+    Arc::new(Mutex::new(v))
+});
+
+// sec
 const DEFAULT_TIMEOUT: f32 = 3.0;
 
 pub const TOP_100_PORTS: [u16; 100] = [
