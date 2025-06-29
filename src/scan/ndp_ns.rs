@@ -25,8 +25,8 @@ use crate::layers::ICMPV6_NS_HEADER_SIZE;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
-use crate::layers::LayersMatch;
-use crate::layers::layer2_send;
+use crate::layers::LayerMatch;
+use crate::layers::layer2_work;
 use crate::layers::multicast_mac;
 
 fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
@@ -137,10 +137,10 @@ pub fn send_ndp_ns_scan_packet(
         icmpv6_type: Some(Icmpv6Type(136)),
         icmpv6_code: Some(Icmpv6Code(0)),
     };
-    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let ethernet_type = EtherTypes::Ipv6;
-    let (r, rtt) = layer2_send(
+    let (r, rtt) = layer2_work(
         multicast_mac(dst_ipv6),
         interface.clone(),
         &ipv6_buff,

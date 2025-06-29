@@ -1,7 +1,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
+use crate::datalink::Channel::Ethernet;
+use log::error;
 use log::warn;
 use pcapture::PcapNg;
+use pnet::datalink;
 use std::fmt;
 use std::fs::File;
 use std::net::IpAddr;
@@ -13,6 +16,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
 
@@ -28,7 +34,7 @@ pub mod utils;
 pub mod vs;
 
 use crate::error::PistolError;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
@@ -70,10 +76,63 @@ static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(||
     Arc::new(Mutex::new(snc))
 });
 
-static UNIFIED_RECV_MATCHS: LazyLock<Arc<Mutex<Vec<LayersMatch>>>> = LazyLock::new(|| {
+static UNIFIED_RECV_MATCHS: LazyLock<Arc<Mutex<Vec<PistolChannel>>>> = LazyLock::new(|| {
     let v = Vec::new();
     Arc::new(Mutex::new(v))
 });
+
+#[derive(Debug, Clone)]
+pub struct PistolChannel {
+    channel: Sender<Vec<u8>>,
+    layer_matchs: Vec<LayerMatch>,
+}
+
+pub struct PistolRunner;
+
+impl PistolRunner {
+    pub fn init(timeout: Option<Duration>) -> Result<(), PistolError> {
+        let config = datalink::Config {
+            read_timeout: timeout,
+            write_timeout: timeout,
+            ..Default::default()
+        };
+        // listen all interface
+        for interface in datalink::interfaces() {
+            let (_, mut receiver) = match datalink::channel(&interface, config) {
+                Ok(Ethernet(tx, rx)) => (tx, rx),
+                Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
+                Err(e) => return Err(e.into()),
+            };
+            thread::spawn(move || {
+                loop {
+                    match receiver.next() {
+                        Ok(ethernet_buff) => match UNIFIED_RECV_MATCHS.lock() {
+                            Ok(urm) => {
+                                for pc in urm.clone() {
+                                    for lm in pc.layer_matchs {
+                                        if lm.do_match(ethernet_buff) {
+                                            // send the matched result to user thread
+                                            match pc.channel.send(ethernet_buff.to_vec()) {
+                                                Ok(_) => (),
+                                                Err(e) => error!(
+                                                    "try return data to sender failed: {}",
+                                                    e
+                                                ),
+                                            };
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => error!("try lock UNIFIED_RECV_MATCHS failed: {}", e),
+                        },
+                        Err(e) => error!("layer2 send failed: {}", e),
+                    }
+                }
+            });
+        }
+        Ok(())
+    }
+}
 
 // sec
 const DEFAULT_TIMEOUT: f32 = 3.0;

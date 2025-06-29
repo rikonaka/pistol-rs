@@ -21,7 +21,7 @@ use crate::layers::ICMPV6_ER_HEADER_SIZE;
 use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::layers::layer3_ipv6_send;
 use crate::ping::PingStatus;
 
@@ -108,7 +108,7 @@ pub fn send_icmpv6_ping_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,

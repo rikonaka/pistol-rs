@@ -27,7 +27,7 @@ use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::layers::TCP_HEADER_SIZE;
 use crate::layers::layer3_ipv4_send;
 use crate::utils;
@@ -114,8 +114,8 @@ pub fn send_syn_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -242,8 +242,8 @@ pub fn send_fin_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -370,8 +370,8 @@ pub fn send_ack_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -495,8 +495,8 @@ pub fn send_null_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -621,8 +621,8 @@ pub fn send_xmas_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -746,8 +746,8 @@ pub fn send_window_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -876,8 +876,8 @@ pub fn send_maimon_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,
@@ -1013,8 +1013,8 @@ pub fn send_idle_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_zombie_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
-    let layers_match_zombie_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp_zombie);
+    let layers_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
+    let layers_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
 
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let (ret, rtt_1) = layer3_ipv4_send(
@@ -1095,8 +1095,8 @@ pub fn send_idle_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt_2) = layer3_ipv4_send(
         src_ipv4,

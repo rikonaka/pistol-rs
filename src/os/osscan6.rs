@@ -19,7 +19,7 @@ use crate::hop::ipv6_get_hops;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::layers::layer3_ipv6_send;
 use crate::layers::system_route6;
 use crate::utils::get_threads_pool;
@@ -529,7 +529,7 @@ fn send_seq_probes(
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
         };
-        let layers_match = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+        let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
         pool.execute(move || {
@@ -656,7 +656,7 @@ fn send_ie_probes(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -749,7 +749,7 @@ fn send_nx_probes(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -838,7 +838,7 @@ fn send_u1_probe(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
@@ -888,7 +888,7 @@ fn send_tecn_probe(
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
     };
-    let layers_match = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
     let buff = packet6::tecn_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_open_port)?;
     // For those that do not require time, process them in order.
@@ -961,12 +961,12 @@ fn send_tx_probes(
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
-    let layers_match_2 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-    let layers_match_3 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-    let layers_match_4 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-    let layers_match_5 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-    let layers_match_6 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
-    let layers_match_7 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+    let layers_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+    let layers_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+    let layers_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+    let layers_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+    let layers_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+    let layers_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
     let ms = vec![
         layers_match_2,
         layers_match_3,
@@ -1520,12 +1520,12 @@ mod tests {
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[5]),
         };
-        let layers_match_2 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-        let layers_match_3 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-        let layers_match_4 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-        let layers_match_5 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-        let layers_match_6 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
-        let layers_match_7 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+        let layers_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+        let layers_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+        let layers_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+        let layers_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+        let layers_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+        let layers_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
         let ms = vec![
             layers_match_2,
             layers_match_3,

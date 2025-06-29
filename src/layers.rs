@@ -38,16 +38,21 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
+
+use crate::PISTOL_PCAPNG;
+use crate::PISTOL_PCAPNG_FLAG;
+use crate::UNIFIED_RECV_MATCHS;
 
 use crate::DEFAULT_TIMEOUT;
 use crate::error::PistolError;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 // use crate::route::SystemNetCache;
-use crate::PISTOL_PCAPNG;
-use crate::PISTOL_PCAPNG_FLAG;
+use crate::PistolChannel;
 use crate::utils::dst_ipv4_in_local;
 use crate::utils::dst_ipv6_in_local;
 use crate::utils::find_interface_by_ip;
@@ -520,7 +525,7 @@ impl Layer4MatchIcmpv6 {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LayersMatch {
+pub enum LayerMatch {
     Layer2Match(Layer2Match),
     Layer3Match(Layer3Match),
     Layer4MatchTcpUdp(Layer4MatchTcpUdp),
@@ -528,15 +533,15 @@ pub enum LayersMatch {
     Layer4MatchIcmpv6(Layer4MatchIcmpv6),
 }
 
-impl LayersMatch {
+impl LayerMatch {
     pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
         if ethernet_buff.len() > 0 {
             match self {
-                LayersMatch::Layer2Match(l2) => l2.do_match(ethernet_buff),
-                LayersMatch::Layer3Match(l3) => l3.do_match(ethernet_buff),
-                LayersMatch::Layer4MatchTcpUdp(l4tcpudp) => l4tcpudp.do_match(ethernet_buff),
-                LayersMatch::Layer4MatchIcmp(l4icmp) => l4icmp.do_match(ethernet_buff),
-                LayersMatch::Layer4MatchIcmpv6(l4icmpv6) => l4icmpv6.do_match(ethernet_buff),
+                LayerMatch::Layer2Match(l2) => l2.do_match(ethernet_buff),
+                LayerMatch::Layer3Match(l3) => l3.do_match(ethernet_buff),
+                LayerMatch::Layer4MatchTcpUdp(l4tcpudp) => l4tcpudp.do_match(ethernet_buff),
+                LayerMatch::Layer4MatchIcmp(l4icmp) => l4icmp.do_match(ethernet_buff),
+                LayerMatch::Layer4MatchIcmpv6(l4icmpv6) => l4icmpv6.do_match(ethernet_buff),
             }
         } else {
             false
@@ -573,53 +578,48 @@ fn layer2_capture(packet: &[u8]) {
     }
 }
 
-pub fn layer2_recv(timeout: Option<Duration>) {
-    let send_time = Instant::now();
+/// This function only recvs data.
+fn layer2_set_matchs(layer_matchs: Vec<LayerMatch>) -> Result<Receiver<Vec<u8>>, PistolError> {
+    // let (tx: Sender<Vec<u8>>, rx: Receiver<Vec<PistolChannel>>) = channel();
+    let (tx, rx) = channel();
+    let pc = PistolChannel {
+        channel: tx,
+        layer_matchs,
+    };
 
-    let loop_timeout = Instant::now();
+    match UNIFIED_RECV_MATCHS.lock() {
+        Ok(mut urm) => urm.push(pc),
+        Err(e) => {
+            return Err(PistolError::TryLockGlobalVarFailed {
+                var_name: String::from("UNIFIED_RECV_MATCHS"),
+                e: e.to_string(),
+            });
+        }
+    }
+    Ok(rx)
+}
+
+fn layer2_recv(rx: Receiver<Vec<u8>>, timeout: Option<Duration>) -> Result<Vec<u8>, PistolError> {
     let timeout = match timeout {
         Some(t) => t,
         None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
     };
-    loop {
-        if loop_timeout.elapsed() >= timeout {
-            break;
-        }
-        let buff = match receiver.next() {
-            Ok(b) => b,
-            Err(e) => {
-                error!("layer2 send failed: {}", e);
-                break;
-            }
-        };
-        // capture recv packet during probe packet send and target packet recved
-        capture_traffic(buff);
-        for m in &layers_match {
-            match m.do_match(buff) {
-                true => {
-                    debug!("match found: {:?}", m);
-                    let rtt = send_time.elapsed();
-                    return Ok((buff.to_vec(), rtt));
-                }
-                false => (),
-            }
-        }
+
+    // only 1 packet will be recv from match threads
+    let iter = rx.recv_timeout(timeout).into_iter().take(1);
+    for ethernet_buff in iter {
+        return Ok(ethernet_buff);
     }
-    // no match packet found
-    Ok((vec![], send_time.elapsed()))
+    Ok(Vec::new())
 }
 
-/// In order to prevent other threads from reading and discarding data packets
-/// that do not belong to them during the multi-threaded multi-packet sending process,
-/// and to improve the stability of the scan, I decided to put the reception of
-/// all data packets into one thread.
-pub fn layer2_send(
+/// This function only sends data.
+fn layer2_send(
     dst_mac: MacAddr,
     interface: NetworkInterface,
     payload: &[u8],
     payload_len: usize,
     ethernet_type: EtherType,
-    layers_match: Vec<LayersMatch>,
     timeout: Option<Duration>,
 ) -> Result<(), PistolError> {
     let config = Config {
@@ -634,7 +634,7 @@ pub fn layer2_send(
         socket_fd: None,
     };
 
-    let (mut sender, mut receiver) = match datalink::channel(&interface, config) {
+    let (mut sender, _) = match datalink::channel(&interface, config) {
         Ok(Ethernet(tx, rx)) => (tx, rx),
         Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
         Err(e) => return Err(e.into()),
@@ -678,6 +678,48 @@ pub fn layer2_send(
             _ => Ok(()),
         },
         None => Ok(()),
+    }
+}
+
+/// In order to prevent other threads from reading and discarding data packets
+/// that do not belong to them during the multi-threaded multi-packet sending process,
+/// and to improve the stability of the scan, I decided to put the reception of
+/// all data packets into one thread.
+pub fn layer2_work(
+    dst_mac: MacAddr,
+    interface: NetworkInterface,
+    payload: &[u8],
+    payload_len: usize,
+    ethernet_type: EtherType,
+    layer_matchs: Vec<LayerMatch>,
+    timeout: Option<Duration>,
+    need_return: bool,
+) -> Result<(Vec<u8>, Duration), PistolError> {
+    let start = Instant::now();
+    if need_return {
+        let rx = layer2_set_matchs(layer_matchs)?;
+        layer2_send(
+            dst_mac,
+            interface,
+            payload,
+            payload_len,
+            ethernet_type,
+            timeout,
+        )?;
+        let data = layer2_recv(rx, timeout)?;
+        let rtt = start.elapsed();
+        Ok((data, rtt))
+    } else {
+        layer2_send(
+            dst_mac,
+            interface,
+            payload,
+            payload_len,
+            ethernet_type,
+            timeout,
+        )?;
+        let rtt = start.elapsed();
+        Ok((Vec::new(), rtt))
     }
 }
 
@@ -773,7 +815,7 @@ pub fn layer3_ipv4_send(
     src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     payload: &[u8],
-    layers_match: Vec<LayersMatch>,
+    layers_match: Vec<LayerMatch>,
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
@@ -782,7 +824,7 @@ pub fn layer3_ipv4_send(
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
     let payload_len = payload.len();
-    let (layer2_buff, rtt) = layer2_send(
+    let (layer2_buff, rtt) = layer2_work(
         dst_mac,
         interface,
         payload,
@@ -894,11 +936,11 @@ fn ndp_rs(
         icmpv6_type: Some(Icmpv6Type(134)), // Type: Router Advertisement (134)
         icmpv6_code: Some(Icmpv6Code(0)),
     };
-    let layers_match = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ethernet_type = EtherTypes::Ipv6;
-    let (r, rtt) = layer2_send(
+    let (r, rtt) = layer2_work(
         dst_mac,
         interface.clone(),
         &ipv6_buff,
@@ -997,7 +1039,7 @@ pub fn layer3_ipv6_send(
     src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     payload: &[u8],
-    layers_match: Vec<LayersMatch>,
+    layers_match: Vec<LayerMatch>,
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
@@ -1006,7 +1048,7 @@ pub fn layer3_ipv6_send(
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv6;
     let payload_len = payload.len();
-    let (layer2_buff, rtt) = layer2_send(
+    let (layer2_buff, rtt) = layer2_work(
         dst_mac,
         interface,
         payload,
@@ -1059,7 +1101,7 @@ mod tests {
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
-        let layers_match = LayersMatch::Layer3Match(layer3);
+        let layers_match = LayerMatch::Layer3Match(layer3);
 
         let x = layers_match.do_match(&data);
         println!("{}", x);

@@ -16,8 +16,8 @@ use crate::error::PistolError;
 use crate::layers::ARP_HEADER_SIZE;
 use crate::layers::Layer2Match;
 use crate::layers::Layer3Match;
-use crate::layers::LayersMatch;
-use crate::layers::layer2_send;
+use crate::layers::LayerMatch;
+use crate::layers::layer2_work;
 
 fn get_mac_from_arp(ethernet_buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
     match EthernetPacket::new(ethernet_buff) {
@@ -78,9 +78,9 @@ pub fn send_arp_scan_packet(
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layers_match = LayersMatch::Layer3Match(layer3);
+    let layers_match = LayerMatch::Layer3Match(layer3);
 
-    let (ret, rtt) = layer2_send(
+    let (ret, rtt) = layer2_work(
         dst_mac,
         interface,
         &arp_buffer,

@@ -25,7 +25,7 @@ use crate::layers::ICMP_HEADER_SIZE;
 use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::layers::layer3_ipv4_send;
 use crate::ping::PingStatus;
 
@@ -113,7 +113,7 @@ pub fn send_icmp_ping_packet(
         types: None,
         codes: None,
     };
-    let layers_match = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,

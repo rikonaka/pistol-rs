@@ -18,7 +18,7 @@ use crate::layers::IPV4_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmp;
 use crate::layers::Layer4MatchTcpUdp;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::layers::UDP_HEADER_SIZE;
 use crate::layers::layer3_ipv4_send;
 
@@ -100,8 +100,8 @@ pub fn send_udp_scan_packet(
         types: None,
         codes: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmp(layer4_icmp);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         src_ipv4,

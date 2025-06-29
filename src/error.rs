@@ -97,4 +97,6 @@ pub enum PistolError {
     SaveCaptureError { e: String },
     #[error("pcapture error")]
     PcaptureError(#[from] pcapture::PcaptureError),
+    #[error("try lock {var_name} failed: {e}")]
+    TryLockGlobalVarFailed { var_name: String, e: String },
 }

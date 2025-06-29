@@ -23,7 +23,7 @@ use crate::layers::IPV6_HEADER_SIZE;
 use crate::layers::Layer3Match;
 use crate::layers::Layer4MatchIcmpv6;
 use crate::layers::Layer4MatchTcpUdp;
-use crate::layers::LayersMatch;
+use crate::layers::LayerMatch;
 use crate::layers::TCP_HEADER_SIZE;
 use crate::layers::layer3_ipv6_send;
 use crate::utils;
@@ -107,8 +107,8 @@ pub fn send_syn_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
@@ -231,8 +231,8 @@ pub fn send_fin_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
@@ -355,8 +355,8 @@ pub fn send_ack_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
@@ -476,8 +476,8 @@ pub fn send_null_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
@@ -597,8 +597,8 @@ pub fn send_xmas_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
@@ -718,8 +718,8 @@ pub fn send_window_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
@@ -844,8 +844,8 @@ pub fn send_maimon_scan_packet(
         icmpv6_type: None,
         icmpv6_code: None,
     };
-    let layers_match_1 = LayersMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayersMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         src_ipv6,
