@@ -329,8 +329,8 @@ mod tests {
     // use kdam::tqdm;
     #[test]
     fn test_vs_detect_github() {
-        use crate::Logger;
-        let _ = Logger::init_debug_logging();
+        use crate::PistolLogger;
+        let _ = PistolLogger::set_debug();
         // let dst_addr = Ipv4Addr::new(47, 104, 100, 200);
         let dst_addr = Ipv4Addr::new(45, 33, 32, 156); // scanme.nmap.org
         let target = Target::new(dst_addr.into(), Some(vec![80, 8099]));

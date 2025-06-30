@@ -1380,16 +1380,23 @@ pub static ARP_LOCAL_DEFAULT_TIMEOUT: f32 = 0.001;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PistolCapture;
+    use crate::PistolLogger;
+    use crate::PistolRunner;
     use crate::TEST_IPV4_LOCAL;
     use crate::Target;
-    use crate::TrafficSaver;
     use std::str::FromStr;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() {
-        let _ts = TrafficSaver::init("arp_scan.pcapng").unwrap();
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("arp_scan.pcapng")),
+            Some(Duration::from_secs_f32(0.1)),
+        )
+        .unwrap();
         let subnet: Ipv4Pool = Ipv4Pool::from_str("192.168.1.0/24").unwrap();
         let mut targets: Vec<Target> = vec![];
         for ip in subnet {
@@ -1398,7 +1405,7 @@ mod tests {
         }
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
         // let targets = vec![Target::new(dst_ipv4.into(), None)];
-        let timeout = Some(Duration::from_millis(10));
+        let timeout = Some(Duration::from_secs_f32(1.0));
         let src_ipv4 = None;
         let threads_num = Some(128);
         let max_tests = 1;
@@ -1441,7 +1448,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() {
-        let mut ts = TrafficSaver::init("tcp_syn_scan.pcapng").unwrap();
+        let mut ts = PistolCapture::init("tcp_syn_scan.pcapng").unwrap();
         // let _ = Logger::init_debug_logging();
         let src_ipv4 = None;
         let src_port = None;

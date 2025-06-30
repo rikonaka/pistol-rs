@@ -148,10 +148,10 @@ The existing method can only keep the regular expressions of nmap basically usab
 ### Show Logging Infomations
 
 ```rust
-use pistol::Logger;
+use pistol::PistolLogger;
 
 fn main() {
-    let _ = Logger::init_debug_logging();
+    let _ = PistolLogger::init_debug_logging();
     // let _ = Logger::init_warn_logging();
     // your code below
 }
@@ -162,10 +162,10 @@ fn main() {
 This method is used to capture all packets sent and recv by pistol into pcapng format (which means you can open it with Wireshark).
 
 ```rust
-use pistol::TrafficSaver;
+use pistol::PistolCapture;
 
 fn main() {
-    let _ts = TrafficSaver::init("pistol.pcapng").unwrap();
+    let _pc = PistolCapture::init("pistol.pcapng").unwrap();
     // your scan or ping code
 }
 ```

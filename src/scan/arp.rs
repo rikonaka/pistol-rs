@@ -19,8 +19,8 @@ use crate::layers::Layer3Match;
 use crate::layers::LayerMatch;
 use crate::layers::layer2_work;
 
-fn get_mac_from_arp(ethernet_buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
-    match EthernetPacket::new(ethernet_buff) {
+fn get_mac_from_arp(ethernet_packet: &[u8]) -> Result<Option<MacAddr>, PistolError> {
+    match EthernetPacket::new(ethernet_packet) {
         Some(re) => match re.get_ethertype() {
             EtherTypes::Arp => {
                 let arp = match ArpPacket::new(re.payload()) {

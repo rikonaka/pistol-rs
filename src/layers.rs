@@ -86,8 +86,8 @@ pub struct Layer2Match {
 }
 
 impl Layer2Match {
-    pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
-        let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
+    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+        let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
             Some(ethernet_packet) => ethernet_packet,
             None => {
                 return false;
@@ -135,14 +135,14 @@ pub struct Layer3Match {
 }
 
 impl Layer3Match {
-    pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
+    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match self.layer2 {
-            Some(layers) => layers.do_match(ethernet_buff),
+            Some(layers) => layers.do_match(ethernet_packet),
             None => true,
         };
         // early stop
         if m1 {
-            let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
+            let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
                 Some(ethernet_packet) => ethernet_packet,
                 None => {
                     return false;
@@ -277,13 +277,13 @@ pub struct Layer4MatchTcpUdp {
 }
 
 impl Layer4MatchTcpUdp {
-    pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
+    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match self.layer3 {
-            Some(layer3) => layer3.do_match(ethernet_buff),
+            Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
         if m1 {
-            let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
+            let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
                 Some(ethernet_packet) => ethernet_packet,
                 None => return false,
             };
@@ -375,13 +375,13 @@ pub struct Layer4MatchIcmp {
 }
 
 impl Layer4MatchIcmp {
-    pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
+    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match self.layer3 {
-            Some(layer3) => layer3.do_match(ethernet_buff),
+            Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
         if m1 {
-            let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
+            let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
                 Some(ethernet_packet) => ethernet_packet,
                 None => {
                     return false;
@@ -451,13 +451,13 @@ pub struct Layer4MatchIcmpv6 {
 }
 
 impl Layer4MatchIcmpv6 {
-    pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
+    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match self.layer3 {
-            Some(layer3) => layer3.do_match(ethernet_buff),
+            Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
         if m1 {
-            let ethernet_packet = match EthernetPacket::new(&ethernet_buff) {
+            let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
                 Some(ethernet_packet) => ethernet_packet,
                 None => {
                     return false;
@@ -534,14 +534,14 @@ pub enum LayerMatch {
 }
 
 impl LayerMatch {
-    pub fn do_match(&self, ethernet_buff: &[u8]) -> bool {
-        if ethernet_buff.len() > 0 {
+    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+        if ethernet_packet.len() > 0 {
             match self {
-                LayerMatch::Layer2Match(l2) => l2.do_match(ethernet_buff),
-                LayerMatch::Layer3Match(l3) => l3.do_match(ethernet_buff),
-                LayerMatch::Layer4MatchTcpUdp(l4tcpudp) => l4tcpudp.do_match(ethernet_buff),
-                LayerMatch::Layer4MatchIcmp(l4icmp) => l4icmp.do_match(ethernet_buff),
-                LayerMatch::Layer4MatchIcmpv6(l4icmpv6) => l4icmpv6.do_match(ethernet_buff),
+                LayerMatch::Layer2Match(l2) => l2.do_match(ethernet_packet),
+                LayerMatch::Layer3Match(l3) => l3.do_match(ethernet_packet),
+                LayerMatch::Layer4MatchTcpUdp(l4tcpudp) => l4tcpudp.do_match(ethernet_packet),
+                LayerMatch::Layer4MatchIcmp(l4icmp) => l4icmp.do_match(ethernet_packet),
+                LayerMatch::Layer4MatchIcmpv6(l4icmpv6) => l4icmpv6.do_match(ethernet_packet),
             }
         } else {
             false
@@ -550,7 +550,7 @@ impl LayerMatch {
 }
 
 /// Capture the traffic and save into file.
-fn layer2_capture(packet: &[u8]) {
+pub fn layer2_capture(packet: &[u8]) {
     match PISTOL_PCAPNG_FLAG.lock() {
         Ok(ppf) => {
             if *ppf {
@@ -607,8 +607,8 @@ fn layer2_recv(rx: Receiver<Vec<u8>>, timeout: Option<Duration>) -> Result<Vec<u
 
     // only 1 packet will be recv from match threads
     let iter = rx.recv_timeout(timeout).into_iter().take(1);
-    for ethernet_buff in iter {
-        return Ok(ethernet_buff);
+    for ethernet_packet in iter {
+        return Ok(ethernet_packet);
     }
     Ok(Vec::new())
 }
@@ -649,7 +649,7 @@ fn layer2_send(
         }
     };
 
-    // let mut ethernet_buff = [0u8; ETHERNET_BUFF_SIZE];
+    // let mut ethernet_packet = [0u8; ETHERNET_BUFF_SIZE];
     let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
     let ethernet_buff_len = if ethernet_buff_len < 60 {
         // padding
@@ -657,8 +657,8 @@ fn layer2_send(
     } else {
         ethernet_buff_len
     };
-    let mut ethernet_buff = vec![0u8; ethernet_buff_len];
-    let mut ethernet_packet = match MutableEthernetPacket::new(&mut ethernet_buff) {
+    let mut buff = vec![0u8; ethernet_buff_len];
+    let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -670,9 +670,9 @@ fn layer2_send(
     ethernet_packet.set_source(src_mac);
     ethernet_packet.set_ethertype(ethernet_type);
     ethernet_packet.set_payload(payload);
-    layer2_capture(&ethernet_buff);
+    layer2_capture(&buff);
 
-    match sender.send_to(&ethernet_buff, Some(interface)) {
+    match sender.send_to(&buff, Some(interface)) {
         Some(r) => match r {
             Err(e) => return Err(e.into()),
             _ => Ok(()),

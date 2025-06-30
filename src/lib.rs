@@ -35,6 +35,7 @@ pub mod vs;
 
 use crate::error::PistolError;
 use crate::layers::LayerMatch;
+use crate::layers::layer2_capture;
 use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
@@ -87,10 +88,12 @@ pub struct PistolChannel {
     layer_matchs: Vec<LayerMatch>,
 }
 
-pub struct PistolRunner;
+pub struct PistolRunner {
+    pub capture: Option<PistolCapture>,
+}
 
 impl PistolRunner {
-    pub fn init(timeout: Option<Duration>) -> Result<(), PistolError> {
+    fn init_pistol_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
         let config = datalink::Config {
             read_timeout: timeout,
             write_timeout: timeout,
@@ -106,31 +109,54 @@ impl PistolRunner {
             thread::spawn(move || {
                 loop {
                     match receiver.next() {
-                        Ok(ethernet_buff) => match UNIFIED_RECV_MATCHS.lock() {
-                            Ok(urm) => {
-                                for pc in urm.clone() {
-                                    for lm in pc.layer_matchs {
-                                        if lm.do_match(ethernet_buff) {
-                                            // send the matched result to user thread
-                                            match pc.channel.send(ethernet_buff.to_vec()) {
-                                                Ok(_) => (),
-                                                Err(e) => error!(
-                                                    "try return data to sender failed: {}",
-                                                    e
-                                                ),
-                                            };
+                        Ok(ethernet_packet) => {
+                            layer2_capture(ethernet_packet);
+                            match UNIFIED_RECV_MATCHS.lock() {
+                                Ok(urm) => {
+                                    for pc in urm.clone() {
+                                        for lm in pc.layer_matchs {
+                                            if lm.do_match(ethernet_packet) {
+                                                // send the matched result to user thread
+                                                match pc.channel.send(ethernet_packet.to_vec()) {
+                                                    Ok(_) => (),
+                                                    Err(e) => error!(
+                                                        "try return data to sender failed: {}",
+                                                        e
+                                                    ),
+                                                };
+                                            }
                                         }
                                     }
                                 }
+                                Err(e) => error!("try lock UNIFIED_RECV_MATCHS failed: {}", e),
                             }
-                            Err(e) => error!("try lock UNIFIED_RECV_MATCHS failed: {}", e),
-                        },
+                        }
                         Err(e) => error!("layer2 send failed: {}", e),
                     }
                 }
             });
         }
         Ok(())
+    }
+    pub fn init(
+        logger: PistolLogger,
+        capture: Option<String>,
+        timeout: Option<Duration>,
+    ) -> Result<PistolRunner, PistolError> {
+        match logger {
+            PistolLogger::Debug => PistolLogger::set_debug()?,
+            PistolLogger::Warn => PistolLogger::set_warn()?,
+            PistolLogger::Info => PistolLogger::set_info()?,
+            PistolLogger::None => (),
+        }
+
+        let capture = match capture {
+            Some(filename) => Some(PistolCapture::init(&filename)?),
+            None => None,
+        };
+
+        let _ = Self::init_pistol_runner(timeout)?;
+        Ok(PistolRunner { capture })
     }
 }
 
@@ -374,17 +400,17 @@ static PISTOL_PCAPNG_FLAG: LazyLock<Arc<Mutex<bool>>> =
 /// Save the sent traffic locally in pcapng format.
 /// Note that this method does not read the traffic from the network card,
 /// but to save the traffic before the it is sent.
-pub struct TrafficSaver {
+pub struct PistolCapture {
     fs: File,
 }
 
-impl TrafficSaver {
-    pub fn init(filename: &str) -> Result<TrafficSaver, PistolError> {
+impl PistolCapture {
+    pub fn init(filename: &str) -> Result<PistolCapture, PistolError> {
         match PISTOL_PCAPNG_FLAG.lock() {
             Ok(mut ppf) => {
                 *ppf = true;
                 let fs = File::create(filename)?;
-                Ok(TrafficSaver { fs })
+                Ok(PistolCapture { fs })
             }
             Err(e) => Err(PistolError::InitCaptureError { e: e.to_string() }),
         }
@@ -411,34 +437,36 @@ impl TrafficSaver {
     }
 }
 
-impl Drop for TrafficSaver {
+impl Drop for PistolCapture {
     fn drop(&mut self) {
         self.save_to_file().expect("auto save to file failed");
     }
 }
 
-pub struct Logger;
+pub enum PistolLogger {
+    Debug,
+    Warn,
+    Info,
+    None,
+}
 
-impl Logger {
-    pub fn init_debug_logging() -> Result<(), PistolError> {
+impl PistolLogger {
+    pub fn set_debug() -> Result<(), PistolError> {
         let _ = env_logger::builder()
-            // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Debug)
             .is_test(false)
             .try_init()?;
         Ok(())
     }
-    pub fn init_warn_logging() -> Result<(), PistolError> {
+    pub fn set_warn() -> Result<(), PistolError> {
         let _ = env_logger::builder()
-            // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Warn)
             .is_test(false)
             .try_init()?;
         Ok(())
     }
-    pub fn init_info_logging() -> Result<(), PistolError> {
+    pub fn set_info() -> Result<(), PistolError> {
         let _ = env_logger::builder()
-            // .target(env_logger::Target::Stdout)
             .filter_level(log::LevelFilter::Info)
             .is_test(false)
             .try_init()?;
