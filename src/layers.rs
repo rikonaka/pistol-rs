@@ -42,6 +42,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
+use uuid::Uuid;
 
 use crate::PISTOL_PCAPNG;
 use crate::PISTOL_PCAPNG_FLAG;
@@ -524,6 +525,7 @@ impl Layer4MatchIcmpv6 {
     }
 }
 
+/// or rules
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LayerMatch {
@@ -551,32 +553,43 @@ impl LayerMatch {
 }
 
 /// Capture the traffic and save into file.
-pub fn layer2_capture(packet: &[u8]) {
-    match PISTOL_PCAPNG_FLAG.lock() {
-        Ok(ppf) => {
-            if *ppf {
-                match PISTOL_PCAPNG.lock() {
-                    Ok(mut pp) => {
-                        // interface_id = 0 means we use the first interface we builed in fake pcapng headers
-                        const INTERFACE_ID: u32 = 0;
-                        // this is the default value of pcapture
-                        const SNAPLEN: usize = 65535;
-                        match EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN) {
-                            Ok(block) => {
-                                let gb = GeneralBlock::EnhancedPacketBlock(block);
-                                pp.append(gb);
-                            }
-                            Err(e) => {
-                                error!("build EnhancedPacketBlock in layer2_send() failed: {}", e)
-                            }
-                        }
+pub fn layer2_capture(packet: &[u8]) -> Result<(), PistolError> {
+    let ppf = match PISTOL_PCAPNG_FLAG.lock() {
+        Ok(ppf) => *ppf,
+        Err(e) => {
+            return Err(PistolError::TryLockGlobalVarFailed {
+                var_name: String::from("PISTOL_PCAPNG_FLAG"),
+                e: e.to_string(),
+            });
+        }
+    };
+
+    if ppf {
+        match PISTOL_PCAPNG.lock() {
+            Ok(mut pp) => {
+                // interface_id = 0 means we use the first interface we builed in fake pcapng headers
+                const INTERFACE_ID: u32 = 0;
+                // this is the default value of pcapture
+                const SNAPLEN: usize = 65535;
+                match EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN) {
+                    Ok(block) => {
+                        let gb = GeneralBlock::EnhancedPacketBlock(block);
+                        pp.append(gb);
                     }
-                    Err(e) => error!("unlock PISTOL_PCAPNG in layer2_send() failed: {}", e),
+                    Err(e) => {
+                        error!("build EnhancedPacketBlock in layer2_send() failed: {}", e)
+                    }
                 }
             }
+            Err(e) => {
+                return Err(PistolError::TryLockGlobalVarFailed {
+                    var_name: String::from("PISTOL_PCAPNG"),
+                    e: e.to_string(),
+                });
+            }
         }
-        Err(e) => error!("unlock PISTOL_PCAPNG_FLAG in layer2_send() failed: {}", e),
     }
+    Ok(())
 }
 
 /// This function only recvs data.
@@ -584,6 +597,7 @@ fn layer2_set_matchs(layer_matchs: Vec<LayerMatch>) -> Result<Receiver<Vec<u8>>,
     // let (tx: Sender<Vec<u8>>, rx: Receiver<Vec<PistolChannel>>) = channel();
     let (tx, rx) = channel();
     let pc = PistolChannel {
+        uuid: Uuid::new_v4(),
         channel: tx,
         layer_matchs,
     };
@@ -671,7 +685,7 @@ fn layer2_send(
     ethernet_packet.set_source(src_mac);
     ethernet_packet.set_ethertype(ethernet_type);
     ethernet_packet.set_payload(payload);
-    layer2_capture(&buff);
+    layer2_capture(&buff)?;
 
     match sender.send_to(&buff, Some(interface)) {
         Some(r) => match r {
@@ -697,7 +711,7 @@ pub fn layer2_work(
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
     let running = match PISTOL_RUNNER_IS_RUNNING.lock() {
-        Ok(r) => r,
+        Ok(r) => *r,
         Err(e) => {
             return Err(PistolError::TryLockGlobalVarFailed {
                 var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
@@ -705,9 +719,8 @@ pub fn layer2_work(
             });
         }
     };
-    println!(">>>>>>>>>>>>>>>> {}", running);
 
-    if *running {
+    if running {
         let start = Instant::now();
         if need_return {
             let rx = layer2_set_matchs(layer_matchs)?;
@@ -732,10 +745,10 @@ pub fn layer2_work(
                 timeout,
             )?;
             let rtt = start.elapsed();
+
             Ok((Vec::new(), rtt))
         }
     } else {
-        println!("tttttttttttttt");
         Err(PistolError::PistolRunnerIsNotRunning)
     }
 }
@@ -748,12 +761,12 @@ pub fn system_route(
     let interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
         None => {
-            let interface = match system_cache_search_route(dst_ipv4.into()) {
+            let interface = match system_cache_search_route(dst_ipv4.into())? {
                 Some(i) => i,
                 None => {
                     // The system route table not contain this ipaddr,
                     // so send it to the default route.
-                    let default_route = match system_cache_default_route() {
+                    let default_route = match system_cache_default_route()? {
                         Some(d) => d,
                         None => return Err(PistolError::CanNotFoundRouterAddress),
                     };
@@ -764,7 +777,7 @@ pub fn system_route(
         }
     };
 
-    let dst_mac = match system_cache_search_mac(dst_ipv4.into()) {
+    let dst_mac = match system_cache_search_mac(dst_ipv4.into())? {
         Some(m) => m,
         None => {
             if dst_ipv4_in_local(dst_ipv4) {
@@ -784,16 +797,16 @@ pub fn system_route(
                     (Some(m), _rtt) => m,
                     (_, _) => return Err(PistolError::CanNotFoundMacAddress),
                 };
-                system_cache_update(dst_ipv4.into(), dst_mac);
+                system_cache_update(dst_ipv4.into(), dst_mac)?;
                 dst_mac
             } else {
-                let default_route = match system_cache_default_route() {
+                let default_route = match system_cache_default_route()? {
                     Some(r) => r,
                     None => return Err(PistolError::CanNotFoundRouterAddress),
                 };
                 let dst_mac = match default_route.via {
                     IpAddr::V4(default_route_ipv4) => {
-                        let dst_mac = match system_cache_search_mac(default_route_ipv4.into()) {
+                        let dst_mac = match system_cache_search_mac(default_route_ipv4.into())? {
                             Some(m) => m,
                             None => {
                                 let dst_mac = MacAddr::broadcast();
@@ -810,7 +823,7 @@ pub fn system_route(
                                     timeout,
                                 )? {
                                     (Some(m), _rtt) => {
-                                        system_cache_update(default_route_ipv4.into(), m);
+                                        system_cache_update(default_route_ipv4.into(), m)?;
                                         m
                                     }
                                     (_, _) => return Err(PistolError::CanNotFoundRouteMacAddress),
@@ -987,12 +1000,12 @@ pub fn system_route6(
     let interface = match find_interface_by_ip(src_ipv6.into()) {
         Some(i) => i,
         None => {
-            let interface = match system_cache_search_route(dst_ipv6.into()) {
+            let interface = match system_cache_search_route(dst_ipv6.into())? {
                 Some(i) => i,
                 None => {
                     // The system route table not contain this ipaddr,
                     // so send it to the default route.
-                    let default_route = match system_cache_default_route6() {
+                    let default_route = match system_cache_default_route6()? {
                         Some(d) => d,
                         None => return Err(PistolError::CanNotFoundRouterAddress),
                     };
@@ -1003,7 +1016,7 @@ pub fn system_route6(
         }
     };
 
-    let dst_mac = match system_cache_search_mac(dst_ipv6.into()) {
+    let dst_mac = match system_cache_search_mac(dst_ipv6.into())? {
         Some(m) => m,
         None => {
             if dst_ipv6_in_local(dst_ipv6) {
@@ -1022,20 +1035,20 @@ pub fn system_route6(
                     (Some(m), _rtt) => m,
                     (_, _) => return Err(PistolError::CanNotFoundMacAddress),
                 };
-                system_cache_update(dst_ipv6.into(), dst_mac);
+                system_cache_update(dst_ipv6.into(), dst_mac)?;
                 dst_mac
             } else {
-                let default_route = match system_cache_default_route6() {
+                let default_route = match system_cache_default_route6()? {
                     Some(r) => r,
                     None => return Err(PistolError::CanNotFoundRouterAddress),
                 };
                 let dst_mac = match default_route.via {
                     IpAddr::V6(default_route_ipv6) => {
-                        let dst_mac = match system_cache_search_mac(default_route_ipv6.into()) {
+                        let dst_mac = match system_cache_search_mac(default_route_ipv6.into())? {
                             Some(m) => m,
                             None => match ndp_rs(src_ipv6, timeout)? {
                                 (Some(m), _rtt) => {
-                                    system_cache_update(default_route_ipv6.into(), m);
+                                    system_cache_update(default_route_ipv6.into(), m)?;
                                     m
                                 }
                                 (_, _) => return Err(PistolError::CanNotFoundRouteMacAddress),

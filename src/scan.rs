@@ -106,30 +106,25 @@ impl PistolArpScanReport {
 impl fmt::Display for PistolArpScanReport {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
+        let total_cost_str = rtt_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!(
-                "ARP Scan Results (max tests:{}, total cost:{:.3}s)",
-                self.tests,
-                total_cost.as_seconds_f32()
-            ))
-            .style_spec("c")
-            .with_hspan(5),
+            Cell::new(&format!("Mac Scan Results (max tests:{})", self.tests))
+                .style_spec("c")
+                .with_hspan(5),
         ]));
 
         table.add_row(row![c -> "seq", c -> "addr", c -> "mac", c -> "oui", c-> "rtt"]);
 
-        let mut total_cost = 0.0;
         for (i, arp_scan_report) in self.arp_scan_reports.iter().enumerate() {
             let rtt_str = rtt_to_string(arp_scan_report.rtt);
-            total_cost += arp_scan_report.rtt.as_secs_f32();
             table.add_row(row![c -> (i + 1), c -> arp_scan_report.addr, c -> arp_scan_report.mac, c -> arp_scan_report.ouis, c -> rtt_str]);
         }
-        let avg_cost = total_cost / self.arp_scan_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.arp_scan_reports.len() as f32;
 
         let summary = format!(
-            "total cost: {:.3}s\navg cost: {:.3}s\nalive hosts: {}",
-            total_cost,
+            "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
+            total_cost_str,
             avg_cost,
             self.arp_scan_reports.len(),
         );
@@ -241,6 +236,61 @@ pub fn arp_scan_raw(
 
 /// ARP Scan (IPv4) or NDP NS Scan (IPv6).
 /// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
+/// ```rust
+/// use pistol::PistolRunner;
+/// use pistol::PistolLogger;
+/// use pistol::Target;
+/// use std::time::Duration;
+///
+/// fn main() {
+///     // you cannot use `_` here because it will be automatically optimized and ignored by the compiler
+///     let _pr = PistolRunner::init(
+///         PistolLogger::None,
+///         Some(String::from("arp_scan.pcapng")),
+///         Some(Duration::from_secs_f32(0.001)),
+///     )
+///     .unwrap();
+///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+///     // set the timeout same as `arp-scan`
+///     let timeout = Some(Duration::from_secs_f32(0.5));
+///     let src_ipv4 = None;
+///     let threads_num = Some(512);
+///     let max_tests = 2;
+///     let ret = mac_scan(&targets, threads_num, src_ipv4, timeout, max_tests).unwrap();
+///     println!("{}", ret);
+/// }
+/// ```
+/// Compare the speed with arp-scan.
+/// pistol:
+/// ```
+/// +--------+---------------+-------------------+--------+---------+
+/// |                Mac Scan Results (max tests:2)                 |
+/// +--------+---------------+-------------------+--------+---------+
+/// |  seq   |     addr      |        mac        |  oui   |   rtt   |
+/// +--------+---------------+-------------------+--------+---------+
+/// |   1    |  192.168.5.2  | 00:50:56:ff:a6:97 | VMware | 0.84ms  |
+/// +--------+---------------+-------------------+--------+---------+
+/// |   2    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 19.50ms |
+/// +--------+---------------+-------------------+--------+---------+
+/// |   3    | 192.168.5.254 | 00:50:56:f8:c4:8f | VMware | 9.89ms  |
+/// +--------+---------------+-------------------+--------+---------+
+/// | total cost: 1.13s                                             |
+/// | avg cost: 0.376s                                              |
+/// | alive hosts: 3                                                |
+/// +--------+---------------+-------------------+--------+---------+
+/// ```
+/// arp-scan:
+/// ```
+/// ➜  pistol-rs git:(main) ✗ sudo arp-scan 192.168.5.0/24
+/// Interface: ens33, type: EN10MB, MAC: 00:0c:29:5b:bd:5c, IPv4: 192.168.5.3
+/// Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
+/// 192.168.5.1     00:50:56:c0:00:08       VMware, Inc.
+/// 192.168.5.2     00:50:56:ff:a6:97       VMware, Inc.
+/// 192.168.5.254   00:50:56:f8:c4:8f       VMware, Inc.
+///
+/// 3 packets received by filter, 0 packets dropped by kernel
+/// Ending arp-scan 1.10.0: 256 hosts scanned in 2.001 seconds (127.94 hosts/sec). 3 responded
+/// ```
 #[cfg(feature = "scan")]
 pub fn mac_scan(
     targets: &[Target],
@@ -1392,16 +1442,21 @@ mod tests {
         let _pr = PistolRunner::init(
             PistolLogger::None,
             Some(String::from("arp_scan.pcapng")),
-            Some(Duration::from_secs_f32(0.1)),
+            Some(Duration::from_secs_f32(0.001)),
         )
         .unwrap();
-        let target = Target::from_subnet("192.168.5.0/24", None).unwrap();
-        let timeout = Some(Duration::new(1, 0));
+        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        println!("{}", targets.len());
+        // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 1)), None);
+        // let target2 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 2)), None);
+        // let target3 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)), None);
+        // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
+        // let targets = vec![target1, target2, target3, target4];
+        let timeout = Some(Duration::from_secs_f32(0.5));
         let src_ipv4 = None;
-        let threads_num = Some(8);
-        let max_tests = 4;
-        let ret: PistolArpScanReport =
-            mac_scan(&target, threads_num, src_ipv4, timeout, max_tests).unwrap();
+        let threads_num = Some(512);
+        let max_tests = 2;
+        let ret = mac_scan(&targets, threads_num, src_ipv4, timeout, max_tests).unwrap();
         println!("{}", ret);
     }
     #[test]

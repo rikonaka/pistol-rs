@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use crate::datalink::Channel::Ethernet;
+use log::debug;
 use log::error;
 use log::warn;
 use pcapture::PcapNg;
@@ -21,6 +22,7 @@ use std::thread;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
+use uuid::Uuid;
 
 pub mod error;
 pub mod flood;
@@ -87,6 +89,7 @@ static PISTOL_RUNNER_IS_RUNNING: LazyLock<Arc<Mutex<bool>>> =
 
 #[derive(Debug, Clone)]
 pub struct PistolChannel {
+    uuid: Uuid, // identified this PC
     channel: Sender<Vec<u8>>,
     layer_matchs: Vec<LayerMatch>,
 }
@@ -95,17 +98,60 @@ pub struct PistolRunner {
     pub capture: Option<PistolCapture>,
 }
 
+// sec
+const RUNNER_DEFAULT_TIMEOUT: f32 = 0.001;
+
 impl PistolRunner {
+    fn get_global_layer_matchs() -> Result<Vec<PistolChannel>, PistolError> {
+        match UNIFIED_RECV_MATCHS.lock() {
+            Ok(urm) => Ok(urm.clone()),
+            Err(e) => Err(PistolError::TryLockGlobalVarFailed {
+                var_name: String::from("UNIFIED_RECV_MATCHS"),
+                e: e.to_string(),
+            }),
+        }
+    }
+    fn rm_global_layer_matchs(uuid: &Uuid) -> Result<bool, PistolError> {
+        match UNIFIED_RECV_MATCHS.lock() {
+            Ok(mut urm) => {
+                let mut urm_clone = urm.clone();
+                if let Some(index) = urm_clone.iter().position(|pc| pc.uuid == *uuid) {
+                    urm_clone.remove(index);
+                    *urm = urm_clone;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(e) => Err(PistolError::TryLockGlobalVarFailed {
+                var_name: String::from("UNIFIED_RECV_MATCHS"),
+                e: e.to_string(),
+            }),
+        }
+    }
     fn init_pistol_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
+        // This timeout can be set very small,
+        // because even if no data packet is received before the timeout expires,
+        // the next cycle of the loop will continue to receive data packets.
+        // That is, We can speed up the loop by setting a very small timeout.
+        let timeout = match timeout {
+            Some(t) => Some(t),
+            None => Some(Duration::from_secs_f32(RUNNER_DEFAULT_TIMEOUT)),
+        };
+
         let config = datalink::Config {
+            write_buffer_size: 4096,
+            read_buffer_size: 4096,
             read_timeout: timeout,
             write_timeout: timeout,
-            ..Default::default()
+            channel_type: datalink::ChannelType::Layer2,
+            bpf_fd_attempts: 1000,
+            linux_fanout: None,
+            promiscuous: false,
+            socket_fd: None,
         };
         // listen all interface
-        println!("here here");
         for interface in datalink::interfaces() {
-            println!("if: {}", &interface.name);
             let (_, mut receiver) = match datalink::channel(&interface, config) {
                 Ok(Ethernet(tx, rx)) => (tx, rx),
                 Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
@@ -115,10 +161,15 @@ impl PistolRunner {
                 loop {
                     match receiver.next() {
                         Ok(ethernet_packet) => {
-                            layer2_capture(ethernet_packet);
-                            match UNIFIED_RECV_MATCHS.lock() {
-                                Ok(urm) => {
-                                    for pc in urm.clone() {
+                            // append this packet to global vec
+                            match layer2_capture(ethernet_packet) {
+                                Ok(_) => (),
+                                Err(e) => error!("capture recv packet failed: {}", e),
+                            }
+                            match Self::get_global_layer_matchs() {
+                                Ok(layer_matchs) => {
+                                    for pc in layer_matchs {
+                                        // if any matchs just return
                                         for lm in pc.layer_matchs {
                                             if lm.do_match(ethernet_packet) {
                                                 // send the matched result to user thread
@@ -129,29 +180,45 @@ impl PistolRunner {
                                                         e
                                                     ),
                                                 };
+                                                match Self::rm_global_layer_matchs(&pc.uuid) {
+                                                    Ok(ret) => {
+                                                        if ret {
+                                                            debug!(
+                                                                "remove layer matchs from global var success"
+                                                            );
+                                                        } else {
+                                                            error!(
+                                                                "remove layer matchs from global var failed"
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => error!(
+                                                        "remove layer matchs from global var failed: {}",
+                                                        e
+                                                    ),
+                                                }
                                             }
                                         }
                                     }
                                 }
-                                Err(e) => error!("try lock UNIFIED_RECV_MATCHS failed: {}", e),
-                            }
+                                Err(e) => error!("get global layer matchs failed: {}", e),
+                            };
                         }
-                        Err(e) => error!("layer2 send failed: {}", e),
+                        Err(e) => error!("layer2 recv failed: {}", e),
                     }
                 }
             });
         }
-        let mut running = match PISTOL_RUNNER_IS_RUNNING.lock() {
-            Ok(r) => r,
+        // set PISTOL_RUNNER_IS_RUNNING = ture
+        match PISTOL_RUNNER_IS_RUNNING.lock() {
+            Ok(mut r) => *r = true,
             Err(e) => {
                 return Err(PistolError::TryLockGlobalVarFailed {
                     var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
                     e: e.to_string(),
                 });
             }
-        };
-        *running = true;
-
+        }
         Ok(())
     }
     pub fn init(
