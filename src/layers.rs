@@ -45,6 +45,7 @@ use std::time::Instant;
 
 use crate::PISTOL_PCAPNG;
 use crate::PISTOL_PCAPNG_FLAG;
+use crate::PISTOL_RUNNER_IS_RUNNING;
 use crate::UNIFIED_RECV_MATCHS;
 
 use crate::DEFAULT_TIMEOUT;
@@ -695,31 +696,47 @@ pub fn layer2_work(
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
-    let start = Instant::now();
-    if need_return {
-        let rx = layer2_set_matchs(layer_matchs)?;
-        layer2_send(
-            dst_mac,
-            interface,
-            payload,
-            payload_len,
-            ethernet_type,
-            timeout,
-        )?;
-        let data = layer2_recv(rx, timeout)?;
-        let rtt = start.elapsed();
-        Ok((data, rtt))
+    let running = match PISTOL_RUNNER_IS_RUNNING.lock() {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(PistolError::TryLockGlobalVarFailed {
+                var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
+                e: e.to_string(),
+            });
+        }
+    };
+    println!(">>>>>>>>>>>>>>>> {}", running);
+
+    if *running {
+        let start = Instant::now();
+        if need_return {
+            let rx = layer2_set_matchs(layer_matchs)?;
+            layer2_send(
+                dst_mac,
+                interface,
+                payload,
+                payload_len,
+                ethernet_type,
+                timeout,
+            )?;
+            let data = layer2_recv(rx, timeout)?;
+            let rtt = start.elapsed();
+            Ok((data, rtt))
+        } else {
+            layer2_send(
+                dst_mac,
+                interface,
+                payload,
+                payload_len,
+                ethernet_type,
+                timeout,
+            )?;
+            let rtt = start.elapsed();
+            Ok((Vec::new(), rtt))
+        }
     } else {
-        layer2_send(
-            dst_mac,
-            interface,
-            payload,
-            payload_len,
-            ethernet_type,
-            timeout,
-        )?;
-        let rtt = start.elapsed();
-        Ok((Vec::new(), rtt))
+        println!("tttttttttttttt");
+        Err(PistolError::PistolRunnerIsNotRunning)
     }
 }
 

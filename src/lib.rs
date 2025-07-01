@@ -82,6 +82,9 @@ static UNIFIED_RECV_MATCHS: LazyLock<Arc<Mutex<Vec<PistolChannel>>>> = LazyLock:
     Arc::new(Mutex::new(v))
 });
 
+static PISTOL_RUNNER_IS_RUNNING: LazyLock<Arc<Mutex<bool>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(false)));
+
 #[derive(Debug, Clone)]
 pub struct PistolChannel {
     channel: Sender<Vec<u8>>,
@@ -100,7 +103,9 @@ impl PistolRunner {
             ..Default::default()
         };
         // listen all interface
+        println!("here here");
         for interface in datalink::interfaces() {
+            println!("if: {}", &interface.name);
             let (_, mut receiver) = match datalink::channel(&interface, config) {
                 Ok(Ethernet(tx, rx)) => (tx, rx),
                 Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
@@ -136,6 +141,17 @@ impl PistolRunner {
                 }
             });
         }
+        let mut running = match PISTOL_RUNNER_IS_RUNNING.lock() {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(PistolError::TryLockGlobalVarFailed {
+                    var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
+                    e: e.to_string(),
+                });
+            }
+        };
+        *running = true;
+
         Ok(())
     }
     pub fn init(

@@ -77,6 +77,8 @@ pub enum PistolError {
     CanNotFoundRouterAddress,
     #[error("build packet error occurret at [{path}]")]
     BuildPacketError { path: String },
+    #[error("the `PistolRunner` monitoring threads is not running, please run it first")]
+    PistolRunnerIsNotRunning,
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]

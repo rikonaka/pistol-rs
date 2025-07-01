@@ -1385,10 +1385,8 @@ mod tests {
     use crate::PistolRunner;
     use crate::TEST_IPV4_LOCAL;
     use crate::Target;
-    use std::str::FromStr;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
-    use subnetwork::Ipv4Pool;
     #[test]
     fn test_arp_scan_subnet() {
         let _pr = PistolRunner::init(
@@ -1397,25 +1395,7 @@ mod tests {
             Some(Duration::from_secs_f32(0.1)),
         )
         .unwrap();
-        let subnet: Ipv4Pool = Ipv4Pool::from_str("192.168.1.0/24").unwrap();
-        let mut targets: Vec<Target> = vec![];
-        for ip in subnet {
-            let host = Target::new(ip.into(), None);
-            targets.push(host);
-        }
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
-        // let targets = vec![Target::new(dst_ipv4.into(), None)];
-        let timeout = Some(Duration::from_secs_f32(1.0));
-        let src_ipv4 = None;
-        let threads_num = Some(128);
-        let max_tests = 1;
-        let ret: PistolArpScanReport =
-            mac_scan(&targets, threads_num, src_ipv4, timeout, max_tests).unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_arp_scan_subnet_new() {
-        let target = Target::from_subnet("192.168.1.1/24", None).unwrap();
+        let target = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let timeout = Some(Duration::new(1, 0));
         let src_ipv4 = None;
         let threads_num = Some(8);
@@ -1429,7 +1409,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 7, 1);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let target = Target::new(dst_ipv4.into(), Some(vec![22, 80]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
