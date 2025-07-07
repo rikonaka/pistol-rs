@@ -1454,7 +1454,7 @@ pub fn threads_os_probe6(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{TEST_IPV6_LOCAL, utils::find_source_addr6};
+    use crate::utils::find_source_addr6;
     #[test]
     fn test_something() {
         let p = "000XXXXXX";
@@ -1472,7 +1472,7 @@ mod tests {
     #[test]
     // #[should_panic]
     fn test_send_tx() {
-        let dst_ipv6 = TEST_IPV6_LOCAL;
+        let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
         let src_ipv6 = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
         let dst_open_port = 22;
         let dst_closed_port = 9876;

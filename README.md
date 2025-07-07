@@ -25,17 +25,13 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 
 Since version v3.2.0, features fields are supported, including `scan`, `ping`, `flood`, `os`, `vs`.
 
-## Bugs About libpnet
+## New Architecture
 
-**libpnet bug on Windows**
+![architecture difference](./imgs/pistol_arch.png)
 
-Bug issues: https://github.com/libpnet/libpnet/issues/707, the `libpnet` cannot get IPv6 address on Windows.
+In the architecture before v4.0.0, when pistol sends data packets, each thread completes the sending and receiving of data packets by itself. This is no problem for a single-threaded environment, but in the subsequent use of multiple threads, when the first thread sends a data packet and waits for the returned data, if there is a second thread also waiting for the return of data at this time and the data packet is read by the second thread, and the first thread will not be able to receive the returned data packet. This can cause uncertainty in the scan results.
 
-Therefore, until `libpnet` fixes this bug, IPv6 on Windows is not supported yet.
-
-**libpnet bug on rust nightly version**
-
-Bug issue: https://github.com/libpnet/libpnet/issues/686
+So the overall architecture was redesigned. Now each thread sends its own data packet, at the same time, there is a `Runner` thread (in fact, each interface has a thread listening). When the data packet returns, the Runner thread checks each data packet, intercepts the qualified data packets and returns them to the required thread.
 
 ## Host Discovery (Ping Scanning)
 
@@ -514,3 +510,15 @@ fn main() {
 | avg time cost: 6266.67 ms                                                  |
 +-------+---------------+-------+---------+----------------------------------+
 ```
+
+## Bugs About libpnet
+
+**libpnet bug on Windows**
+
+Bug issues: https://github.com/libpnet/libpnet/issues/707, the `libpnet` cannot get IPv6 address on Windows.
+
+Therefore, until `libpnet` fixes this bug, IPv6 on Windows is not supported yet.
+
+**libpnet bug on rust nightly version**
+
+Bug issue: https://github.com/libpnet/libpnet/issues/686

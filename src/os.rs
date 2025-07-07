@@ -606,11 +606,9 @@ pub fn os_detect_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TEST_IPV4_LOCAL;
-    use crate::TEST_IPV4_LOCAL_DEAD;
-    use crate::TEST_IPV6_LOCAL;
-    use crate::TEST_IPV6_LOCAL_DEAD;
     use crate::Target;
+    use std::net::Ipv4Addr;
+    use std::net::Ipv6Addr;
     #[test]
     fn test_os_detect() {
         // use crate::Logger;
@@ -620,8 +618,9 @@ mod tests {
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
         let target1 = Target::new(
-            TEST_IPV4_LOCAL.into(),
+            addr1,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -629,8 +628,9 @@ mod tests {
             ]),
         );
 
+        let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 200));
         let target2 = Target::new(
-            TEST_IPV4_LOCAL_DEAD.into(),
+            addr2,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -644,7 +644,7 @@ mod tests {
         let ret = os_detect(&[target1, target2], threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
-        let rr = ret.get(&TEST_IPV4_LOCAL.into()).unwrap();
+        let rr = ret.get(&addr1).unwrap();
         match rr {
             HostOSDetects::V4(r) => {
                 println!("{}", r.fingerprint);
@@ -660,8 +660,11 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
+        let addr1 = IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4,
+        ));
         let target1 = Target::new(
-            TEST_IPV6_LOCAL.into(),
+            addr1,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -669,8 +672,11 @@ mod tests {
             ]),
         );
 
+        let addr2 = IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e5,
+        ));
         let target2 = Target::new(
-            TEST_IPV6_LOCAL_DEAD.into(),
+            addr2,
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -686,6 +692,7 @@ mod tests {
     }
     #[test]
     fn test_os_detect_raw() {
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
@@ -693,7 +700,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let ret = os_detect_raw(
-            TEST_IPV4_LOCAL.into(),
+            addr1,
             dst_open_tcp_port,
             dst_closed_tcp_port,
             dst_closed_udp_port,
@@ -706,6 +713,9 @@ mod tests {
     }
     #[test]
     fn test_os_detect6_raw() {
+        let addr1 = IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4,
+        ));
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
@@ -713,7 +723,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let top_k = 3;
         let ret = os_detect_raw(
-            TEST_IPV6_LOCAL.into(),
+            addr1,
             dst_open_tcp_port,
             dst_closed_tcp_port,
             dst_closed_udp_port,

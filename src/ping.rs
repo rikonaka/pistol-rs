@@ -724,9 +724,6 @@ pub fn icmp_ping_raw(
 mod tests {
     use super::*;
     use crate::Target;
-    // use crate::Logger;
-    use crate::TEST_IPV4_LOCAL;
-    use crate::TEST_IPV6_LOCAL;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     #[test]
@@ -736,7 +733,9 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let target1 = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![80]));
+
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target1 = Target::new(addr1, Some(vec![80]));
         // let host_2 = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22]));
         // let target: Target = Target::new(vec![host_1, host_2]);
         let tests = 3;
@@ -750,8 +749,8 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let (ret, _rtt) =
-            tcp_syn_ping_raw(TEST_IPV4_LOCAL.into(), 80, src_ipv4, src_port, timeout).unwrap();
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let (ret, _rtt) = tcp_syn_ping_raw(addr1, 80, src_ipv4, src_port, timeout).unwrap();
         println!("{:?}", ret);
     }
     #[test]
@@ -760,7 +759,10 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let target = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![22]));
+        let addr1 = IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4,
+        ));
+        let target = Target::new(addr1, Some(vec![22]));
         let tests = 4;
         let threads_num = Some(8);
         let ret = tcp_syn_ping(&[target], threads_num, src_ipv4, src_port, timeout, tests).unwrap();
@@ -787,7 +789,10 @@ mod tests {
         let src_port: Option<u16> = None;
         let src_ipv6: Ipv6Addr = "fe80::20c:29ff:fe99:57c6".parse().unwrap();
         let src_ipv6 = Some(src_ipv6.into());
-        let target = Target::new(TEST_IPV6_LOCAL.into(), Some(vec![]));
+        let addr1 = IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4,
+        ));
+        let target = Target::new(addr1, Some(vec![]));
         let tests = 4;
         let threads_num = Some(8);
         let timeout = Some(Duration::new(3, 0));
@@ -830,8 +835,8 @@ mod tests {
                 &pid,
                 String::from_utf8_lossy(&c2.stdout)
             );
-
-            let target = Target::new(TEST_IPV4_LOCAL.into(), None);
+            let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+            let target = Target::new(addr1, None);
             let _ret = icmp_ping(
                 &[target],
                 threads_num,

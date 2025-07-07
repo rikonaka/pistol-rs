@@ -42,38 +42,6 @@ use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
 
-// debian
-#[cfg(any(
-    feature = "scan",
-    feature = "ping",
-    feature = "flood",
-    feature = "os",
-    feature = "vs"
-))]
-#[cfg(test)]
-const TEST_IPV4_LOCAL: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 133);
-
-// dead host
-#[cfg(feature = "os")]
-#[cfg(test)]
-const TEST_IPV4_LOCAL_DEAD: Ipv4Addr = Ipv4Addr::new(192, 168, 5, 99);
-
-// debian
-#[cfg(any(
-    feature = "scan",
-    feature = "ping",
-    feature = "flood",
-    feature = "os",
-    feature = "vs"
-))]
-#[cfg(test)]
-const TEST_IPV6_LOCAL: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
-
-// dead host
-#[cfg(feature = "os")]
-#[cfg(test)]
-const TEST_IPV6_LOCAL_DEAD: Ipv6Addr = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfe2c, 0x9e5);
-
 static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(|| {
     let snc = SystemNetCache::init().expect("can not init the system net cache");
     Arc::new(Mutex::new(snc))

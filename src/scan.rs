@@ -1433,7 +1433,6 @@ mod tests {
     use crate::PistolCapture;
     use crate::PistolLogger;
     use crate::PistolRunner;
-    use crate::TEST_IPV4_LOCAL;
     use crate::Target;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
@@ -1489,9 +1488,9 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let target = Target::new(dst_ipv4.into(), Some(vec![22]));
+        let target = Target::new(dst_ipv4, Some(vec![22]));
         let max_tests = 1;
         let threads_num = Some(8);
         let ret = tcp_syn_scan(
@@ -1512,7 +1511,8 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let target = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
         let max_tests = 8;
         let threads_num = Some(8);
         let ret = tcp_fin_scan(
@@ -1531,7 +1531,8 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let target = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
         let max_tests = 8;
         let threads_num = Some(8);
         let ret = tcp_ack_scan(
@@ -1550,7 +1551,8 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let target = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
         let max_tests = 8;
         let threads_num = Some(8);
         let ret = tcp_null_scan(
@@ -1569,7 +1571,8 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
-        let target = Target::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
         let max_tests = 8;
         let threads_num = Some(8);
         let ret = udp_scan(

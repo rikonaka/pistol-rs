@@ -45,8 +45,6 @@ mod tests {
     use super::*;
     use crate::utils::find_source_addr;
     use crate::utils::find_source_addr6;
-    // use crate::TEST_IPV4_REMOTE;
-    use crate::TEST_IPV6_LOCAL;
     #[test]
     fn test_get_hops() {
         // use crate::Logger;
@@ -65,10 +63,14 @@ mod tests {
     }
     #[test]
     fn test_get_hops6() {
-        let src_ipv6 = find_source_addr6(None, TEST_IPV6_LOCAL).unwrap();
+        let src_ipv6 = find_source_addr6(
+            None,
+            Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4),
+        )
+        .unwrap();
         match src_ipv6 {
             Some(src_ipv6) => {
-                let dst_ipv6 = TEST_IPV6_LOCAL;
+                let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
                 let timeout = Some(Duration::new(1, 0));
                 let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout).unwrap();
                 println!("{}", hops);
