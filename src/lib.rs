@@ -56,7 +56,7 @@ static PISTOL_RUNNER_IS_RUNNING: LazyLock<Arc<Mutex<bool>>> =
     LazyLock::new(|| Arc::new(Mutex::new(false)));
 
 #[derive(Debug, Clone)]
-pub struct PistolChannel {
+struct PistolChannel {
     uuid: Uuid, // identified this PC
     channel: Sender<Vec<u8>>,
     layer_matchs: Vec<LayerMatch>,
@@ -97,21 +97,21 @@ impl PistolRunner {
             }),
         }
     }
-    fn init_pistol_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
+    fn init_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
         // This timeout can be set very small,
         // because even if no data packet is received before the timeout expires,
         // the next cycle of the loop will continue to receive data packets.
         // That is, We can speed up the loop by setting a very small timeout.
         let timeout = match timeout {
-            Some(t) => Some(t),
-            None => Some(Duration::from_secs_f32(RUNNER_DEFAULT_TIMEOUT)),
+            Some(t) => t,
+            None => Duration::from_secs_f32(RUNNER_DEFAULT_TIMEOUT),
         };
 
         let config = datalink::Config {
             write_buffer_size: 4096,
             read_buffer_size: 4096,
-            read_timeout: timeout,
-            write_timeout: timeout,
+            read_timeout: Some(timeout),
+            write_timeout: Some(timeout),
             channel_type: datalink::ChannelType::Layer2,
             bpf_fd_attempts: 1000,
             linux_fanout: None,
@@ -172,7 +172,7 @@ impl PistolRunner {
                                 Err(e) => error!("get global layer matchs failed: {}", e),
                             };
                         }
-                        Err(e) => error!("layer2 recv failed: {}", e),
+                        Err(e) => warn!("layer2 recv failed: {}", e), // many timeout error
                     }
                 }
             });
@@ -206,7 +206,7 @@ impl PistolRunner {
             None => None,
         };
 
-        let _ = Self::init_pistol_runner(timeout)?;
+        let _ = Self::init_runner(timeout)?;
         Ok(PistolRunner { capture })
     }
 }
@@ -456,7 +456,7 @@ pub struct PistolCapture {
 }
 
 impl PistolCapture {
-    pub fn init(filename: &str) -> Result<PistolCapture, PistolError> {
+    fn init(filename: &str) -> Result<PistolCapture, PistolError> {
         match PISTOL_PCAPNG_FLAG.lock() {
             Ok(mut ppf) => {
                 *ppf = true;
@@ -502,21 +502,21 @@ pub enum PistolLogger {
 }
 
 impl PistolLogger {
-    pub fn set_debug() -> Result<(), PistolError> {
+    fn set_debug() -> Result<(), PistolError> {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Debug)
             .is_test(false)
             .try_init()?;
         Ok(())
     }
-    pub fn set_warn() -> Result<(), PistolError> {
+    fn set_warn() -> Result<(), PistolError> {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Warn)
             .is_test(false)
             .try_init()?;
         Ok(())
     }
-    pub fn set_info() -> Result<(), PistolError> {
+    fn set_info() -> Result<(), PistolError> {
         let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Info)
             .is_test(false)

@@ -78,7 +78,7 @@ pub struct ArpScanReport {
 #[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct PistolArpScanReport {
-    pub arp_scan_reports: Vec<ArpScanReport>,
+    pub mac_scan_reports: Vec<ArpScanReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
     tests: usize,
@@ -88,17 +88,18 @@ pub struct PistolArpScanReport {
 impl PistolArpScanReport {
     pub fn new(tests: usize) -> PistolArpScanReport {
         PistolArpScanReport {
-            arp_scan_reports: Vec::new(),
+            mac_scan_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
             tests,
         }
     }
     pub fn value(&self) -> Vec<ArpScanReport> {
-        self.arp_scan_reports.clone()
+        self.mac_scan_reports.clone()
     }
-    pub fn finish(&mut self) {
+    pub fn finish(&mut self, mac_scan_reports: Vec<ArpScanReport>) {
         self.end_time = Local::now();
+        self.mac_scan_reports = mac_scan_reports;
     }
 }
 
@@ -116,17 +117,17 @@ impl fmt::Display for PistolArpScanReport {
 
         table.add_row(row![c -> "seq", c -> "addr", c -> "mac", c -> "oui", c-> "rtt"]);
 
-        for (i, arp_scan_report) in self.arp_scan_reports.iter().enumerate() {
+        for (i, arp_scan_report) in self.mac_scan_reports.iter().enumerate() {
             let rtt_str = rtt_to_string(arp_scan_report.rtt);
             table.add_row(row![c -> (i + 1), c -> arp_scan_report.addr, c -> arp_scan_report.mac, c -> arp_scan_report.ouis, c -> rtt_str]);
         }
-        let avg_cost = total_cost.as_seconds_f32() / self.arp_scan_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.mac_scan_reports.len() as f32;
 
         let summary = format!(
             "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
             total_cost_str,
             avg_cost,
-            self.arp_scan_reports.len(),
+            self.mac_scan_reports.len(),
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
 
@@ -381,7 +382,7 @@ pub fn mac_scan(
         }
     }
 
-    let mut arp_scan_reports = Vec::new();
+    let mut mac_scan_reports = Vec::new();
     let iter = rx.into_iter().take(recv_size);
     for (target_addr, values) in iter {
         match values? {
@@ -427,13 +428,12 @@ pub fn mac_scan(
                     ouis: target_ouis,
                     rtt,
                 };
-                arp_scan_reports.push(asr);
+                mac_scan_reports.push(asr);
             }
             (_, _) => (),
         }
     }
-    ret.arp_scan_reports = arp_scan_reports;
-    ret.finish();
+    ret.finish(mac_scan_reports);
     Ok(ret)
 }
 
@@ -487,7 +487,7 @@ impl fmt::Display for PortStatus {
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
-pub struct ScanReport {
+pub struct PortScanReport {
     pub addr: IpAddr,
     pub port: u16,
     pub status: PortStatus,
@@ -495,7 +495,7 @@ pub struct ScanReport {
 }
 
 pub struct PistolPortScanReport {
-    scan_reports: Vec<ScanReport>,
+    port_scan_reports: Vec<PortScanReport>,
     start_time: DateTime<Local>,
     end_time: DateTime<Local>,
     tests: usize,
@@ -505,18 +505,19 @@ pub struct PistolPortScanReport {
 impl PistolPortScanReport {
     pub fn new(tests: usize) -> PistolPortScanReport {
         PistolPortScanReport {
-            scan_reports: Vec::new(),
+            port_scan_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
             tests,
         }
     }
-    pub fn value(&self) -> Vec<ScanReport> {
-        let list = self.scan_reports.clone();
+    pub fn value(&self) -> Vec<PortScanReport> {
+        let list = self.port_scan_reports.clone();
         list
     }
-    pub fn finish(&mut self) {
+    pub fn finish(&mut self, port_scan_reports: Vec<PortScanReport>) {
         self.end_time = Local::now();
+        self.port_scan_reports = port_scan_reports;
     }
 }
 
@@ -527,27 +528,21 @@ impl fmt::Display for PistolPortScanReport {
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!(
-                "Scan Results (max tests:{}, total cost:{:.3}s)",
-                self.tests,
-                total_cost.as_seconds_f32()
-            ))
-            .style_spec("c")
-            .with_hspan(5),
+            Cell::new(&format!("Port Scan Results (max tests:{})", self.tests,))
+                .style_spec("c")
+                .with_hspan(5),
         ]));
 
         table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "rtt"]);
 
         let mut open_ports_num = 0;
-        let mut total_cost = 0.0;
-        for (i, scan_report) in self.scan_reports.iter().enumerate() {
-            total_cost += scan_report.rtt.as_secs_f32();
+        for (i, scan_report) in self.port_scan_reports.iter().enumerate() {
             match scan_report.status {
                 PortStatus::Open => open_ports_num += 1,
                 _ => (),
             }
             let status_str = format!("{}", scan_report.status);
-            let rtt_str = format!("{:.3}s", scan_report.rtt.as_secs_f32());
+            let rtt_str = rtt_to_string(scan_report.rtt);
             table.add_row(row![c -> (i + 1), c -> scan_report.addr, c-> scan_report.port, c -> status_str, c-> rtt_str ]);
         }
 
@@ -556,10 +551,12 @@ impl fmt::Display for PistolPortScanReport {
         );
         table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
-        let avg_cost = total_cost / self.scan_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.port_scan_reports.len() as f32;
         let summary = format!(
             "total cost: {:.3}s\navg cost: {:.3}s\nopen ports: {}",
-            total_cost, avg_cost, open_ports_num,
+            total_cost.as_seconds_f32(),
+            avg_cost,
+            open_ports_num,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
@@ -823,46 +820,46 @@ fn scan(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut rets = Vec::new();
+    let mut reports = Vec::new();
     for (dst_addr, dst_port, v) in iter {
         match v {
             Ok((port_status, rtt)) => {
                 // println!("rtt: {:.3}", rtt.as_secs_f32());
-                let scan_report = ScanReport {
+                let scan_report = PortScanReport {
                     addr: dst_addr,
                     port: dst_port,
                     status: port_status,
                     rtt,
                 };
-                rets.push(scan_report);
+                reports.push(scan_report);
             }
             Err(e) => {
                 let rtt = Duration::new(0, 0);
                 match e {
                     PistolError::CanNotFoundMacAddress => {
-                        let scan_report = ScanReport {
+                        let scan_report = PortScanReport {
                             addr: dst_addr,
                             port: dst_port,
                             status: PortStatus::Offline,
                             rtt,
                         };
-                        rets.push(scan_report);
+                        reports.push(scan_report);
                     }
                     _ => {
                         error!("scan error: {}", e);
-                        let scan_report = ScanReport {
+                        let scan_report = PortScanReport {
                             addr: dst_addr,
                             port: dst_port,
                             status: PortStatus::Error,
                             rtt,
                         };
-                        rets.push(scan_report);
+                        reports.push(scan_report);
                     }
                 }
             }
         }
     }
-    port_scan_ret.finish();
+    port_scan_ret.finish(reports);
     Ok(port_scan_ret)
 }
 
@@ -1430,7 +1427,6 @@ pub static ARP_LOCAL_DEFAULT_TIMEOUT: f32 = 0.001;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolCapture;
     use crate::PistolLogger;
     use crate::PistolRunner;
     use crate::Target;
@@ -1441,7 +1437,7 @@ mod tests {
         let _pr = PistolRunner::init(
             PistolLogger::None,
             Some(String::from("arp_scan.pcapng")),
-            Some(Duration::from_secs_f32(0.001)),
+            None, // use default value
         )
         .unwrap();
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
@@ -1450,7 +1446,7 @@ mod tests {
         // let target2 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 2)), None);
         // let target3 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)), None);
         // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
-        // let targets = vec![target1, target2, target3, target4];
+        // let targets = vec![target1, target2, target3, target4];q
         let timeout = Some(Duration::from_secs_f32(0.5));
         let src_ipv4 = None;
         let threads_num = Some(512);
@@ -1460,12 +1456,19 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("tcp_connnect_scan.pcapng")),
+            None,
+        )
+        .unwrap();
+
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 2);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let target = Target::new(dst_ipv4.into(), Some(vec![22, 80]));
+        let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
         let max_tests = 8;
         let threads_num = Some(8);
@@ -1482,15 +1485,20 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() {
-        let mut ts = PistolCapture::init("tcp_syn_scan.pcapng").unwrap();
-        // let _ = Logger::init_debug_logging();
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("tcp_syn_scan.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let target = Target::new(dst_ipv4, Some(vec![22]));
+        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let max_tests = 1;
         let threads_num = Some(8);
         let ret = tcp_syn_scan(
@@ -1503,16 +1511,21 @@ mod tests {
         )
         .unwrap();
         println!("{}", ret);
-        // println!("{:#?}", ret.get(&dst_ipv4.into()).unwrap().status);
-        ts.save_to_file().unwrap();
     }
     #[test]
     fn test_tcp_fin_scan() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("tcp_fin_scan.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(3, 0));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
+        let timeout = Some(Duration::new(1, 0));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let max_tests = 8;
         let threads_num = Some(8);
         let ret = tcp_fin_scan(
@@ -1528,11 +1541,18 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("tcp_ack_scan.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(3, 0));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
+        let timeout = Some(Duration::new(1, 0));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let max_tests = 8;
         let threads_num = Some(8);
         let ret = tcp_ack_scan(
