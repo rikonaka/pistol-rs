@@ -1,6 +1,6 @@
-use log::debug;
-use log::error;
-use log::warn;
+use tracing::debug;
+use tracing::error;
+use tracing::warn;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io::Read;

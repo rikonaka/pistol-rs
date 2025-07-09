@@ -1,6 +1,6 @@
 use crc32fast;
 use gcdx::gcdx;
-use log::warn;
+use tracing::warn;
 use pnet::packet::Packet;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;

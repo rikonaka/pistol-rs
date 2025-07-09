@@ -5,7 +5,7 @@ use chrono::Local;
 #[cfg(feature = "vs")]
 use dbparser::ServiceProbe;
 #[cfg(feature = "vs")]
-use log::debug;
+use tracing::debug;
 #[cfg(feature = "vs")]
 use prettytable::Cell;
 #[cfg(feature = "vs")]
@@ -325,11 +325,8 @@ mod tests {
     use crate::Target;
     use fancy_regex::Regex as FancyRegex;
     use std::net::Ipv4Addr;
-    // use kdam::tqdm;
     #[test]
     fn test_vs_detect_github() {
-        use crate::PistolLogger;
-        let _ = PistolLogger::set_debug();
         // let dst_addr = Ipv4Addr::new(47, 104, 100, 200);
         let dst_addr = Ipv4Addr::new(45, 33, 32, 156); // scanme.nmap.org
         let target = Target::new(dst_addr.into(), Some(vec![80, 8099]));

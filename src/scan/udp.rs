@@ -24,7 +24,7 @@ use crate::layers::layer3_ipv4_send;
 
 use super::PortStatus;
 
-const UDP_DATA_SIZE: usize = 0;
+const UDP_DATA_SIZE: usize = 10;
 const TTL: u8 = 64;
 
 pub fn send_udp_scan_packet(
@@ -70,7 +70,7 @@ pub fn send_udp_scan_packet(
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
-    // udp_header.set_payload(&vec![b'a'; 10]); // test
+    udp_header.set_payload(b"1234567890"); // udp test
     let checksum = ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
 

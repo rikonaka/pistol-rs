@@ -3,9 +3,9 @@ use chrono::DateTime;
 #[cfg(feature = "ping")]
 use chrono::Local;
 #[cfg(feature = "ping")]
-use log::debug;
+use tracing::debug;
 #[cfg(feature = "ping")]
-use log::warn;
+use tracing::warn;
 #[cfg(feature = "ping")]
 use prettytable::Cell;
 #[cfg(feature = "ping")]

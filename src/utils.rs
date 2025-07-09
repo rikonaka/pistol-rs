@@ -1,5 +1,5 @@
-use log::debug;
-use log::warn;
+use tracing::debug;
+use tracing::warn;
 use num_cpus;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;

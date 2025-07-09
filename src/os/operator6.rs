@@ -1,4 +1,4 @@
-use log::warn;
+use tracing::warn;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpOptionNumbers;

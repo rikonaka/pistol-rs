@@ -1,8 +1,7 @@
 use escape_bytes;
 use fancy_regex::Regex as FancyRegex;
-use kdam::tqdm;
-use log::debug;
-use log::error;
+use tracing::debug;
+use tracing::error;
 use regex::Captures;
 use regex::Regex;
 use serde::Deserialize;
@@ -394,7 +393,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 
     let mut first_probe = true;
 
-    for line in tqdm!(lines.iter()) {
+    for line in lines {
         if line.starts_with("#") || line.trim().len() == 0 {
             continue;
         }

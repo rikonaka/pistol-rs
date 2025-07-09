@@ -4,9 +4,9 @@ use chrono::DateTime;
 #[cfg(feature = "os")]
 use chrono::Local;
 #[cfg(feature = "os")]
-use log::debug;
+use tracing::debug;
 #[cfg(feature = "os")]
-use log::warn;
+use tracing::warn;
 #[cfg(feature = "os")]
 use prettytable::Cell;
 #[cfg(feature = "os")]

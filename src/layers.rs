@@ -1,7 +1,7 @@
 // use chrono::Local;
 use dns_lookup::lookup_host;
-use log::debug;
-use log::error;
+use tracing::debug;
+use tracing::error;
 use pcapture::pcapng::EnhancedPacketBlock;
 use pcapture::pcapng::GeneralBlock;
 use pnet::datalink;

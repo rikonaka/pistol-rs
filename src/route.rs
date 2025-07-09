@@ -1,5 +1,5 @@
-use log::debug;
-use log::warn;
+use tracing::debug;
+use tracing::warn;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 #[cfg(target_os = "windows")]

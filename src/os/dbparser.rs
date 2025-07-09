@@ -1,15 +1,13 @@
-use kdam::tqdm;
-use kdam::BarExt;
 use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::osscan::TargetFingerprint;
 use super::osscan::ECNX;
 use super::osscan::IEX;
 use super::osscan::OPSX;
 use super::osscan::SEQX;
 use super::osscan::TXX;
+use super::osscan::TargetFingerprint;
 use super::osscan::U1X;
 use super::osscan::WINX;
 use crate::error::PistolError;
@@ -734,13 +732,9 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
     let mut ret = Vec::new();
     let lines_len = lines.len();
     let mut iter = lines.into_iter();
-
-    let mut pb = tqdm!(total = lines_len);
-
     for _ in 0..lines_len {
         match iter.next() {
             Some(line) => {
-                let _ = pb.update(1);
                 if line.starts_with("#") || line.trim().len() == 0 {
                     continue;
                 }
@@ -755,7 +749,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                             return Err(PistolError::OSDBParseError {
                                 name: String::from("Fingerprint"),
                                 line,
-                            })
+                            });
                         }
                     };
                     // println!("{}", name);
@@ -801,7 +795,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: String::from("CPE"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };
@@ -846,7 +840,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: String::from("SEQ"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };
@@ -885,7 +879,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: String::from("OPS"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };
@@ -924,7 +918,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: String::from("WIN"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };
@@ -966,7 +960,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: String::from("ECN"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };
@@ -1017,7 +1011,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: format!("TX"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };
@@ -1068,7 +1062,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                 return Err(PistolError::OSDBParseError {
                                     name: format!("U1"),
                                     line,
-                                })
+                                });
                             }
                         }
                     };

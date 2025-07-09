@@ -89,8 +89,6 @@ pub enum PistolError {
     IOError(#[from] std::io::Error),
     #[error("subnetwork error")]
     SubnetworkError(#[from] subnetwork::SubnetworkError),
-    #[error("log error")]
-    SetLoggerError(#[from] log::SetLoggerError),
     #[error("hex error")]
     FromHexError(#[from] hex::FromHexError),
     #[error("init the capture function error: {e}")]
@@ -101,4 +99,6 @@ pub enum PistolError {
     PcaptureError(#[from] pcapture::PcaptureError),
     #[error("try lock {var_name} failed: {e}")]
     TryLockGlobalVarFailed { var_name: String, e: String },
+    #[error("tracing error")]
+    SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
 }

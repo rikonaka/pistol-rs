@@ -1,7 +1,7 @@
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
-use log::debug;
+use tracing::debug;
 use pnet::datalink::MacAddr;
 use rand::Rng;
 use serde::Deserialize;

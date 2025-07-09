@@ -1,4 +1,4 @@
-use log::debug;
+use tracing::debug;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;

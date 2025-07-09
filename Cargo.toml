@@ -35,15 +35,14 @@ dns-lookup = "^2"
 fancy-regex = "^0"
 pnet = { version = "^0", features = ["serde"] }
 prettytable-rs = "^0"
-log = "^0"
-env_logger = "^0"
 regex = "^1"
 thiserror = "^2"
 zip = "^0"
-kdam = "^0"
 escape-bytes = "^0"
 pcapture = "^0"
 uuid = { version = "1", features = ["v4"] }
+tracing = "^0"
+tracing-subscriber = "^0"
 
 [features]
 default = ["scan", "ping", "flood", "os", "vs"]

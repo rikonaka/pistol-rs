@@ -1,9 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use crate::datalink::Channel::Ethernet;
-use log::debug;
-use log::error;
-use log::warn;
 use pcapture::PcapNg;
 use pnet::datalink;
 use std::fmt;
@@ -22,6 +19,11 @@ use std::thread;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
+use tracing::Level;
+use tracing::debug;
+use tracing::error;
+use tracing::warn;
+use tracing_subscriber::FmtSubscriber;
 use uuid::Uuid;
 
 pub mod error;
@@ -195,9 +197,9 @@ impl PistolRunner {
         timeout: Option<Duration>,
     ) -> Result<PistolRunner, PistolError> {
         match logger {
-            PistolLogger::Debug => PistolLogger::set_debug()?,
-            PistolLogger::Warn => PistolLogger::set_warn()?,
-            PistolLogger::Info => PistolLogger::set_info()?,
+            PistolLogger::Debug => PistolLogger::set_level(Level::DEBUG)?,
+            PistolLogger::Warn => PistolLogger::set_level(Level::WARN)?,
+            PistolLogger::Info => PistolLogger::set_level(Level::INFO)?,
             PistolLogger::None => (),
         }
 
@@ -502,25 +504,9 @@ pub enum PistolLogger {
 }
 
 impl PistolLogger {
-    fn set_debug() -> Result<(), PistolError> {
-        let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Debug)
-            .is_test(false)
-            .try_init()?;
-        Ok(())
-    }
-    fn set_warn() -> Result<(), PistolError> {
-        let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Warn)
-            .is_test(false)
-            .try_init()?;
-        Ok(())
-    }
-    fn set_info() -> Result<(), PistolError> {
-        let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Info)
-            .is_test(false)
-            .try_init()?;
+    fn set_level(level: Level) -> Result<(), PistolError> {
+        let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+        let _ = tracing::subscriber::set_global_default(subscriber)?;
         Ok(())
     }
 }

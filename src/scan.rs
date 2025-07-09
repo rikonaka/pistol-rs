@@ -3,12 +3,6 @@
 use chrono::DateTime;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::Local;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use log::debug;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use log::error;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use log::warn;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -33,6 +27,12 @@ use std::panic::Location;
 use std::sync::mpsc::channel;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use tracing::debug;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use tracing::error;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use tracing::warn;
 
 #[cfg(feature = "scan")]
 pub mod arp;
@@ -705,19 +705,22 @@ fn scan(
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
-    let src_port = match src_port {
-        Some(s) => s,
-        None => {
-            warn!("can not found src port, use random port instead");
-            random_port()
-        }
-    };
-
     for target in targets {
         let dst_addr = target.addr;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for &dst_port in &target.ports {
+                    let src_port = match src_port {
+                        Some(s) => s,
+                        None => {
+                            warn!("can not found src port, use random port instead");
+                            random_port()
+                        }
+                    };
+                    debug!(
+                        "target [{}] port [{}] src port [{}]",
+                        dst_addr, dst_port, src_port
+                    );
                     let tx = tx.clone();
                     recv_size += 1;
                     let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
@@ -741,10 +744,15 @@ fn scan(
                                 timeout,
                             );
                             if ind == max_tests - 1 {
+                                debug!(
+                                    "last attempt, target [{}] port [{}] try [{}]",
+                                    dst_addr, dst_port, ind
+                                );
                                 // last attempt
                                 tx.send((dst_addr, dst_port, scan_ret))
                                     .expect(&format!("tx send failed at {}", Location::caller()));
                             } else {
+                                debug!("target [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
                                 match scan_ret {
                                     Ok((port_status, _)) => {
                                         match port_status {
@@ -775,6 +783,13 @@ fn scan(
             }
             IpAddr::V6(dst_ipv6) => {
                 for &dst_port in &target.ports {
+                    let src_port = match src_port {
+                        Some(s) => s,
+                        None => {
+                            warn!("can not found src port, use random port instead");
+                            random_port()
+                        }
+                    };
                     let tx = tx.clone();
                     recv_size += 1;
                     let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
@@ -1470,7 +1485,7 @@ mod tests {
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
         // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let max_tests = 8;
+        let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_connect_scan(
             &[target],
@@ -1499,7 +1514,7 @@ mod tests {
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let max_tests = 1;
+        let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_syn_scan(
             &[target],
@@ -1526,7 +1541,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let max_tests = 8;
+        let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_fin_scan(
             &[target],
@@ -1553,7 +1568,7 @@ mod tests {
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let max_tests = 8;
+        let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_ack_scan(
             &[target],
@@ -1568,12 +1583,19 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("tcp_null_scan.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(3, 0));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
-        let max_tests = 8;
+        let timeout = Some(Duration::new(1, 0));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
+        let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_null_scan(
             &[target],
@@ -1588,12 +1610,20 @@ mod tests {
     }
     #[test]
     fn test_udp_scan() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            // Some(String::from("tcp_udp_scan.pcapng")),
+            None,
+            None, // use default value
+        )
+        .unwrap();
+
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(3, 0));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target = Target::new(dst_ipv4, Some(vec![22, 99]));
-        let max_tests = 8;
+        let timeout = Some(Duration::new(1, 0));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080]));
+        let max_tests = 2;
         let threads_num = Some(8);
         let ret = udp_scan(
             &[target],

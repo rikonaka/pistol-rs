@@ -1,4 +1,4 @@
-use log::debug;
+use tracing::debug;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
