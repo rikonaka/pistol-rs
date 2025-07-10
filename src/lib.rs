@@ -6,7 +6,7 @@ use pnet::datalink;
 use std::fmt;
 use std::fs::File;
 use std::net::IpAddr;
-#[cfg(any(test, feature = "os",))]
+#[cfg(feature = "os")]
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::result;
@@ -511,8 +511,8 @@ impl PistolLogger {
     }
 }
 
-// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API.
-// Use this trait instead until its become stable function.
+// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,
+// use this trait instead until its become stable function.
 #[cfg(feature = "os")]
 trait Ipv4CheckMethods {
     fn is_global_x(&self) -> bool;

@@ -54,7 +54,7 @@ use crate::error::PistolError;
 #[cfg(feature = "scan")]
 use crate::utils::find_interface_by_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::find_source_addr;
+use crate::utils::infer_source_addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::find_source_addr6;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -174,7 +174,7 @@ fn ipv4_arp_scan(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+    let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -217,7 +217,7 @@ pub fn arp_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<Option<MacAddr>, PistolError> {
     let dst_mac = MacAddr::broadcast();
-    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+    let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -723,7 +723,7 @@ fn scan(
                     );
                     let tx = tx.clone();
                     recv_size += 1;
-                    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+                    let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
                         Some(s) => s,
                         None => {
                             warn!("can not found src addr");
@@ -1411,7 +1411,7 @@ fn scan_raw(
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+            let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
                 Some(s) => s,
                 None => return Err(PistolError::CanNotFoundSourceAddress),
             };
@@ -1510,10 +1510,10 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
+        // let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        // let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let target = Target::new(dst_ipv4, Some(vec![80]));
         let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_syn_scan(
@@ -1622,6 +1622,7 @@ mod tests {
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        // let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080]));
         let max_tests = 2;
         let threads_num = Some(8);

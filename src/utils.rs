@@ -1,5 +1,3 @@
-use tracing::debug;
-use tracing::warn;
 use num_cpus;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
@@ -10,6 +8,8 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
+use tracing::debug;
+use tracing::warn;
 
 use crate::DEFAULT_TIMEOUT;
 use crate::Ipv6CheckMethods;
@@ -111,6 +111,10 @@ pub fn system_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError
     Ok(snc.update_neighbor_cache(addr, mac))
 }
 
+/// Check if the target IP address is in the local.
+/// There are three cases where true is returned:
+/// loopback address, broadcast address,
+/// and the address is in the same network segment as the address of the local network interface.
 pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
     for interface in interfaces() {
         for ipnetwork in interface.ips {
@@ -119,10 +123,19 @@ pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
             }
         }
     }
-    debug!("the dst ip {} is not in local net", dst_ipv4);
-    false
+    if dst_ipv4.is_loopback() {
+        true
+    } else {
+        // all data for other addresses are sent to the default route
+        debug!("the dst ip {} is not in local net", dst_ipv4);
+        false
+    }
 }
 
+/// Check if the target IP address is in the local.
+/// There are three cases where true is returned:
+/// loopback address, broadcast address,
+/// and the address is in the same network segment as the address of the local network interface.
 pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
     for interface in interfaces() {
         for ipnetwork in interface.ips {
@@ -131,11 +144,17 @@ pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
             }
         }
     }
-    debug!("the dst ip {} is not in local net", dst_ipv6);
-    false
+    if dst_ipv6.is_loopback() {
+        true
+    } else {
+        // all data for other addresses are sent to the default route
+        debug!("the dst ip {} is not in local net", dst_ipv6);
+        false
+    }
 }
 
-pub fn find_source_addr(
+/// Used to infer the source IP address when the user input source IP address is none
+pub fn infer_source_addr(
     src_addr: Option<IpAddr>,
     dst_ipv4: Ipv4Addr,
 ) -> Result<Option<Ipv4Addr>, PistolError> {
@@ -249,30 +268,43 @@ pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     None
 }
 
+/// Use IP address to find local interface
 pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            let i = ip.ip();
-            if ipaddr == i && !i.is_unspecified() {
+    if ipaddr.is_loopback() {
+        for interface in interfaces() {
+            if interface.is_loopback() {
                 return Some(interface);
+            }
+        }
+    } else {
+        for interface in interfaces() {
+            // ignore the interface which is down
+            if interface.is_up() {
+                for ip in &interface.ips {
+                    let i = ip.ip();
+                    if ipaddr == i && !i.is_unspecified() {
+                        return Some(interface);
+                    }
+                }
             }
         }
     }
     None
 }
 
-/// Returns the random port.
+/// Returns the random port
 pub fn random_port() -> u16 {
     let mut rng = rand::rng();
     rng.random_range(10000..=65535)
 }
 
-pub fn random_port_sp(start: u16, end: u16) -> u16 {
+/// Returns the random port with range
+pub fn random_port_range(start: u16, end: u16) -> u16 {
     let mut rng = rand::rng();
     rng.random_range(start..=end)
 }
 
-/// Returns the number of CPUs in the machine.
+/// Returns the number of CPUs in the machine
 pub fn get_cpu_num() -> usize {
     num_cpus::get()
 }

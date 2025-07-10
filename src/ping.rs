@@ -53,7 +53,7 @@ use crate::scan::udp;
 #[cfg(feature = "ping")]
 use crate::scan::udp6;
 #[cfg(feature = "ping")]
-use crate::utils::find_source_addr;
+use crate::utils::infer_source_addr;
 #[cfg(feature = "ping")]
 use crate::utils::find_source_addr6;
 #[cfg(feature = "ping")]
@@ -392,7 +392,7 @@ fn ping(
                 for _ in 0..tests {
                     let tx = tx.clone();
                     recv_size += 1;
-                    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+                    let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
                         Some(s) => s,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
@@ -509,7 +509,7 @@ pub fn tcp_syn_ping_raw(
         None => random_port(),
     };
     match dst_addr {
-        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+        IpAddr::V4(dst_ipv4) => match infer_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
                 let (ret, rtt) =
                     tcp::send_syn_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
@@ -573,7 +573,7 @@ pub fn tcp_ack_ping_raw(
         None => random_port(),
     };
     match dst_addr {
-        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+        IpAddr::V4(dst_ipv4) => match infer_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
                 let (ret, rtt) =
                     tcp::send_ack_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
@@ -637,7 +637,7 @@ pub fn udp_ping_raw(
         None => random_port(),
     };
     match dst_addr {
-        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+        IpAddr::V4(dst_ipv4) => match infer_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
                 let (ret, rtt) =
                     udp::send_udp_scan_packet(src_ipv4, src_port, dst_ipv4, dst_port, timeout)?;
@@ -702,7 +702,7 @@ pub fn icmp_ping_raw(
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     match dst_addr {
-        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+        IpAddr::V4(dst_ipv4) => match infer_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
                 let (ret, rtt) = icmp::send_icmp_ping_packet(src_ipv4, dst_ipv4, timeout)?;
                 Ok((ret, rtt))

@@ -43,7 +43,7 @@ pub fn ipv6_get_hops(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::find_source_addr;
+    use crate::utils::infer_source_addr;
     use crate::utils::find_source_addr6;
     #[test]
     fn test_get_hops() {
@@ -51,7 +51,7 @@ mod tests {
         // let _ = Logger::init_debug_logging();
         // let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        let src_ipv4 = find_source_addr(None, dst_ipv4).unwrap();
+        let src_ipv4 = infer_source_addr(None, dst_ipv4).unwrap();
         match src_ipv4 {
             Some(src_ipv4) => {
                 let timeout = Some(Duration::new(1, 0));

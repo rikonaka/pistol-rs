@@ -1,7 +1,5 @@
 // use chrono::Local;
 use dns_lookup::lookup_host;
-use tracing::debug;
-use tracing::error;
 use pcapture::pcapng::EnhancedPacketBlock;
 use pcapture::pcapng::GeneralBlock;
 use pnet::datalink;
@@ -42,6 +40,8 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
+use tracing::debug;
+use tracing::error;
 use uuid::Uuid;
 
 use crate::PISTOL_PCAPNG;
@@ -758,47 +758,52 @@ pub fn system_route(
     dst_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
-    let interface = match find_interface_by_ip(src_ipv4.into()) {
+    let src_interface = match find_interface_by_ip(src_ipv4.into()) {
         Some(i) => i,
-        None => {
-            let interface = match system_cache_search_route(dst_ipv4.into())? {
-                Some(i) => i,
-                None => {
-                    // The system route table not contain this ipaddr,
-                    // so send it to the default route.
-                    let default_route = match system_cache_default_route()? {
-                        Some(d) => d,
-                        None => return Err(PistolError::CanNotFoundRouterAddress),
-                    };
-                    default_route.dev
+        None => match system_cache_search_route(dst_ipv4.into())? {
+            Some(i) => i,
+            None => {
+                // The system route table not contain this ipaddr,
+                // so send it to the default route.
+                match system_cache_default_route()? {
+                    Some(default_route) => default_route.dev,
+                    None => return Err(PistolError::CanNotFoundRouterAddress),
                 }
-            };
-            interface
-        }
+            }
+        },
     };
 
     let dst_mac = match system_cache_search_mac(dst_ipv4.into())? {
         Some(m) => m,
         None => {
             if dst_ipv4_in_local(dst_ipv4) {
-                let dst_mac = MacAddr::broadcast();
-                let src_mac = match interface.mac {
+                let src_mac = match src_interface.mac {
                     Some(m) => m,
                     None => return Err(PistolError::CanNotFoundMacAddress),
                 };
-                let dst_mac = match send_arp_scan_packet(
-                    dst_ipv4,
-                    dst_mac,
-                    src_ipv4,
-                    src_mac,
-                    interface.clone(),
-                    timeout,
-                )? {
-                    (Some(m), _rtt) => m,
-                    (_, _) => return Err(PistolError::CanNotFoundMacAddress),
-                };
-                system_cache_update(dst_ipv4.into(), dst_mac)?;
-                dst_mac
+                if dst_ipv4.is_loopback() {
+                    match find_interface_by_ip(dst_ipv4.into()) {
+                        Some(loopback_interface) => match loopback_interface.mac {
+                            Some(mac) => mac,
+                            None => return Err(PistolError::CanNotFoundMacAddress),
+                        },
+                        None => return Err(PistolError::CanNotFoundMacAddress),
+                    }
+                } else {
+                    let dst_mac = match send_arp_scan_packet(
+                        dst_ipv4,
+                        MacAddr::broadcast(),
+                        src_ipv4,
+                        src_mac,
+                        src_interface.clone(),
+                        timeout,
+                    )? {
+                        (Some(m), _rtt) => m,
+                        (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
+                    };
+                    system_cache_update(dst_ipv4.into(), dst_mac)?;
+                    dst_mac
+                }
             } else {
                 let default_route = match system_cache_default_route()? {
                     Some(r) => r,
@@ -810,7 +815,7 @@ pub fn system_route(
                             Some(m) => m,
                             None => {
                                 let dst_mac = MacAddr::broadcast();
-                                let src_mac = match interface.mac {
+                                let src_mac = match src_interface.mac {
                                     Some(m) => m,
                                     None => return Err(PistolError::CanNotFoundMacAddress),
                                 };
@@ -819,7 +824,7 @@ pub fn system_route(
                                     dst_mac,
                                     src_ipv4,
                                     src_mac,
-                                    interface.clone(),
+                                    src_interface.clone(),
                                     timeout,
                                 )? {
                                     (Some(m), _rtt) => {
@@ -838,7 +843,7 @@ pub fn system_route(
             }
         }
     };
-    Ok((dst_mac, interface))
+    Ok((dst_mac, src_interface))
 }
 
 pub fn layer3_ipv4_send(
@@ -850,6 +855,7 @@ pub fn layer3_ipv4_send(
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
     let (dst_mac, interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
+    println!(">>>>> {} - {}", dst_mac, interface);
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;

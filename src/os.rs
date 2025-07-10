@@ -55,7 +55,7 @@ use crate::os::osscan6::TargetFingerprint6;
 #[cfg(feature = "os")]
 use crate::os::osscan6::threads_os_probe6;
 #[cfg(feature = "os")]
-use crate::utils::find_source_addr;
+use crate::utils::infer_source_addr;
 #[cfg(feature = "os")]
 use crate::utils::find_source_addr6;
 #[cfg(feature = "os")]
@@ -413,7 +413,7 @@ pub fn os_detect(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let dst_ports = h.ports.clone();
-                let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+                let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
                     Some(s) => s,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
@@ -530,7 +530,7 @@ pub fn os_detect_raw(
 ) -> Result<HostOSDetects, PistolError> {
     let stime = Local::now();
     match dst_addr {
-        IpAddr::V4(dst_ipv4) => match find_source_addr(src_addr, dst_ipv4)? {
+        IpAddr::V4(dst_ipv4) => match infer_source_addr(src_addr, dst_ipv4)? {
             Some(src_ipv4) => {
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");

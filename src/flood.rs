@@ -43,7 +43,7 @@ use crate::Target;
 #[cfg(feature = "flood")]
 use crate::error::PistolError;
 #[cfg(feature = "flood")]
-use crate::utils::find_source_addr;
+use crate::utils::infer_source_addr;
 #[cfg(feature = "flood")]
 use crate::utils::find_source_addr6;
 #[cfg(feature = "flood")]
@@ -165,7 +165,7 @@ fn ipv4_flood(
     max_same_packet: usize,
     max_flood_packet: usize,
 ) -> Result<(usize, usize), PistolError> {
-    let src_ipv4 = match find_source_addr(src_addr, dst_ipv4)? {
+    let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
         Some(s) => s,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -604,7 +604,7 @@ pub fn flood_raw(
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            match find_source_addr(src_addr, dst_ipv4)? {
+            match infer_source_addr(src_addr, dst_ipv4)? {
                 Some(src_ipv4) => {
                     let send_buff_size =
                         match func(dst_ipv4, dst_port, src_ipv4, src_port, max_same_packet) {
