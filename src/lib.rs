@@ -29,7 +29,7 @@ use uuid::Uuid;
 pub mod error;
 pub mod flood;
 pub mod hop;
-pub mod layers;
+pub mod layer;
 pub mod os;
 pub mod ping;
 pub mod route;
@@ -38,8 +38,8 @@ pub mod utils;
 pub mod vs;
 
 use crate::error::PistolError;
-use crate::layers::LayerMatch;
-use crate::layers::layer2_capture;
+use crate::layer::LayerMatch;
+use crate::layer::layer2_capture;
 use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
@@ -717,7 +717,7 @@ pub use vs::vs_scan;
 pub use vs::vs_scan_raw;
 
 /* DNS */
-pub use layers::dns_query;
+pub use layer::dns_query;
 
 #[cfg(test)]
 mod tests {

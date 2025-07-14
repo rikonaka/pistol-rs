@@ -21,13 +21,13 @@ use std::time::Duration;
 use subnetwork::Ipv6AddrExt;
 
 use crate::error::PistolError;
-use crate::layers::ICMPV6_NS_HEADER_SIZE;
-use crate::layers::IPV6_HEADER_SIZE;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmpv6;
-use crate::layers::LayerMatch;
-use crate::layers::layer2_work;
-use crate::layers::multicast_mac;
+use crate::layer::ICMPV6_NS_HEADER_SIZE;
+use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmpv6;
+use crate::layer::LayerMatch;
+use crate::layer::layer2_work;
+use crate::layer::multicast_mac;
 
 fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
     // return mac address from ndp

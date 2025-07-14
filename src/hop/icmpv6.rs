@@ -15,12 +15,12 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::ICMPV6_ER_HEADER_SIZE;
-use crate::layers::IPV6_HEADER_SIZE;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmpv6;
-use crate::layers::LayerMatch;
-use crate::layers::layer3_ipv6_send;
+use crate::layer::ICMPV6_ER_HEADER_SIZE;
+use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmpv6;
+use crate::layer::LayerMatch;
+use crate::layer::layer3_ipv6_send;
 
 pub fn send_icmpv6_ping_packet(
     src_ipv6: Ipv6Addr,

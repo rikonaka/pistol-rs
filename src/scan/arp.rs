@@ -13,11 +13,11 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::ARP_HEADER_SIZE;
-use crate::layers::Layer2Match;
-use crate::layers::Layer3Match;
-use crate::layers::LayerMatch;
-use crate::layers::layer2_work;
+use crate::layer::ARP_HEADER_SIZE;
+use crate::layer::Layer2Match;
+use crate::layer::Layer3Match;
+use crate::layer::LayerMatch;
+use crate::layer::layer2_work;
 
 fn get_mac_from_arp(ethernet_packet: &[u8]) -> Result<Option<MacAddr>, PistolError> {
     match EthernetPacket::new(ethernet_packet) {

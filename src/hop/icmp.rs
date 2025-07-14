@@ -18,12 +18,12 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::ICMP_HEADER_SIZE;
-use crate::layers::IPV4_HEADER_SIZE;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmp;
-use crate::layers::LayerMatch;
-use crate::layers::layer3_ipv4_send;
+use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmp;
+use crate::layer::LayerMatch;
+use crate::layer::layer3_ipv4_send;
 
 pub fn send_icmp_ping_packet(
     src_ipv4: Ipv4Addr,

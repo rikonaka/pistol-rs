@@ -490,7 +490,6 @@ impl Layer4MatchIcmpv6 {
                 _ => (Icmpv6Type(0), Icmpv6Code(0)),
             };
             if m_icmpv6 {
-                // println!("types: {:?}, codes: {:?}", r_types, r_codes);
                 let m2 = match self.icmpv6_type {
                     Some(types) => {
                         if types == r_types {
@@ -773,73 +772,80 @@ pub fn system_route(
         },
     };
 
-    let dst_mac = match system_cache_search_mac(dst_ipv4.into())? {
-        Some(m) => m,
-        None => {
-            if dst_ipv4_in_local(dst_ipv4) {
-                let src_mac = match src_interface.mac {
-                    Some(m) => m,
-                    None => return Err(PistolError::CanNotFoundMacAddress),
-                };
-                if dst_ipv4.is_loopback() {
-                    match find_interface_by_ip(dst_ipv4.into()) {
-                        Some(loopback_interface) => match loopback_interface.mac {
-                            Some(mac) => mac,
-                            None => return Err(PistolError::CanNotFoundMacAddress),
-                        },
+    let dst_mac = if dst_ipv4.is_loopback() {
+        MacAddr::new(0, 0, 0, 0, 0, 0)
+    } else {
+        match system_cache_search_mac(dst_ipv4.into())? {
+            Some(m) => m,
+            None => {
+                if dst_ipv4_in_local(dst_ipv4) {
+                    let src_mac = match src_interface.mac {
+                        Some(m) => m,
                         None => return Err(PistolError::CanNotFoundMacAddress),
-                    }
-                } else {
-                    let dst_mac = match send_arp_scan_packet(
-                        dst_ipv4,
-                        MacAddr::broadcast(),
-                        src_ipv4,
-                        src_mac,
-                        src_interface.clone(),
-                        timeout,
-                    )? {
-                        (Some(m), _rtt) => m,
-                        (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
                     };
-                    system_cache_update(dst_ipv4.into(), dst_mac)?;
-                    dst_mac
-                }
-            } else {
-                let default_route = match system_cache_default_route()? {
-                    Some(r) => r,
-                    None => return Err(PistolError::CanNotFoundRouterAddress),
-                };
-                let dst_mac = match default_route.via {
-                    IpAddr::V4(default_route_ipv4) => {
-                        let dst_mac = match system_cache_search_mac(default_route_ipv4.into())? {
-                            Some(m) => m,
-                            None => {
-                                let dst_mac = MacAddr::broadcast();
-                                let src_mac = match src_interface.mac {
-                                    Some(m) => m,
-                                    None => return Err(PistolError::CanNotFoundMacAddress),
-                                };
-                                match send_arp_scan_packet(
-                                    default_route_ipv4,
-                                    dst_mac,
-                                    src_ipv4,
-                                    src_mac,
-                                    src_interface.clone(),
-                                    timeout,
-                                )? {
-                                    (Some(m), _rtt) => {
-                                        system_cache_update(default_route_ipv4.into(), m)?;
-                                        m
-                                    }
-                                    (_, _) => return Err(PistolError::CanNotFoundRouteMacAddress),
-                                }
-                            }
+                    if dst_ipv4.is_loopback() {
+                        match find_interface_by_ip(dst_ipv4.into()) {
+                            Some(loopback_interface) => match loopback_interface.mac {
+                                Some(mac) => mac,
+                                None => return Err(PistolError::CanNotFoundMacAddress),
+                            },
+                            None => return Err(PistolError::CanNotFoundMacAddress),
+                        }
+                    } else {
+                        let dst_mac = match send_arp_scan_packet(
+                            dst_ipv4,
+                            MacAddr::broadcast(),
+                            src_ipv4,
+                            src_mac,
+                            src_interface.clone(),
+                            timeout,
+                        )? {
+                            (Some(m), _rtt) => m,
+                            (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
                         };
+                        system_cache_update(dst_ipv4.into(), dst_mac)?;
                         dst_mac
                     }
-                    _ => return Err(PistolError::CanNotFoundRouterAddress),
-                };
-                dst_mac
+                } else {
+                    let default_route = match system_cache_default_route()? {
+                        Some(r) => r,
+                        None => return Err(PistolError::CanNotFoundRouterAddress),
+                    };
+                    let dst_mac = match default_route.via {
+                        IpAddr::V4(default_route_ipv4) => {
+                            let dst_mac = match system_cache_search_mac(default_route_ipv4.into())?
+                            {
+                                Some(m) => m,
+                                None => {
+                                    let dst_mac = MacAddr::broadcast();
+                                    let src_mac = match src_interface.mac {
+                                        Some(m) => m,
+                                        None => return Err(PistolError::CanNotFoundMacAddress),
+                                    };
+                                    match send_arp_scan_packet(
+                                        default_route_ipv4,
+                                        dst_mac,
+                                        src_ipv4,
+                                        src_mac,
+                                        src_interface.clone(),
+                                        timeout,
+                                    )? {
+                                        (Some(m), _rtt) => {
+                                            system_cache_update(default_route_ipv4.into(), m)?;
+                                            m
+                                        }
+                                        (_, _) => {
+                                            return Err(PistolError::CanNotFoundRouteMacAddress);
+                                        }
+                                    }
+                                }
+                            };
+                            dst_mac
+                        }
+                        _ => return Err(PistolError::CanNotFoundRouterAddress),
+                    };
+                    dst_mac
+                }
             }
         }
     };
@@ -855,7 +861,6 @@ pub fn layer3_ipv4_send(
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
     let (dst_mac, interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
-    println!(">>>>> {} - {}", dst_mac, interface);
     debug!("convert dst ipv4: {} to mac: {}", dst_ipv4, dst_mac);
     debug!("use this interface to send data: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;

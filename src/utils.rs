@@ -158,44 +158,48 @@ pub fn infer_source_addr(
     src_addr: Option<IpAddr>,
     dst_ipv4: Ipv4Addr,
 ) -> Result<Option<Ipv4Addr>, PistolError> {
-    match src_addr {
-        Some(s) => match s {
-            IpAddr::V6(_) => (),
-            IpAddr::V4(s) => return Ok(Some(s)),
-        },
-        None => {
-            match system_cache_search_route(dst_ipv4.into())? {
-                Some(i) => {
-                    for ipnetwork in i.ips {
-                        match ipnetwork.ip() {
-                            IpAddr::V4(src_ipv4) => {
-                                if !src_ipv4.is_loopback() {
-                                    return Ok(Some(src_ipv4));
+    if dst_ipv4.is_loopback() {
+        return Ok(Some(dst_ipv4));
+    } else {
+        match src_addr {
+            Some(s) => match s {
+                IpAddr::V6(_) => (),
+                IpAddr::V4(s) => return Ok(Some(s)),
+            },
+            None => {
+                match system_cache_search_route(dst_ipv4.into())? {
+                    Some(i) => {
+                        for ipnetwork in i.ips {
+                            match ipnetwork.ip() {
+                                IpAddr::V4(src_ipv4) => {
+                                    if !src_ipv4.is_loopback() {
+                                        return Ok(Some(src_ipv4));
+                                    }
                                 }
+                                _ => (),
                             }
-                            _ => (),
                         }
                     }
-                }
-                None => {
-                    // return the route ip
-                    let route = match system_cache_default_route()? {
-                        Some(d) => d,
-                        None => return Err(PistolError::CanNotFoundRouterAddress),
-                    };
-                    if let IpAddr::V4(route_ipv4) = route.via {
-                        for interface in interfaces() {
-                            for ipnetwork in interface.ips {
-                                if ipnetwork.contains(route_ipv4.into()) {
-                                    if let IpAddr::V4(src_ipv4) = ipnetwork.ip() {
-                                        return Ok(Some(src_ipv4));
+                    None => {
+                        // return the route ip
+                        let route = match system_cache_default_route()? {
+                            Some(d) => d,
+                            None => return Err(PistolError::CanNotFoundRouterAddress),
+                        };
+                        if let IpAddr::V4(route_ipv4) = route.via {
+                            for interface in interfaces() {
+                                for ipnetwork in interface.ips {
+                                    if ipnetwork.contains(route_ipv4.into()) {
+                                        if let IpAddr::V4(src_ipv4) = ipnetwork.ip() {
+                                            return Ok(Some(src_ipv4));
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            };
+                };
+            }
         }
     }
     Ok(None)
@@ -278,13 +282,10 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
         }
     } else {
         for interface in interfaces() {
-            // ignore the interface which is down
-            if interface.is_up() {
-                for ip in &interface.ips {
-                    let i = ip.ip();
-                    if ipaddr == i && !i.is_unspecified() {
-                        return Some(interface);
-                    }
+            for ip in &interface.ips {
+                let i = ip.ip();
+                if ipaddr == i && !i.is_unspecified() {
+                    return Some(interface);
                 }
             }
         }
@@ -391,5 +392,13 @@ mod tests {
     fn test_get_cpus() {
         let cpus = get_cpu_num();
         println!("{}", cpus);
+    }
+    #[test]
+    fn interface_loopback() {
+        for interface in interfaces() {
+            if interface.is_loopback() {
+                println!("{} is loopback interface", interface);
+            }
+        }
     }
 }
