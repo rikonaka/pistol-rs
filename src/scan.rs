@@ -54,11 +54,11 @@ use crate::error::PistolError;
 #[cfg(feature = "scan")]
 use crate::utils::find_interface_by_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::infer_source_addr;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::find_source_addr6;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::utils::infer_source_addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::random_port;
 #[cfg(any(feature = "scan", feature = "ping"))]
