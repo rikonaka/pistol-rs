@@ -522,3 +522,11 @@ Therefore, until `libpnet` fixes this bug, IPv6 on Windows is not supported yet.
 **libpnet bug on rust nightly version**
 
 Bug issue: https://github.com/libpnet/libpnet/issues/686
+
+## Some Unsolvable Problems
+
+**Probe the local loopback address**
+
+Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending data in Ethernet frame mode, it only supports sending at the transport layer. The transport layer design of `libpnet` lacks flexibility and customizability.
+
+So a simple process is done here to convert the loopback address into any local address.

@@ -45,7 +45,7 @@ use crate::error::PistolError;
 #[cfg(feature = "flood")]
 use crate::utils::infer_source_addr;
 #[cfg(feature = "flood")]
-use crate::utils::find_source_addr6;
+use crate::utils::infer_source_addr6;
 #[cfg(feature = "flood")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "flood")]

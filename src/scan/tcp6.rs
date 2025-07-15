@@ -899,22 +899,3 @@ pub fn send_maimon_scan_packet(
     // no response received (even after retransmissions)
     Ok((PortStatus::OpenOrFiltered, rtt))
 }
-
-pub fn send_connect_scan_packet(
-    _: Ipv6Addr,
-    _: u16,
-    dst_ipv6: Ipv6Addr,
-    dst_port: u16,
-    timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
-    let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
-    let start_time = Instant::now();
-    let t = match timeout {
-        Some(t) => t,
-        None => utils::get_default_timeout(),
-    };
-    match TcpStream::connect_timeout(&addr, t) {
-        Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
-        Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
-    }
-}

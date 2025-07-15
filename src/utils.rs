@@ -12,7 +12,6 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::DEFAULT_TIMEOUT;
-use crate::Ipv6CheckMethods;
 use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 use crate::route::DefaultRoute;
@@ -37,36 +36,6 @@ pub fn threads_num_check(threads_num: usize) -> usize {
         threads_num = MAX_THREADS_NUM;
     }
     threads_num
-}
-
-pub fn system_cache_search_route(
-    dst_addr: IpAddr,
-) -> Result<Option<NetworkInterface>, PistolError> {
-    // release the lock when leaving the function
-    let snc = match SYSTEM_NET_CACHE.lock() {
-        Ok(snc) => snc,
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("SYSTEM_NET_CACHE"),
-                e: e.to_string(),
-            });
-        }
-    };
-    Ok(snc.search_route(dst_addr))
-}
-
-pub fn system_cache_search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
-    // release the lock when leaving the function
-    let snc = match SYSTEM_NET_CACHE.lock() {
-        Ok(snc) => snc,
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("SYSTEM_NET_CACHE"),
-                e: e.to_string(),
-            });
-        }
-    };
-    Ok(snc.search_mac(dst_addr))
 }
 
 pub fn system_cache_default_route() -> Result<Option<DefaultRoute>, PistolError> {
@@ -111,151 +80,6 @@ pub fn system_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError
     Ok(snc.update_neighbor_cache(addr, mac))
 }
 
-/// Check if the target IP address is in the local.
-/// There are three cases where true is returned:
-/// loopback address, broadcast address,
-/// and the address is in the same network segment as the address of the local network interface.
-pub fn dst_ipv4_in_local(dst_ipv4: Ipv4Addr) -> bool {
-    for interface in interfaces() {
-        for ipnetwork in interface.ips {
-            if ipnetwork.contains(dst_ipv4.into()) {
-                return true;
-            }
-        }
-    }
-    if dst_ipv4.is_loopback() {
-        true
-    } else {
-        // all data for other addresses are sent to the default route
-        debug!("the dst ip {} is not in local net", dst_ipv4);
-        false
-    }
-}
-
-/// Check if the target IP address is in the local.
-/// There are three cases where true is returned:
-/// loopback address, broadcast address,
-/// and the address is in the same network segment as the address of the local network interface.
-pub fn dst_ipv6_in_local(dst_ipv6: Ipv6Addr) -> bool {
-    for interface in interfaces() {
-        for ipnetwork in interface.ips {
-            if ipnetwork.contains(dst_ipv6.into()) {
-                return true;
-            }
-        }
-    }
-    if dst_ipv6.is_loopback() {
-        true
-    } else {
-        // all data for other addresses are sent to the default route
-        debug!("the dst ip {} is not in local net", dst_ipv6);
-        false
-    }
-}
-
-/// Used to infer the source IP address when the user input source IP address is none
-pub fn infer_source_addr(
-    src_addr: Option<IpAddr>,
-    dst_ipv4: Ipv4Addr,
-) -> Result<Option<Ipv4Addr>, PistolError> {
-    if dst_ipv4.is_loopback() {
-        return Ok(Some(dst_ipv4));
-    } else {
-        match src_addr {
-            Some(s) => match s {
-                IpAddr::V6(_) => (),
-                IpAddr::V4(s) => return Ok(Some(s)),
-            },
-            None => {
-                match system_cache_search_route(dst_ipv4.into())? {
-                    Some(i) => {
-                        for ipnetwork in i.ips {
-                            match ipnetwork.ip() {
-                                IpAddr::V4(src_ipv4) => {
-                                    if !src_ipv4.is_loopback() {
-                                        return Ok(Some(src_ipv4));
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                    }
-                    None => {
-                        // return the route ip
-                        let route = match system_cache_default_route()? {
-                            Some(d) => d,
-                            None => return Err(PistolError::CanNotFoundRouterAddress),
-                        };
-                        if let IpAddr::V4(route_ipv4) = route.via {
-                            for interface in interfaces() {
-                                for ipnetwork in interface.ips {
-                                    if ipnetwork.contains(route_ipv4.into()) {
-                                        if let IpAddr::V4(src_ipv4) = ipnetwork.ip() {
-                                            return Ok(Some(src_ipv4));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-            }
-        }
-    }
-    Ok(None)
-}
-
-pub fn find_source_addr6(
-    src_addr: Option<IpAddr>,
-    dst_ipv6: Ipv6Addr,
-) -> Result<Option<Ipv6Addr>, PistolError> {
-    match src_addr {
-        Some(s) => match s {
-            IpAddr::V4(_) => (),
-            IpAddr::V6(s) => return Ok(Some(s)),
-        },
-        None => {
-            match system_cache_search_route(dst_ipv6.into())? {
-                Some(i) => {
-                    for ipnetwork in i.ips {
-                        match ipnetwork.ip() {
-                            IpAddr::V6(src_ipv6) => {
-                                if !src_ipv6.is_loopback() {
-                                    if (dst_ipv6.is_global_x() && src_ipv6.is_global_x())
-                                        || (!dst_ipv6.is_global_x() && !src_ipv6.is_global_x())
-                                    {
-                                        return Ok(Some(src_ipv6));
-                                    }
-                                }
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                None => {
-                    // return the route ip
-                    let route = match system_cache_default_route6()? {
-                        Some(d) => d,
-                        None => return Err(PistolError::CanNotFoundRouterAddress),
-                    };
-                    if let IpAddr::V6(route_ipv6) = route.via {
-                        for interface in interfaces() {
-                            for ipnetwork in interface.ips {
-                                if ipnetwork.contains(route_ipv6.into()) {
-                                    if let IpAddr::V6(src_ipv6) = ipnetwork.ip() {
-                                        return Ok(Some(src_ipv6));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-        }
-    }
-    Ok(None)
-}
-
 #[cfg(any(
     target_os = "macos",
     target_os = "freebsd",
@@ -274,19 +98,11 @@ pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 
 /// Use IP address to find local interface
 pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
-    if ipaddr.is_loopback() {
-        for interface in interfaces() {
-            if interface.is_loopback() {
+    for interface in interfaces() {
+        for ip in &interface.ips {
+            let i = ip.ip();
+            if ipaddr == i && !i.is_unspecified() {
                 return Some(interface);
-            }
-        }
-    } else {
-        for interface in interfaces() {
-            for ip in &interface.ips {
-                let i = ip.ip();
-                if ipaddr == i && !i.is_unspecified() {
-                    return Some(interface);
-                }
             }
         }
     }

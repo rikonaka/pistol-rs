@@ -511,30 +511,8 @@ impl PistolLogger {
     }
 }
 
-// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,
-// use this trait instead until its become stable function.
-#[cfg(feature = "os")]
-trait Ipv4CheckMethods {
-    fn is_global_x(&self) -> bool;
-}
-
-#[cfg(feature = "os")]
-impl Ipv4CheckMethods for Ipv4Addr {
-    fn is_global_x(&self) -> bool {
-        let octets = self.octets();
-        let is_private = if octets[0] == 10 {
-            true
-        } else if octets[0] == 192 && octets[1] == 168 {
-            true
-        } else if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
-            true
-        } else {
-            false
-        };
-        !is_private
-    }
-}
-
+/// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,
+/// use this trait instead until its become stable function.
 trait Ipv6CheckMethods {
     fn is_global_x(&self) -> bool;
 }

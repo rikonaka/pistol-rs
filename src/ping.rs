@@ -55,7 +55,7 @@ use crate::scan::udp6;
 #[cfg(feature = "ping")]
 use crate::utils::infer_source_addr;
 #[cfg(feature = "ping")]
-use crate::utils::find_source_addr6;
+use crate::utils::infer_source_addr6;
 #[cfg(feature = "ping")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "ping")]

@@ -57,7 +57,7 @@ use crate::os::osscan6::threads_os_probe6;
 #[cfg(feature = "os")]
 use crate::utils::infer_source_addr;
 #[cfg(feature = "os")]
-use crate::utils::find_source_addr6;
+use crate::utils::infer_source_addr6;
 #[cfg(feature = "os")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "os")]

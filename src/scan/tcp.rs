@@ -14,9 +14,11 @@ use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::tcp::ipv4_checksum;
 use rand::Rng;
+use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
+use std::net::SocketAddrV6;
 use std::net::TcpStream;
 use std::panic::Location;
 use std::time::Duration;
@@ -28,6 +30,7 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
+use crate::layer::PistolAddr;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
 use crate::utils;
@@ -997,11 +1000,13 @@ pub fn send_idle_scan_packet(
         Ok(ip_buff.to_vec())
     }
 
+    let src_addr = pistol_addr.sys.src_addr;
+
     // 1. probe the zombie's ip id
     let layer3_zombie = Layer3Match {
         layer2: None,
         src_addr: Some(zombie_ipv4.into()),
-        dst_addr: Some(src_ipv4.into()),
+        dst_addr: Some(src_addr),
     };
     let layer4_tcp_udp_zombie = Layer4MatchTcpUdp {
         layer3: Some(layer3_zombie),
@@ -1016,9 +1021,13 @@ pub fn send_idle_scan_packet(
     let layers_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
     let layers_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
 
+    let src_ipv4 = match pistol_addr.sys.src_addr {
+        IpAddr::V4(s) => s,
+        IpAddr::V6(_) => return Err(PistolError::TargetConstraintError),
+    };
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let (ret, rtt_1) = layer3_ipv4_send(
-        src_ipv4,
+        src_addr,
         zombie_ipv4,
         &ip_buff,
         vec![layers_match_zombie_1, layers_match_zombie_2],
@@ -1076,14 +1085,14 @@ pub fn send_idle_scan_packet(
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = _forge_syn_packet(zombie_ipv4, dst_ipv4, zombie_port, dst_port)?;
     // ignore the response
-    let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff_2, vec![], timeout, true)?;
+    let _ret = layer3_ipv4_send(src_addr, dst_ipv4, &ip_buff_2, vec![], timeout, true)?;
 
     // 4. probe the zombie's ip id again
-    let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
+    let ip_buff_3 = _forge_syn_packet(src_addr, zombie_ipv4, src_port, zombie_port)?;
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
-        dst_addr: Some(src_ipv4.into()),
+        dst_addr: Some(src_addr.into()),
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -1099,7 +1108,7 @@ pub fn send_idle_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt_2) = layer3_ipv4_send(
-        src_ipv4,
+        src_addr,
         dst_ipv4,
         &ip_buff_3,
         vec![layers_match_1, layers_match_2],
@@ -1180,21 +1189,36 @@ pub fn send_idle_scan_packet(
     }
 }
 
+/// For both IPv4 and IPv6 target.
 pub fn send_connect_scan_packet(
-    _: Ipv4Addr,
-    _: u16,
-    dst_ipv4: Ipv4Addr,
+    dst_addr: IpAddr,
+    _src_port: u16,
     dst_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
     let start_time = Instant::now();
-    let t = match timeout {
-        Some(t) => t,
-        None => utils::get_default_timeout(),
-    };
-    match TcpStream::connect_timeout(&addr, t) {
-        Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
-        Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => {
+            let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
+            let t = match timeout {
+                Some(t) => t,
+                None => utils::get_default_timeout(),
+            };
+            match TcpStream::connect_timeout(&addr, t) {
+                Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
+                Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
+            }
+        }
+        IpAddr::V6(dst_ipv6) => {
+            let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
+            let t = match timeout {
+                Some(t) => t,
+                None => utils::get_default_timeout(),
+            };
+            match TcpStream::connect_timeout(&addr, t) {
+                Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
+                Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
+            }
+        }
     }
 }
