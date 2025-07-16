@@ -28,8 +28,8 @@ use crate::ping::PingStatus;
 const TTL: u8 = 255;
 
 pub fn send_icmpv6_ping_packet(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     const ICMPV6_DATA_SIZE: usize = 16;
@@ -111,8 +111,8 @@ pub fn send_icmpv6_ping_packet(
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match],
         timeout,

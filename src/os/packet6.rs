@@ -24,13 +24,13 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::ICMPV6_ER_HEADER_SIZE;
-use crate::layers::ICMPV6_NI_HEADER_SIZE;
-use crate::layers::ICMPV6_NS_HEADER_SIZE;
-use crate::layers::IPV6_HEADER_SIZE;
-use crate::layers::TCP_HEADER_SIZE;
-use crate::layers::UDP_HEADER_SIZE;
-use crate::utils::find_interface_by_ip;
+use crate::layer::ICMPV6_ER_HEADER_SIZE;
+use crate::layer::ICMPV6_NI_HEADER_SIZE;
+use crate::layer::ICMPV6_NS_HEADER_SIZE;
+use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::TCP_HEADER_SIZE;
+use crate::layer::UDP_HEADER_SIZE;
+use crate::layer::find_interface_by_ip;
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.

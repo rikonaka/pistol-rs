@@ -1100,8 +1100,8 @@ fn send_all_probes(
     let u1 = send_u1_probe(src_ipv6, dst_ipv6, dst_closed_udp_port, timeout, start_time)?;
     let tecn = send_tecn_probe(src_ipv6, dst_ipv6, dst_open_tcp_port, timeout, start_time)?;
     let tx = send_tx_probes(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         timeout,
@@ -1202,8 +1202,8 @@ pub fn threads_os_probe6(
 ) -> Result<(TargetFingerprint6, Vec<OSInfo6>), PistolError> {
     debug!("send all probes now");
     let ap = send_all_probes(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,

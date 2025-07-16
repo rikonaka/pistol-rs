@@ -25,10 +25,10 @@ const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub fn send_udp_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     // ipv6 header
@@ -94,8 +94,8 @@ pub fn send_udp_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,

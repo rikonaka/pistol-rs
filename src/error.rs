@@ -79,8 +79,6 @@ pub enum PistolError {
     BuildPacketError { path: String },
     #[error("the `PistolRunner` monitoring threads is not running, please run it first")]
     PistolRunnerIsNotRunning,
-    #[error("the target IP does not meet the method constraints")]
-    TargetConstraintError,
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]
@@ -98,7 +96,7 @@ pub enum PistolError {
     #[error("save the traffic error: {e}")]
     SaveCaptureError { e: String },
     #[error("pcapture error")]
-    PcaptureError(#[from] pcapture::PcaptureError),
+    PcaptureError(#[from] pcapture::error::PcaptureError),
     #[error("try lock {var_name} failed: {e}")]
     TryLockGlobalVarFailed { var_name: String, e: String },
     #[error("tracing error")]

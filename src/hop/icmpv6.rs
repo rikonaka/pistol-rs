@@ -98,8 +98,8 @@ pub fn send_icmpv6_ping_packet(
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, _rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match],
         timeout,

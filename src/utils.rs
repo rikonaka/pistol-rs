@@ -1,20 +1,15 @@
 use num_cpus;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
-use pnet::datalink::interfaces;
 use rand::Rng;
 use std::net::IpAddr;
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
-use tracing::debug;
 use tracing::warn;
 
 use crate::DEFAULT_TIMEOUT;
 use crate::SYSTEM_NET_CACHE;
+
 use crate::error::PistolError;
-use crate::route::DefaultRoute;
 
 const MAX_THREADS_NUM: usize = 1000;
 
@@ -38,34 +33,6 @@ pub fn threads_num_check(threads_num: usize) -> usize {
     threads_num
 }
 
-pub fn system_cache_default_route() -> Result<Option<DefaultRoute>, PistolError> {
-    // release the lock when leaving the function
-    let snc = match SYSTEM_NET_CACHE.lock() {
-        Ok(snc) => snc,
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("SYSTEM_NET_CACHE"),
-                e: e.to_string(),
-            });
-        }
-    };
-    Ok(snc.default_route.clone())
-}
-
-pub fn system_cache_default_route6() -> Result<Option<DefaultRoute>, PistolError> {
-    // release the lock when leaving the function
-    let snc = match SYSTEM_NET_CACHE.lock() {
-        Ok(snc) => snc,
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("SYSTEM_NET_CACHE"),
-                e: e.to_string(),
-            });
-        }
-    };
-    Ok(snc.default_route6.clone())
-}
-
 pub fn system_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
     // release the lock when leaving the function
     let mut snc = match SYSTEM_NET_CACHE.lock() {
@@ -78,35 +45,6 @@ pub fn system_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError
         }
     };
     Ok(snc.update_neighbor_cache(addr, mac))
-}
-
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-    target_os = "linux"
-))]
-pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        if interface.name == name {
-            return Some(interface);
-        }
-    }
-    None
-}
-
-/// Use IP address to find local interface
-pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            let i = ip.ip();
-            if ipaddr == i && !i.is_unspecified() {
-                return Some(interface);
-            }
-        }
-    }
-    None
 }
 
 /// Returns the random port
@@ -183,6 +121,7 @@ impl SpHex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pnet::datalink::interfaces;
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1];

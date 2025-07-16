@@ -16,7 +16,7 @@ pub fn ipv4_get_hops(
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     for ttl in 1..=30 {
-        let ret = send_icmp_ping_packet(src_ipv4, dst_ipv4, ttl, timeout)?;
+        let ret = send_icmp_ping_packet(dst_ipv4, src_ipv4, ttl, timeout)?;
         if ret {
             debug!("ipv4 get hops: {}", ttl);
             return Ok(ttl);
@@ -51,7 +51,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let src_ipv4 = Ipv4Addr::new(192, 168, 1, 1);
         let timeout = Some(Duration::new(1, 0));
-        let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout).unwrap();
+        let hops = ipv4_get_hops(dst_ipv4, src_ipv4, timeout).unwrap();
         println!("{}", hops);
     }
     #[test]

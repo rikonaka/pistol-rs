@@ -1,13 +1,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use crate::datalink::Channel::Ethernet;
-use pcapture::PcapNg;
+use pcapture::pcapng::PcapNg;
 use pnet::datalink;
 use std::fmt;
 use std::fs::File;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
 use std::net::Ipv4Addr;
+#[cfg(feature = "os")]
 use std::net::Ipv6Addr;
 use std::result;
 use std::str::FromStr;
@@ -513,10 +514,7 @@ impl PistolLogger {
 
 /// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,
 /// use this trait instead until its become stable function.
-trait Ipv6CheckMethods {
-    fn is_global_x(&self) -> bool;
-}
-
+#[cfg(feature = "os")]
 impl Ipv6CheckMethods for Ipv6Addr {
     fn is_global_x(&self) -> bool {
         let octets = self.octets();

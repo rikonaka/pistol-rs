@@ -102,8 +102,8 @@ pub fn send_icmp_ping_packet(
     let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, _rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match],
         timeout,

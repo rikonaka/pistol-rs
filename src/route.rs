@@ -1,8 +1,5 @@
-use tracing::debug;
-use tracing::warn;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
-#[cfg(target_os = "windows")]
 use pnet::datalink::interfaces;
 use pnet::ipnetwork::IpNetwork;
 use regex::Regex;
@@ -13,17 +10,19 @@ use std::fmt;
 use std::net::IpAddr;
 use std::process::Command;
 use std::str::FromStr;
+use tracing::debug;
+use tracing::warn;
 
-// use crate::error::InvalidRouteFormat;
 use crate::error::PistolError;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-    target_os = "linux"
-))]
-use crate::utils::find_interface_by_name;
+
+fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        if interface.name == name {
+            return Some(interface);
+        }
+    }
+    None
+}
 
 #[cfg(any(
     target_os = "macos",

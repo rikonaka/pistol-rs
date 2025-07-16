@@ -87,7 +87,7 @@ pub fn send_icmp_flood_packet(
 
     let mut count = 0;
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &ip_buff, vec![], timeout, false)?;
+        let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
         count += 1;
     }
 

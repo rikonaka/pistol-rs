@@ -30,7 +30,6 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
-use crate::layer::PistolAddr;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
 use crate::utils;
@@ -51,10 +50,10 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
 
 pub fn send_syn_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -121,8 +120,8 @@ pub fn send_syn_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -179,10 +178,10 @@ pub fn send_syn_scan_packet(
 }
 
 pub fn send_fin_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -249,8 +248,8 @@ pub fn send_fin_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -307,10 +306,10 @@ pub fn send_fin_scan_packet(
 }
 
 pub fn send_ack_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -377,8 +376,8 @@ pub fn send_ack_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -432,10 +431,10 @@ pub fn send_ack_scan_packet(
 }
 
 pub fn send_null_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -502,8 +501,8 @@ pub fn send_null_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -557,10 +556,10 @@ pub fn send_null_scan_packet(
 }
 
 pub fn send_xmas_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -628,8 +627,8 @@ pub fn send_xmas_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -683,10 +682,10 @@ pub fn send_xmas_scan_packet(
 }
 
 pub fn send_window_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -753,8 +752,8 @@ pub fn send_window_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -813,10 +812,10 @@ pub fn send_window_scan_packet(
 }
 
 pub fn send_maimon_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -883,8 +882,8 @@ pub fn send_maimon_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -938,10 +937,10 @@ pub fn send_maimon_scan_packet(
 }
 
 pub fn send_idle_scan_packet(
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Option<Duration>,
@@ -1000,13 +999,11 @@ pub fn send_idle_scan_packet(
         Ok(ip_buff.to_vec())
     }
 
-    let src_addr = pistol_addr.sys.src_addr;
-
     // 1. probe the zombie's ip id
     let layer3_zombie = Layer3Match {
         layer2: None,
         src_addr: Some(zombie_ipv4.into()),
-        dst_addr: Some(src_addr),
+        dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp_zombie = Layer4MatchTcpUdp {
         layer3: Some(layer3_zombie),
@@ -1021,14 +1018,10 @@ pub fn send_idle_scan_packet(
     let layers_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
     let layers_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
 
-    let src_ipv4 = match pistol_addr.sys.src_addr {
-        IpAddr::V4(s) => s,
-        IpAddr::V6(_) => return Err(PistolError::TargetConstraintError),
-    };
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let (ret, rtt_1) = layer3_ipv4_send(
-        src_addr,
         zombie_ipv4,
+        src_ipv4,
         &ip_buff,
         vec![layers_match_zombie_1, layers_match_zombie_2],
         timeout,
@@ -1085,14 +1078,14 @@ pub fn send_idle_scan_packet(
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = _forge_syn_packet(zombie_ipv4, dst_ipv4, zombie_port, dst_port)?;
     // ignore the response
-    let _ret = layer3_ipv4_send(src_addr, dst_ipv4, &ip_buff_2, vec![], timeout, true)?;
+    let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff_2, vec![], timeout, true)?;
 
     // 4. probe the zombie's ip id again
-    let ip_buff_3 = _forge_syn_packet(src_addr, zombie_ipv4, src_port, zombie_port)?;
+    let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
-        dst_addr: Some(src_addr.into()),
+        dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -1108,8 +1101,8 @@ pub fn send_idle_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt_2) = layer3_ipv4_send(
-        src_addr,
         dst_ipv4,
+        src_ipv4,
         &ip_buff_3,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -1192,7 +1185,6 @@ pub fn send_idle_scan_packet(
 /// For both IPv4 and IPv6 target.
 pub fn send_connect_scan_packet(
     dst_addr: IpAddr,
-    _src_port: u16,
     dst_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {

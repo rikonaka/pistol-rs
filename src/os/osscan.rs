@@ -306,7 +306,7 @@ fn send_seq_probes(
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
                 let ret =
-                    layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
+                    layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -383,8 +383,8 @@ fn send_ie_probes(
     let id_1 = rng.random();
     // and the ICMP request ID and sequence numbers are incremented by one from the previous query values
     let id_2 = id_1 + 1;
-    let buff_1 = packet::ie_packet_1_layer3(src_ipv4, dst_ipv4, id_1)?;
-    let buff_2 = packet::ie_packet_2_layer3(src_ipv4, dst_ipv4, id_2)?;
+    let buff_1 = packet::ie_packet_1_layer3(dst_ipv4, src_ipv4, id_1)?;
+    let buff_2 = packet::ie_packet_2_layer3(dst_ipv4, src_ipv4, id_2)?;
     let buffs = vec![buff_1, buff_2];
 
     let layer3 = Layer3Match {
@@ -406,7 +406,7 @@ fn send_ie_probes(
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
             let ret =
-                layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true);
+                layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true);
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
@@ -473,7 +473,7 @@ fn send_ecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let (response, _) =
-            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true)?;
+            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true)?;
         if response.len() > 0 {
             let rr = RequestAndResponse {
                 request: buff,
@@ -581,7 +581,7 @@ fn send_tx_probes(
         let m = ms[i];
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret = layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![m], timeout, true);
+                let ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![m], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -668,7 +668,7 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let (response, _) =
-            layer3_ipv4_send(src_ipv4, dst_ipv4, &buff, vec![layers_match], timeout, true)?;
+            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true)?;
 
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -697,17 +697,17 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     timeout: Option<Duration>,
 ) -> Result<AllPacketRR, PistolError> {
-    let seq = send_seq_probes(src_ipv4, dst_ipv4, dst_open_tcp_port, timeout)?;
-    let ie = send_ie_probes(src_ipv4, dst_ipv4, timeout)?;
-    let ecn = send_ecn_probe(src_ipv4, dst_ipv4, dst_open_tcp_port, timeout)?;
+    let seq = send_seq_probes(dst_ipv4, src_ipv4, dst_open_tcp_port, timeout)?;
+    let ie = send_ie_probes(dst_ipv4, src_ipv4, timeout)?;
+    let ecn = send_ecn_probe(dst_ipv4, src_ipv4, dst_open_tcp_port, timeout)?;
     let tx = send_tx_probes(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         timeout,
     )?;
-    let u1 = send_u1_probe(src_ipv4, dst_ipv4, dst_closed_udp_port, timeout)?;
+    let u1 = send_u1_probe(dst_ipv4, src_ipv4, dst_closed_udp_port, timeout)?;
 
     let ap = AllPacketRR {
         seq,
@@ -1812,12 +1812,12 @@ pub fn threads_os_probe(
     timeout: Option<Duration>,
 ) -> Result<(TargetFingerprint, Vec<OSInfo>), PistolError> {
     // exec this line first to return error for host which dead
-    let (dst_mac, _interface) = system_route(src_ipv4, dst_ipv4, timeout)?;
+    let (dst_mac, _interface) = system_route(dst_ipv4, src_ipv4, timeout)?;
 
     debug!("send all probes now");
     let ap = send_all_probes(
-        src_ipv4,
         dst_ipv4,
+        src_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
@@ -1838,7 +1838,7 @@ pub fn threads_os_probe(
 
     let scan = match need_cal_hops(dst_ipv4.into()) {
         true => {
-            let hops = ipv4_get_hops(src_ipv4, dst_ipv4, timeout)?;
+            let hops = ipv4_get_hops(dst_ipv4, src_ipv4, timeout)?;
             get_scan_line(
                 dst_mac,
                 dst_open_tcp_port,

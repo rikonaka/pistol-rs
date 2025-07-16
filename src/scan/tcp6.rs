@@ -11,12 +11,8 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::tcp::ipv6_checksum;
 use rand::Rng;
 use std::net::Ipv6Addr;
-use std::net::SocketAddr;
-use std::net::SocketAddrV6;
-use std::net::TcpStream;
 use std::panic::Location;
 use std::time::Duration;
-use std::time::Instant;
 
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
@@ -26,7 +22,6 @@ use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv6_send;
-use crate::utils;
 
 use super::PortStatus;
 
@@ -43,10 +38,10 @@ const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub fn send_syn_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -111,8 +106,8 @@ pub fn send_syn_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -167,10 +162,10 @@ pub fn send_syn_scan_packet(
 }
 
 pub fn send_fin_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -235,8 +230,8 @@ pub fn send_fin_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -291,10 +286,10 @@ pub fn send_fin_scan_packet(
 }
 
 pub fn send_ack_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -359,8 +354,8 @@ pub fn send_ack_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -412,10 +407,10 @@ pub fn send_ack_scan_packet(
 }
 
 pub fn send_null_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -480,8 +475,8 @@ pub fn send_null_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -533,10 +528,10 @@ pub fn send_null_scan_packet(
 }
 
 pub fn send_xmas_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -601,8 +596,8 @@ pub fn send_xmas_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -654,10 +649,10 @@ pub fn send_xmas_scan_packet(
 }
 
 pub fn send_window_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -722,8 +717,8 @@ pub fn send_window_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
@@ -780,10 +775,10 @@ pub fn send_window_scan_packet(
 }
 
 pub fn send_maimon_scan_packet(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -848,8 +843,8 @@ pub fn send_maimon_scan_packet(
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
-        src_ipv6,
         dst_ipv6,
+        src_ipv6,
         &ipv6_buff,
         vec![layers_match_1, layers_match_2],
         timeout,
