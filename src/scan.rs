@@ -55,7 +55,7 @@ use crate::error::PistolError;
 #[cfg(feature = "scan")]
 use crate::layer::find_interface_by_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::layer::infer_src_addr;
+use crate::layer::infer_addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -173,11 +173,8 @@ fn ipv4_arp_scan(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let src_ipv4 = match infer_src_addr(src_addr, dst_ipv4.into())? {
-        Some(s) => match s {
-            IpAddr::V4(src_ipv4) => src_ipv4,
-            IpAddr::V6(_) => return Err(PistolError::CanNotFoundSourceAddress),
-        },
+    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+        Some(ia) => ia.ipv4_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
@@ -197,11 +194,8 @@ fn ipv6_ndp_ns_scan(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let src_ipv6 = match infer_src_addr(src_addr, dst_ipv6.into())? {
-        Some(s) => match s {
-            IpAddr::V4(_) => return Err(PistolError::CanNotFoundSourceAddress),
-            IpAddr::V6(src_ipv6) => src_ipv6,
-        },
+    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+        Some(ia) => ia.ipv6_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv6.into()) {
@@ -222,11 +216,8 @@ pub fn arp_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<Option<MacAddr>, PistolError> {
     let dst_mac = MacAddr::broadcast();
-    let src_ipv4 = match infer_src_addr(src_addr, dst_ipv4.into())? {
-        Some(s) => match s {
-            IpAddr::V4(src_ipv4) => src_ipv4,
-            IpAddr::V6(_) => return Err(PistolError::CanNotFoundSourceAddress),
-        },
+    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+        Some(ia) => ia.ipv4_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
     let interface = match find_interface_by_ip(src_ipv4.into()) {
@@ -727,11 +718,8 @@ fn scan(
                     );
                     let tx = tx.clone();
                     recv_size += 1;
-                    let src_ipv4 = match infer_src_addr(src_addr, dst_ipv4.into())? {
-                        Some(s) => match s {
-                            IpAddr::V4(src_ipv4) => src_ipv4,
-                            _ => return Err(PistolError::CanNotFoundSourceAddress),
-                        },
+                    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+                        Some(ia) => ia.ipv4_addr()?,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
 
@@ -796,11 +784,8 @@ fn scan(
                     };
                     let tx = tx.clone();
                     recv_size += 1;
-                    let src_ipv6 = match infer_src_addr(src_addr, dst_ipv6.into())? {
-                        Some(s) => match s {
-                            IpAddr::V4(_) => return Err(PistolError::CanNotFoundSourceAddress),
-                            IpAddr::V6(src_ipv6) => src_ipv6,
-                        },
+                    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+                        Some(ia) => ia.ipv6_addr()?,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
                     pool.execute(move || {
@@ -1417,34 +1402,31 @@ fn scan_raw(
         None => random_port(),
     };
 
-    let src_addr = match infer_src_addr(src_addr, dst_addr)? {
-        Some(s) => s,
+    let infer_addr = match infer_addr(src_addr, dst_addr)? {
+        Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
 
+    // dst_addr may change during the processing.
+    // It is only used here to determine whether the target is ipv4 or ipv6.
+    // The real dst_addr is inferred from infer_addr.
     match dst_addr {
-        IpAddr::V4(dst_ipv4) => {
-            if let IpAddr::V4(src_ipv4) = src_addr {
-                threads_scan(
-                    method,
-                    dst_ipv4,
-                    dst_port,
-                    src_ipv4,
-                    src_port,
-                    zombie_ipv4,
-                    zombie_port,
-                    timeout,
-                )
-            } else {
-                Err(PistolError::CanNotFoundSourceAddress)
-            }
+        IpAddr::V4(_) => {
+            let (dst_ipv4, src_ipv4) = infer_addr.ipv4_addr()?;
+            threads_scan(
+                method,
+                dst_ipv4,
+                dst_port,
+                src_ipv4,
+                src_port,
+                zombie_ipv4,
+                zombie_port,
+                timeout,
+            )
         }
-        IpAddr::V6(dst_ipv6) => {
-            if let IpAddr::V6(src_ipv6) = src_addr {
-                threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
-            } else {
-                Err(PistolError::CanNotFoundSourceAddress)
-            }
+        IpAddr::V6(_) => {
+            let (dst_ipv6, src_ipv6) = infer_addr.ipv6_addr()?;
+            threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)
         }
     }
 }

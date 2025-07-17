@@ -33,7 +33,7 @@ pub fn threads_num_check(threads_num: usize) -> usize {
     threads_num
 }
 
-pub fn system_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
+pub fn arp_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
     // release the lock when leaving the function
     let mut snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,

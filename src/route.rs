@@ -15,6 +15,13 @@ use tracing::warn;
 
 use crate::error::PistolError;
 
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
         if interface.name == name {

@@ -57,7 +57,7 @@ use crate::error::PistolError;
 use crate::route::DefaultRoute;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
-use crate::utils::system_cache_update;
+use crate::utils::arp_cache_update;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const ARP_HEADER_SIZE: usize = 28;
@@ -142,10 +142,8 @@ fn search_mac_from_cache(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolErro
     Ok(snc.search_mac(dst_addr))
 }
 
-/// Get the route address from the system cache
-fn search_route_table_from_cache(
-    dst_addr: IpAddr,
-) -> Result<Option<NetworkInterface>, PistolError> {
+/// Get the send interface from the system route table
+fn search_route_table(dst_addr: IpAddr) -> Result<Option<NetworkInterface>, PistolError> {
     let snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,
         Err(e) => {
@@ -165,7 +163,7 @@ fn get_dst_mac_and_interface(
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
     let src_interface = match find_interface_by_ip(src_addr) {
         Some(i) => i,
-        None => match search_route_table_from_cache(dst_addr)? {
+        None => match search_route_table(dst_addr)? {
             Some(i) => i,
             None => return Err(PistolError::CanNotFoundSourceAddress),
         },
@@ -201,7 +199,7 @@ fn get_dst_mac_and_interface(
                                 (Some(m), _rtt) => m,
                                 (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
                             };
-                            system_cache_update(dst_ipv4.into(), dst_mac)?;
+                            arp_cache_update(dst_ipv4.into(), dst_mac)?;
                             dst_mac
                         } else {
                             return Err(PistolError::CanNotFoundMacAddress);
@@ -219,7 +217,7 @@ fn get_dst_mac_and_interface(
                                 (Some(m), _rtt) => m,
                                 (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
                             };
-                            system_cache_update(dst_ipv6.into(), dst_mac)?;
+                            arp_cache_update(dst_ipv6.into(), dst_mac)?;
                             dst_mac
                         } else {
                             return Err(PistolError::CanNotFoundMacAddress);
@@ -251,7 +249,7 @@ fn get_dst_mac_and_interface(
                                         timeout,
                                     )? {
                                         (Some(m), _rtt) => {
-                                            system_cache_update(default_route_ipv4.into(), m)?;
+                                            arp_cache_update(default_route_ipv4.into(), m)?;
                                             m
                                         }
                                         (None, _rtt) => {
@@ -266,7 +264,7 @@ fn get_dst_mac_and_interface(
                                 if let IpAddr::V6(src_ipv6) = src_addr {
                                     match ndp_rs(src_ipv6, timeout)? {
                                         (Some(m), _rtt) => {
-                                            system_cache_update(default_route_ipv6.into(), m)?;
+                                            arp_cache_update(default_route_ipv6.into(), m)?;
                                             m
                                         }
                                         (None, _rtt) => {
@@ -287,11 +285,45 @@ fn get_dst_mac_and_interface(
     Ok((dst_mac, src_interface))
 }
 
-/// Used to infer the source IP address when the user input source IP address is none
-pub fn infer_src_addr(
+/// When the target is a loopback address,
+/// we need to update not only the value of src addr,
+/// but also the value of dst addr.
+#[derive(Debug, Clone, Copy)]
+pub struct InferAddr {
+    pub dst_addr: IpAddr,
+    pub src_addr: IpAddr,
+}
+
+impl InferAddr {
+    /// Returns: (dst_addr, src_addr)
+    pub fn ipv4_addr(&self) -> Result<(Ipv4Addr, Ipv4Addr), PistolError> {
+        if let IpAddr::V4(dst_ipv4) = self.dst_addr {
+            if let IpAddr::V4(src_ipv4) = self.src_addr {
+                return Ok((dst_ipv4, src_ipv4));
+            }
+        }
+        Err(PistolError::CanNotFoundSourceAddress)
+    }
+    /// Returns: (dst_addr, src_addr)
+    pub fn ipv6_addr(&self) -> Result<(Ipv6Addr, Ipv6Addr), PistolError> {
+        if let IpAddr::V6(dst_ipv6) = self.dst_addr {
+            if let IpAddr::V6(src_ipv6) = self.src_addr {
+                return Ok((dst_ipv6, src_ipv6));
+            }
+        }
+        Err(PistolError::CanNotFoundSourceAddress)
+    }
+}
+
+/// The source address is inferred from the target address.
+/// When the target address is a loopback address,
+/// it is mapped to an internal private address
+/// because the loopback address only works at the transport layer
+/// and cannot send data frames.
+pub fn infer_addr(
     src_addr: Option<IpAddr>,
     dst_addr: IpAddr,
-) -> Result<Option<IpAddr>, PistolError> {
+) -> Result<Option<InferAddr>, PistolError> {
     if dst_addr.is_loopback() {
         for interface in interfaces() {
             if !interface.is_loopback() {
@@ -300,14 +332,22 @@ pub fn infer_src_addr(
                         IpAddr::V4(src_ipv4) => {
                             if dst_addr.is_ipv4() {
                                 if src_ipv4.is_private() {
-                                    return Ok(Some(src_ipv4.into()));
+                                    let ia = InferAddr {
+                                        dst_addr: src_ipv4.into(),
+                                        src_addr: src_ipv4.into(),
+                                    };
+                                    return Ok(Some(ia));
                                 }
                             }
                         }
                         IpAddr::V6(src_ipv6) => {
                             if dst_addr.is_ipv6() {
                                 if src_ipv6.is_unicast_link_local() || src_ipv6.is_unique_local() {
-                                    return Ok(Some(src_ipv6.into()));
+                                    let ia = InferAddr {
+                                        dst_addr: src_ipv6.into(),
+                                        src_addr: src_ipv6.into(),
+                                    };
+                                    return Ok(Some(ia));
                                 }
                             }
                         }
@@ -317,19 +357,33 @@ pub fn infer_src_addr(
         }
     } else {
         match src_addr {
-            Some(addr) => return Ok(Some(addr)),
-            None => match search_route_table_from_cache(dst_addr)? {
-                Some(i) => {
-                    for ipn in i.ips {
+            Some(addr) => {
+                let ia = InferAddr {
+                    dst_addr: dst_addr,
+                    src_addr: addr,
+                };
+                return Ok(Some(ia));
+            }
+            None => match search_route_table(dst_addr)? {
+                Some(send_interface) => {
+                    for ipn in send_interface.ips {
                         match ipn.ip() {
                             IpAddr::V4(src_ipv4) => {
                                 if !src_ipv4.is_loopback() {
-                                    return Ok(Some(src_ipv4.into()));
+                                    let ia = InferAddr {
+                                        dst_addr: dst_addr,
+                                        src_addr: src_ipv4.into(),
+                                    };
+                                    return Ok(Some(ia));
                                 }
                             }
                             IpAddr::V6(src_ipv6) => {
                                 if !src_ipv6.is_loopback() {
-                                    return Ok(Some(src_ipv6.into()));
+                                    let ia = InferAddr {
+                                        dst_addr: dst_addr,
+                                        src_addr: src_ipv6.into(),
+                                    };
+                                    return Ok(Some(ia));
                                 }
                             }
                         }
