@@ -725,6 +725,7 @@ fn scan(
 
                     pool.execute(move || {
                         for ind in 0..max_tests {
+                            debug!("target [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
                             let scan_ret = threads_scan(
                                 method,
                                 dst_ipv4,
@@ -736,15 +737,10 @@ fn scan(
                                 timeout,
                             );
                             if ind == max_tests - 1 {
-                                debug!(
-                                    "last attempt, target [{}] port [{}] try [{}]",
-                                    dst_addr, dst_port, ind
-                                );
                                 // last attempt
                                 tx.send((dst_addr, dst_port, scan_ret))
                                     .expect(&format!("tx send failed at {}", Location::caller()));
                             } else {
-                                debug!("target [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
                                 match scan_ret {
                                     Ok((port_status, _)) => {
                                         match port_status {

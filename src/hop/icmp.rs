@@ -39,7 +39,7 @@ pub fn send_icmp_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -60,7 +60,7 @@ pub fn send_icmp_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -82,7 +82,7 @@ pub fn send_icmp_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };

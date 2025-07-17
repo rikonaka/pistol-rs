@@ -75,8 +75,8 @@ pub enum PistolError {
     CanNotFoundSourceAddress,
     #[error("can not found router address")]
     CanNotFoundRouterAddress,
-    #[error("build packet error occurret at [{path}]")]
-    BuildPacketError { path: String },
+    #[error("build packet error occurret at [{location}]")]
+    BuildPacketError { location: String },
     #[error("the `PistolRunner` monitoring threads is not running, please run it first")]
     PistolRunnerIsNotRunning,
 

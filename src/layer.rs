@@ -88,6 +88,15 @@ pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
     None
 }
 
+fn find_loopback_interface() -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        if interface.is_loopback() {
+            return Some(interface);
+        }
+    }
+    None
+}
+
 fn get_default_route() -> Result<Option<DefaultRoute>, PistolError> {
     // release the lock when leaving the function
     let snc = match SYSTEM_NET_CACHE.lock() {
@@ -161,14 +170,21 @@ fn get_dst_mac_and_interface(
     dst_addr: IpAddr,
     timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
-    let src_interface = match find_interface_by_ip(src_addr) {
-        Some(i) => i,
-        None => match search_route_table(dst_addr)? {
+    let src_interface = if src_addr == dst_addr {
+        match find_loopback_interface() {
             Some(i) => i,
-            None => return Err(PistolError::CanNotFoundSourceAddress),
-        },
+            None => return Err(PistolError::CanNotFoundInterface),
+        }
+    } else {
+        match find_interface_by_ip(src_addr) {
+            Some(i) => i,
+            None => match search_route_table(dst_addr)? {
+                Some(i) => i,
+                None => return Err(PistolError::CanNotFoundInterface),
+            },
+        }
     };
-    println!("src inf: {}", src_interface.name);
+    // println!("src inf: {}", src_interface.name);
 
     let dst_mac = match search_mac_from_cache(dst_addr)? {
         Some(m) => m,
@@ -992,7 +1008,7 @@ fn layer2_send(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -1076,7 +1092,7 @@ pub fn layer3_ipv4_send(
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
-    println!("dst: {}, src: {}", dst_ipv4, src_ipv4);
+    // println!("dst: {}, src: {}", dst_ipv4, src_ipv4);
     let (dst_mac, interface) =
         get_dst_mac_and_interface(src_ipv4.into(), dst_ipv4.into(), timeout)?;
     let ethernet_type = EtherTypes::Ipv4;
@@ -1133,7 +1149,7 @@ fn ndp_rs(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -1152,7 +1168,7 @@ fn ndp_rs(
             Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
-                    path: format!("{}", Location::caller()),
+                    location: format!("{}", Location::caller()),
                 });
             }
         };
@@ -1171,7 +1187,7 @@ fn ndp_rs(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };

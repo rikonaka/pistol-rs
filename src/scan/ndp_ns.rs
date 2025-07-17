@@ -35,7 +35,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -43,7 +43,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -51,7 +51,7 @@ fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -79,7 +79,7 @@ pub fn send_ndp_ns_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -100,7 +100,7 @@ pub fn send_ndp_ns_scan_packet(
             Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
-                    path: format!("{}", Location::caller()),
+                    location: format!("{}", Location::caller()),
                 });
             }
         };
@@ -120,7 +120,7 @@ pub fn send_ndp_ns_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };

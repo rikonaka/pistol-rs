@@ -27,7 +27,7 @@ fn get_mac_from_arp(ethernet_packet: &[u8]) -> Result<Option<MacAddr>, PistolErr
                     Some(p) => p,
                     None => {
                         return Err(PistolError::BuildPacketError {
-                            path: format!("{}", Location::caller()),
+                            location: format!("{}", Location::caller()),
                         });
                     }
                 };
@@ -52,7 +52,7 @@ pub fn send_arp_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };

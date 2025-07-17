@@ -63,7 +63,7 @@ pub fn send_syn_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -85,7 +85,7 @@ pub fn send_syn_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -191,7 +191,7 @@ pub fn send_fin_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -213,7 +213,7 @@ pub fn send_fin_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -319,7 +319,7 @@ pub fn send_ack_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -341,7 +341,7 @@ pub fn send_ack_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -444,7 +444,7 @@ pub fn send_null_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -466,7 +466,7 @@ pub fn send_null_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -569,7 +569,7 @@ pub fn send_xmas_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -592,7 +592,7 @@ pub fn send_xmas_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -695,7 +695,7 @@ pub fn send_window_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -717,7 +717,7 @@ pub fn send_window_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -825,7 +825,7 @@ pub fn send_maimon_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -847,7 +847,7 @@ pub fn send_maimon_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -958,7 +958,7 @@ pub fn send_idle_scan_packet(
             Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
-                    path: format!("{}", Location::caller()),
+                    location: format!("{}", Location::caller()),
                 });
             }
         };
@@ -980,7 +980,7 @@ pub fn send_idle_scan_packet(
             Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
-                    path: format!("{}", Location::caller()),
+                    location: format!("{}", Location::caller()),
                 });
             }
         };

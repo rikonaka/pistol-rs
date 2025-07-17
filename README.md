@@ -525,8 +525,10 @@ Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 ## Some Unsolvable Problems
 
-**Probe the local loopback address**
+**Probe the loopback address**
 
-Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending data in Ethernet frame mode, it only supports sending at the transport layer. The transport layer design of `libpnet` lacks flexibility and customizability.
+Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending data in ethernet frame mode, but only at the transport layer.
 
-So a simple process is done here to convert the loopback address into any local address.
+And the transport layer design of `libpnet` lacks flexibility and customizability, for example there is `ipv4_packet_iter` method only and no `ipv6_packet_iter` method, it means that I cannot receive any ipv6 packets, [reference](https://docs.rs/pnet/0.35.0/pnet/transport/index.html).
+
+Therefore, pistol will not support loopback address speculation until a technical solution that can solve the above problem is found.
