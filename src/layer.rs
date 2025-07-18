@@ -76,6 +76,48 @@ pub const ICMPV6_RS_HEADER_SIZE: usize = 16;
 pub const ICMPV6_ER_HEADER_SIZE: usize = 8;
 pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
 
+/// If the ICMP message is a Destination Unreachable,
+/// Time Exceeded, Parameter Problem, or Source Quench,
+/// the Internet header plus the first 64 bits of the original datagram's data are returned.
+/// The remaining 32 bits of the ICMP message header are unused and must be zero.
+/// --- From RFC 792 – Internet Control Message Protocol (ICMP) https://datatracker.ietf.org/doc/html/rfc792#page-6
+fn get_icmp_payload(icmp_packet: &IcmpPacket) -> Vec<u8> {
+    let icmp_type = icmp_packet.get_icmp_type();
+    let icmp_payload = icmp_packet.payload().to_vec();
+    if icmp_type == IcmpType(3) {
+        // Destination Unreachable
+        icmp_payload[..4].to_vec()
+    } else if icmp_type == IcmpType(0) {
+        // Source Quench - Deprecated
+        icmp_payload[..4].to_vec()
+    } else if icmp_type == IcmpType(11) {
+        // Time Exceeded
+        icmp_payload[..4].to_vec()
+    } else {
+        icmp_payload
+    }
+}
+
+fn get_icmpv6_payload(icmpv6_packet: &Icmpv6Packet) -> Vec<u8> {
+    let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+    let icmpv6_payload = icmpv6_packet.payload().to_vec();
+    if icmpv6_type == Icmpv6Type(1) {
+        // Destination Unreachable
+        icmpv6_payload[..4].to_vec()
+    } else if icmpv6_type == Icmpv6Type(3) {
+        // Time Exceeded
+        icmpv6_payload[..4].to_vec()
+    } else if icmpv6_type == Icmpv6Type(4) {
+        // Parameter Problem
+        icmpv6_payload[..4].to_vec()
+    } else if icmpv6_type == Icmpv6Type(128) || icmpv6_type == Icmpv6Type(129) {
+        // Echo Request/Reply
+        icmpv6_payload[..4].to_vec()
+    } else {
+        icmpv6_payload
+    }
+}
+
 /// Use IP address to find local interface
 pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
@@ -670,6 +712,9 @@ pub struct PayloadMatchIp {
 impl PayloadMatchIp {
     /// When the icmp payload contains ipv4 data
     pub fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
+        for i in icmp_payload {
+            print!("{:x} ", i);
+        }
         let ipv4_packet = match Ipv4Packet::new(icmp_payload) {
             Some(i) => i,
             None => return false,
@@ -677,6 +722,7 @@ impl PayloadMatchIp {
         match self.src_addr {
             Some(src_addr) => match src_addr {
                 IpAddr::V4(src_ipv4) => {
+                    println!("get source: {}", ipv4_packet.get_source());
                     if ipv4_packet.get_source() != src_ipv4 {
                         return false;
                     }
@@ -685,6 +731,7 @@ impl PayloadMatchIp {
             },
             None => (),
         }
+        println!("UUU");
         match self.dst_addr {
             Some(dst_addr) => match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
@@ -748,6 +795,7 @@ impl PayloadMatchTcpUdp {
             // early stop
             return false;
         }
+        println!("YYYY");
         let ipv4_packet = match Ipv4Packet::new(icmp_payload) {
             Some(i) => i,
             None => return false,
@@ -846,7 +894,6 @@ pub struct PayloadMatchIcmp {
 
 impl PayloadMatchIcmp {
     pub fn do_match(&self, icmp_payload: &[u8]) -> bool {
-        println!("YYYY");
         let m1 = match self.layer3 {
             Some(layer3) => layer3.do_match_ipv4(icmp_payload),
             None => true,
@@ -995,7 +1042,11 @@ impl Layer4MatchIcmp {
                 };
                 match ipv4_packet.get_next_level_protocol() {
                     IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
-                        Some(t) => (t.get_icmp_type(), t.get_icmp_code(), t.payload().to_vec()),
+                        Some(icmp_packet) => (
+                            icmp_packet.get_icmp_type(),
+                            icmp_packet.get_icmp_code(),
+                            get_icmp_payload(&icmp_packet),
+                        ),
                         None => return false,
                     },
                     _ => return false,
@@ -1058,10 +1109,10 @@ impl Layer4MatchIcmpv6 {
                 match ipv6_packet.get_next_header() {
                     IpNextHeaderProtocols::Icmpv6 => {
                         match Icmpv6Packet::new(ipv6_packet.payload()) {
-                            Some(t) => (
-                                t.get_icmpv6_type(),
-                                t.get_icmpv6_code(),
-                                t.payload().to_vec(),
+                            Some(icmpv6_packet) => (
+                                icmpv6_packet.get_icmpv6_type(),
+                                icmpv6_packet.get_icmpv6_code(),
+                                get_icmpv6_payload(&icmpv6_packet),
                             ),
                             None => return false,
                         }
@@ -1564,16 +1615,16 @@ mod tests {
     fn test_layer_match() {
         let data: Vec<u8> = vec![
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0xc, 0x29, 0x2c, 0x9, 0xe4, 0x8, 0x0, 0x45,
-            0xc0, 0x0, 0x38, 0xe5, 0xc1, 0x0, 0x0, 0x40, 0x1, 0x8, 0xeb, 0xc0, 0xa8, 0x5, 0x5,
+            0xc0, 0x0, 0x38, 0xbb, 0xb5, 0x0, 0x0, 0x40, 0x1, 0x32, 0xf7, 0xc0, 0xa8, 0x5, 0x5,
             0xc0, 0xa8, 0x5, 0x3, 0x3, 0x3, 0x88, 0x6f, 0x0, 0x0, 0x0, 0x0, 0x45, 0x0, 0x0, 0x1c,
-            0xea, 0x53, 0x40, 0x0, 0x40, 0x11, 0xc5, 0x24, 0xc0, 0xa8, 0x5, 0x3, 0xc0, 0xa8, 0x5,
-            0x5, 0x5f, 0xcd, 0x0, 0x16, 0x0, 0x8, 0x14, 0xa2,
+            0xe4, 0xea, 0x40, 0x0, 0x40, 0x11, 0xca, 0x8d, 0xc0, 0xa8, 0x5, 0x3, 0xc0, 0xa8, 0x5,
+            0x5, 0x8a, 0x71, 0x1, 0xbb, 0x0, 0x8, 0xe8, 0x58,
         ];
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let dst_port = 22;
+        let dst_port = 443;
         // let dst_port = 80;
-        let src_port = 24525;
+        let src_port = 35441;
         let layer3 = Layer3Match {
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
