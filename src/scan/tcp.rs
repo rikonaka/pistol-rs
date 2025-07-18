@@ -30,12 +30,14 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
+use crate::layer::PayloadMatch;
+use crate::layer::PayloadMatchIp;
+use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
+use crate::scan::PortStatus;
+use crate::scan::TcpIdleScans;
 use crate::utils;
-
-use super::PortStatus;
-use super::TcpIdleScans;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
@@ -111,10 +113,22 @@ pub fn send_syn_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -203,10 +217,10 @@ pub fn send_fin_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -239,10 +253,22 @@ pub fn send_fin_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -331,10 +357,10 @@ pub fn send_ack_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -347,7 +373,8 @@ pub fn send_ack_scan_packet(
     };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.random());
+    // tcp_header.set_sequence(rng.random());
+    tcp_header.set_sequence(0);
     tcp_header.set_acknowledgement(rng.random());
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
@@ -367,10 +394,22 @@ pub fn send_ack_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -456,10 +495,10 @@ pub fn send_null_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -492,10 +531,22 @@ pub fn send_null_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -581,10 +632,10 @@ pub fn send_xmas_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
     let mut rng = rand::rng();
@@ -618,10 +669,22 @@ pub fn send_xmas_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -707,10 +770,10 @@ pub fn send_window_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -743,10 +806,22 @@ pub fn send_window_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -837,10 +912,10 @@ pub fn send_maimon_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // tcp header
     let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -873,10 +948,22 @@ pub fn send_maimon_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -1010,11 +1097,24 @@ pub fn send_idle_scan_packet(
         src_port: Some(zombie_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(zombie_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp_zombie = Layer4MatchIcmp {
         layer3: Some(layer3_zombie),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
+
     let layers_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
     let layers_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
 
@@ -1092,10 +1192,22 @@ pub fn send_idle_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcpudp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);

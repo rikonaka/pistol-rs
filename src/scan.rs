@@ -1535,24 +1535,6 @@ mod tests {
         )
         .unwrap();
         println!("{}", ret);
-
-        let src_ipv4 = None;
-        let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let max_tests = 2;
-        let threads_num = Some(8);
-        let ret = tcp_syn_scan(
-            &[target],
-            threads_num,
-            src_ipv4,
-            src_port,
-            timeout,
-            max_tests,
-        )
-        .unwrap();
-        println!("{}", ret);
     }
     #[test]
     fn test_tcp_fin_scan() {
@@ -1639,17 +1621,15 @@ mod tests {
     fn test_udp_scan() {
         let _pr = PistolRunner::init(
             PistolLogger::None,
-            // Some(String::from("tcp_udp_scan.pcapng")),
-            None,
+            Some(String::from("tcp_udp_scan.pcapng")),
             None, // use default value
         )
         .unwrap();
 
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Some(Duration::new(3, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        // let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080]));
         let max_tests = 2;
         let threads_num = Some(8);

@@ -12,9 +12,8 @@ use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use rand::Rng;
-use std::panic::Location;
-
 use std::net::Ipv4Addr;
+use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
@@ -23,6 +22,9 @@ use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::LayerMatch;
+use crate::layer::PayloadMatch;
+use crate::layer::PayloadMatchIcmp;
+use crate::layer::PayloadMatchIp;
 use crate::layer::layer3_ipv4_send;
 
 pub fn send_icmp_ping_packet(
@@ -94,10 +96,22 @@ pub fn send_icmp_ping_packet(
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_icmp = PayloadMatchIcmp {
+        layer3: Some(payload_ip),
+        icmp_type: Some(IcmpType(8)),
+        icmp_code: Some(IcmpCode(0)),
+    };
+    let payload = PayloadMatch::PayloadMatchIcmp(payload_icmp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 

@@ -527,7 +527,7 @@ Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 **Probe the loopback address**
 
-Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending data in ethernet frame mode, but only at the transport layer.
+Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending ethernet frame data, but only at the transport layer.
 
 And the transport layer design of `libpnet` lacks flexibility and customizability, for example there is `ipv4_packet_iter` method only and no `ipv6_packet_iter` method, it means that I cannot receive any ipv6 packets, [reference](https://docs.rs/pnet/0.35.0/pnet/transport/index.html).
 

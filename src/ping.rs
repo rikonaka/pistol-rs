@@ -71,7 +71,7 @@ const ACK_PING_DEFAULT_PORT: u16 = 80;
 const UDP_PING_DEFAULT_PORT: u16 = 125;
 
 #[cfg(feature = "ping")]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingStatus {
     Up,
     Down,

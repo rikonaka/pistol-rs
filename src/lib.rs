@@ -21,7 +21,6 @@ use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
 use tracing::Level;
-use tracing::debug;
 use tracing::error;
 use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
@@ -82,24 +81,6 @@ impl PistolRunner {
             }),
         }
     }
-    fn rm_global_layer_matchs(uuid: &Uuid) -> Result<bool, PistolError> {
-        match UNIFIED_RECV_MATCHS.lock() {
-            Ok(mut urm) => {
-                let mut urm_clone = urm.clone();
-                if let Some(index) = urm_clone.iter().position(|pc| pc.uuid == *uuid) {
-                    urm_clone.remove(index);
-                    *urm = urm_clone;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            Err(e) => Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("UNIFIED_RECV_MATCHS"),
-                e: e.to_string(),
-            }),
-        }
-    }
     fn init_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
         // This timeout can be set very small,
         // because even if no data packet is received before the timeout expires,
@@ -137,43 +118,27 @@ impl PistolRunner {
                                 Ok(_) => (),
                                 Err(e) => error!("capture recv packet failed: {}", e),
                             }
-                            match Self::get_global_layer_matchs() {
-                                Ok(layer_matchs) => {
-                                    for pc in layer_matchs {
-                                        // if any matchs just return
-                                        for lm in pc.layer_matchs {
-                                            if lm.do_match(ethernet_packet) {
-                                                // send the matched result to user thread
-                                                match pc.channel.send(ethernet_packet.to_vec()) {
-                                                    Ok(_) => (),
-                                                    Err(e) => error!(
-                                                        "try return data to sender failed: {}",
-                                                        e
-                                                    ),
-                                                };
-                                                match Self::rm_global_layer_matchs(&pc.uuid) {
-                                                    Ok(ret) => {
-                                                        if ret {
-                                                            debug!(
-                                                                "remove layer matchs from global var success"
-                                                            );
-                                                        } else {
-                                                            error!(
-                                                                "remove layer matchs from global var failed"
-                                                            );
-                                                        }
-                                                    }
-                                                    Err(e) => error!(
-                                                        "remove layer matchs from global var failed: {}",
-                                                        e
-                                                    ),
-                                                }
+                            let layer_matchs = match Self::get_global_layer_matchs() {
+                                Ok(layer_matchs) => layer_matchs,
+                                Err(e) => {
+                                    error!("get global layer matchs failed: {}", e);
+                                    continue;
+                                }
+                            };
+                            for pc in layer_matchs {
+                                // if any matchs just return
+                                for lm in pc.layer_matchs {
+                                    if lm.do_match(ethernet_packet) {
+                                        // send the matched result to user thread
+                                        match pc.channel.send(ethernet_packet.to_vec()) {
+                                            Ok(_) => (),
+                                            Err(e) => {
+                                                error!("try return data to sender failed: {}", e)
                                             }
-                                        }
+                                        };
                                     }
                                 }
-                                Err(e) => error!("get global layer matchs failed: {}", e),
-                            };
+                            }
                         }
                         Err(e) => warn!("layer2 recv failed: {}", e), // many timeout error
                     }

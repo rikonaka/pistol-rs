@@ -16,6 +16,9 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
+use crate::layer::PayloadMatch;
+use crate::layer::PayloadMatchIp;
+use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
 use crate::layer::layer3_ipv6_send;
 
@@ -85,10 +88,22 @@ pub fn send_udp_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv6.into()),
+        dst_addr: Some(dst_ipv6.into()),
+    };
+    let payload_tcp_udp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);

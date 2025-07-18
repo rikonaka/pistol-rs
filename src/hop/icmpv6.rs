@@ -20,6 +20,9 @@ use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::LayerMatch;
+use crate::layer::PayloadMatch;
+use crate::layer::PayloadMatchIcmpv6;
+use crate::layer::PayloadMatchIp;
 use crate::layer::layer3_ipv6_send;
 
 pub fn send_icmpv6_ping_packet(
@@ -90,10 +93,22 @@ pub fn send_icmpv6_ping_packet(
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv6.into()),
+        dst_addr: Some(dst_ipv6.into()),
+    };
+    let payload_icmpv6 = PayloadMatchIcmpv6 {
+        layer3: Some(payload_ip),
+        icmpv6_type: Some(Icmpv6Type(128)),
+        icmpv6_code: Some(Icmpv6Code(0)),
+    };
+    let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
+        payload: Some(payload),
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 

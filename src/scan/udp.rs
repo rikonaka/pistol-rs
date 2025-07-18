@@ -19,12 +19,15 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
+use crate::layer::PayloadMatch;
+use crate::layer::PayloadMatchIp;
+use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
 
 use super::PortStatus;
 
-const UDP_DATA_SIZE: usize = 10;
+const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
 
 pub fn send_udp_scan_packet(
@@ -53,10 +56,10 @@ pub fn send_udp_scan_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Udp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // udp header
     let mut udp_header = match MutableUdpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -70,7 +73,7 @@ pub fn send_udp_scan_packet(
     udp_header.set_source(src_port);
     udp_header.set_destination(dst_port);
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
-    udp_header.set_payload(b"1234567890"); // udp test
+    // udp_header.set_payload(b"1234567890"); // udp test
     let checksum = ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
 
@@ -95,10 +98,22 @@ pub fn send_udp_scan_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv4.into()),
+        dst_addr: Some(dst_ipv4.into()),
+    };
+    let payload_tcp_udp = PayloadMatchTcpUdp {
+        layer3: Some(payload_ip),
+        src_port: Some(src_port),
+        dst_port: Some(dst_port),
+    };
+    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: Some(payload),
     };
     let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
     let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
@@ -115,14 +130,19 @@ pub fn send_udp_scan_packet(
         Some(ipv4_packet) => {
             match ipv4_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => {
+                    println!("UDP");
                     // any udp response from target port (unusual)
                     return Ok((PortStatus::Open, rtt));
                 }
                 IpNextHeaderProtocols::Icmp => {
                     match IcmpPacket::new(ipv4_packet.payload()) {
                         Some(icmp_packet) => {
-                            // let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
+                            println!(
+                                "ICMP to {}, code: {:?}",
+                                ipv4_packet.get_destination(),
+                                icmp_code
+                            );
                             if codes_1.contains(&icmp_code) {
                                 // icmp port unreachable error (type 3, code 3)
                                 return Ok((PortStatus::Closed, rtt));

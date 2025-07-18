@@ -1,4 +1,3 @@
-use tracing::debug;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -11,6 +10,7 @@ use pnet::packet::ethernet::EthernetPacket;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
+use tracing::debug;
 
 use crate::error::PistolError;
 use crate::layer::ARP_HEADER_SIZE;

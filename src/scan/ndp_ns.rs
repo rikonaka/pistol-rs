@@ -5,7 +5,6 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
-use pnet::packet::icmpv6::Icmpv6Type;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
@@ -26,6 +25,9 @@ use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::LayerMatch;
+use crate::layer::PayloadMatch;
+use crate::layer::PayloadMatchIcmpv6;
+use crate::layer::PayloadMatchIp;
 use crate::layer::layer2_work;
 use crate::layer::multicast_mac;
 
@@ -132,10 +134,22 @@ pub fn send_ndp_ns_scan_packet(
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
+    // set the icmp payload matchs
+    let payload_ip = PayloadMatchIp {
+        src_addr: Some(src_ipv6.into()),
+        dst_addr: Some(dst_ipv6.into()),
+    };
+    let payload_icmpv6 = PayloadMatchIcmpv6 {
+        layer3: Some(payload_ip),
+        icmpv6_type: Some(Icmpv6Types::NeighborSolicit),
+        icmpv6_code: Some(Icmpv6Code(0)),
+    };
+    let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
-        icmpv6_type: Some(Icmpv6Type(136)),
+        icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
         icmpv6_code: Some(Icmpv6Code(0)),
+        payload: Some(payload),
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
