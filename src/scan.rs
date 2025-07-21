@@ -394,9 +394,13 @@ pub fn mac_scan(
                                     }
                                     None => (),
                                 },
-                                Err(_) => tx
-                                    .send((dst_addr, scan_ret))
-                                    .expect(&format!("tx send failed at {}", Location::caller())),
+                                Err(_) => {
+                                    // println!("{}", e);
+                                    tx.send((dst_addr, scan_ret)).expect(&format!(
+                                        "tx send failed at {}",
+                                        Location::caller()
+                                    ))
+                                }
                             }
                         }
                     }
@@ -1487,6 +1491,7 @@ mod tests {
     use crate::PistolLogger;
     use crate::PistolRunner;
     use crate::Target;
+    use std::str::FromStr;
     use std::time::Instant;
     use subnetwork::CrossIpv4Pool;
     #[test]
@@ -1509,6 +1514,39 @@ mod tests {
         let threads_num = Some(512);
         let max_tests = 2;
         let ret = mac_scan(&targets, threads_num, src_ipv4, timeout, max_tests).unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_ndp_ns_scan_subnet() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("ndp_ns_scan.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+        let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
+        let timeout = Some(Duration::from_secs_f32(0.5));
+        let src_ipv6 = None;
+        let threads_num = Some(512);
+        let max_tests = 2;
+        let ret = mac_scan(&targets, threads_num, src_ipv6, timeout, max_tests).unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_ndp_ns_scan_single() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("ndp_ns_scan_single.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+        let ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
+        let target = Target::new(ipv6.into(), None);
+        let timeout = Some(Duration::from_secs_f32(0.5));
+        let src_ipv6 = None;
+        let threads_num = Some(512);
+        let max_tests = 2;
+        let ret = mac_scan(&[target], threads_num, src_ipv6, timeout, max_tests).unwrap();
         println!("{}", ret);
     }
     #[test]

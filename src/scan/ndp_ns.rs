@@ -25,46 +25,34 @@ use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::LayerMatch;
-use crate::layer::PayloadMatch;
-use crate::layer::PayloadMatchIcmpv6;
-use crate::layer::PayloadMatchIp;
 use crate::layer::layer2_work;
 use crate::layer::multicast_mac;
 
-fn get_mac_from_ndp_ns(buff: &[u8]) -> Result<Option<MacAddr>, PistolError> {
+fn get_mac_from_ndp_ns(ethernet_packet: &[u8]) -> Option<MacAddr> {
+    if ethernet_packet.len() == 0 {
+        return None;
+    }
     // return mac address from ndp
-    let ethernet_packet = match EthernetPacket::new(buff) {
+    let ethernet_packet = match EthernetPacket::new(ethernet_packet) {
         Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
+        None => return None,
     };
     let ipv6_packet = match Ipv6Packet::new(ethernet_packet.payload()) {
         Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
+        None => return None,
     };
     let icmpv6_packet = match NeighborAdvertPacket::new(ipv6_packet.payload()) {
         Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
+        None => return None,
     };
     for o in icmpv6_packet.get_options() {
         let mac = MacAddr::new(
             o.data[0], o.data[1], o.data[2], o.data[3], o.data[4], o.data[5],
         );
         // println!("{:?}", mac);
-        return Ok(Some(mac));
+        return Some(mac);
     }
-    Ok(None)
+    None
 }
 
 pub fn send_ndp_ns_scan_packet(
@@ -134,27 +122,16 @@ pub fn send_ndp_ns_scan_packet(
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    // set the icmp payload matchs
-    let payload_ip = PayloadMatchIp {
-        src_addr: Some(src_ipv6.into()),
-        dst_addr: Some(dst_ipv6.into()),
-    };
-    let payload_icmpv6 = PayloadMatchIcmpv6 {
-        layer3: Some(payload_ip),
-        icmpv6_type: Some(Icmpv6Types::NeighborSolicit),
-        icmpv6_code: Some(Icmpv6Code(0)),
-    };
-    let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
         icmpv6_code: Some(Icmpv6Code(0)),
-        payload: Some(payload),
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let ethernet_type = EtherTypes::Ipv6;
-    let (r, rtt) = layer2_work(
+    let (ret, rtt) = layer2_work(
         multicast_mac(dst_ipv6),
         interface.clone(),
         &ipv6_buff,
@@ -164,8 +141,8 @@ pub fn send_ndp_ns_scan_packet(
         timeout,
         true,
     )?;
-    let mac = match layer4_icmpv6.do_match(&r) {
-        true => get_mac_from_ndp_ns(&r)?,
+    let mac = match layer4_icmpv6.do_match(&ret) {
+        true => get_mac_from_ndp_ns(&ret),
         false => None,
     };
     Ok((mac, rtt))

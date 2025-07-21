@@ -389,25 +389,23 @@ pub fn infer_addr(
                 for ipn in interface.ips {
                     match ipn.ip() {
                         IpAddr::V4(src_ipv4) => {
-                            if dst_addr.is_ipv4() {
-                                if src_ipv4.is_private() {
-                                    let ia = InferAddr {
-                                        dst_addr: src_ipv4.into(),
-                                        src_addr: src_ipv4.into(),
-                                    };
-                                    return Ok(Some(ia));
-                                }
+                            if dst_addr.is_ipv4() && src_ipv4.is_private() {
+                                let ia = InferAddr {
+                                    dst_addr: src_ipv4.into(),
+                                    src_addr: src_ipv4.into(),
+                                };
+                                return Ok(Some(ia));
                             }
                         }
                         IpAddr::V6(src_ipv6) => {
-                            if dst_addr.is_ipv6() {
-                                if src_ipv6.is_unicast_link_local() || src_ipv6.is_unique_local() {
-                                    let ia = InferAddr {
-                                        dst_addr: src_ipv6.into(),
-                                        src_addr: src_ipv6.into(),
-                                    };
-                                    return Ok(Some(ia));
-                                }
+                            if dst_addr.is_ipv6()
+                                && (src_ipv6.is_unicast_link_local() || src_ipv6.is_unique_local())
+                            {
+                                let ia = InferAddr {
+                                    dst_addr: src_ipv6.into(),
+                                    src_addr: src_ipv6.into(),
+                                };
+                                return Ok(Some(ia));
                             }
                         }
                     }
@@ -416,11 +414,8 @@ pub fn infer_addr(
         }
     } else {
         match src_addr {
-            Some(addr) => {
-                let ia = InferAddr {
-                    dst_addr: dst_addr,
-                    src_addr: addr,
-                };
+            Some(src_addr) => {
+                let ia = InferAddr { dst_addr, src_addr };
                 return Ok(Some(ia));
             }
             None => match search_route_table(dst_addr)? {
@@ -428,18 +423,18 @@ pub fn infer_addr(
                     for ipn in send_interface.ips {
                         match ipn.ip() {
                             IpAddr::V4(src_ipv4) => {
-                                if !src_ipv4.is_loopback() {
+                                if dst_addr.is_ipv4() && !src_ipv4.is_loopback() {
                                     let ia = InferAddr {
-                                        dst_addr: dst_addr,
+                                        dst_addr,
                                         src_addr: src_ipv4.into(),
                                     };
                                     return Ok(Some(ia));
                                 }
                             }
                             IpAddr::V6(src_ipv6) => {
-                                if !src_ipv6.is_loopback() {
+                                if dst_addr.is_ipv6() && !src_ipv6.is_loopback() {
                                     let ia = InferAddr {
-                                        dst_addr: dst_addr,
+                                        dst_addr,
                                         src_addr: src_ipv6.into(),
                                     };
                                     return Ok(Some(ia));
@@ -448,7 +443,17 @@ pub fn infer_addr(
                         }
                     }
                 }
-                None => (),
+                None => {
+                    for interface in interfaces() {
+                        for ipn in interface.ips {
+                            if ipn.contains(dst_addr) {
+                                let src_addr = ipn.ip();
+                                let ia = InferAddr { dst_addr, src_addr };
+                                return Ok(Some(ia));
+                            }
+                        }
+                    }
+                }
             },
         }
     }
@@ -1600,7 +1605,7 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
+    use std::{net::Ipv4Addr, str::FromStr};
     #[test]
     fn test_dns_query() {
         let hostname = "ipv6.sjtu.edu.cn";
@@ -1641,8 +1646,35 @@ mod tests {
             icmp_code: None,
             payload: Some(payload),
         };
-        let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
-        let x = layers_match_2.do_match(&data);
+        let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+        let x = layers_match.do_match(&data);
+        println!("match ret: {}", x);
+    }
+    #[test]
+    fn test_layer_match2() {
+        let data = vec![
+            0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0xc, 0x29, 0x2c, 0x9, 0xe4, 0x86, 0xdd, 0x60,
+            0x0, 0x0, 0x0, 0x0, 0x20, 0x3a, 0xff, 0xfe, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2,
+            0xc, 0x29, 0xff, 0xfe, 0x2c, 0x9, 0xe4, 0xfe, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2,
+            0xc, 0x29, 0xff, 0xfe, 0x5b, 0xbd, 0x5c, 0x88, 0x0, 0x97, 0x8, 0x60, 0x0, 0x0, 0x0,
+            0xfe, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0xc, 0x29, 0xff, 0xfe, 0x2c, 0x9, 0xe4,
+            0x2, 0x1, 0x0, 0xc, 0x29, 0x2c, 0x9, 0xe4,
+        ];
+        let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
+        let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
+        let layer3 = Layer3Match {
+            layer2: None,
+            src_addr: Some(dst_ipv6.into()),
+            dst_addr: Some(src_ipv6.into()),
+        };
+        let layer4_icmpv6 = Layer4MatchIcmpv6 {
+            layer3: Some(layer3),
+            icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
+            icmpv6_code: Some(Icmpv6Code(0)),
+            payload: None,
+        };
+        let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+        let x = layers_match.do_match(&data);
         println!("match ret: {}", x);
     }
     #[test]

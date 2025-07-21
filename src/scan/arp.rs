@@ -19,24 +19,20 @@ use crate::layer::Layer3Match;
 use crate::layer::LayerMatch;
 use crate::layer::layer2_work;
 
-fn get_mac_from_arp(ethernet_packet: &[u8]) -> Result<Option<MacAddr>, PistolError> {
-    match EthernetPacket::new(ethernet_packet) {
-        Some(re) => match re.get_ethertype() {
-            EtherTypes::Arp => {
-                let arp = match ArpPacket::new(re.payload()) {
-                    Some(p) => p,
-                    None => {
-                        return Err(PistolError::BuildPacketError {
-                            location: format!("{}", Location::caller()),
-                        });
-                    }
-                };
-                Ok(Some(arp.get_sender_hw_addr()))
-            }
-            _ => Ok(None),
-        },
-        None => Ok(None),
+fn get_mac_from_arp(ethernet_packet: &[u8]) -> Option<MacAddr> {
+    if ethernet_packet.len() > 0 {
+        match EthernetPacket::new(ethernet_packet) {
+            Some(re) => match re.get_ethertype() {
+                EtherTypes::Arp => match ArpPacket::new(re.payload()) {
+                    Some(arp) => return Some(arp.get_sender_hw_addr()),
+                    None => (),
+                },
+                _ => (),
+            },
+            None => (),
+        }
     }
+    None
 }
 
 pub fn send_arp_scan_packet(
@@ -91,7 +87,7 @@ pub fn send_arp_scan_packet(
         true,
     )?;
     debug!("{} get ret from internet", dst_ipv4);
-    let mac = get_mac_from_arp(&ret)?;
+    let mac = get_mac_from_arp(&ret);
     debug!("{}: {:?}", dst_ipv4, mac);
     Ok((mac, rtt))
 }
