@@ -24,6 +24,7 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
+use crate::scan::DataRecvStatus;
 
 use super::PortStatus;
 
@@ -36,7 +37,7 @@ pub fn send_udp_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -130,25 +131,19 @@ pub fn send_udp_scan_packet(
         Some(ipv4_packet) => {
             match ipv4_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => {
-                    println!("UDP");
                     // any udp response from target port (unusual)
-                    return Ok((PortStatus::Open, rtt));
+                    return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                 }
                 IpNextHeaderProtocols::Icmp => {
                     match IcmpPacket::new(ipv4_packet.payload()) {
                         Some(icmp_packet) => {
                             let icmp_code = icmp_packet.get_icmp_code();
-                            println!(
-                                "ICMP to {}, code: {:?}",
-                                ipv4_packet.get_destination(),
-                                icmp_code
-                            );
                             if codes_1.contains(&icmp_code) {
                                 // icmp port unreachable error (type 3, code 3)
-                                return Ok((PortStatus::Closed, rtt));
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                             } else if codes_2.contains(&icmp_code) {
                                 // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -160,5 +155,5 @@ pub fn send_udp_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, rtt))
+    Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))
 }

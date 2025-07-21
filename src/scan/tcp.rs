@@ -35,6 +35,7 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
+use crate::scan::DataRecvStatus;
 use crate::scan::PortStatus;
 use crate::scan::TcpIdleScans;
 use crate::utils;
@@ -57,7 +58,7 @@ pub fn send_syn_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -150,10 +151,11 @@ pub fn send_syn_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
                                 // tcp syn/ack response
-                                return Ok((PortStatus::Open, rtt));
+                                println!("{}:{} open", dst_ipv4, dst_port);
+                                return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                             } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst response
-                                return Ok((PortStatus::Closed, rtt));
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -176,7 +178,7 @@ pub fn send_syn_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -188,7 +190,7 @@ pub fn send_syn_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, rtt))
+    Ok((PortStatus::Filtered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_fin_scan_packet(
@@ -197,7 +199,7 @@ pub fn send_fin_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -290,10 +292,10 @@ pub fn send_fin_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
                                 // tcp syn/ack response
-                                return Ok((PortStatus::Open, rtt));
+                                return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                             } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst packet
-                                return Ok((PortStatus::Closed, rtt));
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -316,7 +318,7 @@ pub fn send_fin_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -328,7 +330,7 @@ pub fn send_fin_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, rtt))
+    Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_ack_scan_packet(
@@ -337,7 +339,7 @@ pub fn send_ack_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -431,7 +433,7 @@ pub fn send_ack_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst response
-                                return Ok((PortStatus::Unfiltered, rtt));
+                                return Ok((PortStatus::Unfiltered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -454,7 +456,7 @@ pub fn send_ack_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -466,7 +468,7 @@ pub fn send_ack_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, rtt))
+    Ok((PortStatus::Filtered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_null_scan_packet(
@@ -475,7 +477,7 @@ pub fn send_null_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -568,7 +570,7 @@ pub fn send_null_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst response
-                                return Ok((PortStatus::Closed, rtt));
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -591,7 +593,7 @@ pub fn send_null_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -603,7 +605,7 @@ pub fn send_null_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, rtt))
+    Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_xmas_scan_packet(
@@ -612,7 +614,7 @@ pub fn send_xmas_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -706,7 +708,7 @@ pub fn send_xmas_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst response
-                                return Ok((PortStatus::Closed, rtt));
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -729,7 +731,7 @@ pub fn send_xmas_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -741,7 +743,7 @@ pub fn send_xmas_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, rtt))
+    Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_window_scan_packet(
@@ -750,7 +752,7 @@ pub fn send_window_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -844,10 +846,10 @@ pub fn send_window_scan_packet(
                             if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 if tcp_packet.get_window() > 0 {
                                     // tcp rst response with non-zero window field
-                                    return Ok((PortStatus::Open, rtt));
+                                    return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                                 } else {
                                     // tcp rst response with zero window field
-                                    return Ok((PortStatus::Closed, rtt));
+                                    return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                                 }
                             }
                         }
@@ -871,7 +873,7 @@ pub fn send_window_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -883,7 +885,7 @@ pub fn send_window_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, rtt))
+    Ok((PortStatus::Filtered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_maimon_scan_packet(
@@ -892,7 +894,7 @@ pub fn send_maimon_scan_packet(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -985,7 +987,7 @@ pub fn send_maimon_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst response
-                                return Ok((PortStatus::Closed, rtt));
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -1008,7 +1010,7 @@ pub fn send_maimon_scan_packet(
                                 && codes.contains(&icmp_code)
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, rtt));
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),
@@ -1020,7 +1022,7 @@ pub fn send_maimon_scan_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, rtt))
+    Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))
 }
 
 pub fn send_idle_scan_packet(
@@ -1031,7 +1033,7 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Option<TcpIdleScans>, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Option<TcpIdleScans>, Duration), PistolError> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
@@ -1163,7 +1165,12 @@ pub fn send_idle_scan_packet(
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                 // dst is unreachable ignore this port
-                                return Ok((PortStatus::Unreachable, None, rtt_1));
+                                return Ok((
+                                    PortStatus::Unreachable,
+                                    DataRecvStatus::Yes,
+                                    None,
+                                    rtt_1,
+                                ));
                             }
                         }
                         None => (),
@@ -1257,7 +1264,12 @@ pub fn send_idle_scan_packet(
                             {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                 // dst is unreachable ignore this port
-                                return Ok((PortStatus::Unreachable, None, rtt));
+                                return Ok((
+                                    PortStatus::Unreachable,
+                                    DataRecvStatus::Yes,
+                                    None,
+                                    rtt,
+                                ));
                             }
                         }
                         None => (),
@@ -1276,6 +1288,7 @@ pub fn send_idle_scan_packet(
     } else if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
         Ok((
             PortStatus::Open,
+            DataRecvStatus::Yes,
             Some(TcpIdleScans {
                 zombie_ip_id_1,
                 zombie_ip_id_2,
@@ -1285,6 +1298,7 @@ pub fn send_idle_scan_packet(
     } else {
         Ok((
             PortStatus::ClosedOrFiltered,
+            DataRecvStatus::No,
             Some(TcpIdleScans {
                 zombie_ip_id_1,
                 zombie_ip_id_2,
@@ -1299,7 +1313,7 @@ pub fn send_connect_scan_packet(
     dst_addr: IpAddr,
     dst_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let start_time = Instant::now();
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -1309,8 +1323,16 @@ pub fn send_connect_scan_packet(
                 None => utils::get_default_timeout(),
             };
             match TcpStream::connect_timeout(&addr, t) {
-                Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
-                Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
+                Ok(_) => Ok((
+                    PortStatus::Open,
+                    DataRecvStatus::Yes,
+                    start_time.elapsed(),
+                )),
+                Err(_) => Ok((
+                    PortStatus::Closed,
+                    DataRecvStatus::No,
+                    start_time.elapsed(),
+                )),
             }
         }
         IpAddr::V6(dst_ipv6) => {
@@ -1320,8 +1342,16 @@ pub fn send_connect_scan_packet(
                 None => utils::get_default_timeout(),
             };
             match TcpStream::connect_timeout(&addr, t) {
-                Ok(_) => Ok((PortStatus::Open, start_time.elapsed())),
-                Err(_) => Ok((PortStatus::Closed, start_time.elapsed())),
+                Ok(_) => Ok((
+                    PortStatus::Open,
+                    DataRecvStatus::Yes,
+                    start_time.elapsed(),
+                )),
+                Err(_) => Ok((
+                    PortStatus::Closed,
+                    DataRecvStatus::No,
+                    start_time.elapsed(),
+                )),
             }
         }
     }

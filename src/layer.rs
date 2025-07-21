@@ -86,13 +86,13 @@ fn get_icmp_payload(icmp_packet: &IcmpPacket) -> Vec<u8> {
     let icmp_payload = icmp_packet.payload().to_vec();
     if icmp_type == IcmpType(3) {
         // Destination Unreachable
-        icmp_payload[..4].to_vec()
+        icmp_payload[4..].to_vec()
     } else if icmp_type == IcmpType(0) {
         // Source Quench - Deprecated
-        icmp_payload[..4].to_vec()
+        icmp_payload[4..].to_vec()
     } else if icmp_type == IcmpType(11) {
         // Time Exceeded
-        icmp_payload[..4].to_vec()
+        icmp_payload[4..].to_vec()
     } else {
         icmp_payload
     }
@@ -103,16 +103,16 @@ fn get_icmpv6_payload(icmpv6_packet: &Icmpv6Packet) -> Vec<u8> {
     let icmpv6_payload = icmpv6_packet.payload().to_vec();
     if icmpv6_type == Icmpv6Type(1) {
         // Destination Unreachable
-        icmpv6_payload[..4].to_vec()
+        icmpv6_payload[4..].to_vec()
     } else if icmpv6_type == Icmpv6Type(3) {
         // Time Exceeded
-        icmpv6_payload[..4].to_vec()
+        icmpv6_payload[4..].to_vec()
     } else if icmpv6_type == Icmpv6Type(4) {
         // Parameter Problem
-        icmpv6_payload[..4].to_vec()
+        icmpv6_payload[4..].to_vec()
     } else if icmpv6_type == Icmpv6Type(128) || icmpv6_type == Icmpv6Type(129) {
         // Echo Request/Reply
-        icmpv6_payload[..4].to_vec()
+        icmpv6_payload[4..].to_vec()
     } else {
         icmpv6_payload
     }
@@ -712,9 +712,6 @@ pub struct PayloadMatchIp {
 impl PayloadMatchIp {
     /// When the icmp payload contains ipv4 data
     pub fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
-        for i in icmp_payload {
-            print!("{:x} ", i);
-        }
         let ipv4_packet = match Ipv4Packet::new(icmp_payload) {
             Some(i) => i,
             None => return false,
@@ -722,7 +719,6 @@ impl PayloadMatchIp {
         match self.src_addr {
             Some(src_addr) => match src_addr {
                 IpAddr::V4(src_ipv4) => {
-                    println!("get source: {}", ipv4_packet.get_source());
                     if ipv4_packet.get_source() != src_ipv4 {
                         return false;
                     }
@@ -731,7 +727,6 @@ impl PayloadMatchIp {
             },
             None => (),
         }
-        println!("UUU");
         match self.dst_addr {
             Some(dst_addr) => match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
@@ -795,7 +790,6 @@ impl PayloadMatchTcpUdp {
             // early stop
             return false;
         }
-        println!("YYYY");
         let ipv4_packet = match Ipv4Packet::new(icmp_payload) {
             Some(i) => i,
             None => return false,
@@ -1367,6 +1361,7 @@ pub fn layer2_work(
     if running {
         let start = Instant::now();
         if need_return {
+            // set the matchs
             let (rx, pc) = layer2_set_matchs(layer_matchs)?;
             layer2_send(
                 dst_mac,
@@ -1378,8 +1373,9 @@ pub fn layer2_work(
             )?;
             let data = layer2_recv(rx, timeout)?;
             let rtt = start.elapsed();
+            // we done here and remove the matchs
             if !layer2_rm_matchs(&pc.uuid)? {
-                warn!("can not found recv matchs");
+                warn!("can not found and remove recv matchs");
             }
             Ok((data, rtt))
         } else {
@@ -1615,16 +1611,15 @@ mod tests {
     fn test_layer_match() {
         let data: Vec<u8> = vec![
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0xc, 0x29, 0x2c, 0x9, 0xe4, 0x8, 0x0, 0x45,
-            0xc0, 0x0, 0x38, 0xbb, 0xb5, 0x0, 0x0, 0x40, 0x1, 0x32, 0xf7, 0xc0, 0xa8, 0x5, 0x5,
+            0xc0, 0x0, 0x38, 0x1, 0xcd, 0x0, 0x0, 0x40, 0x1, 0xec, 0xdf, 0xc0, 0xa8, 0x5, 0x5,
             0xc0, 0xa8, 0x5, 0x3, 0x3, 0x3, 0x88, 0x6f, 0x0, 0x0, 0x0, 0x0, 0x45, 0x0, 0x0, 0x1c,
-            0xe4, 0xea, 0x40, 0x0, 0x40, 0x11, 0xca, 0x8d, 0xc0, 0xa8, 0x5, 0x3, 0xc0, 0xa8, 0x5,
-            0x5, 0x8a, 0x71, 0x1, 0xbb, 0x0, 0x8, 0xe8, 0x58,
+            0x81, 0x56, 0x40, 0x0, 0x40, 0x11, 0x2e, 0x22, 0xc0, 0xa8, 0x5, 0x3, 0xc0, 0xa8, 0x5,
+            0x5, 0x73, 0xa, 0x1f, 0x90, 0x0, 0x8, 0xe1, 0xea,
         ];
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let dst_port = 443;
-        // let dst_port = 80;
-        let src_port = 35441;
+        let dst_port = 8080;
+        let src_port = 29450;
         let layer3 = Layer3Match {
             layer2: None,
             src_addr: Some(dst_ipv4.into()),

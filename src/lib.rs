@@ -111,9 +111,10 @@ impl PistolRunner {
             };
             thread::spawn(move || {
                 loop {
+                    // append this packet to global vec
                     match receiver.next() {
                         Ok(ethernet_packet) => {
-                            // append this packet to global vec
+                            // capture the recved packet and save it into file
                             match layer2_capture(ethernet_packet) {
                                 Ok(_) => (),
                                 Err(e) => error!("capture recv packet failed: {}", e),
@@ -501,7 +502,7 @@ trait IpCheckMethods {
 impl IpCheckMethods for IpAddr {
     fn is_global_x(&self) -> bool {
         match self {
-            IpAddr::V4(ipv4) => ipv4.is_global_x(),
+            IpAddr::V4(ipv4) => !ipv4.is_private(),
             IpAddr::V6(ipv6) => ipv6.is_global_x(),
         }
     }
