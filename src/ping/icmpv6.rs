@@ -17,13 +17,14 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::ICMPV6_ER_HEADER_SIZE;
-use crate::layers::IPV6_HEADER_SIZE;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmpv6;
-use crate::layers::LayerMatch;
-use crate::layers::layer3_ipv6_send;
+use crate::layer::ICMPV6_ER_HEADER_SIZE;
+use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmpv6;
+use crate::layer::LayerMatch;
+use crate::layer::layer3_ipv6_send;
 use crate::ping::PingStatus;
+use crate::scan::DataRecvStatus;
 
 const TTL: u8 = 255;
 
@@ -31,7 +32,7 @@ pub fn send_icmpv6_ping_packet(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration), PistolError> {
+) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
     const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ipv6 header
@@ -40,7 +41,7 @@ pub fn send_icmpv6_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -60,7 +61,7 @@ pub fn send_icmpv6_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -82,7 +83,7 @@ pub fn send_icmpv6_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -107,6 +108,7 @@ pub fn send_icmpv6_ping_packet(
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -130,11 +132,11 @@ pub fn send_icmpv6_ping_packet(
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
                                 if codes_1.contains(&icmpv6_code) {
                                     // icmp protocol unreachable error (type 3, code 2)
-                                    return Ok((PingStatus::Down, rtt));
+                                    return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
                                 }
                             } else if icmpv6_type == Icmpv6Types::EchoReply {
                                 if codes_2.contains(&icmpv6_code) {
-                                    return Ok((PingStatus::Up, rtt));
+                                    return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                                 }
                             }
                         }
@@ -147,5 +149,5 @@ pub fn send_icmpv6_ping_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PingStatus::Down, rtt))
+    Ok((PingStatus::Down, DataRecvStatus::No, rtt))
 }

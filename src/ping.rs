@@ -3,10 +3,6 @@ use chrono::DateTime;
 #[cfg(feature = "ping")]
 use chrono::Local;
 #[cfg(feature = "ping")]
-use tracing::debug;
-#[cfg(feature = "ping")]
-use tracing::warn;
-#[cfg(feature = "ping")]
 use prettytable::Cell;
 #[cfg(feature = "ping")]
 use prettytable::Row;
@@ -32,6 +28,10 @@ use std::panic::Location;
 use std::sync::mpsc::channel;
 #[cfg(feature = "ping")]
 use std::time::Duration;
+#[cfg(feature = "ping")]
+use tracing::debug;
+#[cfg(feature = "ping")]
+use tracing::warn;
 
 #[cfg(feature = "ping")]
 pub mod icmp;
@@ -43,6 +43,10 @@ use crate::Target;
 #[cfg(feature = "ping")]
 use crate::error::PistolError;
 #[cfg(feature = "ping")]
+use crate::layer::infer_addr;
+#[cfg(feature = "ping")]
+use crate::scan::DataRecvStatus;
+#[cfg(feature = "ping")]
 use crate::scan::PortStatus;
 #[cfg(feature = "ping")]
 use crate::scan::tcp;
@@ -52,10 +56,6 @@ use crate::scan::tcp6;
 use crate::scan::udp;
 #[cfg(feature = "ping")]
 use crate::scan::udp6;
-#[cfg(feature = "ping")]
-use crate::utils::infer_source_addr;
-#[cfg(feature = "ping")]
-use crate::utils::infer_source_addr6;
 #[cfg(feature = "ping")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "ping")]
@@ -245,24 +245,24 @@ pub enum PingMethods {
 #[cfg(feature = "ping")]
 fn threads_ping(
     method: PingMethods,
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
+    src_ipv4: Ipv4Addr,
+    src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration), PistolError> {
-    let (ping_status, rtt) = match method {
+) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
+    let (ping_status, data_return, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let (ret, rtt) =
+            let (port_status, data_return, rtt) =
                 tcp::send_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?;
-            match ret {
-                PortStatus::Open => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, rtt),
+            match port_status {
+                PortStatus::Open => (PingStatus::Up, data_return, rtt),
+                _ => (PingStatus::Down, data_return, rtt),
             }
         }
         PingMethods::Ack => {
@@ -271,11 +271,11 @@ fn threads_ping(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let (ret, rtt) =
+            let (ret, data_return, rtt) =
                 tcp::send_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?;
             match ret {
-                PortStatus::Unfiltered => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, rtt),
+                PortStatus::Unfiltered => (PingStatus::Up, data_return, rtt),
+                _ => (PingStatus::Down, data_return, rtt),
             }
         }
         PingMethods::Udp => {
@@ -284,43 +284,43 @@ fn threads_ping(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let (ret, rtt) =
+            let (ret, data_return, rtt) =
                 udp::send_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?;
             match ret {
-                PortStatus::Open => (PingStatus::Up, rtt),
+                PortStatus::Open => (PingStatus::Up, data_return, rtt),
                 // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, rtt),
+                _ => (PingStatus::Down, data_return, rtt),
             }
         }
         PingMethods::Icmp => {
-            let (ret, rtt) = icmp::send_icmp_ping_packet(dst_ipv4, src_ipv4, timeout)?;
-            (ret, rtt)
+            let (ret, data_return, rtt) = icmp::send_icmp_ping_packet(dst_ipv4, src_ipv4, timeout)?;
+            (ret, data_return, rtt)
         }
     };
-    Ok((ping_status, rtt))
+    Ok((ping_status, data_return, rtt))
 }
 
 #[cfg(feature = "ping")]
 fn threads_ping6(
     method: PingMethods,
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration), PistolError> {
-    let (ping_status, rtt) = match method {
+) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
+    let (ping_status, data_return, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let (ret, rtt) =
+            let (ret, data_return, rtt) =
                 tcp6::send_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             match ret {
-                PortStatus::Open => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, rtt),
+                PortStatus::Open => (PingStatus::Up, data_return, rtt),
+                _ => (PingStatus::Down, data_return, rtt),
             }
         }
         PingMethods::Ack => {
@@ -329,11 +329,11 @@ fn threads_ping6(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let (ret, rtt) =
+            let (ret, data_return, rtt) =
                 tcp6::send_ack_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             match ret {
-                PortStatus::Unfiltered => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, rtt),
+                PortStatus::Unfiltered => (PingStatus::Up, data_return, rtt),
+                _ => (PingStatus::Down, data_return, rtt),
             }
         }
         PingMethods::Udp => {
@@ -342,17 +342,17 @@ fn threads_ping6(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let (ret, rtt) =
+            let (ret, data_return, rtt) =
                 udp6::send_udp_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             match ret {
-                PortStatus::Open => (PingStatus::Up, rtt),
-                PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, rtt),
+                PortStatus::Open => (PingStatus::Up, data_return, rtt),
+                PortStatus::OpenOrFiltered => (PingStatus::Up, data_return, rtt),
+                _ => (PingStatus::Down, data_return, rtt),
             }
         }
-        PingMethods::Icmp => icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?,
+        PingMethods::Icmp => icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?,
     };
-    Ok((ping_status, rtt))
+    Ok((ping_status, data_return, rtt))
 }
 
 #[cfg(feature = "ping")]
@@ -392,8 +392,8 @@ fn ping(
                 for _ in 0..tests {
                     let tx = tx.clone();
                     recv_size += 1;
-                    let src_ipv4 = match infer_source_addr(src_addr, dst_ipv4)? {
-                        Some(s) => s,
+                    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+                        Some(ia) => ia.ipv4_addr()?,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
                     let dst_port = if target.ports.len() > 0 {
@@ -419,8 +419,8 @@ fn ping(
                 for _ in 0..tests {
                     let tx = tx.clone();
                     recv_size += 1;
-                    let src_ipv6 = match find_source_addr6(src_addr, dst_ipv6)? {
-                        Some(s) => s,
+                    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+                        Some(ia) => ia.ipv6_addr()?,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
                     let dst_port = if target.ports.len() > 0 {
@@ -450,7 +450,7 @@ fn ping(
     for (dst_ipv4, pr, stime) in iter {
         let etime = Local::now();
         match pr {
-            Ok((ping_status, rtt)) => {
+            Ok((ping_status, _data_return,, rtt)) => {
                 ping_results.insert(dst_ipv4, ping_status, rtt, stime, etime);
             }
             Err(e) => {

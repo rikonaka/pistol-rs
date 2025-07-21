@@ -21,13 +21,14 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::layers::ICMP_HEADER_SIZE;
-use crate::layers::IPV4_HEADER_SIZE;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmp;
-use crate::layers::LayerMatch;
-use crate::layers::layer3_ipv4_send;
+use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmp;
+use crate::layer::LayerMatch;
+use crate::layer::layer3_ipv4_send;
 use crate::ping::PingStatus;
+use crate::scan::DataRecvStatus;
 
 const TTL: u8 = 64;
 
@@ -35,7 +36,7 @@ pub fn send_icmp_ping_packet(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
-) -> Result<(PingStatus, Duration), PistolError> {
+) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
     const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ip header
@@ -44,7 +45,7 @@ pub fn send_icmp_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -65,7 +66,7 @@ pub fn send_icmp_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -87,7 +88,7 @@ pub fn send_icmp_ping_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
@@ -110,8 +111,9 @@ pub fn send_icmp_ping_packet(
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
@@ -138,11 +140,11 @@ pub fn send_icmp_ping_packet(
                             if icmp_type == IcmpTypes::DestinationUnreachable {
                                 if codes_1.contains(&icmp_code) {
                                     // icmp protocol unreachable error (type 3, code 2)
-                                    return Ok((PingStatus::Down, rtt));
+                                    return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
                                 }
                             } else if icmp_type == IcmpTypes::EchoReply {
                                 if codes_2.contains(&icmp_code) {
-                                    return Ok((PingStatus::Up, rtt));
+                                    return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                                 }
                             }
                         }
@@ -155,5 +157,5 @@ pub fn send_icmp_ping_packet(
         None => (),
     }
     // no response received (even after retransmissions)
-    Ok((PingStatus::Down, rtt))
+    Ok((PingStatus::Down, DataRecvStatus::No, rtt))
 }

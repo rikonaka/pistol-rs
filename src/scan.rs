@@ -36,9 +36,7 @@ use tracing::error;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::warn;
 
-#[cfg(feature = "scan")]
 pub mod arp;
-#[cfg(feature = "scan")]
 pub mod ndp_ns;
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub mod tcp;
@@ -58,6 +56,10 @@ use crate::error::PistolError;
 use crate::layer::find_interface_by_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layer::infer_addr;
+#[cfg(feature = "scan")]
+use crate::scan::arp::send_arp_scan_packet;
+#[cfg(feature = "scan")]
+use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -72,7 +74,7 @@ use crate::utils::threads_num_check;
 /// For example, in UDP scan, if no data is received, the status returned is open_or_filtered.
 /// So when UDP scan returns to the open_or_filtered state, DataRecvStatus should be set to No.
 /// This structure is used to indicate whether the program needs to be retried or terminated directly.
-#[cfg(feature = "scan")]
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
 pub enum DataRecvStatus {
     Yes,
@@ -209,7 +211,7 @@ fn ipv4_arp_scan(
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
-    arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
+    send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -252,7 +254,7 @@ pub fn arp_scan_raw(
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
-    match arp::send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
+    match send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
         Ok((mac, _)) => Ok(mac),
         Err(e) => Err(e),
     }

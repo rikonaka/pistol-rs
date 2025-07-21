@@ -779,7 +779,7 @@ pub fn tcp_udp_icmp_t(ipv4_response: &[u8], u1rr: &U1RR) -> Result<u16, PistolEr
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                path: format!("{}", Location::caller()),
+                location: format!("{}", Location::caller()),
             });
         }
     };
