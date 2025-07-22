@@ -18,10 +18,10 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::ICMP_HEADER_SIZE;
-use crate::layers::IPV4_HEADER_SIZE;
-use crate::layers::TCP_HEADER_SIZE;
-use crate::layers::UDP_HEADER_SIZE;
+use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::TCP_HEADER_SIZE;
+use crate::layer::UDP_HEADER_SIZE;
 
 /* 8 options:
 *  0~5: six options for SEQ/OPS/WIN/T1 probes.

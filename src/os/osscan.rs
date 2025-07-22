@@ -19,13 +19,13 @@ use std::time::SystemTime;
 use crate::IpCheckMethods;
 use crate::error::PistolError;
 use crate::hop::ipv4_get_hops;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmp;
-use crate::layers::Layer4MatchTcpUdp;
-use crate::layers::LayerMatch;
-use crate::layers::layer3_ipv4_send;
-use crate::layers::system_route;
-use crate::os::OSInfo;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmp;
+use crate::layer::Layer4MatchTcpUdp;
+use crate::layer::LayerMatch;
+use crate::layer::layer3_ipv4_send;
+use crate::layer::system_route;
+use crate::os::OsInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_sp;
@@ -88,7 +88,7 @@ const MAX_RETRY: usize = 5; // nmap default
 // IE(R=Y%DFI=N%T=40%CD=S)
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TargetFingerprint {
+pub struct PistolFingerprint {
     pub scan: String,
     pub seqx: SEQX,
     pub opsx: OPSX,
@@ -105,9 +105,9 @@ pub struct TargetFingerprint {
     pub iex: IEX,
 }
 
-impl TargetFingerprint {
-    pub fn empty() -> TargetFingerprint {
-        TargetFingerprint {
+impl PistolFingerprint {
+    pub fn empty() -> PistolFingerprint {
+        PistolFingerprint {
             scan: String::new(),
             seqx: SEQX::empty(),
             opsx: OPSX::empty(),
@@ -126,7 +126,7 @@ impl TargetFingerprint {
     }
 }
 
-impl fmt::Display for TargetFingerprint {
+impl fmt::Display for PistolFingerprint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let seqx_str = format!("\n{}", self.seqx);
@@ -159,7 +159,7 @@ impl fmt::Display for TargetFingerprint {
     }
 }
 
-impl TargetFingerprint {
+impl PistolFingerprint {
     pub fn nmap_format(&self) -> String {
         let interval = 72;
         let mut ret = String::new();
@@ -1766,12 +1766,12 @@ pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolError> {
     Ok(IEX { r, dfi, t, tg, cd })
 }
 
-fn sort_pick(arr: &[OSInfo], top_k: usize) -> Vec<OSInfo> {
+fn sort_pick(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
     /* Insertion Sort (O(n^2) ==! anyway) */
     let mut ret = Vec::new();
     let mut arr = arr.to_vec();
 
-    fn pick(arr: &[OSInfo]) -> (OSInfo, Vec<OSInfo>) {
+    fn pick(arr: &[OsInfo]) -> (OsInfo, Vec<OsInfo>) {
         let mut max_score = 0;
         let mut max_score_loc = 0;
         let mut arr = arr.to_vec();
@@ -1810,7 +1810,7 @@ pub fn threads_os_probe(
     nmap_os_db: Vec<NmapOSDB>,
     top_k: usize,
     timeout: Option<Duration>,
-) -> Result<(TargetFingerprint, Vec<OSInfo>), PistolError> {
+) -> Result<(PistolFingerprint, Vec<OsInfo>), PistolError> {
     // exec this line first to return error for host which dead
     let (dst_mac, _interface) = system_route(dst_ipv4, src_ipv4, timeout)?;
 
@@ -1875,7 +1875,7 @@ pub fn threads_os_probe(
             let iex = ie_fingerprint(&ap)?;
 
             debug!("generate the fingerprint");
-            let target_fingerprint = TargetFingerprint {
+            let target_fingerprint = PistolFingerprint {
                 scan,
                 seqx,
                 opsx,
@@ -1896,7 +1896,7 @@ pub fn threads_os_probe(
             for db in &nmap_os_db {
                 let (score, total) = db.check(&target_fingerprint);
                 // println!("name: {}, score: {}", &db.name, score);
-                let osinfo = OSInfo {
+                let osinfo = OsInfo {
                     name: db.name.clone(),
                     class: db.class.clone(),
                     score,

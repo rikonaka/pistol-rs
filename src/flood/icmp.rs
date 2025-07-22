@@ -13,9 +13,9 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::ICMP_HEADER_SIZE;
-use crate::layers::IPV4_HEADER_SIZE;
-use crate::layers::layer3_ipv4_send;
+use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::layer3_ipv4_send;
 
 const TTL: u8 = 64;
 pub fn send_icmp_flood_packet(
@@ -85,11 +85,9 @@ pub fn send_icmp_flood_packet(
     icmp_header.set_checksum(checksum);
     let timeout = None; // not wait the result
 
-    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
-        count += 1;
     }
 
-    Ok(ip_buff.len() * count)
+    Ok(ip_buff.len() * max_same_packet)
 }

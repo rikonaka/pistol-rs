@@ -9,9 +9,9 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::IPV4_HEADER_SIZE;
-use crate::layers::UDP_HEADER_SIZE;
-use crate::layers::layer3_ipv4_send;
+use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::UDP_HEADER_SIZE;
+use crate::layer::layer3_ipv4_send;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
@@ -42,10 +42,10 @@ pub fn send_udp_flood_packet(
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(TTL);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Udp);
-    let c = ipv4::checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
+    let c = ipv4::checksum(&ip_header.to_immutable());
+    ip_header.set_checksum(c);
 
     // udp header
     let mut udp_header = match MutableUdpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -64,11 +64,8 @@ pub fn send_udp_flood_packet(
     udp_header.set_checksum(checksum);
     let timeout = None;
 
-    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
-        count += 1;
     }
-
-    Ok(ip_buff.len() * count)
+    Ok(ip_buff.len() * max_same_packet)
 }

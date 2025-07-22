@@ -7,7 +7,7 @@ use super::osscan::IEX;
 use super::osscan::OPSX;
 use super::osscan::SEQX;
 use super::osscan::TXX;
-use super::osscan::TargetFingerprint;
+use super::osscan::PistolFingerprint;
 use super::osscan::U1X;
 use super::osscan::WINX;
 use crate::error::PistolError;
@@ -635,7 +635,7 @@ pub struct NmapOSDB {
 }
 
 impl NmapOSDB {
-    pub fn check(&self, probe_ret: &TargetFingerprint) -> (usize, usize) {
+    pub fn check(&self, probe_ret: &PistolFingerprint) -> (usize, usize) {
         let (seq_score, seq_total) = self.seq.check(&probe_ret.seqx);
         // println!("SEQ: {}", seq_check);
         let (ops_score, ops_total) = self.ops.check(&probe_ret.opsx);

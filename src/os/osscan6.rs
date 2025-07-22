@@ -16,18 +16,18 @@ use std::time::SystemTime;
 use crate::IpCheckMethods;
 use crate::error::PistolError;
 use crate::hop::ipv6_get_hops;
-use crate::layers::Layer3Match;
-use crate::layers::Layer4MatchIcmpv6;
-use crate::layers::Layer4MatchTcpUdp;
-use crate::layers::LayerMatch;
-use crate::layers::layer3_ipv6_send;
-use crate::layers::system_route6;
+use crate::layer::Layer3Match;
+use crate::layer::Layer4MatchIcmpv6;
+use crate::layer::Layer4MatchTcpUdp;
+use crate::layer::LayerMatch;
+use crate::layer::layer3_ipv6_send;
+use crate::layer::system_route6;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_sp;
 
 use super::Linear;
-use super::OSInfo6;
+use super::OsInfo6;
 use super::operator6::apply_scale;
 use super::operator6::vectorize;
 use super::osscan::get_scan_line;
@@ -352,7 +352,7 @@ impl fmt::Display for TX6 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TargetFingerprint6 {
+pub struct PistolFingerprint6 {
     // Some fields just for display.
     pub scan: String,
     pub s1x: SEQX6,
@@ -378,9 +378,9 @@ pub struct TargetFingerprint6 {
     pub status: bool,
 }
 
-impl TargetFingerprint6 {
-    pub fn empty() -> TargetFingerprint6 {
-        TargetFingerprint6 {
+impl PistolFingerprint6 {
+    pub fn empty() -> PistolFingerprint6 {
+        PistolFingerprint6 {
             scan: String::new(),
             s1x: SEQX6::empty(),
             s2x: SEQX6::empty(),
@@ -407,7 +407,7 @@ impl TargetFingerprint6 {
     }
 }
 
-impl TargetFingerprint6 {
+impl PistolFingerprint6 {
     pub fn nmap_format(&self) -> String {
         let interval = 71; // from nmap format
         let mut ret = String::new();
@@ -426,7 +426,7 @@ impl TargetFingerprint6 {
     }
 }
 
-impl fmt::Display for TargetFingerprint6 {
+impl fmt::Display for PistolFingerprint6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let s1x_str = format!("\n{}", self.s1x);
@@ -1162,8 +1162,8 @@ fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
     sum.sqrt()
 }
 
-fn isort(arr: &[OSInfo6]) -> Vec<OSInfo6> {
-    fn pick(arr: &[OSInfo6]) -> (OSInfo6, Vec<OSInfo6>) {
+fn isort(arr: &[OsInfo6]) -> Vec<OsInfo6> {
+    fn pick(arr: &[OsInfo6]) -> (OsInfo6, Vec<OsInfo6>) {
         let mut max_score = 0.0;
         let mut max_score_loc = 0;
         let mut i = 0;
@@ -1199,7 +1199,7 @@ pub fn threads_os_probe6(
     top_k: usize,
     linear: Linear,
     timeout: Option<Duration>,
-) -> Result<(TargetFingerprint6, Vec<OSInfo6>), PistolError> {
+) -> Result<(PistolFingerprint6, Vec<OsInfo6>), PistolError> {
     debug!("send all probes now");
     let ap = send_all_probes(
         dst_ipv6,
@@ -1260,7 +1260,7 @@ pub fn threads_os_probe6(
         if class.len() > 0 {
             let class = class[0].join(" | ");
             let cpe = linear.cpe[i].cpe.join(" ");
-            let dr = OSInfo6 {
+            let dr = OsInfo6 {
                 name: name.to_string(),
                 class,
                 cpe,
@@ -1402,7 +1402,7 @@ pub fn threads_os_probe6(
         rt: ap.tx.rt7,
     };
 
-    let target_fingerprint = TargetFingerprint6 {
+    let target_fingerprint = PistolFingerprint6 {
         scan,
         s1x,
         s2x,

@@ -7,8 +7,6 @@ use std::fmt;
 use std::fs::File;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
-use std::net::Ipv4Addr;
-#[cfg(feature = "os")]
 use std::net::Ipv6Addr;
 use std::result;
 use std::str::FromStr;
@@ -476,6 +474,11 @@ impl PistolLogger {
         let _ = tracing::subscriber::set_global_default(subscriber)?;
         Ok(())
     }
+}
+
+#[cfg(feature = "os")]
+trait Ipv6CheckMethods {
+    fn is_global_x(&self) -> bool;
 }
 
 /// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,

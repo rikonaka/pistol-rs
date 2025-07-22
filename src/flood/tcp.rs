@@ -10,9 +10,9 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::IPV4_HEADER_SIZE;
-use crate::layers::TCP_HEADER_SIZE;
-use crate::layers::layer3_ipv4_send;
+use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::TCP_HEADER_SIZE;
+use crate::layer::layer3_ipv4_send;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
@@ -70,12 +70,10 @@ pub fn send_syn_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = None;
 
-    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
-        count += 1;
     }
-    Ok(ip_buff.len() * count)
+    Ok(ip_buff.len() * max_same_packet)
 }
 
 pub fn send_ack_flood_packet(
@@ -131,12 +129,10 @@ pub fn send_ack_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = None;
 
-    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
-        count += 1;
     }
-    Ok(ip_buff.len() * count)
+    Ok(ip_buff.len() * max_same_packet)
 }
 
 pub fn send_ack_psh_flood_packet(
@@ -192,10 +188,8 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_checksum(checksum);
     let timeout = None;
 
-    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
-        count += 1;
     }
-    Ok(ip_buff.len() * count)
+    Ok(ip_buff.len() * max_same_packet)
 }

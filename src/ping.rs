@@ -78,7 +78,7 @@ pub enum PingStatus {
     Error,
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
+#[cfg(feature = "ping")]
 impl fmt::Display for PingStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
@@ -104,17 +104,17 @@ pub struct PistolPings {
     pub ping_reports: Vec<PingReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
-    max_tests: usize,
+    max_attempts: usize,
 }
 
 #[cfg(feature = "ping")]
 impl PistolPings {
-    pub fn new(max_tests: usize) -> PistolPings {
+    pub fn new(max_attempts: usize) -> PistolPings {
         PistolPings {
             ping_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
-            max_tests,
+            max_attempts,
         }
     }
     pub fn value(&self) -> Vec<PingReport> {
@@ -133,9 +133,12 @@ impl fmt::Display for PistolPings {
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Ping Results (max_tests:{})", self.max_tests))
-                .style_spec("c")
-                .with_hspan(4),
+            Cell::new(&format!(
+                "Ping Results (max_attempts:{})",
+                self.max_attempts
+            ))
+            .style_spec("c")
+            .with_hspan(4),
         ]));
 
         table.add_row(row![
@@ -322,9 +325,9 @@ fn ping(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_tests: usize,
+    max_attempts: usize,
 ) -> Result<PistolPings, PistolError> {
-    let mut pistol_pings = PistolPings::new(max_tests);
+    let mut pistol_pings = PistolPings::new(max_attempts);
 
     let threads_num = match threads_num {
         Some(t) => t,
@@ -364,11 +367,11 @@ fn ping(
                     None
                 };
                 pool.execute(move || {
-                    for ind in 0..max_tests {
+                    for ind in 0..max_attempts {
                         let start_time = Instant::now();
                         let ping_ret =
                             threads_ping(method, dst_ipv4, dst_port, src_ipv4, src_port, timeout);
-                        if ind == max_tests - 1 {
+                        if ind == max_attempts - 1 {
                             // last attempt
                             tx.send((dst_addr, ping_ret, start_time.elapsed()))
                                 .expect(&format!("tx send failed at {}", Location::caller()));
@@ -422,11 +425,11 @@ fn ping(
                     None
                 };
                 pool.execute(move || {
-                    for ind in 0..max_tests {
+                    for ind in 0..max_attempts {
                         let start_time = Instant::now();
                         let ping_ret =
                             threads_ping6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
-                        if ind == max_tests - 1 {
+                        if ind == max_attempts - 1 {
                             // last attempt
                             tx.send((dst_addr, ping_ret, start_time.elapsed()))
                                 .expect(&format!("tx send failed at {}", Location::caller()));
@@ -508,7 +511,7 @@ pub fn tcp_syn_ping(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_tests: usize,
+    max_attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
@@ -517,7 +520,7 @@ pub fn tcp_syn_ping(
         src_addr,
         src_port,
         timeout,
-        max_tests,
+        max_attempts,
     )
 }
 
@@ -572,7 +575,7 @@ pub fn tcp_ack_ping(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_tests: usize,
+    max_attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
@@ -581,7 +584,7 @@ pub fn tcp_ack_ping(
         src_addr,
         src_port,
         timeout,
-        max_tests,
+        max_attempts,
     )
 }
 
@@ -636,7 +639,7 @@ pub fn udp_ping(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_tests: usize,
+    max_attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
@@ -645,7 +648,7 @@ pub fn udp_ping(
         src_addr,
         src_port,
         timeout,
-        max_tests,
+        max_attempts,
     )
 }
 
@@ -706,7 +709,7 @@ pub fn icmp_ping(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_tests: usize,
+    max_attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
@@ -715,7 +718,7 @@ pub fn icmp_ping(
         src_addr,
         src_port,
         timeout,
-        max_tests,
+        max_attempts,
     )
 }
 
@@ -727,7 +730,7 @@ pub fn icmpv6_ping(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_tests: usize,
+    max_attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
@@ -736,7 +739,7 @@ pub fn icmpv6_ping(
         src_addr,
         src_port,
         timeout,
-        max_tests,
+        max_attempts,
     )
 }
 
@@ -769,7 +772,7 @@ pub fn icmp_ping_raw(
 
 #[cfg(feature = "ping")]
 #[cfg(test)]
-mod max_tests {
+mod max_attempts {
     use super::*;
     use crate::PistolLogger;
     use crate::PistolRunner;
@@ -792,7 +795,7 @@ mod max_tests {
         let target1 = Target::new(addr1, Some(vec![80]));
         let target2 = Target::new(addr2, Some(vec![80]));
         let target3 = Target::new(addr3, Some(vec![80]));
-        let max_tests = 2;
+        let max_attempts = 2;
         let threads_num = Some(8);
         let ret = tcp_syn_ping(
             &[target1, target2, target3],
@@ -801,7 +804,7 @@ mod max_tests {
             src_ipv4,
             src_port,
             timeout,
-            max_tests,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -839,7 +842,7 @@ mod max_tests {
         let target1 = Target::new(addr1.into(), Some(vec![80]));
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
-        let max_tests = 4;
+        let max_attempts = 4;
         let threads_num = Some(8);
         let ret = tcp_syn_ping(
             &[target1, target2, target3],
@@ -847,7 +850,7 @@ mod max_tests {
             src_ipv4,
             src_port,
             timeout,
-            max_tests,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -871,7 +874,7 @@ mod max_tests {
         let target2 = Target::new(addr2.into(), Some(vec![]));
         let target3 = Target::new(addr3.into(), Some(vec![]));
         let target4 = Target::new(addr4.into(), Some(vec![]));
-        let max_tests = 4;
+        let max_attempts = 4;
         let threads_num = Some(8);
         let ret = icmp_ping(
             &[target1, target2, target3, target4],
@@ -879,7 +882,7 @@ mod max_tests {
             src_ipv4,
             src_port,
             timeout,
-            max_tests,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -897,7 +900,7 @@ mod max_tests {
         let timeout = Some(Duration::new(1, 0));
         let addr1 = Ipv4Addr::new(192, 168, 1, 2);
         let target1 = Target::new(addr1.into(), Some(vec![]));
-        let max_tests = 4;
+        let max_attempts = 4;
         let threads_num = Some(8);
         let ret = icmp_ping(
             &[target1],
@@ -905,7 +908,7 @@ mod max_tests {
             src_ipv4,
             src_port,
             timeout,
-            max_tests,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -926,7 +929,7 @@ mod max_tests {
         let target1 = Target::new(addr1.into(), Some(vec![80]));
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
-        let max_tests = 4;
+        let max_attempts = 4;
         let threads_num = Some(8);
         let timeout = Some(Duration::new(1, 0));
         let ret = icmpv6_ping(
@@ -935,7 +938,7 @@ mod max_tests {
             src_addr,
             src_port,
             timeout,
-            max_tests,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);

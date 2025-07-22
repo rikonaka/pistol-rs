@@ -6,9 +6,9 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 
 use crate::error::PistolError;
-use crate::layers::IPV6_HEADER_SIZE;
-use crate::layers::UDP_HEADER_SIZE;
-use crate::layers::layer3_ipv6_send;
+use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::UDP_HEADER_SIZE;
+use crate::layer::layer3_ipv6_send;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
@@ -57,10 +57,8 @@ pub fn send_udp_flood_packet(
     udp_header.set_checksum(checksum);
     let timeout = None;
 
-    let mut count = 0;
     for _ in 0..max_same_packet {
         let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
-        count += 1;
     }
-    Ok(ipv6_buff.len() * count)
+    Ok(ipv6_buff.len() * max_same_packet)
 }
