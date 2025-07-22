@@ -170,7 +170,7 @@ impl fmt::Display for PistolPings {
         // let help_info = "NOTE:\nThe target host is considered alive\nas long as one of the packets returns\na result that is considered to be alive.";
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
-        let avg_cost = total_cost.as_seconds_f32() / self.ping_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.ping_reports.len() as f64;
         let summary = format!(
             "total cost: {:.3}s\navg cost: {:.3}s\nalive hosts: {}",
             total_cost.as_seconds_f32(),
@@ -764,7 +764,7 @@ pub fn icmp_ping_raw(
         IpAddr::V6(_) => {
             let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
             let (ret, _data_return, rtt) =
-                icmpv6::send_icmpv6_ping_packet(src_ipv6, dst_ipv6, timeout)?;
+                icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
             Ok((ret, rtt))
         }
     }

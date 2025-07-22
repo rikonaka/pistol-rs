@@ -25,6 +25,10 @@ use std::panic::Location;
 #[cfg(feature = "flood")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "flood")]
+use std::time::Duration;
+#[cfg(feature = "flood")]
+use std::time::Instant;
+#[cfg(feature = "flood")]
 use tracing::error;
 
 #[cfg(feature = "flood")]
@@ -57,8 +61,7 @@ pub struct FloodReport {
     pub addr: IpAddr,
     pub send_packet: usize, // count
     pub send_size: usize,   // KB, MB or GB
-    pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub time_cost: Duration,
 }
 
 #[cfg(feature = "flood")]
@@ -68,8 +71,7 @@ impl FloodReport {
             addr,
             send_packet: 0,
             send_size: 0,
-            start_time: Local::now(),
-            end_time: Local::now(),
+            time_cost: Duration::new(0, 0),
         }
     }
 }
@@ -117,20 +119,20 @@ impl fmt::Display for PistolFloods {
         }
 
         for (addr, report) in btm_addr {
-            let time_cost = report.end_time - report.start_time;
-            let time_cost = time_cost.as_seconds_f32();
-            let (size_str, traffic_str) = if report.send_size as f32 / BYTES_PER_GB as f32 > 1.0 {
-                let v = report.send_size as f32 / BYTES_PER_GB as f32;
+            let time_cost = report.time_cost;
+            let time_cost = time_cost.as_secs_f32();
+            let (size_str, traffic_str) = if report.send_size as f64 / BYTES_PER_GB as f64 > 1.0 {
+                let v = report.send_size as f64 / BYTES_PER_GB as f64;
                 let k = v / time_cost;
-                (format!("{:.3} GB", v), format!("{:.3} GB/s", k))
-            } else if report.send_size as f32 / BYTES_PER_MB as f32 > 1.0 {
-                let v = report.send_size as f32 / BYTES_PER_MB as f32;
+                (format!("{:.3}GB", v), format!("{:.3}GB/s", k))
+            } else if report.send_size as f64 / BYTES_PER_MB as f64 > 1.0 {
+                let v = report.send_size as f64 / BYTES_PER_MB as f64;
                 let k = v / time_cost;
-                (format!("{:.3} MB", v), format!("{:.3} MB/s", k))
+                (format!("{:.3}MB", v), format!("{:.3}MB/s", k))
             } else {
                 let v = report.send_size;
-                let k = v as f32 / time_cost;
-                (format!("{} Bytes", v), format!("{:.3} B/s", k))
+                let k = v as f64 / time_cost;
+                (format!("{}Bytes", v), format!("{:.3}B/s", k))
             };
             let traffic_str = format!(
                 "packets sent: {}({}), time cost: {:.3}({})",
@@ -297,7 +299,7 @@ fn flood(
                     let dst_port = dst_port.clone();
                     recv_size += 1;
                     pool.execute(move || {
-                        let start_time = Local::now();
+                        let start_time = Instant::now();
                         let ret = ipv4_flood(
                             method,
                             dst_ipv4,
@@ -319,7 +321,7 @@ fn flood(
                     let dst_port = dst_port.clone();
                     recv_size += 1;
                     pool.execute(move || {
-                        let start_time = Local::now();
+                        let start_time = Instant::now();
                         let ret = ipv6_flood(
                             method,
                             dst_ipv6,
@@ -341,15 +343,14 @@ fn flood(
     let iter = rx.into_iter().take(recv_size);
     let mut flood_reports = Vec::new();
     for (addr, ret, start_time) in iter {
-        let end_time = Local::now();
+        let time_cost = start_time.elapsed();
         match ret {
             Ok((send_packet, send_size)) => {
                 let flood_report = FloodReport {
                     addr,
                     send_packet,
                     send_size,
-                    start_time,
-                    end_time,
+                    time_cost,
                 };
                 flood_reports.push(flood_report);
             }

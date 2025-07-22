@@ -11,8 +11,8 @@ pub mod icmp;
 pub mod icmpv6;
 
 pub fn ipv4_get_hops(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     for ttl in 1..=30 {
@@ -26,12 +26,12 @@ pub fn ipv4_get_hops(
 }
 
 pub fn ipv6_get_hops(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     for ttl in 1..=30 {
-        let ret = send_icmpv6_ping_packet(src_ipv6, dst_ipv6, ttl, timeout)?;
+        let ret = send_icmpv6_ping_packet(dst_ipv6, src_ipv6, ttl, timeout)?;
         if ret {
             debug!("ipv6 get hops: {}", ttl);
             return Ok(ttl);
@@ -59,7 +59,7 @@ mod tests {
         let src_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
         let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
         let timeout = Some(Duration::new(1, 0));
-        let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout).unwrap();
+        let hops = ipv6_get_hops(dst_ipv6, src_ipv6, timeout).unwrap();
         println!("{}", hops);
     }
 }

@@ -1,7 +1,6 @@
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
-use tracing::debug;
 use pnet::datalink::MacAddr;
 use rand::Rng;
 use serde::Deserialize;
@@ -15,6 +14,7 @@ use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
+use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
@@ -23,12 +23,12 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
+use crate::layer::get_dst_mac_and_interface;
 use crate::layer::layer3_ipv4_send;
-use crate::layer::system_route;
 use crate::os::OsInfo;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::utils::random_port_sp;
+use crate::utils::random_port_range;
 
 use super::dbparser::NmapOSDB;
 use super::operator::icmp_cd;
@@ -88,7 +88,7 @@ const MAX_RETRY: usize = 5; // nmap default
 // IE(R=Y%DFI=N%T=40%CD=S)
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PistolFingerprint {
+pub struct Fingerprint {
     pub scan: String,
     pub seqx: SEQX,
     pub opsx: OPSX,
@@ -105,9 +105,9 @@ pub struct PistolFingerprint {
     pub iex: IEX,
 }
 
-impl PistolFingerprint {
-    pub fn empty() -> PistolFingerprint {
-        PistolFingerprint {
+impl Fingerprint {
+    pub fn empty() -> Fingerprint {
+        Fingerprint {
             scan: String::new(),
             seqx: SEQX::empty(),
             opsx: OPSX::empty(),
@@ -126,7 +126,7 @@ impl PistolFingerprint {
     }
 }
 
-impl fmt::Display for PistolFingerprint {
+impl fmt::Display for Fingerprint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let seqx_str = format!("\n{}", self.seqx);
@@ -159,7 +159,7 @@ impl fmt::Display for PistolFingerprint {
     }
 }
 
-impl PistolFingerprint {
+impl Fingerprint {
     pub fn nmap_format(&self) -> String {
         let interval = 72;
         let mut ret = String::new();
@@ -263,27 +263,27 @@ pub fn get_scan_line(
 }
 
 fn send_seq_probes(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<SEQRR, PistolError> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_port_start = random_port_sp(1000, 6540);
+    let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
         src_ports.push(src_port_start * 10 + i);
     }
 
-    let buff_1 = packet::seq_packet_1_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
-    let buff_2 = packet::seq_packet_2_layer3(src_ipv4, src_ports[1], dst_ipv4, dst_open_port)?;
-    let buff_3 = packet::seq_packet_3_layer3(src_ipv4, src_ports[2], dst_ipv4, dst_open_port)?;
-    let buff_4 = packet::seq_packet_4_layer3(src_ipv4, src_ports[3], dst_ipv4, dst_open_port)?;
-    let buff_5 = packet::seq_packet_5_layer3(src_ipv4, src_ports[4], dst_ipv4, dst_open_port)?;
-    let buff_6 = packet::seq_packet_6_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_open_port)?;
+    let buff_1 = packet::seq_packet_1_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[0])?;
+    let buff_2 = packet::seq_packet_2_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[1])?;
+    let buff_3 = packet::seq_packet_3_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[2])?;
+    let buff_4 = packet::seq_packet_4_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[3])?;
+    let buff_5 = packet::seq_packet_5_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[4])?;
+    let buff_6 = packet::seq_packet_6_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[5])?;
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
     // let buffs = vec![buff_4];
 
@@ -373,8 +373,8 @@ fn send_seq_probes(
 }
 
 fn send_ie_probes(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<IERR, PistolError> {
     let (tx, rx) = channel();
@@ -394,8 +394,9 @@ fn send_ie_probes(
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
@@ -449,9 +450,9 @@ fn send_ie_probes(
 }
 
 fn send_ecn_probe(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
@@ -467,7 +468,7 @@ fn send_ecn_probe(
     };
     let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
-    let buff = packet::ecn_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_open_port)?;
+    let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
@@ -495,17 +496,17 @@ fn send_ecn_probe(
 }
 
 fn send_tx_probes(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<TXRR, PistolError> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_port_start = random_port_sp(1000, 6540);
+    let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
         src_ports.push(src_port_start * 10 + i);
@@ -562,17 +563,17 @@ fn send_tx_probes(
     ];
 
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
-    let buff_2 = packet::t2_packet_layer3(src_ipv4, src_ports[0], dst_ipv4, dst_open_port)?;
+    let buff_2 = packet::t2_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[0])?;
     // T3 sends a TCP packet with the SYN, FIN, URG, and PSH flags set and a window field of 256 to an open port. The IP DF bit is not set.
-    let buff_3 = packet::t3_packet_layer3(src_ipv4, src_ports[1], dst_ipv4, dst_open_port)?;
+    let buff_3 = packet::t3_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[1])?;
     // T4 sends a TCP ACK packet with IP DF and a window field of 1024 to an open port.
-    let buff_4 = packet::t4_packet_layer3(src_ipv4, src_ports[2], dst_ipv4, dst_open_port)?;
+    let buff_4 = packet::t4_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[2])?;
     // T5 sends a TCP SYN packet without IP DF and a window field of 31337 to a closed port.
-    let buff_5 = packet::t5_packet_layer3(src_ipv4, src_ports[3], dst_ipv4, dst_closed_port)?;
+    let buff_5 = packet::t5_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_ports[3])?;
     // T6 sends a TCP ACK packet with IP DF and a window field of 32768 to a closed port.
-    let buff_6 = packet::t6_packet_layer3(src_ipv4, src_ports[4], dst_ipv4, dst_closed_port)?;
+    let buff_6 = packet::t6_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_ports[4])?;
     // T7 sends a TCP packet with the FIN, PSH, and URG flags set and a window field of 65535 to a closed port. The IP DF bit is not set.
-    let buff_7 = packet::t7_packet_layer3(src_ipv4, src_ports[5], dst_ipv4, dst_closed_port)?;
+    let buff_7 = packet::t7_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_ports[5])?;
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
     // let buffs = vec![buff_5];
 
@@ -644,9 +645,9 @@ fn send_tx_probes(
 }
 
 fn send_u1_probe(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
@@ -657,12 +658,13 @@ fn send_u1_probe(
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
-        types: None,
-        codes: None,
+        icmp_type: None,
+        icmp_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
-    let buff = packet::udp_packet_layer3(src_ipv4, src_port, dst_ipv4, dst_closed_port)?;
+    let buff = packet::udp_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
@@ -690,24 +692,24 @@ fn send_u1_probe(
 }
 
 fn send_all_probes(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<AllPacketRR, PistolError> {
-    let seq = send_seq_probes(dst_ipv4, src_ipv4, dst_open_tcp_port, timeout)?;
+    let seq = send_seq_probes(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
     let ie = send_ie_probes(dst_ipv4, src_ipv4, timeout)?;
-    let ecn = send_ecn_probe(dst_ipv4, src_ipv4, dst_open_tcp_port, timeout)?;
+    let ecn = send_ecn_probe(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
     let tx = send_tx_probes(
         dst_ipv4,
-        src_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
+        src_ipv4,
         timeout,
     )?;
-    let u1 = send_u1_probe(dst_ipv4, src_ipv4, dst_closed_udp_port, timeout)?;
+    let u1 = send_u1_probe(dst_ipv4, dst_closed_udp_port, src_ipv4, timeout)?;
 
     let ap = AllPacketRR {
         seq,
@@ -811,7 +813,7 @@ pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
     let (r, sp, gcd, isr, ti, ci, ii, ss, ts) = if num >= 4 {
         let (gcd, diff) = tcp_gcd(&ap.seq)?; // None mean error
         let elapsed = ap.seq.elapsed / 6.0;
-        let (isr, seq_rates) = tcp_isr(diff, elapsed as f32)?;
+        let (isr, seq_rates) = tcp_isr(diff, elapsed as f64)?;
         let sp = tcp_sp(seq_rates, gcd)?;
         let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.tx, &ap.ie)?;
         let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii)?;
@@ -1802,25 +1804,26 @@ fn sort_pick(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
 }
 
 pub fn threads_os_probe(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    src_ipv4: Ipv4Addr,
     nmap_os_db: Vec<NmapOSDB>,
     top_k: usize,
     timeout: Option<Duration>,
-) -> Result<(PistolFingerprint, Vec<OsInfo>), PistolError> {
+) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {
     // exec this line first to return error for host which dead
-    let (dst_mac, _interface) = system_route(dst_ipv4, src_ipv4, timeout)?;
+    let (dst_mac, _interface) =
+        get_dst_mac_and_interface(dst_ipv4.into(), src_ipv4.into(), timeout)?;
 
     debug!("send all probes now");
     let ap = send_all_probes(
         dst_ipv4,
-        src_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
+        src_ipv4,
         timeout,
     )?;
 
@@ -1875,7 +1878,7 @@ pub fn threads_os_probe(
             let iex = ie_fingerprint(&ap)?;
 
             debug!("generate the fingerprint");
-            let target_fingerprint = PistolFingerprint {
+            let target_fingerprint = Fingerprint {
                 scan,
                 seqx,
                 opsx,

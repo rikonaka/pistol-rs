@@ -67,7 +67,7 @@ pub fn send_syn_flood_packet(
     let timeout = None;
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
+        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
     }
     Ok(ipv6_buff.len() * max_same_packet)
 }
@@ -124,7 +124,7 @@ pub fn send_ack_flood_packet(
     let timeout = None;
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
+        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
     }
     Ok(ipv6_buff.len() * max_same_packet)
 }
@@ -181,7 +181,7 @@ pub fn send_ack_psh_flood_packet(
     let timeout = None;
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &ipv6_buff, vec![], timeout, false)?;
+        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
     }
     Ok(ipv6_buff.len() * max_same_packet)
 }

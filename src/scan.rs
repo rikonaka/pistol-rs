@@ -146,7 +146,7 @@ impl fmt::Display for PistolMacScans {
             );
             i += 1;
         }
-        let avg_cost = total_cost.as_seconds_f32() / self.mac_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.mac_reports.len() as f64;
 
         let summary = format!(
             "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
@@ -582,7 +582,7 @@ impl fmt::Display for PistolPortScans {
         // );
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
-        let avg_cost = total_cost.as_seconds_f32() / self.port_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.port_reports.len() as f64;
         let summary = format!(
             "total cost: {:.3}s\navg cost: {:.3}s\nopen ports: {}",
             total_cost.as_seconds_f32(),

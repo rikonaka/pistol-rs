@@ -1,4 +1,4 @@
-use tracing::debug;
+use pnet::datalink::MacAddr;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -12,6 +12,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
+use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
@@ -20,11 +21,11 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
+use crate::layer::get_dst_mac_and_interface;
 use crate::layer::layer3_ipv6_send;
-use crate::layer::system_route6;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
-use crate::utils::random_port_sp;
+use crate::utils::random_port_range;
 
 use super::Linear;
 use super::OsInfo6;
@@ -352,7 +353,7 @@ impl fmt::Display for TX6 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PistolFingerprint6 {
+pub struct Fingerprint6 {
     // Some fields just for display.
     pub scan: String,
     pub s1x: SEQX6,
@@ -378,9 +379,9 @@ pub struct PistolFingerprint6 {
     pub status: bool,
 }
 
-impl PistolFingerprint6 {
-    pub fn empty() -> PistolFingerprint6 {
-        PistolFingerprint6 {
+impl Fingerprint6 {
+    pub fn empty() -> Fingerprint6 {
+        Fingerprint6 {
             scan: String::new(),
             s1x: SEQX6::empty(),
             s2x: SEQX6::empty(),
@@ -407,7 +408,7 @@ impl PistolFingerprint6 {
     }
 }
 
-impl PistolFingerprint6 {
+impl Fingerprint6 {
     pub fn nmap_format(&self) -> String {
         let interval = 71; // from nmap format
         let mut ret = String::new();
@@ -426,7 +427,7 @@ impl PistolFingerprint6 {
     }
 }
 
-impl fmt::Display for PistolFingerprint6 {
+impl fmt::Display for Fingerprint6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = format!("{}", self.scan);
         let s1x_str = format!("\n{}", self.s1x);
@@ -494,26 +495,26 @@ impl fmt::Display for PistolFingerprint6 {
 }
 
 fn send_seq_probes(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
+    src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
     start_time: Instant,
 ) -> Result<SEQRR6, PistolError> {
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_port_start = random_port_sp(1000, 6540);
+    let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
         src_ports.push(src_port_start * 10 + i);
     }
-    let buff_1 = packet6::seq_packet_1_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port)?;
-    let buff_2 = packet6::seq_packet_2_layer3(src_ipv6, src_ports[1], dst_ipv6, dst_open_port)?;
-    let buff_3 = packet6::seq_packet_3_layer3(src_ipv6, src_ports[2], dst_ipv6, dst_open_port)?;
-    let buff_4 = packet6::seq_packet_4_layer3(src_ipv6, src_ports[3], dst_ipv6, dst_open_port)?;
-    let buff_5 = packet6::seq_packet_5_layer3(src_ipv6, src_ports[4], dst_ipv6, dst_open_port)?;
-    let buff_6 = packet6::seq_packet_6_layer3(src_ipv6, src_ports[5], dst_ipv6, dst_open_port)?;
+    let buff_1 = packet6::seq_packet_1_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[0])?;
+    let buff_2 = packet6::seq_packet_2_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[1])?;
+    let buff_3 = packet6::seq_packet_3_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[2])?;
+    let buff_4 = packet6::seq_packet_4_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[3])?;
+    let buff_5 = packet6::seq_packet_5_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[4])?;
+    let buff_6 = packet6::seq_packet_6_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[5])?;
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
 
     let start = SystemTime::now();
@@ -536,7 +537,7 @@ fn send_seq_probes(
             for retry_time in 0..MAX_RETRY {
                 let st = start_time.elapsed();
                 let ret =
-                    layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout, true);
+                    layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true);
                 let rt = start_time.elapsed();
                 match ret {
                     Ok((response, rtt)) => {
@@ -635,15 +636,15 @@ fn send_seq_probes(
 }
 
 fn send_ie_probes(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
     start_time: Instant,
 ) -> Result<IERR6, PistolError> {
     let (tx, rx) = channel();
 
-    let buff_1 = packet6::ie_packet_1_layer3(src_ipv6, dst_ipv6)?;
-    let buff_2 = packet6::ie_packet_2_layer3(src_ipv6, dst_ipv6)?;
+    let buff_1 = packet6::ie_packet_1_layer3(dst_ipv6, src_ipv6)?;
+    let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
     let buffs = vec![buff_1, buff_2];
     // let match_object = MatchObject::new_layer4_icmpv6_specific(Icmpv6Types::EchoReply, Icmpv6Code(0));
     let layer3 = Layer3Match {
@@ -655,6 +656,7 @@ fn send_ie_probes(
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -666,7 +668,7 @@ fn send_ie_probes(
         for retry_time in 0..MAX_RETRY {
             let st = start_time.elapsed();
             let ret =
-                layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout, true);
+                layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true);
             let rt = start_time.elapsed();
             match ret {
                 Ok((response, rtt)) => {
@@ -727,15 +729,16 @@ fn send_ie_probes(
 }
 
 fn send_nx_probes(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
     timeout: Option<Duration>,
     start_time: Instant,
 ) -> Result<NXRR6, PistolError> {
     let (tx, rx) = channel();
 
-    let buff_1 = packet6::ni_packet_layer3(src_ipv6, dst_ipv6)?;
-    let buff_2 = packet6::ns_packet_layer3(src_ipv6, dst_ipv6)?;
+    let buff_1 = packet6::ni_packet_layer3(dst_ipv6, src_ipv6)?;
+    let buff_2 = packet6::ns_packet_layer3(dst_ipv6, src_ipv6, src_mac)?;
     let buffs = vec![buff_1, buff_2];
     // let buffs = vec![buff_1];
     // let buffs = vec![buff_2];
@@ -748,6 +751,7 @@ fn send_nx_probes(
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -759,7 +763,7 @@ fn send_nx_probes(
         for retry_time in 0..MAX_RETRY {
             let st = start_time.elapsed();
             let ret =
-                layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout, true);
+                layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true);
             let rt = start_time.elapsed();
             match ret {
                 Ok((response, rtt)) => {
@@ -820,14 +824,14 @@ fn send_nx_probes(
 }
 
 fn send_u1_probe(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     dst_closed_port: u16, //should be an closed udp port
+    src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
     start_time: Instant,
 ) -> Result<U1RR6, PistolError> {
     let src_port = random_port();
-    let buff = packet6::udp_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_closed_port)?;
+    let buff = packet6::udp_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_port)?;
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
@@ -837,6 +841,7 @@ fn send_u1_probe(
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
+        payload: None,
     };
     let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
@@ -848,7 +853,7 @@ fn send_u1_probe(
     for _ in 0..MAX_RETRY {
         st = start_time.elapsed();
         let (response, _rtt) =
-            layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout, true)?;
+            layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true)?;
         rt = start_time.elapsed();
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -870,9 +875,9 @@ fn send_u1_probe(
 }
 
 fn send_tecn_probe(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     dst_open_port: u16,
+    src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
     start_time: Instant,
 ) -> Result<TECNRR6, PistolError> {
@@ -890,13 +895,13 @@ fn send_tecn_probe(
     };
     let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
-    let buff = packet6::tecn_packet_layer3(src_ipv6, src_port, dst_ipv6, dst_open_port)?;
+    let buff = packet6::tecn_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
     let (response, _) =
-        layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![layers_match], timeout, true)?;
+        layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true)?;
     let rt = start_time.elapsed();
 
     let rr = RequestAndResponse {
@@ -909,8 +914,8 @@ fn send_tecn_probe(
 }
 
 fn send_tx_probes(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
     timeout: Option<Duration>,
@@ -919,7 +924,7 @@ fn send_tx_probes(
     let pool = get_threads_pool(6);
     let (tx, rx) = channel();
 
-    let src_port_start = random_port_sp(1000, 6540);
+    let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
         src_ports.push(src_port_start * 10 + i);
@@ -976,12 +981,12 @@ fn send_tx_probes(
         layers_match_7,
     ];
 
-    let buff_2 = packet6::t2_packet_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port)?;
-    let buff_3 = packet6::t3_packet_layer3(src_ipv6, src_ports[1], dst_ipv6, dst_open_port)?;
-    let buff_4 = packet6::t4_packet_layer3(src_ipv6, src_ports[2], dst_ipv6, dst_open_port)?;
-    let buff_5 = packet6::t5_packet_layer3(src_ipv6, src_ports[3], dst_ipv6, dst_closed_port)?;
-    let buff_6 = packet6::t6_packet_layer3(src_ipv6, src_ports[4], dst_ipv6, dst_closed_port)?;
-    let buff_7 = packet6::t7_packet_layer3(src_ipv6, src_ports[5], dst_ipv6, dst_closed_port)?;
+    let buff_2 = packet6::t2_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[0])?;
+    let buff_3 = packet6::t3_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[1])?;
+    let buff_4 = packet6::t4_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[2])?;
+    let buff_5 = packet6::t5_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[3])?;
+    let buff_6 = packet6::t6_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[4])?;
+    let buff_7 = packet6::t7_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[5])?;
     let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
 
     for (i, buff) in buffs.into_iter().enumerate() {
@@ -990,7 +995,7 @@ fn send_tx_probes(
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
                 let st = start_time.elapsed();
-                let ret = layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout, true);
+                let ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![m], timeout, true);
                 let rt = start_time.elapsed();
                 match ret {
                     Ok((response, rtt)) => {
@@ -1086,19 +1091,20 @@ fn send_tx_probes(
 }
 
 fn send_all_probes(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
     timeout: Option<Duration>,
 ) -> Result<AllPacketRR6, PistolError> {
     let start_time = Instant::now();
-    let seq = send_seq_probes(src_ipv6, dst_ipv6, dst_open_tcp_port, timeout, start_time)?;
-    let ie = send_ie_probes(src_ipv6, dst_ipv6, timeout, start_time)?;
-    let nx = send_nx_probes(src_ipv6, dst_ipv6, timeout, start_time)?;
-    let u1 = send_u1_probe(src_ipv6, dst_ipv6, dst_closed_udp_port, timeout, start_time)?;
-    let tecn = send_tecn_probe(src_ipv6, dst_ipv6, dst_open_tcp_port, timeout, start_time)?;
+    let seq = send_seq_probes(dst_ipv6, dst_open_tcp_port, src_ipv6, timeout, start_time)?;
+    let ie = send_ie_probes(dst_ipv6, src_ipv6, timeout, start_time)?;
+    let nx = send_nx_probes(dst_ipv6, src_ipv6, src_mac, timeout, start_time)?;
+    let u1 = send_u1_probe(dst_ipv6, dst_closed_udp_port, src_ipv6, timeout, start_time)?;
+    let tecn = send_tecn_probe(dst_ipv6, dst_open_tcp_port, src_ipv6, timeout, start_time)?;
     let tx = send_tx_probes(
         dst_ipv6,
         src_ipv6,
@@ -1191,22 +1197,31 @@ fn isort(arr: &[OsInfo6]) -> Vec<OsInfo6> {
 }
 
 pub fn threads_os_probe6(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    src_ipv6: Ipv6Addr,
     top_k: usize,
     linear: Linear,
     timeout: Option<Duration>,
-) -> Result<(PistolFingerprint6, Vec<OsInfo6>), PistolError> {
+) -> Result<(Fingerprint6, Vec<OsInfo6>), PistolError> {
+    let (dst_mac, interface) =
+        get_dst_mac_and_interface(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+
+    let src_mac = match interface.mac {
+        Some(mac) => mac,
+        None => return Err(PistolError::CanNotFoundMacAddress),
+    };
+
     debug!("send all probes now");
     let ap = send_all_probes(
         dst_ipv6,
-        src_ipv6,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
+        src_ipv6,
+        src_mac, // for ns probe use
         timeout,
     )?;
 
@@ -1222,10 +1237,9 @@ pub fn threads_os_probe6(
         }
     };
 
-    let (dst_mac, _interface) = system_route6(src_ipv6, dst_ipv6, timeout)?;
     let scan = match need_cal_hops(dst_ipv6.into()) {
         true => {
-            let hops = ipv6_get_hops(src_ipv6, dst_ipv6, timeout)?;
+            let hops = ipv6_get_hops(dst_ipv6, src_ipv6, timeout)?;
             get_scan_line(
                 dst_mac,
                 dst_open_tcp_port,
@@ -1402,7 +1416,7 @@ pub fn threads_os_probe6(
         rt: ap.tx.rt7,
     };
 
-    let target_fingerprint = PistolFingerprint6 {
+    let target_fingerprint = Fingerprint6 {
         scan,
         s1x,
         s2x,
@@ -1454,7 +1468,6 @@ pub fn threads_os_probe6(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::find_source_addr6;
     #[test]
     fn test_something() {
         let p = "000XXXXXX";
@@ -1473,11 +1486,11 @@ mod tests {
     // #[should_panic]
     fn test_send_tx() {
         let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
-        let src_ipv6 = find_source_addr6(None, dst_ipv6).unwrap().unwrap();
+        let src_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
         let dst_open_port = 22;
         let dst_closed_port = 9876;
 
-        let src_port_start = random_port_sp(1000, 6540);
+        let src_port_start = random_port_range(1000, 6540);
         let mut src_ports = Vec::new();
         for i in 0..6 {
             src_ports.push(src_port_start * 10 + i);
@@ -1554,7 +1567,7 @@ mod tests {
         let buff = buffs[i].clone();
         let timeout = Some(Duration::new(3, 0));
         let (ret, _rtt) =
-            layer3_ipv6_send(src_ipv6, dst_ipv6, &buff, vec![m], timeout, true).unwrap();
+            layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![m], timeout, true).unwrap();
         println!("ret: {}", ret.len());
     }
 }

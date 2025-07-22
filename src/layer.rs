@@ -181,6 +181,7 @@ fn dst_in_host(dst_addr: IpAddr) -> bool {
     false
 }
 
+/// Get the target mac address through arp table
 fn search_mac_from_cache(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
     let snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,
@@ -208,9 +209,9 @@ fn search_route_table(dst_addr: IpAddr) -> Result<Option<NetworkInterface>, Pist
     Ok(snc.search_route(dst_addr))
 }
 
-fn get_dst_mac_and_interface(
-    src_addr: IpAddr,
+pub fn get_dst_mac_and_interface(
     dst_addr: IpAddr,
+    src_addr: IpAddr,
     timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
     let src_interface = if src_addr == dst_addr {
@@ -1270,7 +1271,7 @@ fn layer2_rm_matchs(uuid: &Uuid) -> Result<bool, PistolError> {
 fn layer2_recv(rx: Receiver<Vec<u8>>, timeout: Option<Duration>) -> Result<Vec<u8>, PistolError> {
     let timeout = match timeout {
         Some(t) => t,
-        None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
+        None => Duration::from_secs_f64(DEFAULT_TIMEOUT),
     };
 
     // only 1 packet will be recv from match threads
@@ -1424,7 +1425,7 @@ pub fn layer3_ipv4_send(
 ) -> Result<(Vec<u8>, Duration), PistolError> {
     // println!("dst: {}, src: {}", dst_ipv4, src_ipv4);
     let (dst_mac, interface) =
-        get_dst_mac_and_interface(src_ipv4.into(), dst_ipv4.into(), timeout)?;
+        get_dst_mac_and_interface(dst_ipv4.into(), src_ipv4.into(), timeout)?;
     // println!("send interface: {}", interface.name);
     let ethernet_type = EtherTypes::Ipv4;
     let payload_len = ethernet_payload.len();
@@ -1504,7 +1505,7 @@ fn ndp_rs(
             }
         };
     // Neighbor Solicitation
-    icmpv6_header.set_icmpv6_type(Icmpv6Types::RouterSolicit);
+    icmpv6_header.set_icmpv6_type(Icmpv6Type(133));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
     icmpv6_header.set_reserved(0);
     let ndp_option = NdpOption {
@@ -1592,7 +1593,7 @@ pub fn layer3_ipv6_send(
         dst_ipv6
     };
     let (dst_mac, interface) =
-        get_dst_mac_and_interface(src_ipv6.into(), dst_ipv6.into(), timeout)?;
+        get_dst_mac_and_interface(dst_ipv6.into(), src_ipv6.into(), timeout)?;
 
     let ethernet_type = EtherTypes::Ipv6;
     let payload_len = payload.len();

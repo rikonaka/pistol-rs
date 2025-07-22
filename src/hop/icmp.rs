@@ -28,8 +28,8 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::layer3_ipv4_send;
 
 pub fn send_icmp_ping_packet(
-    src_ipv4: Ipv4Addr,
     dst_ipv4: Ipv4Addr,
+    src_ipv4: Ipv4Addr,
     ttl: u8,
     timeout: Option<Duration>,
 ) -> Result<bool, PistolError> {

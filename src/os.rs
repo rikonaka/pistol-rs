@@ -32,6 +32,8 @@ use std::sync::mpsc::channel;
 #[cfg(feature = "os")]
 use std::time::Duration;
 #[cfg(feature = "os")]
+use std::time::Instant;
+#[cfg(feature = "os")]
 use tracing::debug;
 #[cfg(feature = "os")]
 use tracing::warn;
@@ -47,11 +49,11 @@ use crate::layer::infer_addr;
 #[cfg(feature = "os")]
 use crate::os::dbparser::NmapOSDB;
 #[cfg(feature = "os")]
-use crate::os::osscan::PistolFingerprint;
+use crate::os::osscan::Fingerprint;
 #[cfg(feature = "os")]
 use crate::os::osscan::threads_os_probe;
 #[cfg(feature = "os")]
-use crate::os::osscan6::PistolFingerprint6;
+use crate::os::osscan6::Fingerprint6;
 #[cfg(feature = "os")]
 use crate::os::osscan6::threads_os_probe6;
 #[cfg(feature = "os")]
@@ -77,98 +79,6 @@ pub mod packet6;
 pub mod rr;
 
 #[cfg(feature = "os")]
-#[derive(Debug, Clone)]
-pub struct PistolOsDetects {
-    pub os_detects: Vec<OsDetect>,
-    pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
-}
-
-#[cfg(feature = "os")]
-impl PistolOsDetects {
-    pub fn new() -> PistolOsDetects {
-        PistolOsDetects {
-            os_detects: Vec::new(),
-            start_time: Local::now(),
-            end_time: Local::now(),
-        }
-    }
-    pub fn get(&self, k: &IpAddr) -> Option<&OsDetect> {
-        self.os_detects.get(k)
-    }
-    pub fn finish(&mut self, os_detects: Vec<OsDetect>) {
-        self.end_time = Local::now();
-        self.os_detects = os_detects;
-    }
-}
-
-#[cfg(feature = "os")]
-impl fmt::Display for PistolOsDetects {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut table = Table::new();
-        table.add_row(Row::new(vec![
-            Cell::new("OS Detect Results").style_spec("c").with_hspan(6),
-        ]));
-
-        table.add_row(
-            row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "details", c -> "cpe"],
-        );
-
-        // sorted
-        let mut btm_addr: BTreeMap<IpAddr, OsDetect> = BTreeMap::new();
-        for detect in self.os_detects {
-            btm_addr.insert(detect., value)
-        }
-
-        let oss = &self.os_detects;
-        let oss: BTreeMap<IpAddr, &OsDetect> = oss.into_iter().map(|(i, h)| (*i, h)).collect();
-        let mut id = 1;
-        for (ip, o) in oss {
-            match o {
-                OsDetect::V4(o) => {
-                    if o.alive {
-                        for (i, os_info) in o.detects.iter().enumerate() {
-                            let rank_str = format!("#{}", i + 1);
-                            let score_str = format!("{}/{}", os_info.score, os_info.total);
-                            let os_details = &os_info.name;
-                            let os_cpe = os_info.cpe.join("|");
-                            table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe]);
-                            id += 1;
-                        }
-                    } else {
-                        let rank_str = format!("#{}", 1);
-                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0/0", c -> "target dead", c -> ""]);
-                        id += 1;
-                    }
-                }
-                OsDetect::V6(o) => {
-                    if o.alive {
-                        for (i, os_info6) in o.detects.iter().enumerate() {
-                            let number_str = format!("#{}", i + 1);
-                            let score_str = format!("{:.1}", os_info6.score);
-                            let os_str = &os_info6.name;
-                            let os_cpe = &os_info6.cpe;
-                            table.add_row(row![c -> id, c -> ip, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe]);
-                            id += 1;
-                        }
-                    } else {
-                        let rank_str = format!("#{}", 1);
-                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0.0", c -> "target dead", c -> ""]);
-                        id += 1;
-                    }
-                }
-            }
-        }
-        let summary = format!(
-            "total used time: {:.3}s\navg time cost: {:.3}s",
-            self.total_cost, self.avg_cost,
-        );
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
-        write!(f, "{}", table)
-    }
-}
-
-#[cfg(feature = "os")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsInfo {
     pub name: String,
@@ -191,87 +101,132 @@ pub struct OsInfo6 {
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct Ipv4OsDetect {
+pub struct OsDetectV4 {
     pub addr: IpAddr,
     pub alive: bool,
-    pub fingerprint: PistolFingerprint,
+    pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
-    pub rtt: Duration,
+    pub time_cost: Duration,
 }
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct Ipv6OsDetect {
+pub struct OsDetectV6 {
+    pub addr: IpAddr,
     pub alive: bool,
-    pub fingerprint: PistolFingerprint6,
+    pub fingerprint: Fingerprint6,
     pub detects: Vec<OsInfo6>,
-    pub rtt: Duration,
+    pub time_cost: Duration,
 }
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub enum OsDetect {
-    V4(Ipv4OsDetect),
-    V6(Ipv6OsDetect),
+    V4(OsDetectV4),
+    V6(OsDetectV6),
 }
 
 #[cfg(feature = "os")]
 impl OsDetect {
-    pub fn set_etime(&mut self, etime: DateTime<Local>) {
+    pub fn addr(&self) -> IpAddr {
         match self {
-            OsDetect::V4(h) => h.end_time = etime,
-            OsDetect::V6(h) => h.etime = etime,
+            OsDetect::V4(ipv4) => ipv4.addr,
+            OsDetect::V6(ipv6) => ipv6.addr,
         }
     }
-    pub fn new(
-        fingerprint: PistolFingerprint,
-        detects: Vec<OsInfo>,
-        stime: DateTime<Local>,
-        etime: DateTime<Local>,
-    ) -> OsDetect {
-        let h = Ipv4OsDetect {
-            alive: true,
-            fingerprint,
-            detects,
-            start_time: stime,
-            end_time: etime,
-        };
-        OsDetect::V4(h)
-    }
-    pub fn new_offline() -> OsDetect {
-        let h = Ipv4OsDetect {
-            alive: false,
-            fingerprint: PistolFingerprint::empty(),
-            detects: Vec::new(),
+}
+
+#[cfg(feature = "os")]
+#[derive(Debug, Clone)]
+pub struct PistolOsDetects {
+    pub os_detects: Vec<OsDetect>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
+}
+
+#[cfg(feature = "os")]
+impl PistolOsDetects {
+    pub fn new() -> PistolOsDetects {
+        PistolOsDetects {
+            os_detects: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
-        };
-        OsDetect::V4(h)
+        }
     }
-    pub fn new6(
-        fingerprint: PistolFingerprint6,
-        detects: Vec<OsInfo6>,
-        stime: DateTime<Local>,
-        etime: DateTime<Local>,
-    ) -> OsDetect {
-        let h = Ipv6OsDetect {
-            alive: true,
-            fingerprint,
-            detects,
-            stime,
-            etime,
-        };
-        OsDetect::V6(h)
+    pub fn value(&self) -> Vec<OsDetect> {
+        self.os_detects.clone()
     }
-    pub fn new6_offline() -> OsDetect {
-        let h = Ipv6OsDetect {
-            alive: false,
-            fingerprint: PistolFingerprint6::empty(),
-            detects: Vec::new(),
-            stime: Local::now(),
-            etime: Local::now(),
-        };
-        OsDetect::V6(h)
+    pub fn finish(&mut self, os_detects: Vec<OsDetect>) {
+        self.end_time = Local::now();
+        self.os_detects = os_detects;
+    }
+}
+
+#[cfg(feature = "os")]
+impl fmt::Display for PistolOsDetects {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![
+            Cell::new("OS Detect Results").style_spec("c").with_hspan(6),
+        ]));
+
+        table.add_row(
+            row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "report", c -> "cpe"],
+        );
+
+        // sorted
+        let mut btm_addr: BTreeMap<IpAddr, OsDetect> = BTreeMap::new();
+        for detect in &self.os_detects {
+            btm_addr.insert(detect.addr(), detect.clone());
+        }
+
+        let mut total_cost = 0.0;
+        let mut id = 1;
+        for (ip, detect) in btm_addr {
+            match detect {
+                OsDetect::V4(o) => {
+                    total_cost += o.time_cost.as_secs_f64();
+                    if o.alive {
+                        for (i, os_info) in o.detects.iter().enumerate() {
+                            let rank_str = format!("#{}", i + 1);
+                            let score_str = format!("{}/{}", os_info.score, os_info.total);
+                            let os_details = &os_info.name;
+                            let os_cpe = os_info.cpe.join("|");
+                            table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe]);
+                            id += 1;
+                        }
+                    } else {
+                        let rank_str = format!("#{}", 1);
+                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0/0", c -> "target dead", c -> ""]);
+                        id += 1;
+                    }
+                }
+                OsDetect::V6(o) => {
+                    total_cost += o.time_cost.as_secs_f64();
+                    if o.alive {
+                        for (i, os_info6) in o.detects.iter().enumerate() {
+                            let number_str = format!("#{}", i + 1);
+                            let score_str = format!("{:.1}", os_info6.score);
+                            let os_str = &os_info6.name;
+                            let os_cpe = &os_info6.cpe;
+                            table.add_row(row![c -> id, c -> ip, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe]);
+                            id += 1;
+                        }
+                    } else {
+                        let rank_str = format!("#{}", 1);
+                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0.0", c -> "target dead", c -> ""]);
+                        id += 1;
+                    }
+                }
+            }
+        }
+        let avg_cost = total_cost / self.os_detects.len() as f64;
+        let summary = format!(
+            "total used time: {:.3}s, avg time cost: {:.3}s",
+            total_cost, avg_cost,
+        );
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
+        write!(f, "{}", table)
     }
 }
 
@@ -408,25 +363,24 @@ pub fn os_detect(
             None => return Err(PistolError::CanNotFoundSourceAddress),
         };
         match dst_addr {
-            IpAddr::V4(dst_ipv4) => {
+            IpAddr::V4(_) => {
                 let dst_ports = h.ports.clone();
                 let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
-
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");
 
                 pool.execute(move || {
-                    let stime = Local::now();
-                    let detect_ret = if dst_ports.len() >= 3 {
+                    let start_time = Instant::now();
+                    let detect_rets = if dst_ports.len() >= 3 {
                         let dst_open_tcp_port = dst_ports[0];
                         let dst_closed_tcp_port = dst_ports[1];
                         let dst_closed_udp_port = dst_ports[2];
                         let os_detect_ret = threads_os_probe(
-                            src_ipv4,
                             dst_ipv4,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
                             dst_closed_udp_port,
+                            src_ipv4,
                             nmap_os_db,
                             top_k,
                             timeout,
@@ -435,37 +389,43 @@ pub fn os_detect(
                     } else {
                         Err(PistolError::OSDetectPortsNotEnough)
                     };
-                    let hodr = match detect_ret {
-                        Ok((fingerprint, ret)) => {
-                            let hodr = OsDetect::new(fingerprint, ret, stime, Local::now());
-                            Ok(hodr)
+                    let od = match detect_rets {
+                        Ok((fingerprint, detects)) => {
+                            let o = OsDetectV4 {
+                                addr: dst_addr,
+                                alive: true,
+                                fingerprint,
+                                detects,
+                                time_cost: start_time.elapsed(),
+                            };
+                            let od = OsDetect::V4(o);
+                            Ok(od)
                         }
                         Err(e) => Err(e),
                     };
-                    tx.send((dst_addr, hodr))
+                    tx.send((dst_addr, od, start_time))
                         .expect(&format!("tx send failed at {}", Location::caller()));
                 });
             }
-            IpAddr::V6(dst_ipv6) => {
+            IpAddr::V6(_) => {
                 let dst_ports = h.ports.clone();
-                let (dst_ipv6, src_ipv6) = ia.ipv4_addr()?;
-
+                let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
                 let linear = gen_linear()?;
                 debug!("ipv6 gen linear parse finish");
 
                 pool.execute(move || {
-                    let stime = Local::now();
-                    let detect_ret = if dst_ports.len() >= 3 {
+                    let start_time = Instant::now();
+                    let detect_rets = if dst_ports.len() >= 3 {
                         let dst_open_tcp_port = dst_ports[0];
                         let dst_closed_tcp_port = dst_ports[1];
                         let dst_closed_udp_port = dst_ports[2];
 
                         let os_detect_ret = threads_os_probe6(
-                            src_ipv6,
                             dst_ipv6,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
                             dst_closed_udp_port,
+                            src_ipv6,
                             top_k,
                             linear,
                             timeout,
@@ -474,14 +434,21 @@ pub fn os_detect(
                     } else {
                         Err(PistolError::OSDetectPortsNotEnough)
                     };
-                    let hodr = match detect_ret {
-                        Ok((fingerprint, ret)) => {
-                            let hodr = OsDetect::new6(fingerprint, ret, stime, Local::now());
-                            Ok(hodr)
+                    let od = match detect_rets {
+                        Ok((fingerprint, detects)) => {
+                            let o = OsDetectV6 {
+                                addr: dst_addr,
+                                alive: true,
+                                fingerprint,
+                                detects,
+                                time_cost: start_time.elapsed(),
+                            };
+                            let od = OsDetect::V6(o);
+                            Ok(od)
                         }
                         Err(e) => Err(e),
                     };
-                    tx.send((dst_addr, hodr))
+                    tx.send((dst_addr, od, start_time))
                         .expect(&format!("tx send failed at {}", Location::caller()));
                 });
             }
@@ -489,23 +456,42 @@ pub fn os_detect(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    for (addr, r) in iter {
+    let mut os_detects = Vec::new();
+    for (addr, r, start_time) in iter {
         match r {
-            Ok(mut hodr) => {
-                let etime = Local::now();
-                hodr.set_etime(etime);
-                ret.os_detects.insert(addr, hodr);
+            Ok(od) => {
+                os_detects.push(od);
             }
-            Err(_) => {
-                let h = match addr {
-                    IpAddr::V4(_) => OsDetect::new_offline(),
-                    IpAddr::V6(_) => OsDetect::new6_offline(),
-                };
-                ret.os_detects.insert(addr, h);
+            Err(e) => {
+                warn!("os probe error: {}", e);
+                match addr {
+                    IpAddr::V4(_) => {
+                        let o = OsDetectV4 {
+                            addr,
+                            alive: false,
+                            fingerprint: Fingerprint::empty(),
+                            detects: Vec::new(),
+                            time_cost: start_time.elapsed(),
+                        };
+                        let od = OsDetect::V4(o);
+                        os_detects.push(od);
+                    }
+                    IpAddr::V6(_) => {
+                        let o = OsDetectV6 {
+                            addr,
+                            alive: false,
+                            fingerprint: Fingerprint6::empty(),
+                            detects: Vec::new(),
+                            time_cost: start_time.elapsed(),
+                        };
+                        let od = OsDetect::V6(o);
+                        os_detects.push(od);
+                    }
+                }
             }
         }
     }
-    ret.finish();
+    ret.finish(os_detects);
     Ok(ret)
 }
 
@@ -519,7 +505,7 @@ pub fn os_detect_raw(
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<OsDetect, PistolError> {
-    let start_time = Local::now();
+    let start_time = Instant::now();
     let ia = match infer_addr(src_addr, dst_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
@@ -527,60 +513,80 @@ pub fn os_detect_raw(
     match dst_addr {
         IpAddr::V4(_) => {
             let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
-
             let nmap_os_db = get_nmap_os_db()?;
             debug!("ipv4 nmap os db parse finish");
-
             let nmap_os_db = nmap_os_db.to_vec();
             match threads_os_probe(
-                src_ipv4,
                 dst_ipv4,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
+                src_ipv4,
                 nmap_os_db,
                 top_k,
                 timeout,
             ) {
-                Ok((fingerprint, ret)) => {
-                    let etime = Local::now();
-                    let oss = OsDetect::new(fingerprint, ret, start_time, etime);
-                    Ok(oss)
+                Ok((fingerprint, detects)) => {
+                    let o = OsDetectV4 {
+                        addr: dst_addr,
+                        alive: true,
+                        fingerprint,
+                        detects,
+                        time_cost: start_time.elapsed(),
+                    };
+                    let od = OsDetect::V4(o);
+                    Ok(od)
                 }
                 Err(e) => {
-                    // Err(e)
-                    warn!("threads os probe error: {}", e);
-                    let h = OsDetect::new_offline();
-                    Ok(h)
+                    warn!("os probe error: {}", e);
+                    let o = OsDetectV4 {
+                        addr: dst_addr,
+                        alive: false,
+                        fingerprint: Fingerprint::empty(),
+                        detects: Vec::new(),
+                        time_cost: start_time.elapsed(),
+                    };
+                    let od = OsDetect::V4(o);
+                    Ok(od)
                 }
             }
         }
         IpAddr::V6(_) => {
             let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
-
             let linear = gen_linear()?;
             debug!("ipv6 gen linear parse finish");
-
             match threads_os_probe6(
-                src_ipv6,
                 dst_ipv6,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
+                src_ipv6,
                 top_k,
                 linear,
                 timeout,
             ) {
-                Ok((fingerprint, ret)) => {
-                    let etime = Local::now();
-                    let oss = OsDetect::new6(fingerprint, ret, start_time, etime);
-                    Ok(oss)
+                Ok((fingerprint, detects)) => {
+                    let o = OsDetectV6 {
+                        addr: dst_addr,
+                        alive: true,
+                        fingerprint,
+                        detects,
+                        time_cost: start_time.elapsed(),
+                    };
+                    let od = OsDetect::V6(o);
+                    Ok(od)
                 }
                 Err(e) => {
-                    // Err(e)
-                    warn!("threads os probe error: {}", e);
-                    let h = OsDetect::new_offline();
-                    Ok(h)
+                    warn!("os probe error: {}", e);
+                    let o = OsDetectV6 {
+                        addr: dst_addr,
+                        alive: false,
+                        fingerprint: Fingerprint6::empty(),
+                        detects: Vec::new(),
+                        time_cost: start_time.elapsed(),
+                    };
+                    let od = OsDetect::V6(o);
+                    Ok(od)
                 }
             }
         }
@@ -591,19 +597,27 @@ pub fn os_detect_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PistolLogger;
+    use crate::PistolRunner;
     use crate::Target;
     use std::net::Ipv4Addr;
     use std::net::Ipv6Addr;
+    use std::str::FromStr;
     #[test]
     fn test_os_detect() {
-        // use crate::Logger;
-        // let _ = Logger::init_debug_logging();
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("os_detect.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target1 = Target::new(
             addr1,
             Some(vec![
@@ -613,43 +627,38 @@ mod tests {
             ]),
         );
 
-        let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 200));
-        let target2 = Target::new(
-            addr2,
-            Some(vec![
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
-        );
-
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
         let threads_num = Some(8);
-        let ret = os_detect(&[target1, target2], threads_num, src_addr, top_k, timeout).unwrap();
+        let ret = os_detect(&[target1], threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
-        let rr = ret.get(&addr1).unwrap();
-        match rr {
-            OsDetect::V4(r) => {
-                println!("{}", r.fingerprint);
+        let detects = ret.value();
+        for od in detects {
+            match od {
+                OsDetect::V4(r) => {
+                    println!("{}", r.fingerprint);
+                }
+                _ => (),
             }
-            _ => (),
         }
     }
     #[test]
     fn test_os_detect6() {
-        // use crate::Logger;
-        // Logger::init_debug_logging()?;
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            Some(String::from("os_detect6.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let addr1 = IpAddr::V6(Ipv6Addr::new(
-            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4,
-        ));
+        let addr1 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let target1 = Target::new(
-            addr1,
+            addr1.into(),
             Some(vec![
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -657,22 +666,10 @@ mod tests {
             ]),
         );
 
-        let addr2 = IpAddr::V6(Ipv6Addr::new(
-            0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e5,
-        ));
-        let target2 = Target::new(
-            addr2,
-            Some(vec![
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
-        );
-
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
         let threads_num = Some(8);
-        let ret = os_detect(&[target1, target2], threads_num, src_addr, top_k, timeout).unwrap();
+        let ret = os_detect(&[target1], threads_num, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]

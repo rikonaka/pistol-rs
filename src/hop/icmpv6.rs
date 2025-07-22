@@ -26,8 +26,8 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::layer3_ipv6_send;
 
 pub fn send_icmpv6_ping_packet(
-    src_ipv6: Ipv6Addr,
     dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
     ttl: u8,
     timeout: Option<Duration>,
 ) -> Result<bool, PistolError> {

@@ -31,10 +31,10 @@ const FIN_MASK: u8 = 0b00000001;
 // Because different programs wait, process, and send probebao for different times,
 // so there is a certain error in the two indicators calculated based on time.
 // Program estimation error, ISR, SP use.
-// const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.35;
-// const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.35;
-const PROGRAM_ESTIMATION_ERROR_ISR: f32 = 0.0;
-const PROGRAM_ESTIMATION_ERROR_SP: f32 = 0.0;
+// const PROGRAM_ESTIMATION_ERROR_ISR: f64 = 0.35;
+// const PROGRAM_ESTIMATION_ERROR_SP: f64 = 0.35;
+const PROGRAM_ESTIMATION_ERROR_ISR: f64 = 0.0;
+const PROGRAM_ESTIMATION_ERROR_SP: f64 = 0.0;
 
 fn get_ipv4_packet(ipv4_buff: &[u8]) -> Result<Ipv4Packet, PistolError> {
     if ipv4_buff.len() > 0 {
@@ -154,16 +154,16 @@ pub fn tcp_gcd(seqrr: &SEQRR) -> Result<(u32, Vec<u32>), PistolError> {
 }
 
 /// TCP ISN counter rate (ISR)
-pub fn tcp_isr(diff: Vec<u32>, elapsed: f32) -> Result<(u32, Vec<f32>), PistolError> {
+pub fn tcp_isr(diff: Vec<u32>, elapsed: f64) -> Result<(u32, Vec<f64>), PistolError> {
     if diff.len() > 0 {
-        let mut seq_rates: Vec<f32> = Vec::new();
+        let mut seq_rates: Vec<f64> = Vec::new();
         let mut sum = 0.0;
         for d in &diff {
-            let f = (*d as f32) / elapsed;
+            let f = (*d as f64) / elapsed;
             seq_rates.push(f);
             sum += f;
         }
-        let avg = sum / diff.len() as f32;
+        let avg = sum / diff.len() as f64;
         let isr = if avg < 1.0 {
             0
         } else {
@@ -176,12 +176,12 @@ pub fn tcp_isr(diff: Vec<u32>, elapsed: f32) -> Result<(u32, Vec<f32>), PistolEr
 }
 
 /// Calculate standard deviation
-fn vec_std(values: &[f32]) -> f32 {
+fn vec_std(values: &[f64]) -> f64 {
     let mut sum = 0.0;
     for v in values {
         sum += *v;
     }
-    let mean = sum / values.len() as f32;
+    let mean = sum / values.len() as f64;
     let mut ret = 0.0;
     for v in values {
         ret += (v - mean).powi(2);
@@ -190,14 +190,14 @@ fn vec_std(values: &[f32]) -> f32 {
 }
 
 /// TCP ISN sequence predictability index (SP)
-pub fn tcp_sp(seq_rates: Vec<f32>, gcd: u32) -> Result<u32, PistolError> {
+pub fn tcp_sp(seq_rates: Vec<f64>, gcd: u32) -> Result<u32, PistolError> {
     // This test is only performed if at least four responses were seen.
     if seq_rates.len() >= 4 {
         let mut seq_rates_clone = seq_rates.clone();
         // If the previously computed GCD value is greater than nine.
         if gcd > 9 {
             for i in 0..seq_rates.len() {
-                seq_rates_clone[i] /= gcd as f32;
+                seq_rates_clone[i] /= gcd as f64;
             }
         }
         let sd = vec_std(&seq_rates);
@@ -536,14 +536,14 @@ pub fn tcp_ss(seqrr: &SEQRR, ierr: &IERR, ti: &str, ii: &str) -> Result<String, 
             !(seq_first_ip_id - seq_last_ip_id)
         };
 
-        let avg = difference as f32 / (last - first) as f32;
+        let avg = difference as f64 / (last - first) as f64;
         let ie1_ip_id = get_ip_id(&ierr.ie1.response);
         let ss = match ie1_ip_id {
             Ok(ie1_ip_id) => {
                 // If the first ICMP echo response IP ID is less than the final TCP sequence response IP ID plus three times avg,
                 // the SS result is S. Otherwise it is O.
-                let temp_value = seq_last_ip_id as f32 + (3.0 * avg);
-                let ss = if (ie1_ip_id as f32) < temp_value {
+                let temp_value = seq_last_ip_id as f64 + (3.0 * avg);
+                let ss = if (ie1_ip_id as f64) < temp_value {
                     String::from("S")
                 } else {
                     String::from("O")

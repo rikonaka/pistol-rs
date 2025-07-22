@@ -1,7 +1,7 @@
+use pnet::datalink::MacAddr;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Type;
-use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
@@ -30,23 +30,20 @@ use crate::layer::ICMPV6_NS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::layer::find_interface_by_ip;
 
-/* 8 options:
-*  0~5: six options for SEQ/OPS/WIN/T1 probes.
-*  6:   ECN probe.
-*  7-12:   T2~T7 probes.
-*
-* option 0: WScale (10), Nop, MSS (1460), Timestamp, SackP
-* option 1: MSS (1400), WScale (0), SackP, T(0xFFFFFFFF,0x0), EOL
-* option 2: T(0xFFFFFFFF, 0x0), Nop, Nop, WScale (5), Nop, MSS (640)
-* option 3: SackP, T(0xFFFFFFFF,0x0), WScale (10), EOL
-* option 4: MSS (536), SackP, T(0xFFFFFFFF,0x0), WScale (10), EOL
-* option 5: MSS (265), SackP, T(0xFFFFFFFF,0x0)
-* option 6: WScale (10), Nop, MSS (1460), SackP, Nop, Nop
-* option 7-11: WScale (10), Nop, MSS (265), T(0xFFFFFFFF,0x0), SackP
-* option 12: WScale (15), Nop, MSS (265), T(0xFFFFFFFF,0x0), SackP
-*/
+// 8 options:
+// 0~5: six options for SEQ/OPS/WIN/T1 probes.
+// 6:   ECN probe.
+// 7-12:   T2~T7 probes.//
+// option 0: WScale (10), Nop, MSS (1460), Timestamp, SackP
+// option 1: MSS (1400), WScale (0), SackP, T(0xFFFFFFFF,0x0), EOL
+// option 2: T(0xFFFFFFFF, 0x0), Nop, Nop, WScale (5), Nop, MSS (640)
+// option 3: SackP, T(0xFFFFFFFF,0x0), WScale (10), EOL
+// option 4: MSS (536), SackP, T(0xFFFFFFFF,0x0), WScale (10), EOL
+// option 5: MSS (265), SackP, T(0xFFFFFFFF,0x0)
+// option 6: WScale (10), Nop, MSS (1460), SackP, Nop, Nop
+// option 7-11: WScale (10), Nop, MSS (265), T(0xFFFFFFFF,0x0), SackP
+// option 12: WScale (15), Nop, MSS (265), T(0xFFFFFFFF,0x0), SackP
 const PRB_OPT: [[u8; 20]; 13] = [
     [
         0x03, 0x03, 0x0A, 0x01, 0x02, 0x04, 0x05, 0xb4, 0x08, 0x0A, 0xff, 0xff, 0xff, 0xff, 0x00,
@@ -102,10 +99,10 @@ const PRB_OPT: [[u8; 20]; 13] = [
     ],
 ];
 
-/* TCP window sizes, numbering is the same as for prbOpts[] */
+// TCP window sizes, numbering is the same as for prbOpts[]
 const PRB_WINDOW_SZ: [u16; 13] = [1, 63, 4, 4, 16, 512, 3, 128, 256, 1024, 31337, 32768, 65535];
 
-/* TCP options size  */
+// TCP options size
 const NOP_SIZE: usize = 1;
 const MSS_SIZE: usize = 4;
 const WSCALE_SIZE: usize = 3;
@@ -113,10 +110,10 @@ const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
 
 pub fn seq_packet_1_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize =
@@ -181,15 +178,14 @@ pub fn seq_packet_1_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn seq_packet_2_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
@@ -251,15 +247,14 @@ pub fn seq_packet_2_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn seq_packet_3_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize =
@@ -324,15 +319,14 @@ pub fn seq_packet_3_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn seq_packet_4_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
@@ -393,15 +387,14 @@ pub fn seq_packet_4_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn seq_packet_5_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
@@ -463,15 +456,14 @@ pub fn seq_packet_5_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn seq_packet_6_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
@@ -532,11 +524,10 @@ pub fn seq_packet_6_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ie_packet_1_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 120;
     const HOPBYHOP_OPTION_SIZE: usize = 8;
@@ -616,11 +607,10 @@ pub fn ie_packet_1_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
         };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     // 150 bytes of data is sent
     let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 0;
@@ -777,11 +767,10 @@ pub fn ie_packet_2_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<
     };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
     // ipv6 header
@@ -881,22 +870,15 @@ pub fn ni_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     };
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
-pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ns_packet_layer3(
+    dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
+) -> Result<Vec<u8>, PistolError> {
     // This probe is only sent to hosts on the same subnet.
-    let interface = match find_interface_by_ip(src_ipv6.into()) {
-        Some(i) => i,
-        None => return Err(PistolError::CanNotFoundInterface),
-    };
-    let src_mac = match interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
-    };
-
-    // let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
 
     // ipv6
@@ -934,7 +916,7 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
             }
         };
     // Neighbor Solicitation
-    icmpv6_header.set_icmpv6_type(Icmpv6Types::NeighborSolicit);
+    icmpv6_header.set_icmpv6_type(Icmpv6Type(135));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
     icmpv6_header.set_reserved(0);
     icmpv6_header.set_target_addr(dst_ipv6);
@@ -955,15 +937,14 @@ pub fn ns_packet_layer3(src_ipv6: Ipv6Addr, dst_ipv6: Ipv6Addr) -> Result<Vec<u8
     };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn udp_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const UDP_DATA_SIZE: usize = 300;
@@ -1008,15 +989,14 @@ pub fn udp_packet_layer3(
     udp_header.set_payload(&udp_data);
     let checksum = udp::ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn tecn_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1095,15 +1075,14 @@ pub fn tecn_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn t2_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1166,15 +1145,14 @@ pub fn t2_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn t3_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1237,15 +1215,14 @@ pub fn t3_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn t4_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1308,15 +1285,14 @@ pub fn t4_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn t5_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1379,15 +1355,14 @@ pub fn t5_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn t6_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1450,15 +1425,14 @@ pub fn t6_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }
 
 pub fn t7_packet_layer3(
-    src_ipv6: Ipv6Addr,
-    src_port: u16,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_ipv6: Ipv6Addr,
+    src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
@@ -1523,6 +1497,5 @@ pub fn t7_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-
     Ok(ipv6_buff.to_vec())
 }

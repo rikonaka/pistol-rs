@@ -67,7 +67,7 @@ pub struct PistolRunner {
 }
 
 // sec
-const RUNNER_DEFAULT_TIMEOUT: f32 = 0.001;
+const RUNNER_DEFAULT_TIMEOUT: f64 = 0.001;
 
 impl PistolRunner {
     fn get_global_layer_matchs() -> Result<Vec<PistolChannel>, PistolError> {
@@ -86,7 +86,7 @@ impl PistolRunner {
         // That is, We can speed up the loop by setting a very small timeout.
         let timeout = match timeout {
             Some(t) => t,
-            None => Duration::from_secs_f32(RUNNER_DEFAULT_TIMEOUT),
+            None => Duration::from_secs_f64(RUNNER_DEFAULT_TIMEOUT),
         };
 
         let config = datalink::Config {
@@ -179,7 +179,7 @@ impl PistolRunner {
 }
 
 // sec
-const DEFAULT_TIMEOUT: f32 = 3.0;
+const DEFAULT_TIMEOUT: f64 = 1.0;
 
 pub const TOP_100_PORTS: [u16; 100] = [
     7, 9, 13, 21, 22, 23, 25, 26, 37, 53, 79, 80, 81, 88, 106, 110, 111, 113, 119, 135, 139, 143,

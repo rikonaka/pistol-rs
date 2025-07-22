@@ -5,6 +5,7 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
+use pnet::packet::icmpv6::Icmpv6Type;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::icmpv6::ndp::MutableNeighborSolicitPacket;
@@ -95,7 +96,7 @@ pub fn send_ndp_ns_scan_packet(
             }
         };
     // Neighbor Solicitation
-    icmpv6_header.set_icmpv6_type(Icmpv6Types::NeighborSolicit);
+    icmpv6_header.set_icmpv6_type(Icmpv6Type(135));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
     icmpv6_header.set_reserved(0);
     icmpv6_header.set_target_addr(dst_ipv6);
