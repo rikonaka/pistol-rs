@@ -1,6 +1,3 @@
-use tracing::debug;
-use tracing::error;
-use tracing::warn;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io::Read;
@@ -13,8 +10,9 @@ use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::net::UdpSocket;
 use std::time::Duration;
-use std::time::Instant;
-// use std::fs::File;
+use tracing::debug;
+use tracing::error;
+use tracing::warn;
 
 use super::dbparser::Match;
 use super::dbparser::ProbeProtocol;
@@ -296,9 +294,8 @@ pub fn threads_vs_probe(
     intensity: usize,
     service_probes: Vec<ServiceProbe>,
     timeout: Duration,
-) -> Result<(Vec<MatchX>, Duration), PistolError> {
+) -> Result<Vec<MatchX>, PistolError> {
     // If the port is TCP, Nmap starts by connecting to it.
-    let start_time = Instant::now();
     let tcp_dst_addr = SocketAddr::new(dst_addr, dst_port);
     match TcpStream::connect_timeout(&tcp_dst_addr, timeout) {
         Ok(mut stream) => {
@@ -322,7 +319,7 @@ pub fn threads_vs_probe(
                     Ok(_) => (),
                     Err(e) => error!("shutdown tcp stream failed: {}", e),
                 }
-                Ok((null_probe_ret, start_time.elapsed()))
+                Ok(null_probe_ret)
             } else {
                 stream.set_read_timeout(Some(timeout))?;
                 stream.set_write_timeout(Some(timeout))?;
@@ -343,7 +340,7 @@ pub fn threads_vs_probe(
                             Ok(_) => (),
                             Err(e) => error!("shutdown tcp stream failed: {}", e),
                         }
-                        Ok((tcp_ret, start_time.elapsed()))
+                        Ok(tcp_ret)
                     } else {
                         // This point is where Nmap starts for UDP probes,
                         // and TCP connections continue here if the NULL probe described above fails or soft-matches.
@@ -360,20 +357,20 @@ pub fn threads_vs_probe(
                             Ok(_) => (),
                             Err(e) => error!("shutdown tcp stream failed: {}", e),
                         }
-                        Ok((udp_ret, start_time.elapsed()))
+                        Ok(udp_ret)
                     }
                 } else {
                     match stream.shutdown(Shutdown::Both) {
                         Ok(_) => (),
                         Err(e) => error!("shutdown tcp stream failed: {}", e),
                     }
-                    Ok((vec![], start_time.elapsed()))
+                    Ok(vec![])
                 }
             }
         }
         Err(e) => {
             error!("connect to dst failed: {}", e);
-            Ok((vec![], start_time.elapsed())) // ignore closed port here
+            Ok(vec![]) // ignore closed port here
         }
     }
 }

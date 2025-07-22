@@ -122,7 +122,7 @@ impl PistolMacScans {
 impl fmt::Display for PistolMacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
-        let total_cost_str = rtt_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
+        let total_cost_str = rtt_to_string(Duration::from_secs_f64(total_cost.as_seconds_f64()));
         let mut table = Table::new();
         table.add_row(Row::new(vec![
             Cell::new(&format!("Mac Scan Results (max_attempts:{})", self.max_attempts))
@@ -146,7 +146,7 @@ impl fmt::Display for PistolMacScans {
             );
             i += 1;
         }
-        let avg_cost = total_cost.as_seconds_f32() / self.mac_reports.len() as f64;
+        let avg_cost = total_cost.as_seconds_f64() / self.mac_reports.len() as f64;
 
         let summary = format!(
             "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
@@ -255,12 +255,12 @@ pub fn ndp_ns_scan_raw(
 ///     let _pr = PistolRunner::init(
 ///         PistolLogger::None,
 ///         Some(String::from("arp_scan.pcapng")),
-///         Some(Duration::from_secs_f32(0.001)),
+///         Some(Duration::from_secs_f64(0.001)),
 ///     )
 ///     .unwrap();
 ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
 ///     // set the timeout same as `arp-scan`
-///     let timeout = Some(Duration::from_secs_f32(0.5));
+///     let timeout = Some(Duration::from_secs_f64(0.5));
 ///     let src_ipv4 = None;
 ///     let threads_num = Some(512);
 ///     let max_attempts = 2;
@@ -582,10 +582,10 @@ impl fmt::Display for PistolPortScans {
         // );
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
-        let avg_cost = total_cost.as_seconds_f32() / self.port_reports.len() as f64;
+        let avg_cost = total_cost.as_seconds_f64() / self.port_reports.len() as f64;
         let summary = format!(
             "total cost: {:.3}s\navg cost: {:.3}s\nopen ports: {}",
-            total_cost.as_seconds_f32(),
+            total_cost.as_seconds_f64(),
             avg_cost,
             open_ports_num,
         );
@@ -887,7 +887,7 @@ fn scan(
     for (dst_addr, dst_port, v, elapsed) in iter {
         match v {
             Ok((port_status, _data_return, rtt)) => {
-                // println!("rtt: {:.3}", rtt.as_secs_f32());
+                // println!("rtt: {:.3}", rtt.as_secs_f64());
                 let scan_report = PortReport {
                     addr: dst_addr,
                     port: dst_port,
@@ -1510,7 +1510,7 @@ mod max_attempts {
         // let target3 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)), None);
         // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
         // let targets = vec![target1, target2, target3, target4];q
-        let timeout = Some(Duration::from_secs_f32(0.5));
+        let timeout = Some(Duration::from_secs_f64(0.5));
         let src_ipv4 = None;
         let threads_num = Some(512);
         let max_attempts = 2;
@@ -1526,7 +1526,7 @@ mod max_attempts {
         )
         .unwrap();
         let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
-        let timeout = Some(Duration::from_secs_f32(0.5));
+        let timeout = Some(Duration::from_secs_f64(0.5));
         let src_ipv6 = None;
         let threads_num = Some(512);
         let max_attempts = 2;
@@ -1543,7 +1543,7 @@ mod max_attempts {
         .unwrap();
         let ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let target = Target::new(ipv6.into(), None);
-        let timeout = Some(Duration::from_secs_f32(0.5));
+        let timeout = Some(Duration::from_secs_f64(0.5));
         let src_ipv6 = None;
         let threads_num = Some(512);
         let max_attempts = 2;

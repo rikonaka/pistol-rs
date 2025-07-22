@@ -45,7 +45,7 @@ tracing = "^0"
 tracing-subscriber = "^0"
 
 [features]
-default = ["os"]
+default = ["vs"]
 scan = []
 ping = []
 flood = []

@@ -120,7 +120,7 @@ impl fmt::Display for PistolFloods {
 
         for (addr, report) in btm_addr {
             let time_cost = report.time_cost;
-            let time_cost = time_cost.as_secs_f32();
+            let time_cost = time_cost.as_secs_f64();
             let (size_str, traffic_str) = if report.send_size as f64 / BYTES_PER_GB as f64 > 1.0 {
                 let v = report.send_size as f64 / BYTES_PER_GB as f64;
                 let k = v / time_cost;

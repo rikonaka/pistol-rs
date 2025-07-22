@@ -5,8 +5,6 @@ use chrono::Local;
 #[cfg(feature = "vs")]
 use dbparser::ServiceProbe;
 #[cfg(feature = "vs")]
-use tracing::debug;
-#[cfg(feature = "vs")]
 use prettytable::Cell;
 #[cfg(feature = "vs")]
 use prettytable::Row;
@@ -16,8 +14,6 @@ use prettytable::Table;
 use prettytable::row;
 #[cfg(feature = "vs")]
 use std::collections::BTreeMap;
-#[cfg(feature = "vs")]
-use std::collections::HashMap;
 #[cfg(feature = "vs")]
 use std::fmt;
 #[cfg(feature = "vs")]
@@ -32,6 +28,10 @@ use std::panic::Location;
 use std::sync::mpsc::channel;
 #[cfg(feature = "vs")]
 use std::time::Duration;
+#[cfg(feature = "vs")]
+use std::time::Instant;
+#[cfg(feature = "vs")]
+use tracing::debug;
 #[cfg(feature = "vs")]
 use zip::ZipArchive;
 
@@ -59,65 +59,38 @@ pub mod vscan;
 
 #[cfg(feature = "vs")]
 #[derive(Debug, Clone)]
-pub struct PortServices {
+pub struct PortService {
+    pub addr: IpAddr,
+    pub port: u16,
     pub matchs: Vec<MatchX>,
-    pub rtt: Duration,
-    pub stime: DateTime<Local>,
-    pub etime: DateTime<Local>,
-}
-
-#[cfg(feature = "vs")]
-impl PortServices {
-    pub fn new() -> PortServices {
-        PortServices {
-            matchs: Vec::new(),
-            rtt: Duration::new(0, 0),
-            stime: Local::now(),
-            etime: Local::now(),
-        }
-    }
+    pub time_cost: Duration,
 }
 
 #[cfg(feature = "vs")]
 #[derive(Debug, Clone)]
-pub struct VsScans {
-    pub vss: HashMap<IpAddr, HashMap<u16, PortServices>>,
-    pub total_cost: i64,
-    pub avg_cost: f64,
-    pub stime: DateTime<Local>,
-    pub etime: DateTime<Local>,
+pub struct PistolVsScans {
+    pub port_services: Vec<PortService>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
 }
 
 #[cfg(feature = "vs")]
-impl VsScans {
-    pub fn new() -> VsScans {
-        VsScans {
-            vss: HashMap::new(),
-            total_cost: 0,
-            avg_cost: 0.0,
-            stime: Local::now(),
-            etime: Local::now(),
+impl PistolVsScans {
+    pub fn new() -> PistolVsScans {
+        PistolVsScans {
+            port_services: Vec::new(),
+            start_time: Local::now(),
+            end_time: Local::now(),
         }
     }
-    pub fn get(&self, k: &IpAddr) -> Option<&HashMap<u16, PortServices>> {
-        self.vss.get(k)
-    }
-    pub fn enrichment(&mut self) {
-        self.etime = Local::now();
-        self.total_cost = self
-            .etime
-            .signed_duration_since(self.stime)
-            .num_milliseconds();
-        let mut total_num = 0;
-        for (_, h) in &self.vss {
-            total_num += h.len();
-        }
-        self.avg_cost = self.total_cost as f64 / total_num as f64;
+    pub fn finish(&mut self, port_services: Vec<PortService>) {
+        self.end_time = Local::now();
+        self.port_services = port_services;
     }
 }
 
 #[cfg(feature = "vs")]
-impl fmt::Display for VsScans {
+impl fmt::Display for PistolVsScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
@@ -128,42 +101,53 @@ impl fmt::Display for VsScans {
 
         table
             .add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service", c -> "versioninfo"]);
-        let vss = &self.vss;
-        let vss: BTreeMap<IpAddr, &HashMap<u16, PortServices>> =
-            vss.into_iter().map(|(i, h)| (*i, h)).collect();
+
+        // sorted
+        let mut btm_addr: BTreeMap<IpAddr, BTreeMap<u16, PortService>> = BTreeMap::new();
+        for service in &self.port_services {
+            if let Some(btm_port) = btm_addr.get_mut(&service.addr) {
+                btm_port.insert(service.port, service.clone());
+            } else {
+                let mut btm_port = BTreeMap::new();
+                btm_port.insert(service.port, service.clone());
+                btm_addr.insert(service.addr, btm_port);
+            }
+        }
         let mut i = 1;
-        for (ip, ports_service) in vss {
-            let ports_service: BTreeMap<u16, &PortServices> =
-                ports_service.into_iter().map(|(p, s)| (*p, s)).collect();
-            for (port, services) in ports_service {
-                let mut sv = Vec::new();
-                let mut vv = Vec::new();
-                for m in &services.matchs {
+        let mut total_cost = 0.0;
+        for (_addr, btm_port) in btm_addr {
+            for (_port, service) in btm_port {
+                let mut service_vec = Vec::new();
+                let mut vesioninfo_vec = Vec::new();
+                for m in &service.matchs {
                     let (service, version) = match m {
                         MatchX::Match(m) => (&m.service, &m.versioninfo.to_string()),
                         MatchX::SoftMatch(sm) => (&sm.service, &String::new()),
                     };
-                    if !sv.contains(service) && service.trim().len() > 0 {
-                        sv.push(service.trim().to_string());
+                    if !service_vec.contains(service) && service.trim().len() > 0 {
+                        service_vec.push(service.trim().to_string());
                     }
-                    if !vv.contains(version) && version.trim().len() > 0 {
-                        vv.push(version.trim().to_string());
+                    if !vesioninfo_vec.contains(version) && version.trim().len() > 0 {
+                        vesioninfo_vec.push(version.trim().to_string());
                     }
                 }
-                let mut services_str = sv.join("|");
-                let versioninfo_str = vv.join("|");
+                let mut services_str = service_vec.join("|");
+                let versioninfo_str = vesioninfo_vec.join("|");
                 if services_str.trim().len() == 0 {
                     services_str = String::from("unknown|closed");
                 }
+                total_cost += service.time_cost.as_secs_f64();
                 table.add_row(
-                    row![c -> i, c -> ip, c -> port, c -> services_str, c -> versioninfo_str],
+                    row![c -> i, c -> service.addr, c -> service.port, c -> services_str, c -> versioninfo_str],
                 );
                 i += 1;
             }
         }
+
+        let avg_cost = total_cost / self.port_services.len() as f64;
         let summary = format!(
-            "total used time: {:.3}s\navg time cost: {:.3}s",
-            self.total_cost, self.avg_cost,
+            "total used time: {:.3}s, avg time cost: {:.3}s",
+            total_cost, avg_cost,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
@@ -197,8 +181,8 @@ pub fn vs_scan(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<VsScans, PistolError> {
-    let mut ret = VsScans::new();
+) -> Result<PistolVsScans, PistolError> {
+    let mut ret = PistolVsScans::new();
     let threads_num = match threads_num {
         Some(t) => t,
         None => {
@@ -227,7 +211,7 @@ pub fn vs_scan(
             let service_probes = service_probes.clone();
             debug!("dst: {}, port: {}", dst_addr, dst_port);
             pool.execute(move || {
-                let stime = Local::now();
+                let start_time = Instant::now();
                 let probe_ret = threads_vs_probe(
                     dst_addr,
                     dst_port,
@@ -238,7 +222,7 @@ pub fn vs_scan(
                     service_probes,
                     timeout,
                 );
-                tx.send((dst_addr, dst_port, probe_ret, stime))
+                tx.send((dst_addr, dst_port, probe_ret, start_time))
                     .expect(&format!("tx send failed at {}", Location::caller()));
             });
             recv_size += 1;
@@ -246,30 +230,22 @@ pub fn vs_scan(
     }
 
     let rx = rx.into_iter().take(recv_size);
-    for (addr, port, probe_ret, stime) in rx {
+    let mut port_services = Vec::new();
+    for (addr, port, probe_ret, start_time) in rx {
         match probe_ret {
-            Ok((r, rtt)) => {
-                let etime = Local::now();
-                let mut port_services = PortServices::new();
-                port_services.stime = stime;
-                port_services.stime = etime;
-                port_services.matchs = r;
-                port_services.rtt = rtt;
-                match ret.vss.get_mut(&addr) {
-                    Some(services) => {
-                        services.insert(port, port_services);
-                    }
-                    None => {
-                        let mut host = HashMap::new();
-                        host.insert(port, port_services);
-                        ret.vss.insert(addr, host);
-                    }
-                }
+            Ok(matchs) => {
+                let port_service = PortService {
+                    addr,
+                    port,
+                    matchs,
+                    time_cost: start_time.elapsed(),
+                };
+                port_services.push(port_service);
             }
             Err(e) => return Err(e),
         }
     }
-    ret.enrichment();
+    ret.finish(port_services);
     Ok(ret)
 }
 
@@ -282,7 +258,7 @@ pub fn vs_scan_raw(
     only_udp_recommended: bool,
     intensity: usize,
     timeout: Option<Duration>,
-) -> Result<PortServices, PistolError> {
+) -> Result<PortService, PistolError> {
     let nsp_str = include_str!("./db/nmap-service-probes");
     let mut nsp_lines = Vec::new();
     for l in nsp_str.lines() {
@@ -298,6 +274,7 @@ pub fn vs_scan_raw(
         None => get_default_timeout(),
     };
 
+    let start_time = Instant::now();
     match threads_vs_probe(
         dst_addr,
         dst_port,
@@ -308,11 +285,14 @@ pub fn vs_scan_raw(
         service_probes,
         timeout,
     ) {
-        Ok((r, rtt)) => {
-            let mut service_status = PortServices::new();
-            service_status.matchs = r;
-            service_status.rtt = rtt;
-            Ok(service_status)
+        Ok(matchs) => {
+            let port_service = PortService {
+                addr: dst_addr,
+                port: dst_port,
+                matchs,
+                time_cost: start_time.elapsed(),
+            };
+            Ok(port_service)
         }
         Err(e) => Err(e),
     }
@@ -322,37 +302,23 @@ pub fn vs_scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PistolLogger;
+    use crate::PistolRunner;
     use crate::Target;
     use fancy_regex::Regex as FancyRegex;
     use std::net::Ipv4Addr;
     #[test]
-    fn test_vs_detect_github() {
-        // let dst_addr = Ipv4Addr::new(47, 104, 100, 200);
-        let dst_addr = Ipv4Addr::new(45, 33, 32, 156); // scanme.nmap.org
-        let target = Target::new(dst_addr.into(), Some(vec![80, 8099]));
-        let timeout = Some(Duration::new(1, 0));
-        let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
-        let intensity = 7; // nmap default
-        let threads_num = Some(8);
-        let ret = vs_scan(
-            &[target],
-            threads_num,
-            only_null_probe,
-            only_tcp_recommended,
-            only_udp_recommended,
-            intensity,
-            timeout,
+    fn test_vs_detect() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            None,
+            None, // use default value
         )
         .unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_vs_detect() {
-        // use crate::Logger;
-        // let _ = Logger::init_debug_logging();
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+
+        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 8080]));
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Some(Duration::from_secs_f64(0.5));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
         let threads_num = Some(8);

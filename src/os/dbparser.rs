@@ -1226,7 +1226,7 @@ mod tests {
         let ret = nmap_os_db_parser(nmap_os_file_lines).unwrap();
         println!("len: {}", ret.len());
 
-        println!("parse time: {:.3}", start.elapsed().as_secs_f32());
+        println!("parse time: {:.3}", start.elapsed().as_secs_f64());
 
         let serialized = serde_json::to_string(&ret).unwrap();
         let mut file_write = File::create("nmap-os-db.pistol").unwrap();

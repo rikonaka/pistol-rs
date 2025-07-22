@@ -170,10 +170,10 @@ impl fmt::Display for PistolPings {
         // let help_info = "NOTE:\nThe target host is considered alive\nas long as one of the packets returns\na result that is considered to be alive.";
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
-        let avg_cost = total_cost.as_seconds_f32() / self.ping_reports.len() as f64;
+        let avg_cost = total_cost.as_seconds_f64() / self.ping_reports.len() as f64;
         let summary = format!(
             "total cost: {:.3}s\navg cost: {:.3}s\nalive hosts: {}",
-            total_cost.as_seconds_f32(),
+            total_cost.as_seconds_f64(),
             avg_cost,
             alive_hosts,
         );

@@ -162,8 +162,8 @@ impl fmt::Display for SEQX6 {
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
                 p_as_nmap_format(&self.rr.response),
-                self.st.as_secs_f32(),
-                self.rt.as_secs_f32()
+                self.st.as_secs_f64(),
+                self.rt.as_secs_f64()
             );
             output
         } else {
@@ -199,8 +199,8 @@ impl fmt::Display for IEX6 {
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
                 p_as_nmap_format(&self.rr.response),
-                self.st.as_secs_f32(),
-                self.rt.as_secs_f32()
+                self.st.as_secs_f64(),
+                self.rt.as_secs_f64()
             );
             output
         } else {
@@ -236,8 +236,8 @@ impl fmt::Display for NX6 {
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
                 p_as_nmap_format(&self.rr.response),
-                self.st.as_secs_f32(),
-                self.rt.as_secs_f32()
+                self.st.as_secs_f64(),
+                self.rt.as_secs_f64()
             );
             output
         } else {
@@ -270,8 +270,8 @@ impl fmt::Display for U1X6 {
             let output = format!(
                 "U1(P={}%ST={:.6}%RT={:.6})",
                 p_as_nmap_format(&self.rr.response),
-                self.st.as_secs_f32(),
-                self.rt.as_secs_f32()
+                self.st.as_secs_f64(),
+                self.rt.as_secs_f64()
             );
             output
         } else {
@@ -304,8 +304,8 @@ impl fmt::Display for TECNX6 {
             let output = format!(
                 "TECN(P={}%ST={:.6}%RT={:.6})",
                 p_as_nmap_format(&self.rr.response),
-                self.st.as_secs_f32(),
-                self.rt.as_secs_f32()
+                self.st.as_secs_f64(),
+                self.rt.as_secs_f64()
             );
             output
         } else {
@@ -341,8 +341,8 @@ impl fmt::Display for TX6 {
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
                 p_as_nmap_format(&self.rr.response),
-                self.st.as_secs_f32(),
-                self.rt.as_secs_f32()
+                self.st.as_secs_f64(),
+                self.rt.as_secs_f64()
             );
             output
         } else {
