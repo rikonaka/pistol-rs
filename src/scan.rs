@@ -30,6 +30,8 @@ use std::sync::mpsc::channel;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use std::time::Instant;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::debug;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::error;
@@ -58,8 +60,6 @@ use crate::layer::find_interface_by_ip;
 use crate::layer::infer_addr;
 #[cfg(feature = "scan")]
 use crate::scan::arp::send_arp_scan_packet;
-#[cfg(feature = "scan")]
-use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -83,7 +83,7 @@ pub enum DataRecvStatus {
 
 #[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
-pub struct ArpScanReport {
+pub struct MacReport {
     pub addr: IpAddr,
     pub mac: MacAddr,
     pub ouis: String, // productions organization name
@@ -92,40 +92,40 @@ pub struct ArpScanReport {
 
 #[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
-pub struct PistolArpScanReports {
-    pub mac_scan_reports: Vec<ArpScanReport>,
+pub struct PistolMacScans {
+    pub mac_reports: Vec<MacReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
-    tests: usize,
+    max_tests: usize,
 }
 
 #[cfg(feature = "scan")]
-impl PistolArpScanReports {
-    pub fn new(tests: usize) -> PistolArpScanReports {
-        PistolArpScanReports {
-            mac_scan_reports: Vec::new(),
+impl PistolMacScans {
+    pub fn new(max_tests: usize) -> PistolMacScans {
+        PistolMacScans {
+            mac_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
-            tests,
+            max_tests,
         }
     }
-    pub fn value(&self) -> Vec<ArpScanReport> {
-        self.mac_scan_reports.clone()
+    pub fn value(&self) -> Vec<MacReport> {
+        self.mac_reports.clone()
     }
-    pub fn finish(&mut self, mac_scan_reports: Vec<ArpScanReport>) {
+    pub fn finish(&mut self, mac_reports: Vec<MacReport>) {
         self.end_time = Local::now();
-        self.mac_scan_reports = mac_scan_reports;
+        self.mac_reports = mac_reports;
     }
 }
 
 #[cfg(feature = "scan")]
-impl fmt::Display for PistolArpScanReports {
+impl fmt::Display for PistolMacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
         let total_cost_str = rtt_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Mac Scan Results (max tests:{})", self.tests))
+            Cell::new(&format!("Mac Scan Results (max_tests:{})", self.max_tests))
                 .style_spec("c")
                 .with_hspan(5),
         ]));
@@ -133,8 +133,8 @@ impl fmt::Display for PistolArpScanReports {
         table.add_row(row![c -> "seq", c -> "addr", c -> "mac", c -> "oui", c-> "rtt"]);
 
         // sorted the results
-        let mut btm_addr: BTreeMap<IpAddr, ArpScanReport> = BTreeMap::new();
-        for report in &self.mac_scan_reports {
+        let mut btm_addr: BTreeMap<IpAddr, MacReport> = BTreeMap::new();
+        for report in &self.mac_reports {
             btm_addr.insert(report.addr, report.clone());
         }
 
@@ -146,13 +146,13 @@ impl fmt::Display for PistolArpScanReports {
             );
             i += 1;
         }
-        let avg_cost = total_cost.as_seconds_f32() / self.mac_scan_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.mac_reports.len() as f32;
 
         let summary = format!(
             "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
             total_cost_str,
             avg_cost,
-            self.mac_scan_reports.len(),
+            self.mac_reports.len(),
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
 
@@ -193,54 +193,11 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
 }
 
 #[cfg(feature = "scan")]
-fn ipv4_arp_scan(
-    dst_ipv4: Ipv4Addr,
-    dst_mac: MacAddr,
-    src_addr: Option<IpAddr>,
-    timeout: Option<Duration>,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
-        Some(ia) => ia.ipv4_addr()?,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
-    };
-    let interface = match find_interface_by_ip(src_ipv4.into()) {
-        Some(i) => i,
-        None => return Err(PistolError::CanNotFoundInterface),
-    };
-    let src_mac = match interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
-    };
-    send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout)
-}
-
-#[cfg(feature = "scan")]
-fn ipv6_ndp_ns_scan(
-    dst_ipv6: Ipv6Addr,
-    src_addr: Option<IpAddr>,
-    timeout: Option<Duration>,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
-        Some(ia) => ia.ipv6_addr()?,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
-    };
-    let interface = match find_interface_by_ip(src_ipv6.into()) {
-        Some(i) => i,
-        None => return Err(PistolError::CanNotFoundInterface),
-    };
-    let src_mac = match interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
-    };
-    ndp_ns::send_ndp_ns_scan_packet(dst_ipv6, src_ipv6, src_mac, interface, timeout)
-}
-
-#[cfg(feature = "scan")]
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
-) -> Result<Option<MacAddr>, PistolError> {
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let dst_mac = MacAddr::broadcast();
     let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
         Some(ia) => ia.ipv4_addr()?,
@@ -255,7 +212,32 @@ pub fn arp_scan_raw(
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
     match send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
-        Ok((mac, _)) => Ok(mac),
+        Ok((mac, rtt)) => Ok((mac, rtt)),
+        Err(e) => Err(e),
+    }
+}
+
+#[cfg(feature = "scan")]
+pub fn ndp_ns_scan_raw(
+    dst_ipv6: Ipv6Addr,
+    src_addr: Option<IpAddr>,
+    timeout: Option<Duration>,
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
+    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+        Some(ia) => ia.ipv6_addr()?,
+        None => return Err(PistolError::CanNotFoundSourceAddress),
+    };
+    let interface = match find_interface_by_ip(src_ipv6.into()) {
+        Some(i) => i,
+        None => return Err(PistolError::CanNotFoundInterface),
+    };
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundMacAddress),
+    };
+    match send_ndp_ns_scan_packet(dst_ipv6, src_ipv6, src_mac, interface, timeout) {
+        Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
 }
@@ -290,7 +272,7 @@ pub fn arp_scan_raw(
 /// pistol:
 /// ```
 /// +--------+---------------+-------------------+--------+---------+
-/// |                Mac Scan Results (max tests:2)                 |
+/// |                Mac Scan Results (max_tests:2)                 |
 /// +--------+---------------+-------------------+--------+---------+
 /// |  seq   |     addr      |        mac        |  oui   |   rtt   |
 /// +--------+---------------+-------------------+--------+---------+
@@ -323,10 +305,10 @@ pub fn mac_scan(
     threads_num: Option<usize>,
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
-    tests: usize,
-) -> Result<PistolArpScanReports, PistolError> {
+    max_tests: usize,
+) -> Result<PistolMacScans, PistolError> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
-    let mut ret = PistolArpScanReports::new(tests);
+    let mut ret = PistolMacScans::new(max_tests);
 
     let threads_num = match threads_num {
         Some(t) => t,
@@ -338,7 +320,6 @@ pub fn mac_scan(
     };
 
     let pool = get_threads_pool(threads_num);
-    let broadcast_mac = MacAddr::broadcast();
     let (tx, rx) = channel();
     let mut recv_size = 0;
     for target in targets {
@@ -348,10 +329,10 @@ pub fn mac_scan(
                 let tx = tx.clone();
                 recv_size += 1;
                 pool.execute(move || {
-                    for i in 0..tests {
-                        debug!("arp scan packets: #{}/{}", i + 1, tests);
-                        let scan_ret = ipv4_arp_scan(dst_ipv4, broadcast_mac, src_addr, timeout);
-                        if i == tests - 1 {
+                    for i in 0..max_tests {
+                        debug!("arp scan packets: #{}/{}", i + 1, max_tests);
+                        let scan_ret = arp_scan_raw(dst_ipv4, src_addr, timeout);
+                        if i == max_tests - 1 {
                             tx.send((dst_addr, scan_ret))
                                 .expect(&format!("tx send failed at {}", Location::caller()));
                         } else {
@@ -378,10 +359,10 @@ pub fn mac_scan(
                 let tx = tx.clone();
                 recv_size += 1;
                 pool.execute(move || {
-                    for i in 0..tests {
-                        debug!("ndp_ns scan packets: #{}/{}", i + 1, tests);
-                        let scan_ret = ipv6_ndp_ns_scan(dst_ipv6, src_addr, timeout);
-                        if i == tests - 1 {
+                    for i in 0..max_tests {
+                        debug!("ndp_ns scan packets: #{}/{}", i + 1, max_tests);
+                        let scan_ret = ndp_ns_scan_raw(dst_ipv6, src_addr, timeout);
+                        if i == max_tests - 1 {
                             tx.send((dst_addr, scan_ret))
                                 .expect(&format!("tx send failed at {}", Location::caller()));
                         } else {
@@ -451,7 +432,7 @@ pub fn mac_scan(
                         target_ouis = p.ouis.to_string();
                     }
                 }
-                let asr = ArpScanReport {
+                let asr = MacReport {
                     addr: target_addr,
                     mac: target_mac,
                     ouis: target_ouis,
@@ -516,50 +497,49 @@ impl fmt::Display for PortStatus {
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
-pub struct PortScanReport {
+pub struct PortReport {
     pub addr: IpAddr,
     pub port: u16,
     pub status: PortStatus,
     pub rtt: Duration, // from layer2
 }
 
-pub struct PistolPortScanReports {
+pub struct PistolPortScans {
     // The order of this Vec is the same as the order in which the data packets are received.
     // The detection that receives the data first is in the front.
-    port_scan_reports: Vec<PortScanReport>,
+    port_reports: Vec<PortReport>,
     start_time: DateTime<Local>,
     end_time: DateTime<Local>,
-    tests: usize,
+    max_tests: usize,
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-impl PistolPortScanReports {
-    pub fn new(tests: usize) -> PistolPortScanReports {
-        PistolPortScanReports {
-            port_scan_reports: Vec::new(),
+impl PistolPortScans {
+    pub fn new(max_tests: usize) -> PistolPortScans {
+        PistolPortScans {
+            port_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
-            tests,
+            max_tests,
         }
     }
-    pub fn value(&self) -> Vec<PortScanReport> {
-        let list = self.port_scan_reports.clone();
-        list
+    pub fn value(&self) -> Vec<PortReport> {
+        self.port_reports.clone()
     }
-    pub fn finish(&mut self, port_scan_reports: Vec<PortScanReport>) {
+    pub fn finish(&mut self, port_reports: Vec<PortReport>) {
         self.end_time = Local::now();
-        self.port_scan_reports = port_scan_reports;
+        self.port_reports = port_reports;
     }
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-impl fmt::Display for PistolPortScanReports {
+impl fmt::Display for PistolPortScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Port Scan Results (max tests:{})", self.tests,))
+            Cell::new(&format!("Port Scan Results (max_tests:{})", self.max_tests,))
                 .style_spec("c")
                 .with_hspan(5),
         ]));
@@ -567,8 +547,8 @@ impl fmt::Display for PistolPortScanReports {
         table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "rtt"]);
 
         // sorted the resutls
-        let mut btm_addr: BTreeMap<IpAddr, BTreeMap<u16, PortScanReport>> = BTreeMap::new();
-        for report in &self.port_scan_reports {
+        let mut btm_addr: BTreeMap<IpAddr, BTreeMap<u16, PortReport>> = BTreeMap::new();
+        for report in &self.port_reports {
             if let Some(btm_port) = btm_addr.get_mut(&report.addr) {
                 btm_port.insert(report.port, report.clone());
             } else {
@@ -600,7 +580,7 @@ impl fmt::Display for PistolPortScanReports {
         // );
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
-        let avg_cost = total_cost.as_seconds_f32() / self.port_scan_reports.len() as f32;
+        let avg_cost = total_cost.as_seconds_f32() / self.port_reports.len() as f32;
         let summary = format!(
             "total cost: {:.3}s\navg cost: {:.3}s\nopen ports: {}",
             total_cost.as_seconds_f32(),
@@ -734,8 +714,8 @@ fn scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
-    let mut port_scan_ret = PistolPortScanReports::new(max_tests);
+) -> Result<PistolPortScans, PistolError> {
+    let mut pistol_port_scans = PistolPortScans::new(max_tests);
 
     let threads_num = match threads_num {
         Some(t) => t,
@@ -775,6 +755,7 @@ fn scan(
 
                     pool.execute(move || {
                         for ind in 0..max_tests {
+                            let start_time = Instant::now();
                             debug!("target [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
                             let scan_ret = threads_scan(
                                 method,
@@ -788,7 +769,7 @@ fn scan(
                             );
                             if ind == max_tests - 1 {
                                 // last attempt
-                                tx.send((dst_addr, dst_port, scan_ret))
+                                tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()))
                                     .expect(&format!("tx send failed at {}", Location::caller()));
                             } else {
                                 match scan_ret {
@@ -796,12 +777,16 @@ fn scan(
                                         match data_return {
                                             DataRecvStatus::Yes => {
                                                 // conclusions drawn from the returned data
-                                                tx.send((dst_addr, dst_port, scan_ret)).expect(
-                                                    &format!(
-                                                        "tx send failed at {}",
-                                                        Location::caller()
-                                                    ),
-                                                );
+                                                tx.send((
+                                                    dst_addr,
+                                                    dst_port,
+                                                    scan_ret,
+                                                    start_time.elapsed(),
+                                                ))
+                                                .expect(&format!(
+                                                    "tx send failed at {}",
+                                                    Location::caller()
+                                                ));
                                                 break; // quit loop now
                                             }
                                             // conclusions from the default policy
@@ -810,7 +795,13 @@ fn scan(
                                     }
                                     Err(_) => {
                                         // stop probe immediately if an error occurs
-                                        tx.send((dst_addr, dst_port, scan_ret)).expect(&format!(
+                                        tx.send((
+                                            dst_addr,
+                                            dst_port,
+                                            scan_ret,
+                                            start_time.elapsed(),
+                                        ))
+                                        .expect(&format!(
                                             "tx send failed at {}",
                                             Location::caller()
                                         ));
@@ -838,31 +829,44 @@ fn scan(
                     };
                     pool.execute(move || {
                         for ind in 0..max_tests {
+                            let start_time = Instant::now();
                             let scan_ret = threads_scan6(
                                 method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
                             );
                             if ind == max_tests - 1 {
-                                tx.send((dst_addr, dst_port, scan_ret))
+                                tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()))
                                     .expect(&format!("tx send failed at {}", Location::caller()));
                             } else {
                                 match scan_ret {
-                                    Ok((_port_status, data_return, _)) => match data_return {
-                                        DataRecvStatus::Yes => {
-                                            // conclusions drawn from the returned data
-                                            tx.send((dst_addr, dst_port, scan_ret)).expect(
-                                                &format!(
+                                    Ok((_port_status, data_return, _)) => {
+                                        match data_return {
+                                            DataRecvStatus::Yes => {
+                                                // conclusions drawn from the returned data
+                                                tx.send((
+                                                    dst_addr,
+                                                    dst_port,
+                                                    scan_ret,
+                                                    start_time.elapsed(),
+                                                ))
+                                                .expect(&format!(
                                                     "tx send failed at {}",
                                                     Location::caller()
-                                                ),
-                                            );
-                                            break; // quit loop now
+                                                ));
+                                                break; // quit loop now
+                                            }
+                                            // conclusions from the default policy
+                                            DataRecvStatus::No => (), // continue probing
                                         }
-                                        // conclusions from the default policy
-                                        DataRecvStatus::No => (), // continue probing
-                                    },
+                                    }
                                     Err(_) => {
                                         // stop probe immediately if an error occurs
-                                        tx.send((dst_addr, dst_port, scan_ret)).expect(&format!(
+                                        tx.send((
+                                            dst_addr,
+                                            dst_port,
+                                            scan_ret,
+                                            start_time.elapsed(),
+                                        ))
+                                        .expect(&format!(
                                             "tx send failed at {}",
                                             Location::caller()
                                         ));
@@ -878,11 +882,11 @@ fn scan(
 
     let iter = rx.into_iter().take(recv_size);
     let mut reports = Vec::new();
-    for (dst_addr, dst_port, v) in iter {
+    for (dst_addr, dst_port, v, elapsed) in iter {
         match v {
             Ok((port_status, _data_return, rtt)) => {
                 // println!("rtt: {:.3}", rtt.as_secs_f32());
-                let scan_report = PortScanReport {
+                let scan_report = PortReport {
                     addr: dst_addr,
                     port: dst_port,
                     status: port_status,
@@ -890,34 +894,31 @@ fn scan(
                 };
                 reports.push(scan_report);
             }
-            Err(e) => {
-                let rtt = Duration::new(0, 0);
-                match e {
-                    PistolError::CanNotFoundMacAddress => {
-                        let scan_report = PortScanReport {
-                            addr: dst_addr,
-                            port: dst_port,
-                            status: PortStatus::Offline,
-                            rtt,
-                        };
-                        reports.push(scan_report);
-                    }
-                    _ => {
-                        error!("scan error: {}", e);
-                        let scan_report = PortScanReport {
-                            addr: dst_addr,
-                            port: dst_port,
-                            status: PortStatus::Error,
-                            rtt,
-                        };
-                        reports.push(scan_report);
-                    }
+            Err(e) => match e {
+                PistolError::CanNotFoundMacAddress => {
+                    let scan_report = PortReport {
+                        addr: dst_addr,
+                        port: dst_port,
+                        status: PortStatus::Offline,
+                        rtt: elapsed,
+                    };
+                    reports.push(scan_report);
                 }
-            }
+                _ => {
+                    error!("scan error: {}", e);
+                    let scan_report = PortReport {
+                        addr: dst_addr,
+                        port: dst_port,
+                        status: PortStatus::Error,
+                        rtt: elapsed,
+                    };
+                    reports.push(scan_report);
+                }
+            },
         }
     }
-    port_scan_ret.finish(reports);
-    Ok(port_scan_ret)
+    pistol_port_scans.finish(reports);
+    Ok(pistol_port_scans)
 }
 
 /// TCP Connect() Scan.
@@ -941,7 +942,7 @@ pub fn tcp_connect_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -996,7 +997,7 @@ pub fn tcp_syn_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1052,7 +1053,7 @@ pub fn tcp_fin_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1101,7 +1102,7 @@ pub fn tcp_ack_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1148,8 +1149,8 @@ pub fn tcp_null_scan(
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+    max_tests: usize,
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1159,7 +1160,7 @@ pub fn tcp_null_scan(
         None,
         None,
         timeout,
-        tests,
+        max_tests,
     )
 }
 
@@ -1197,7 +1198,7 @@ pub fn tcp_xmas_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1246,7 +1247,7 @@ pub fn tcp_window_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1295,7 +1296,7 @@ pub fn tcp_maimon_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1348,7 +1349,7 @@ pub fn tcp_idle_scan(
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1401,7 +1402,7 @@ pub fn udp_scan(
     src_port: Option<u16>,
     timeout: Option<Duration>,
     max_tests: usize,
-) -> Result<PistolPortScanReports, PistolError> {
+) -> Result<PistolPortScans, PistolError> {
     scan(
         targets,
         threads_num,
@@ -1452,7 +1453,7 @@ fn scan_raw(
         None => random_port(),
     };
 
-    let infer_addr = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(src_addr, dst_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -1462,7 +1463,7 @@ fn scan_raw(
     // The real dst_addr is inferred from infer_addr.
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = infer_addr.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
             let (port_status, _data_return, rtt) = threads_scan(
                 method,
                 dst_ipv4,
@@ -1476,7 +1477,7 @@ fn scan_raw(
             Ok((port_status, rtt))
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = infer_addr.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
             let (port_status, _data_return, rtt) =
                 threads_scan6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             Ok((port_status, rtt))
@@ -1484,11 +1485,9 @@ fn scan_raw(
     }
 }
 
-pub static ARP_LOCAL_DEFAULT_TIMEOUT: f32 = 0.001;
-
 #[cfg(feature = "scan")]
 #[cfg(test)]
-mod tests {
+mod max_tests {
     use super::*;
     use crate::PistolLogger;
     use crate::PistolRunner;
@@ -1612,12 +1611,14 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080, 8081]));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target1 = Target::new(addr1, Some(vec![22, 80, 443, 8080, 8081]));
+        let target2 = Target::new(addr2, Some(vec![22, 80, 443, 8080, 8081]));
         let max_tests = 2;
         let threads_num = Some(8);
         let ret = tcp_syn_scan(
-            &[target],
+            &[target1, target2],
             threads_num,
             src_ipv4,
             src_port,
@@ -1786,8 +1787,8 @@ mod tests {
             max_tests,
         )
         .unwrap();
-        // let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
-        // let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, tests).unwrap();
+        // let ret = tcp_ack_scan(target, src_ipv4, src_port, timeout, max_tests).unwrap();
+        // let ret = tcp_connect_scan(target, src_ipv4, src_port, timeout, max_tests).unwrap();
         println!("{}", ret);
         println!("elapsed: {:.3}", start_time.elapsed().as_secs_f32());
     }

@@ -453,6 +453,19 @@ pub fn infer_addr(
                             }
                         }
                     }
+                    // Finally, if we really can't find the source address,
+                    // transform it to the address in the same network segment as the default route.
+                    if let Some(default_route) = get_default_route()? {
+                        for interface in interfaces() {
+                            for ipn in interface.ips {
+                                if ipn.contains(default_route.via) {
+                                    let src_addr = ipn.ip();
+                                    let ia = InferAddr { dst_addr, src_addr };
+                                    return Ok(Some(ia));
+                                }
+                            }
+                        }
+                    }
                 }
             },
         }

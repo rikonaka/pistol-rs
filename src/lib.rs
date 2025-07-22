@@ -560,6 +560,8 @@ pub use scan::arp_scan_raw;
 #[cfg(feature = "scan")]
 pub use scan::mac_scan;
 #[cfg(feature = "scan")]
+pub use scan::ndp_ns_scan_raw;
+#[cfg(feature = "scan")]
 pub use scan::tcp_ack_scan;
 #[cfg(feature = "scan")]
 pub use scan::tcp_ack_scan_raw;

@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -40,6 +40,10 @@ pub enum PistolError {
     ZipError(#[from] zip::result::ZipError),
     #[error("zip file empty")]
     ZipEmptyError,
+
+    /* PING ERROR */
+    #[error("The target {target} does not support this detection method {method}")]
+    PingDetectionMethodError { target: IpAddr, method: String },
 
     /* SCAN ERROR */
     #[error(

@@ -193,30 +193,31 @@ fn main() {
 
 If you don't want to use `Target`, you can also use the `_raw` functions we provide, for example, the corresponding raw function for `tcp_syn_scan` is `tcp_syn_scan_raw`.
 
-| Rich Function     | Raw Function          |
-| :---------------- | :-------------------- |
-| arp_scan          | arp_scan_raw          |
-| tcp_syn_scan      | tcp_syn_scan_raw      |
-| tcp_ack_scan      | tcp_ack_scan_raw      |
-| tcp_connect_scan  | tcp_connect_scan_raw  |
-| tcp_fin_scan      | tcp_fin_scan_raw      |
-| tcp_idle_scan     | tcp_idle_scan_raw     |
-| tcp_maimon_scan   | tcp_maimon_scan_raw   |
-| tcp_null_scan     | tcp_null_scan_raw     |
-| tcp_window_scan   | tcp_window_scan_raw   |
-| tcp_xmas_scan     | tcp_xmas_scan_raw     |
-| udp_scan          | udp_scan_raw          |
-| icmp_ping         | icmp_ping_raw         |
-| tcp_ack_ping      | tcp_ack_ping_raw      |
-| tcp_syn_ping      | tcp_syn_ping_raw      |
-| udp_ping          | udp_ping_raw          |
-| icmp_flood        | icmp_flood_raw        |
-| tcp_ack_flood     | tcp_ack_flood_raw     |
-| tcp_ack_psh_flood | tcp_ack_psh_flood_raw |
-| tcp_syn_flood     | tcp_syn_flood_raw     |
-| udp_flood         | udp_flood_raw         |
-| os_detect         | os_detect_raw         |
-| vs_scan           | vs_scan_raw           |
+| Rich Function     | Raw Function           |
+| :---------------- | :--------------------- |
+| mac_scan          | arp_scan_raw (IPv4)    |
+| mac_scan          | ndp_ns_scan_raw (IPv6) |
+| tcp_syn_scan      | tcp_syn_scan_raw       |
+| tcp_ack_scan      | tcp_ack_scan_raw       |
+| tcp_connect_scan  | tcp_connect_scan_raw   |
+| tcp_fin_scan      | tcp_fin_scan_raw       |
+| tcp_idle_scan     | tcp_idle_scan_raw      |
+| tcp_maimon_scan   | tcp_maimon_scan_raw    |
+| tcp_null_scan     | tcp_null_scan_raw      |
+| tcp_window_scan   | tcp_window_scan_raw    |
+| tcp_xmas_scan     | tcp_xmas_scan_raw      |
+| udp_scan          | udp_scan_raw           |
+| icmp_ping         | icmp_ping_raw          |
+| tcp_ack_ping      | tcp_ack_ping_raw       |
+| tcp_syn_ping      | tcp_syn_ping_raw       |
+| udp_ping          | udp_ping_raw           |
+| icmp_flood        | icmp_flood_raw         |
+| tcp_ack_flood     | tcp_ack_flood_raw      |
+| tcp_ack_psh_flood | tcp_ack_psh_flood_raw  |
+| tcp_syn_flood     | tcp_syn_flood_raw      |
+| udp_flood         | udp_flood_raw          |
+| os_detect         | os_detect_raw          |
+| vs_scan           | vs_scan_raw            |
 
 **Note that the `_raw` function is blocking.**
 

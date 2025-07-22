@@ -151,7 +151,6 @@ pub fn send_syn_scan_packet(
                             let tcp_flags = tcp_packet.get_flags();
                             if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
                                 // tcp syn/ack response
-                                println!("{}:{} open", dst_ipv4, dst_port);
                                 return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                             } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                                 // tcp rst response
