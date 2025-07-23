@@ -669,6 +669,8 @@ pub use layer::dns_query;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
+    use subnetwork::CrossIpv4Pool;
     fn simple_top_ports_parser(ports_str: &str) -> Result<Vec<u16>, PistolError> {
         let mut ret = Vec::new();
         let ports_str_split: Vec<&str> = ports_str.split(",").collect();
@@ -750,5 +752,149 @@ mod tests {
         };
         println!("{}", top_1000_udp_ports.len());
         // println!("{:?}", top_1000_tcp_ports);
+    }
+    #[test]
+    fn example_tcp_syn_scan() {
+        // Initialize and run the Runner thread.
+        // This step is required for all other functions except service detection.
+        let _pr = PistolRunner::init(
+            PistolLogger::None,                        // logger level settings
+            Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging
+            None, // timeout settings, unless there is a clear reason, use the default here
+        )
+        .unwrap();
+
+        // When using scanning, please use a real local address to get the return packet.
+        // And for flood attacks, please consider using a fake address.
+        // If the value here is None, the programme will automatically look up the available addresses from the existing interfaces on the device.
+        // In some complex network environments, if the program cannot automatically identify the source IP address, you can set the source IP address manually here.
+        let src_ipv4 = None;
+        // If the value of `source port` is `None`, the program will generate the source port randomly.
+        let src_port = None;
+        let timeout = Some(Duration::new(1, 0));
+        let start = Ipv4Addr::new(192, 168, 5, 1);
+        let end = Ipv4Addr::new(192, 168, 5, 10);
+        // The destination address is from 192.168.5.1 to 192.168.5.10.
+        let subnet = CrossIpv4Pool::new(start, end).unwrap();
+        let mut targets = vec![];
+        for ip in subnet {
+            // Test with a example port `22`
+            let host = Target::new(ip.into(), Some(vec![22]));
+            targets.push(host);
+        }
+        // Number of attempts, it can also be understood as the maximum number of unsuccessful retries.
+        // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
+        let max_attempts = 2;
+        let threads_num = Some(8);
+        let ret = tcp_syn_scan(
+            &targets,
+            threads_num,
+            src_ipv4,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+        .unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn example_os_detect() {
+        // Initialize and run the Runner thread.
+        // This step is required for all other functions except service detection.
+        let _pr = PistolRunner::init(
+            PistolLogger::None,                     // logger level settings
+            Some(String::from("os_detect.pcapng")), // capture pistol traffic for debugging
+            None, // timeout settings, unless there is a clear reason, use the default here
+        )
+        .unwrap();
+
+        // If the value of `src_ipv4` is `None`, the program will find it auto.
+        let src_ipv4 = None;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
+        // `dst_open_tcp_port` must be a certain open tcp port.
+        let dst_open_tcp_port = 22;
+        // `dst_closed_tcp_port` must be a certain closed tcp port.
+        let dst_closed_tcp_port = 8765;
+        // `dst_closed_udp_port` must be a certain closed udp port.
+        let dst_closed_udp_port = 9876;
+        let target = Target::new(
+            dst_ipv4.into(),
+            Some(vec![
+                dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+        let timeout = Some(Duration::from_secs_f64(0.5));
+        let top_k = 3;
+        let threads_num = Some(8);
+
+        // The `fingerprint` is the obtained fingerprint of the target OS.
+        // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
+        let ret = os_detect(&[target], threads_num, src_ipv4, top_k, timeout).unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn example_os_detect_ipv6() {
+        // Initialize and run the Runner thread.
+        // This step is required for all other functions except service detection.
+        let _pr = PistolRunner::init(
+            PistolLogger::None,                          // logger level settings
+            Some(String::from("os_detect_ipv6.pcapng")), // capture pistol traffic for debugging
+            None, // timeout settings, unless there is a clear reason, use the default here
+        )
+        .unwrap();
+
+        let src_ipv6 = None;
+        let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
+        let dst_open_tcp_port = 22;
+        let dst_closed_tcp_port = 8765;
+        let dst_closed_udp_port = 9876;
+        let target = Target::new(
+            dst_ipv6.into(),
+            Some(vec![
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+
+        let timeout = Some(Duration::from_secs_f64(0.5));
+        let top_k = 3;
+        let threads_num = Some(8);
+        let ret = os_detect(&[target], threads_num, src_ipv6, top_k, timeout).unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn example_vs_scan() {
+        // Initialize and run the Runner thread.
+        // This step is required for all other functions except service detection.
+        let _pr = PistolRunner::init(
+            PistolLogger::None, // logger level settings
+            None,               // this capture will not work for vs scan, so just set it to None
+            None, // timeout settings, unless there is a clear reason, use the default here
+        )
+        .unwrap();
+
+        let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
+        let target = Target::new(dst_addr.into(), Some(vec![22, 80, 8080]));
+        let timeout = Some(Duration::from_secs_f64(0.5));
+        // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
+        // only_tcp_recommended = true: only try the tcp probe recommended port
+        // only_udp_recommended = true: only try the udp probe recommended port
+        let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
+        let intensity = 7; // nmap default
+        let threads_num = Some(8);
+        let ret = vs_scan(
+            &[target],
+            threads_num,
+            only_null_probe,
+            only_tcp_recommended,
+            only_udp_recommended,
+            intensity,
+            timeout,
+        )
+        .unwrap();
+        println!("{}", ret);
     }
 }

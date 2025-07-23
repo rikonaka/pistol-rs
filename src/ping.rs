@@ -59,9 +59,9 @@ use crate::utils::get_threads_pool;
 #[cfg(feature = "ping")]
 use crate::utils::random_port;
 #[cfg(feature = "ping")]
-use crate::utils::rtt_to_string;
-#[cfg(feature = "ping")]
 use crate::utils::threads_num_check;
+#[cfg(feature = "ping")]
+use crate::utils::time_sec_to_string;
 
 #[cfg(feature = "ping")]
 const SYN_PING_DEFAULT_PORT: u16 = 80;
@@ -95,7 +95,7 @@ impl fmt::Display for PingStatus {
 pub struct PingReport {
     pub addr: IpAddr,
     pub status: PingStatus,
-    pub rtt: Duration,
+    pub cost: Duration,
 }
 
 #[cfg(feature = "ping")]
@@ -145,7 +145,7 @@ impl fmt::Display for PistolPings {
             c -> "id",
             c -> "addr",
             c -> "status",
-            c -> "rtt"
+            c -> "time cost"
         ]);
 
         // sorted
@@ -162,7 +162,7 @@ impl fmt::Display for PistolPings {
                 _ => (),
             }
             let status_str = format!("{}", report.status);
-            let rtt_str = rtt_to_string(report.rtt);
+            let rtt_str = time_sec_to_string(report.cost);
             table.add_row(row![c -> i, c -> report.addr, c -> status_str, c -> rtt_str]);
             i += 1;
         }
@@ -472,7 +472,7 @@ fn ping(
                 let ping_report = PingReport {
                     addr: dst_addr,
                     status,
-                    rtt,
+                    cost: rtt,
                 };
                 reports.push(ping_report);
             }
@@ -481,7 +481,7 @@ fn ping(
                     let scan_report = PingReport {
                         addr: dst_addr,
                         status: PingStatus::Down,
-                        rtt: elapsed,
+                        cost: elapsed,
                     };
                     reports.push(scan_report);
                 }
@@ -490,7 +490,7 @@ fn ping(
                     let scan_report = PingReport {
                         addr: dst_addr,
                         status: PingStatus::Error,
-                        rtt: elapsed,
+                        cost: elapsed,
                     };
                     reports.push(scan_report);
                 }

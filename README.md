@@ -141,27 +141,23 @@ The existing method can only keep the regular expressions of nmap basically usab
 
 ## Debugs
 
-### Show Logging Infomations
-
-```rust
-use pistol::PistolLogger;
-
-fn main() {
-    let _ = PistolLogger::init_debug_logging();
-    // let _ = Logger::init_warn_logging();
-    // your code below
-}
-```
-
-### Capture and Analyse All Traffic
+### Show Logging Infomations and Capture All Pistol Traffic
 
 This method is used to capture all packets sent and recv by pistol into pcapng format (which means you can open it with Wireshark).
 
 ```rust
-use pistol::PistolCapture;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
 
 fn main() {
-    let _pc = PistolCapture::init("pistol.pcapng").unwrap();
+    // Initialize and run the Runner thread.
+    // This step is required for all other functions except service detection.
+    let _pr = PistolRunner::init(
+        PistolLogger::Info,                        // logger level settings
+        Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging
+        None,                                      // timeout settings, unless there is a clear reason, use the default here
+    )
+    .unwrap();
     // your scan or ping code
 }
 ```
@@ -176,18 +172,16 @@ However, please note that some algorithms can only work with certain protocols, 
 
 ```rust
 use pistol::Target;
-use pistol::Host;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 
 fn main() {
     let dst_ipv4 = Ipv4Addr::new(192, 168, 72, 134);
-    let host1 = Host::new(dst_ipv4.into(), Some(vec![22, 99]));
+    let target1 = Target::new(dst_ipv4.into(), Some(vec![22, 99]));
     let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x020c, 0x29ff, 0xfeb6, 0x8d99);
-    let host2 = Host::new(dst_ipv6.into(), Some(vec![443, 8080]));
-    let target = Target::new(vec![host1, host2]);
+    let target2 = Target::new(dst_ipv6.into(), Some(vec![443, 8080]));
+    let targets = vec![host1, host2];
     // your code below
-    ...
 }
 ```
 
@@ -224,14 +218,23 @@ If you don't want to use `Target`, you can also use the `_raw` functions we prov
 ### 1. SYN Port Scan Example
 
 ```rust
-use pistol::scan::tcp_syn_scan;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
+use pistol::tcp_syn_scan;
 use pistol::Target;
-use pistol::Host;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use subnetwork::CrossIpv4Pool;
 
 fn main() {
+    // Initialize and run the Runner thread.
+    // This step is required for all other functions except service detection.
+    let _pr = PistolRunner::init(
+        PistolLogger::None,                        // logger level settings
+        Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging
+        None,                                      // timeout settings, unless there is a clear reason, use the default here
+    )
+    .unwrap();
     // When using scanning, please use a real local address to get the return packet.
     // And for flood attacks, please consider using a fake address.
     // If the value here is None, the programme will automatically look up the available addresses from the existing interfaces on the device.
@@ -244,76 +247,78 @@ fn main() {
     let end = Ipv4Addr::new(192, 168, 5, 10);
     // The destination address is from 192.168.5.1 to 192.168.5.10.
     let subnet = CrossIpv4Pool::new(start, end).unwrap();
-    let mut hosts = vec![];
+    let mut targets = vec![];
     for ip in subnet {
         // Test with a example port `22`
-        let host = Host::new(ip.into(), Some(vec![22]));
-        hosts.push(host);
+        let host = Target::new(ip.into(), Some(vec![22]));
+        targets.push(host);
     }
-    let target = Target::new(hosts);
-    // Number of tests, it can also be understood as the maximum number of unsuccessful retries.
-    // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
-    let tests = 2;
+    // Number of max attempts, it can also be understood as the maximum number of unsuccessful retries.
+    let max_attempts = 2;
     let threads_num = Some(8);
     let ret = tcp_syn_scan(
-        target,
+        &targets,
         threads_num,
         src_ipv4,
         src_port,
         timeout,
-        tests
-    ).unwrap();
+        max_attempts,
+    )
+    .unwrap();
     println!("{}", ret);
 }
 ```
 
-### Output
+#### Output
+
+The local address I used for testing is 192.168.5.3. This address was skipped during the scan and no operation was performed. For the specific reasons, please see the end of the document **Probe the loopback address and local machine** part.
 
 ```
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|                                    Scan Results (tests:2)                                    |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|    id     |     addr     |   port    |                  status                   | avg cost  |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     1     | 192.168.5.1  |    22     | O(0)OF(0)F(2)UF(0)C(0)UR(0)CF(0)E(0)OL(0) | 1061.39ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     2     | 192.168.5.2  |    22     | O(0)OF(0)F(0)UF(0)C(2)UR(0)CF(0)E(0)OL(0) |  74.26ms  |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     3     | 192.168.5.3  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1079.59ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     4     | 192.168.5.4  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1077.55ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     5     | 192.168.5.5  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1094.39ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     6     | 192.168.5.6  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1093.97ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     7     | 192.168.5.7  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1093.10ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     8     | 192.168.5.8  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1093.42ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|     9     | 192.168.5.9  |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1090.77ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-|    10     | 192.168.5.10 |    22     | O(0)OF(0)F(0)UF(0)C(0)UR(0)CF(0)E(0)OL(2) | 1089.91ms |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-| NOTE:                                                                                        |
-| O: OPEN, OF: OPEN_OR_FILTERED, F: FILTERED,                                                  |
-| UF: UNFILTERED, C: CLOSED, UR: UNREACHABLE,                                                  |
-| CF: CLOSE_OF_FILTERED, E: ERROR, OL: OFFLINE.                                                |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
-| total used time: 1177.12ms                                                                   |
-| avg time cost: 984.83ms                                                                      |
-| open ports: 0                                                                                |
-+-----------+--------------+-----------+-------------------------------------------+-----------+
++------------+--------------+------------+------------+------------+
+|                Port Scan Results (max_attempts:2)                |
++------------+--------------+------------+------------+------------+
+|     id     |     addr     |    port    |   status   | time cost  |
++------------+--------------+------------+------------+------------+
+|     1      | 192.168.5.1  |     22     |  filtered  |   1.016s   |
++------------+--------------+------------+------------+------------+
+|     2      | 192.168.5.2  |     22     |   closed   | 32.142 ms  |
++------------+--------------+------------+------------+------------+
+|     3      | 192.168.5.4  |     22     |    open    |  3.086 ms  |
++------------+--------------+------------+------------+------------+
+|     4      | 192.168.5.5  |     22     |    open    | 32.464 ms  |
++------------+--------------+------------+------------+------------+
+|     5      | 192.168.5.6  |     22     |  offline   |   1.039s   |
++------------+--------------+------------+------------+------------+
+|     6      | 192.168.5.7  |     22     |  offline   |   1.034s   |
++------------+--------------+------------+------------+------------+
+|     7      | 192.168.5.8  |     22     |  offline   |   1.038s   |
++------------+--------------+------------+------------+------------+
+|     8      | 192.168.5.9  |     22     |  offline   |   1.016s   |
++------------+--------------+------------+------------+------------+
+|     9      | 192.168.5.10 |     22     |  offline   |   1.024s   |
++------------+--------------+------------+------------+------------+
+| total cost: 2.082s, avg cost: 0.208s, open ports: 2              |
++------------+--------------+------------+------------+------------+
 ```
 
 Or
 
 ```rust
-use pistol::scan::tcp_syn_scan_raw;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
+use pistol::tcp_syn_scan_raw;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 fn main() {
+    // Initialize and run the Runner thread.
+    // This step is required for all other functions except service detection.
+    let _pr = PistolRunner::init(
+        PistolLogger::None, // logger level settings
+        Some(String::from("tcp_syn_scan_raw.pcapng")), // capture pistol traffic for debugging
+        None, // timeout settings, unless there is a clear reason, use the default here
+    )
+    .unwrap();
     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
     let dst_port = 80;
     let src_ipv4 = None;
@@ -326,16 +331,26 @@ fn main() {
 
 ### 2. Remote OS Detect Example
 
-The test target server is Debian 12 server.
+The test target server is Debian 12.
 
 ```rust
-use pistol::os::os_detect;
 use pistol::Target;
-use pistol::Host;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
+use pistol::os::os_detect;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 fn main() {
+    // Initialize and run the Runner thread.
+    // This step is required for all other functions except service detection.
+    let _pr = PistolRunner::init(
+        PistolLogger::None,                     // logger level settings
+        Some(String::from("os_detect.pcapng")), // capture pistol traffic for debugging
+        None, // timeout settings, unless there is a clear reason, use the default here
+    )
+    .unwrap();
+
     // If the value of `src_ipv4` is `None`, the program will find it auto.
     let src_ipv4 = None;
     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
@@ -345,69 +360,73 @@ fn main() {
     let dst_closed_tcp_port = 8765;
     // `dst_closed_udp_port` must be a certain closed udp port.
     let dst_closed_udp_port = 9876;
-    let host = Host::new(
+    let target = Target::new(
         dst_ipv4.into(),
         Some(vec![
-            dst_open_tcp_port,   // The order of these three ports cannot be disrupted.
+            dst_open_tcp_port, // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port,
             dst_closed_udp_port,
         ]),
     );
-    let target = Target::new(vec![host]);
-    let timeout = Some(Duration::new(3, 0));
+    let timeout = Some(Duration::from_secs_f64(0.5));
     let top_k = 3;
     let threads_num = Some(8);
 
     // The `fingerprint` is the obtained fingerprint of the target OS.
     // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
-    let ret = os_detect(
-        target,
-        threads_num,
-        src_ipv4,
-        top_k,
-        timeout,
-    ).unwrap();
+    let ret = os_detect(&[target], threads_num, src_ipv4, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
 
-### output
+#### output
 
 ```
-+----------+-------------+----------+----------+------------+-------------------------------------+
-|                                        OS Detect Results                                        |
-+----------+-------------+----------+----------+------------+-------------------------------------+
-|    id    |    addr     |   rank   |  score   |   report   |                 cpe                 |
-+----------+-------------+----------+----------+------------+-------------------------------------+
-|    1     | 192.168.5.5 |    #1    |  73/101  | Linux 6.0  | cpe:/o:linux:linux_kernel:6.0 auto  |
-+----------+-------------+----------+----------+------------+-------------------------------------+
-|    2     | 192.168.5.5 |    #2    |  72/101  | Linux 4.19 | cpe:/o:linux:linux_kernel:4.19 auto |
-+----------+-------------+----------+----------+------------+-------------------------------------+
-|    3     | 192.168.5.5 |    #3    |  71/101  | Linux 5.4  | cpe:/o:linux:linux_kernel:5.4 auto  |
-+----------+-------------+----------+----------+------------+-------------------------------------+
-| total used time: 3.912s, avg time cost: 3.912s                                                  |
-+----------+-------------+----------+----------+------------+-------------------------------------+
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
+|                                            OS Detect Results                                             |
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
+|   id    |    addr     |  rank   |  score  |     os     |                 cpe                 | time cost |
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
+|    1    | 192.168.5.5 |   #1    | 75/101  | Linux 6.0  | cpe:/o:linux:linux_kernel:6.0 auto  |  4.078s   |
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
+|    2    | 192.168.5.5 |   #2    | 74/101  | Linux 4.19 | cpe:/o:linux:linux_kernel:4.19 auto |  4.078s   |
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
+|    3    | 192.168.5.5 |   #3    | 73/101  | Linux 5.4  | cpe:/o:linux:linux_kernel:5.4 auto  |  4.078s   |
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
+| total used time: 4.078s, avg time cost: 4.078s                                                           |
++---------+-------------+---------+---------+------------+-------------------------------------+-----------+
 ```
 
 
 ### 3. Remote OS Detect Example on IPv6
 
-The test target server is Debian 12 server.
+The test target server is Debian 12.
 
 ```rust
-use pistol::os::os_detect;
 use pistol::Target;
-use pistol::Host;
-use std::net::Ipv4Addr;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
+use pistol::os_detect;
+use std::net::Ipv6Addr;
 use std::time::Duration;
+use std::str::FromStr;
 
 fn main() {
+    // Initialize and run the Runner thread.
+    // This step is required for all other functions except service detection.
+    let _pr = PistolRunner::init(
+        PistolLogger::None,                          // logger level settings
+        Some(String::from("os_detect_ipv6.pcapng")), // capture pistol traffic for debugging
+        None, // timeout settings, unless there is a clear reason, use the default here
+    )
+    .unwrap();
+
     let src_ipv6 = None;
-    let dst_ipv6: Ipv6Addr = "fe80::20c:29ff:fe2c:9e4".parse().unwrap();
+    let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
     let dst_open_tcp_port = 22;
     let dst_closed_tcp_port = 8765;
     let dst_closed_udp_port = 9876;
-    let host = Host::new(
+    let target = Target::new(
         dst_ipv6.into(),
         Some(vec![
             dst_open_tcp_port,
@@ -416,31 +435,30 @@ fn main() {
         ]),
     );
 
-    let target = Target::new(vec![host]);
-    let timeout = Some(Duration::new(3, 0));
+    let timeout = Some(Duration::from_secs_f64(0.5));
     let top_k = 3;
     let threads_num = Some(8);
-    let ret = os_detect(target, threads_num, src_ipv6, top_k, timeout).unwrap();
+    let ret = os_detect(&[target], threads_num, src_ipv6, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
 
-### Output
+#### Output
 
 ```
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
-|                                                               OS Detect Results                                                               |
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
-|    id    |          addr           |   rank   |  score   |          report          |                           cpe                           |
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
-|    1     | fe80::20c:29ff:fe2c:9e4 |    #1    |   0.9    |        Linux 4.19        |             cpe:/o:linux:linux_kernel:4.19              |
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
-|    2     | fe80::20c:29ff:fe2c:9e4 |    #2    |   0.7    |     Linux 3.13 - 4.6     | cpe:/o:linux:linux_kernel:3 cpe:/o:linux:linux_kernel:4 |
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
-|    3     | fe80::20c:29ff:fe2c:9e4 |    #3    |   0.0    | Android 7.1 (Linux 3.18) |                                                         |
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
-| total used time: 5.974s, avg time cost: 5.974s                                                                                                |
-+----------+-------------------------+----------+----------+--------------------------+---------------------------------------------------------+
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
+|                                                                   OS Detect Results                                                                    |
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
+|   id    |          addr           |  rank   |  score  |            os            |                           cpe                           | time cost |
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
+|    1    | fe80::20c:29ff:fe2c:9e4 |   #1    |   0.9   |        Linux 4.19        |             cpe:/o:linux:linux_kernel:4.19              |  5.954s   |
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
+|    2    | fe80::20c:29ff:fe2c:9e4 |   #2    |   0.6   |     Linux 3.13 - 4.6     | cpe:/o:linux:linux_kernel:3 cpe:/o:linux:linux_kernel:4 |  5.954s   |
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
+|    3    | fe80::20c:29ff:fe2c:9e4 |   #3    |   0.0   | Android 7.1 (Linux 3.18) |                                                         |  5.954s   |
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
+| total used time: 5.954s, avg time cost: 5.954s                                                                                                         |
++---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
 ```
 
 According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value (third column in the table) must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
@@ -448,7 +466,7 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 
 ### 3. Remote Service Detect Example
 
-* 192.168.5.133 - Debian 12 (ssh: 22, apache httpd: 80, apache tomcat: 8080)
+* 192.168.5.5 - Debian 12 (ssh: 22, apache httpd: 80, apache tomcat: 8080)
 
 ```rust
 use pistol::vs::vs_scan;
@@ -458,30 +476,39 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 fn main() {
+    // Initialize and run the Runner thread.
+    // This step is required for all other functions except service detection.
+    let _pr = PistolRunner::init(
+        PistolLogger::None, // logger level settings
+        None,               // this capture will not work for vs scan, so just set it to None
+        None, // timeout settings, unless there is a clear reason, use the default here
+    )
+    .unwrap();
+
     let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
-    let host = Host::new(dst_addr.into(), Some(vec![22, 80, 8080]));
-    let target = Target::new(vec![host]);
-    let timeout = Some(Duration::new(1, 0));
+    let target = Target::new(dst_addr.into(), Some(vec![22, 80, 8080]));
+    let timeout = Some(Duration::from_secs_f64(0.5));
     // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
     // only_tcp_recommended = true: only try the tcp probe recommended port
     // only_udp_recommended = true: only try the udp probe recommended port
-    let (only_null_probe, only_tcp_recommended, only_udp_recomended) = (false, true, true);
+    let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
     let intensity = 7; // nmap default
     let threads_num = Some(8);
     let ret = vs_scan(
-        target,
+        &[target],
         threads_num,
         only_null_probe,
         only_tcp_recommended,
         only_udp_recommended,
         intensity,
         timeout,
-    )..unwrap();
+    )
+    .unwrap();
     println!("{}", ret);
 }
 ```
 
-### Output
+#### Output
 
 ```
 +-----------+-------------+-----------+-----------+----------------------------------+
@@ -503,7 +530,7 @@ fn main() {
 |     3     | 192.168.5.5 |   8080    |   http    |         p:Apache Tomcat          |
 |           |             |           |           |       cpe:/a:apache:tomcat       |
 +-----------+-------------+-----------+-----------+----------------------------------+
-| total used time: 51.290s, avg time cost: 17.097s                                   |
+| total used time: 63.547s, avg time cost: 21.182s                                   |
 +-----------+-------------+-----------+-----------+----------------------------------+
 ```
 
@@ -521,10 +548,10 @@ Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 ## Some Unsolvable Problems
 
-**Probe the loopback address**
+**Probe the loopback address and local machine**
 
 Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending ethernet frame data, but only at the transport layer.
 
-And the transport layer design of `libpnet` lacks flexibility and customizability, for example there is `ipv4_packet_iter` method only and no `ipv6_packet_iter` method, it means that I cannot receive any ipv6 packets, [reference](https://docs.rs/pnet/0.35.0/pnet/transport/index.html).
+And the transport layer design of `libpnet` lacks flexibility and customizability, for example there is `ipv4_packet_iter` method only and no `ipv6_packet_iter` method, it means that I cannot receive any ipv6 packets if I changes the `pistol`'s sending and receiving methods from datalink layer to transport layer, [reference](https://docs.rs/pnet/0.35.0/pnet/transport/index.html).
 
-Therefore, pistol will not support loopback address speculation until a technical solution that can solve the above problem is found.
+Therefore, `pistol` will not support loopback address speculation until a technical solution that can solve the above problem is found.

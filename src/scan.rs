@@ -65,9 +65,9 @@ use crate::utils::get_threads_pool;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::random_port;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::rtt_to_string;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::threads_num_check;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::utils::time_sec_to_string;
 
 /// This structure is used to indicate whether the status
 /// is a conclusion drawn from data received or from no data received.
@@ -122,12 +122,16 @@ impl PistolMacScans {
 impl fmt::Display for PistolMacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
-        let total_cost_str = rtt_to_string(Duration::from_secs_f64(total_cost.as_seconds_f64()));
+        let total_cost_str =
+            time_sec_to_string(Duration::from_secs_f64(total_cost.as_seconds_f64()));
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Mac Scan Results (max_attempts:{})", self.max_attempts))
-                .style_spec("c")
-                .with_hspan(5),
+            Cell::new(&format!(
+                "Mac Scan Results (max_attempts:{})",
+                self.max_attempts
+            ))
+            .style_spec("c")
+            .with_hspan(5),
         ]));
 
         table.add_row(row![c -> "seq", c -> "addr", c -> "mac", c -> "oui", c-> "rtt"]);
@@ -140,7 +144,7 @@ impl fmt::Display for PistolMacScans {
 
         let mut i = 1;
         for (_addr, report) in btm_addr {
-            let rtt_str = rtt_to_string(report.rtt);
+            let rtt_str = time_sec_to_string(report.rtt);
             table.add_row(
                 row![c -> i, c -> report.addr, c -> report.mac, c -> report.ouis, c -> rtt_str],
             );
@@ -501,7 +505,7 @@ pub struct PortReport {
     pub addr: IpAddr,
     pub port: u16,
     pub status: PortStatus,
-    pub rtt: Duration, // from layer2
+    pub cost: Duration, // from layer2
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -541,12 +545,15 @@ impl fmt::Display for PistolPortScans {
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Port Scan Results (max_attempts:{})", self.max_attempts,))
-                .style_spec("c")
-                .with_hspan(5),
+            Cell::new(&format!(
+                "Port Scan Results (max_attempts:{})",
+                self.max_attempts,
+            ))
+            .style_spec("c")
+            .with_hspan(5),
         ]));
 
-        table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "rtt"]);
+        table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "time cost"]);
 
         // sorted the resutls
         let mut btm_addr: BTreeMap<IpAddr, BTreeMap<u16, PortReport>> = BTreeMap::new();
@@ -569,9 +576,9 @@ impl fmt::Display for PistolPortScans {
                     _ => (),
                 }
                 let status_str = format!("{}", report.status);
-                let rtt_str = rtt_to_string(report.rtt);
+                let time_cost_str = time_sec_to_string(report.cost);
                 table.add_row(
-                    row![c -> i, c -> report.addr, c -> report.port, c -> status_str, c -> rtt_str],
+                    row![c -> i, c -> report.addr, c -> report.port, c -> status_str, c -> time_cost_str],
                 );
                 i += 1;
             }
@@ -584,7 +591,7 @@ impl fmt::Display for PistolPortScans {
 
         let avg_cost = total_cost.as_seconds_f64() / self.port_reports.len() as f64;
         let summary = format!(
-            "total cost: {:.3}s\navg cost: {:.3}s\nopen ports: {}",
+            "total cost: {:.3}s, avg cost: {:.3}s, open ports: {}",
             total_cost.as_seconds_f64(),
             avg_cost,
             open_ports_num,
@@ -892,7 +899,7 @@ fn scan(
                     addr: dst_addr,
                     port: dst_port,
                     status: port_status,
-                    rtt,
+                    cost: rtt,
                 };
                 reports.push(scan_report);
             }
@@ -902,7 +909,7 @@ fn scan(
                         addr: dst_addr,
                         port: dst_port,
                         status: PortStatus::Offline,
-                        rtt: elapsed,
+                        cost: elapsed,
                     };
                     reports.push(scan_report);
                 }
@@ -912,7 +919,7 @@ fn scan(
                         addr: dst_addr,
                         port: dst_port,
                         status: PortStatus::Error,
-                        rtt: elapsed,
+                        cost: elapsed,
                     };
                     reports.push(scan_report);
                 }

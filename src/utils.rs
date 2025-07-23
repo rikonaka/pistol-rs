@@ -13,11 +13,11 @@ use crate::error::PistolError;
 
 const MAX_THREADS_NUM: usize = 1000;
 
-pub fn rtt_to_string(rtt: Duration) -> String {
-    if rtt.as_secs_f64() > 1.0 {
-        format!("{:.3}s", rtt.as_secs_f64())
+pub fn time_sec_to_string(cost: Duration) -> String {
+    if cost.as_secs_f64() > 1.0 {
+        format!("{:.3}s", cost.as_secs_f64())
     } else {
-        format!("{:.3} ms", rtt.as_secs_f64() * 1000.0)
+        format!("{:.3} ms", cost.as_secs_f64() * 1000.0)
     }
 }
 

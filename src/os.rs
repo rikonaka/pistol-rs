@@ -60,6 +60,8 @@ use crate::os::osscan6::threads_os_probe6;
 use crate::utils::get_threads_pool;
 #[cfg(feature = "os")]
 use crate::utils::threads_num_check;
+#[cfg(feature = "os")]
+use crate::utils::time_sec_to_string;
 
 #[cfg(feature = "os")]
 pub mod dbparser;
@@ -106,7 +108,7 @@ pub struct OsDetectV4 {
     pub alive: bool,
     pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
-    pub time_cost: Duration,
+    pub cost: Duration,
 }
 
 #[cfg(feature = "os")]
@@ -116,7 +118,7 @@ pub struct OsDetectV6 {
     pub alive: bool,
     pub fingerprint: Fingerprint6,
     pub detects: Vec<OsInfo6>,
-    pub time_cost: Duration,
+    pub cost: Duration,
 }
 
 #[cfg(feature = "os")]
@@ -167,11 +169,11 @@ impl fmt::Display for PistolOsDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new("OS Detect Results").style_spec("c").with_hspan(6),
+            Cell::new("OS Detect Results").style_spec("c").with_hspan(7),
         ]));
 
         table.add_row(
-            row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "report", c -> "cpe"],
+            row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "os", c -> "cpe", c -> "time cost"],
         );
 
         // sorted
@@ -185,36 +187,38 @@ impl fmt::Display for PistolOsDetects {
         for (ip, detect) in btm_addr {
             match detect {
                 OsDetect::V4(o) => {
-                    total_cost += o.time_cost.as_secs_f64();
+                    let time_cost_str = time_sec_to_string(o.cost);
+                    total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         for (i, os_info) in o.detects.iter().enumerate() {
                             let rank_str = format!("#{}", i + 1);
                             let score_str = format!("{}/{}", os_info.score, os_info.total);
                             let os_details = &os_info.name;
                             let os_cpe = os_info.cpe.join("|");
-                            table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe]);
+                            table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe, c -> time_cost_str]);
                             id += 1;
                         }
                     } else {
                         let rank_str = format!("#{}", 1);
-                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0/0", c -> "target dead", c -> ""]);
+                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0/0", c -> "target dead", c -> "", c -> time_cost_str]);
                         id += 1;
                     }
                 }
                 OsDetect::V6(o) => {
-                    total_cost += o.time_cost.as_secs_f64();
+                    let time_cost_str = time_sec_to_string(o.cost);
+                    total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         for (i, os_info6) in o.detects.iter().enumerate() {
                             let number_str = format!("#{}", i + 1);
                             let score_str = format!("{:.1}", os_info6.score);
                             let os_str = &os_info6.name;
                             let os_cpe = &os_info6.cpe;
-                            table.add_row(row![c -> id, c -> ip, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe]);
+                            table.add_row(row![c -> id, c -> ip, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe, c -> time_cost_str]);
                             id += 1;
                         }
                     } else {
                         let rank_str = format!("#{}", 1);
-                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0.0", c -> "target dead", c -> ""]);
+                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0.0", c -> "target dead", c -> "", c -> time_cost_str]);
                         id += 1;
                     }
                 }
@@ -225,7 +229,7 @@ impl fmt::Display for PistolOsDetects {
             "total used time: {:.3}s, avg time cost: {:.3}s",
             total_cost, avg_cost,
         );
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(7)]));
         write!(f, "{}", table)
     }
 }
@@ -396,7 +400,7 @@ pub fn os_detect(
                                 alive: true,
                                 fingerprint,
                                 detects,
-                                time_cost: start_time.elapsed(),
+                                cost: start_time.elapsed(),
                             };
                             let od = OsDetect::V4(o);
                             Ok(od)
@@ -441,7 +445,7 @@ pub fn os_detect(
                                 alive: true,
                                 fingerprint,
                                 detects,
-                                time_cost: start_time.elapsed(),
+                                cost: start_time.elapsed(),
                             };
                             let od = OsDetect::V6(o);
                             Ok(od)
@@ -471,7 +475,7 @@ pub fn os_detect(
                             alive: false,
                             fingerprint: Fingerprint::empty(),
                             detects: Vec::new(),
-                            time_cost: start_time.elapsed(),
+                            cost: start_time.elapsed(),
                         };
                         let od = OsDetect::V4(o);
                         os_detects.push(od);
@@ -482,7 +486,7 @@ pub fn os_detect(
                             alive: false,
                             fingerprint: Fingerprint6::empty(),
                             detects: Vec::new(),
-                            time_cost: start_time.elapsed(),
+                            cost: start_time.elapsed(),
                         };
                         let od = OsDetect::V6(o);
                         os_detects.push(od);
@@ -532,7 +536,7 @@ pub fn os_detect_raw(
                         alive: true,
                         fingerprint,
                         detects,
-                        time_cost: start_time.elapsed(),
+                        cost: start_time.elapsed(),
                     };
                     let od = OsDetect::V4(o);
                     Ok(od)
@@ -544,7 +548,7 @@ pub fn os_detect_raw(
                         alive: false,
                         fingerprint: Fingerprint::empty(),
                         detects: Vec::new(),
-                        time_cost: start_time.elapsed(),
+                        cost: start_time.elapsed(),
                     };
                     let od = OsDetect::V4(o);
                     Ok(od)
@@ -571,7 +575,7 @@ pub fn os_detect_raw(
                         alive: true,
                         fingerprint,
                         detects,
-                        time_cost: start_time.elapsed(),
+                        cost: start_time.elapsed(),
                     };
                     let od = OsDetect::V6(o);
                     Ok(od)
@@ -583,7 +587,7 @@ pub fn os_detect_raw(
                         alive: false,
                         fingerprint: Fingerprint6::empty(),
                         detects: Vec::new(),
-                        time_cost: start_time.elapsed(),
+                        cost: start_time.elapsed(),
                     };
                     let od = OsDetect::V6(o);
                     Ok(od)
