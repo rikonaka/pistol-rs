@@ -103,9 +103,9 @@ fn tcp_null_probe(
     debug!("null probe recv buff len: {}", recv_buff.len());
     if recv_buff.len() > 0 {
         let recv_str = vs_probe_data_to_string(&recv_buff);
-        for s in service_probes {
-            if s.probe.probename == "NULL" {
-                match s.check(&recv_str) {
+        for sp in service_probes {
+            if sp.probe.probename == "NULL" {
+                match sp.check(&recv_str) {
                     Some(mx) => ret.push(mx),
                     None => (),
                 }
@@ -122,10 +122,7 @@ fn tcp_continue_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
 ) -> Result<Vec<MatchX>, PistolError> {
-    fn send_recv_match(
-        stream: &mut TcpStream,
-        sp: &ServiceProbe,
-    ) -> Result<Vec<MatchX>, PistolError> {
+    fn run_probe(stream: &mut TcpStream, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolError> {
         let probestring = &sp.probe.probestring;
         stream.write(probestring)?;
         let mut total_recv_buff = Vec::new();
@@ -175,21 +172,16 @@ fn tcp_continue_probe(
             // every probe has a list of port numbers that are considered to be most effective.
             if only_tcp_recommended {
                 if sp.ports.len() > 0 && sp.ports.contains(&dst_port) {
-                    let r = send_recv_match(stream, sp);
-                    match r {
-                        Ok(r) => ret.extend(r),
-                        Err(e) => return Err(e.into()),
-                    }
+                    let r = run_probe(stream, &sp)?;
+                    ret.extend(r);
                 }
             } else {
-                let r = send_recv_match(stream, sp);
-                match r {
-                    Ok(r) => ret.extend(r),
-                    Err(e) => return Err(e.into()),
-                }
+                let r = run_probe(stream, &sp)?;
+                ret.extend(r);
             }
         }
     }
+
     Ok(ret)
 }
 
@@ -267,21 +259,16 @@ fn udp_probe(
             // every probe has a list of port numbers that are considered to be most effective.
             if only_udp_recommended {
                 if sp.ports.contains(&dst_port) {
-                    let r = run_probe(&socket, sp);
-                    match r {
-                        Ok(r) => ret.extend(r),
-                        Err(e) => return Err(e.into()),
-                    }
+                    let r = run_probe(&socket, sp)?;
+                    ret.extend(r);
                 }
             } else {
-                let r = run_probe(&socket, sp);
-                match r {
-                    Ok(r) => ret.extend(r),
-                    Err(e) => return Err(e.into()),
-                }
+                let r = run_probe(&socket, sp)?;
+                ret.extend(r);
             }
         }
     }
+
     Ok(ret)
 }
 
@@ -299,7 +286,6 @@ pub fn threads_vs_probe(
     let tcp_dst_addr = SocketAddr::new(dst_addr, dst_port);
     match TcpStream::connect_timeout(&tcp_dst_addr, timeout) {
         Ok(mut stream) => {
-            // println!("{}", tcp_dst_addr);
             // stream.set_nonblocking(false)?;
             // Once the TCP connection is made, Nmap listens for roughly five seconds.
             let five_seconds = Duration::from_secs(5);
@@ -309,8 +295,7 @@ pub fn threads_vs_probe(
                 .set_nonblocking(false)
                 .expect("set noblocking failed");
 
-            // If the connection succeeds and the port had been in the open|filtered state, it is changed to open.
-            // Ignore this step here.
+            // If the connection succeeds and the port had been in the open|filtered state, it is changed to open (ignore this step).
             debug!("send null probe");
             let null_probe_ret = tcp_null_probe(&mut stream, &service_probes)?;
             if null_probe_ret.len() > 0 {
@@ -325,7 +310,6 @@ pub fn threads_vs_probe(
                 stream.set_write_timeout(Some(timeout))?;
                 if !only_null_probe {
                     // Start TCP continue probe.
-                    // println!("TCP CONTINUE PROBE");
                     debug!("send tcp continue probe");
                     let tcp_ret = tcp_continue_probe(
                         &mut stream,

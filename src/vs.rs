@@ -46,6 +46,8 @@ use crate::utils::get_threads_pool;
 #[cfg(feature = "vs")]
 use crate::utils::threads_num_check;
 #[cfg(feature = "vs")]
+use crate::utils::time_sec_to_string;
+#[cfg(feature = "vs")]
 use crate::vs::dbparser::nmap_service_probes_parser;
 #[cfg(feature = "vs")]
 use crate::vs::vscan::MatchX;
@@ -96,11 +98,11 @@ impl fmt::Display for PistolVsScans {
         table.add_row(Row::new(vec![
             Cell::new("Service Scan Results")
                 .style_spec("c")
-                .with_hspan(5),
+                .with_hspan(6),
         ]));
 
         table
-            .add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service", c -> "versioninfo"]);
+            .add_row(row![c -> "id", c -> "addr", c -> "port", c -> "service", c -> "versioninfo", c -> "time cost"]);
 
         // sorted
         let mut btm_addr: BTreeMap<IpAddr, BTreeMap<u16, PortService>> = BTreeMap::new();
@@ -137,8 +139,9 @@ impl fmt::Display for PistolVsScans {
                     services_str = String::from("unknown|closed");
                 }
                 total_cost += service.time_cost.as_secs_f64();
+                let time_cost_str = time_sec_to_string(service.time_cost);
                 table.add_row(
-                    row![c -> i, c -> service.addr, c -> service.port, c -> services_str, c -> versioninfo_str],
+                    row![c -> i, c -> service.addr, c -> service.port, c -> services_str, c -> versioninfo_str, c -> time_cost_str],
                 );
                 i += 1;
             }
@@ -149,7 +152,7 @@ impl fmt::Display for PistolVsScans {
             "total used time: {:.3}s, avg time cost: {:.3}s",
             total_cost, avg_cost,
         );
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
         write!(f, "{}", table)
     }
 }
