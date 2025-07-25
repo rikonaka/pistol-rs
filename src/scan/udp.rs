@@ -25,8 +25,7 @@ use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
 use crate::scan::DataRecvStatus;
-
-use super::PortStatus;
+use crate::scan::PortStatus;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;

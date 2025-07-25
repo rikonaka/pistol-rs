@@ -26,8 +26,7 @@ use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv6_send;
 use crate::scan::DataRecvStatus;
-
-use super::PortStatus;
+use crate::scan::PortStatus;
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
 // const TCP_FLAGS_ECE_MASK: u8 = 0b01000000;

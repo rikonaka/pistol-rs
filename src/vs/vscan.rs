@@ -14,12 +14,12 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 
-use super::dbparser::Match;
-use super::dbparser::ProbeProtocol;
-use super::dbparser::ServiceProbe;
-use super::dbparser::SoftMatch;
 use crate::error::PistolError;
 use crate::utils::random_port;
+use crate::vs::dbparser::Match;
+use crate::vs::dbparser::ProbeProtocol;
+use crate::vs::dbparser::ServiceProbe;
+use crate::vs::dbparser::SoftMatch;
 
 const TCP_BUFF_SIZE: usize = 40960;
 const UDP_BUFF_SIZE: usize = 40960;

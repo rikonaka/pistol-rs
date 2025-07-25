@@ -23,24 +23,23 @@ use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
 use crate::layer::get_dst_mac_and_interface;
 use crate::layer::layer3_ipv6_send;
+use crate::os::Linear;
+use crate::os::OsInfo6;
+use crate::os::operator6::apply_scale;
+use crate::os::operator6::vectorize;
+use crate::os::osscan::get_scan_line;
+use crate::os::packet6;
+use crate::os::rr::AllPacketRR6;
+use crate::os::rr::IERR6;
+use crate::os::rr::NXRR6;
+use crate::os::rr::RequestAndResponse;
+use crate::os::rr::SEQRR6;
+use crate::os::rr::TECNRR6;
+use crate::os::rr::TXRR6;
+use crate::os::rr::U1RR6;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
-
-use super::Linear;
-use super::OsInfo6;
-use super::operator6::apply_scale;
-use super::operator6::vectorize;
-use super::osscan::get_scan_line;
-use super::packet6;
-use super::rr::AllPacketRR6;
-use super::rr::IERR6;
-use super::rr::NXRR6;
-use super::rr::RequestAndResponse;
-use super::rr::SEQRR6;
-use super::rr::TECNRR6;
-use super::rr::TXRR6;
-use super::rr::U1RR6;
 
 const MAX_RETRY: usize = 5; // nmap default
 
@@ -1549,17 +1548,17 @@ mod tests {
         ];
 
         let buff_2 =
-            packet6::t2_packet_layer3(src_ipv6, src_ports[0], dst_ipv6, dst_open_port).unwrap();
+            packet6::t2_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[0]).unwrap();
         let buff_3 =
-            packet6::t3_packet_layer3(src_ipv6, src_ports[1], dst_ipv6, dst_open_port).unwrap();
+            packet6::t3_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[1]).unwrap();
         let buff_4 =
-            packet6::t4_packet_layer3(src_ipv6, src_ports[2], dst_ipv6, dst_open_port).unwrap();
+            packet6::t4_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[2]).unwrap();
         let buff_5 =
-            packet6::t5_packet_layer3(src_ipv6, src_ports[3], dst_ipv6, dst_closed_port).unwrap();
+            packet6::t5_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[3]).unwrap();
         let buff_6 =
-            packet6::t6_packet_layer3(src_ipv6, src_ports[4], dst_ipv6, dst_closed_port).unwrap();
+            packet6::t6_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[4]).unwrap();
         let buff_7 =
-            packet6::t7_packet_layer3(src_ipv6, src_ports[5], dst_ipv6, dst_closed_port).unwrap();
+            packet6::t7_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[5]).unwrap();
         let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
 
         let i = 0;

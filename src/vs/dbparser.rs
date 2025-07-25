@@ -1,16 +1,15 @@
 use escape_bytes;
 use fancy_regex::Regex as FancyRegex;
-use tracing::debug;
-use tracing::error;
 use regex::Captures;
 use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
+use tracing::debug;
+use tracing::error;
 
 use crate::error::PistolError;
-
-use super::vscan::MatchX;
+use crate::vs::vscan::MatchX;
 
 fn unescape_string(input: &str) -> Result<Vec<u8>, PistolError> {
     let output = match escape_bytes::unescape(input.as_bytes()) {
@@ -19,7 +18,7 @@ fn unescape_string(input: &str) -> Result<Vec<u8>, PistolError> {
             return Err(PistolError::CanNotUnescapeString {
                 s: input.to_string(),
                 e: format!("{:?}", e),
-            })
+            });
         }
     };
     Ok(output)
@@ -250,11 +249,7 @@ impl ServiceProbe {
             }
         }
     }
-    fn softmatch_function(
-        &self,
-        sm: &SoftMatch,
-        recv_str: &str,
-    ) -> Result<SoftMatch, PistolError> {
+    fn softmatch_function(&self, sm: &SoftMatch, recv_str: &str) -> Result<SoftMatch, PistolError> {
         let new_pattern = self.pattern_fix(&sm.pattern);
         let re = FancyRegex::new(&new_pattern)?;
         if re.is_match(recv_str)? {
@@ -451,7 +446,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("Probe"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             let probeprotocol = match probeprotocol.as_str() {
@@ -460,7 +455,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                 _ => {
                     return Err(PistolError::ServiceProbesProtocolUnknown {
                         protocol: probeprotocol,
-                    })
+                    });
                 }
             };
             let no_payload = if line.contains("no-payload") {
@@ -486,7 +481,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("ports"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             ports_v = ports_parser(ports_str)?;
@@ -500,7 +495,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("ports"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             sslports_v = ports_parser(ports_str)?;
@@ -514,7 +509,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("totalwaitms"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             let totalwaitms: usize = totalwaitms.parse()?;
@@ -529,7 +524,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("tcpwrappedms"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             let tcpwrappedms: usize = tcpwrappedms.parse()?;
@@ -544,7 +539,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("rarity"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             let rarity: usize = rarity.parse()?;
@@ -556,7 +551,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("match"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
 
@@ -599,7 +594,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("match"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
 
@@ -629,7 +624,7 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
                     return Err(PistolError::ServiceProbesParseError {
                         name: String::from("fallback"),
                         line: line.to_string(),
-                    })
+                    });
                 }
             };
             fallback_v.push(fallback.trim().to_string());

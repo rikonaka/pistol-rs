@@ -1,6 +1,5 @@
 use crc32fast;
 use gcdx::gcdx;
-use tracing::warn;
 use pnet::packet::Packet;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
@@ -10,13 +9,13 @@ use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use std::panic::Location;
-
-use super::rr::IERR;
-use super::rr::SEQRR;
-use super::rr::TXRR;
-use super::rr::U1RR;
+use tracing::warn;
 
 use crate::error::PistolError;
+use crate::os::rr::IERR;
+use crate::os::rr::SEQRR;
+use crate::os::rr::TXRR;
+use crate::os::rr::U1RR;
 use crate::utils::SpHex;
 
 const CWR_MASK: u8 = 0b10000000;

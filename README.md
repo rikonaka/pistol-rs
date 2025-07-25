@@ -8,7 +8,7 @@ The library must be run as root (Linux, *BSD), the `stable` version of rust is r
 
 ```toml
 [dependencies]
-pistol = "^3"
+pistol = "^4"
 ```
 
 On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npcap` [here](https://npcap.com/#download) SDK, then place `Packet.lib` from the `Lib/x64` folder in your root of code (Note: the `npcap` did not test by libpnet according to the doc of libpnet).
@@ -29,9 +29,9 @@ Since version v3.2.0, features fields are supported, including `scan`, `ping`, `
 
 ![architecture difference](./imgs/pistol_arch.png)
 
-In the architecture before v4.0.0, when pistol sends data packets, each thread completes the sending and receiving of data packets by itself. This is no problem for a single-threaded environment, but in the subsequent use of multiple threads, when the first thread sends a data packet and waits for the returned data, if there is a second thread also waiting for the return of data at this time and the data packet is read by the second thread, and the first thread will not be able to receive the returned data packet. This can cause uncertainty in the scan results.
+In the architecture before v4.0.0, when `pistol` sends data packets, each thread completes the sending and receiving of data packets by itself. This is no problem for a single-threaded environment, but in the subsequent use of multiple threads, when the first thread sends a data packet and waits for the returned data, if there is a second thread also waiting for the return of data at this time and the data packet is read by the second thread, and the first thread will not be able to receive the returned data packet. This can cause uncertainty in the scan results.
 
-So the overall architecture was redesigned. Now each thread sends its own data packet, at the same time, there is a `Runner` thread (in fact, each interface has a thread listening). When the data packet returns, the Runner thread checks each data packet, intercepts the qualified data packets and returns them to the required thread.
+So the overall architecture was redesigned. Now each thread sends its own data packet, at the same time, there is a `Runner` thread (in fact, each interface has a thread listening). When the data packet returns, the `Runner` thread checks each data packet, intercepts the qualified data packets and returns them to the required thread.
 
 ## Host Discovery (Ping Scanning)
 
@@ -133,7 +133,7 @@ int main() {
 
 ```
 
-But in Rust, it is impossible to include any special characters like `\0` in `&str` or `String`, and the existing regular expression engine is based on `&str` matching (not `&[8]`), so I can only make some trade-offs and changes to build a bridge between nmap's original regular expression and the Rust regular expression engine.
+But in Rust, it is impossible to include any special characters like `\0` in `&str` or `String`, and the existing regular expression engine is based on `&str` matching (not `&[u8]`), so I can only make some trade-offs and changes to build a bridge between nmap's original regular expression and the Rust regular expression engine.
 
 I replaced the `\0` in the nmap regular expression with `\\0`, and then replaced the `0u8` in the received buff with the `\\0` string. Although this can perfectly solve the above problems in most cases, I found some unsolvable [problems](https://github.com/fancy-regex/fancy-regex/issues/149) in the process of replacing `\r` and `\n`, so the processing of `\r` and `\n` is to keep their original values ​​unchanged.
 
@@ -154,7 +154,7 @@ fn main() {
     // This step is required for all other functions except service detection.
     let _pr = PistolRunner::init(
         PistolLogger::Info,                        // logger level settings
-        Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging
+        Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging if you want
         None,                                      // timeout settings, unless there is a clear reason, use the default here
     )
     .unwrap();
@@ -230,9 +230,9 @@ fn main() {
     // Initialize and run the Runner thread.
     // This step is required for all other functions except service detection.
     let _pr = PistolRunner::init(
-        PistolLogger::None,                        // logger level settings
+        PistolLogger::None, // logger level settings
         Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging
-        None,                                      // timeout settings, unless there is a clear reason, use the default here
+        None, // timeout settings, unless there is a clear reason, use the default here
     )
     .unwrap();
     // When using scanning, please use a real local address to get the return packet.
@@ -271,7 +271,7 @@ fn main() {
 
 #### Output
 
-The local address I used for testing is 192.168.5.3. This address was skipped during the scan and no operation was performed. For the specific reasons, please see the end of the document **Probe the loopback address and local machine** part.
+The local address I used for testing is 192.168.5.3. This address was skipped during the scan and no operation was performed. For the specific reasons, please see the end of the document **[Probe the loopback address and local machine](https://github.com/rikonaka/pistol-rs?tab=readme-ov-file#some-unsolvable-problems)** part.
 
 ```
 +------------+--------------+------------+------------+------------+
@@ -345,7 +345,7 @@ fn main() {
     // Initialize and run the Runner thread.
     // This step is required for all other functions except service detection.
     let _pr = PistolRunner::init(
-        PistolLogger::None,                     // logger level settings
+        PistolLogger::None, // logger level settings
         Some(String::from("os_detect.pcapng")), // capture pistol traffic for debugging
         None, // timeout settings, unless there is a clear reason, use the default here
     )
@@ -354,11 +354,11 @@ fn main() {
     // If the value of `src_ipv4` is `None`, the program will find it auto.
     let src_ipv4 = None;
     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
-    // `dst_open_tcp_port` must be a certain open tcp port.
+    // dst_open_tcp_port must be a certain open tcp port.
     let dst_open_tcp_port = 22;
-    // `dst_closed_tcp_port` must be a certain closed tcp port.
+    // dst_closed_tcp_port must be a certain closed tcp port.
     let dst_closed_tcp_port = 8765;
-    // `dst_closed_udp_port` must be a certain closed udp port.
+    // dst_closed_udp_port must be a certain closed udp port.
     let dst_closed_udp_port = 9876;
     let target = Target::new(
         dst_ipv4.into(),
@@ -415,7 +415,7 @@ fn main() {
     // Initialize and run the Runner thread.
     // This step is required for all other functions except service detection.
     let _pr = PistolRunner::init(
-        PistolLogger::None,                          // logger level settings
+        PistolLogger::None, // logger level settings
         Some(String::from("os_detect_ipv6.pcapng")), // capture pistol traffic for debugging
         None, // timeout settings, unless there is a clear reason, use the default here
     )
@@ -461,7 +461,7 @@ fn main() {
 +---------+-------------------------+---------+---------+--------------------------+---------------------------------------------------------+-----------+
 ```
 
-According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value (third column in the table) must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
+According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#osdetect-guess-ipv6), the `novelty` value must be less than `15` for the probe result to be meaningful, so when this value is greater than `15`, an empty list is returned. Same when the two highest OS classes have scores that differ by less than `10%`, the classification is considered ambiguous and not a successful match.
 
 
 ### 3. Remote Service Detect Example

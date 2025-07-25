@@ -10,16 +10,6 @@ repository = "https://github.com/rikonaka/pistol-rs"
 readme = "README.md"
 keywords = ["penetration-test", "cybersecurity", "nmap"]
 
-[lib]
-name = "pistol"
-path = "src/lib/lib.rs"
-
-[[bin]]
-name = "pmap"
-path = "src/main.rs"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 num_cpus = "^1"
 rand = "^0"
@@ -43,8 +33,6 @@ pcapture = "^0"
 uuid = { version = "1", features = ["v4"] }
 tracing = "^0"
 tracing-subscriber = "^0"
-# for main.rs
-clap = { version="^4", features=["derive"] }
 
 [features]
 default = ["scan", "ping", "flood", "os", "vs"]

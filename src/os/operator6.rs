@@ -1,13 +1,13 @@
-use tracing::warn;
+use pnet::packet::Packet;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
-use pnet::packet::Packet;
 use std::iter::zip;
+use tracing::warn;
 
-use super::rr::AllPacketRR6;
 use crate::error::PistolError;
+use crate::os::rr::AllPacketRR6;
 use crate::utils::SpHex;
 
 const CWR_MASK: u8 = 0b10000000;

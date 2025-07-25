@@ -2,15 +2,15 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::osscan::ECNX;
-use super::osscan::IEX;
-use super::osscan::OPSX;
-use super::osscan::SEQX;
-use super::osscan::TXX;
-use super::osscan::Fingerprint;
-use super::osscan::U1X;
-use super::osscan::WINX;
 use crate::error::PistolError;
+use crate::os::osscan::ECNX;
+use crate::os::osscan::Fingerprint;
+use crate::os::osscan::IEX;
+use crate::os::osscan::OPSX;
+use crate::os::osscan::SEQX;
+use crate::os::osscan::TXX;
+use crate::os::osscan::U1X;
+use crate::os::osscan::WINX;
 use crate::utils::SpHex;
 
 fn bool_score(bool_vec: Vec<bool>) -> usize {
