@@ -474,7 +474,7 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 use pistol::Target;
 use pistol::PistolRunner;
 use pistol::PistolLogger;
-use pistol::vs::vs_scan;
+use pistol::vs_scan;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
@@ -543,7 +543,7 @@ fn main() {
 use pistol::Target;
 use pistol::PistolRunner;
 use pistol::PistolLogger;
-use pistol::flood::tcp_syn_flood;
+use pistol::tcp_syn_flood;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
