@@ -572,13 +572,13 @@ Finally, we generate `30` threads (`num_threads`) to execute the above process.
 We no longer use `threadpool` to limit the number of threads here, so please do it according to your ability (in the previous scan or ping function, we use `threadpool` to avoid system overload caused by too many threads when the target range is large).
 
 ```
-+-------------+------------------------------------------------------------+
-|                           Flood Attack Summary                           |
-+-------------+------------------------------------------------------------+
-|    addr     |                           report                           |
-+-------------+------------------------------------------------------------+
-| 192.168.5.5 | packets sent: 2500(98.340MB), time cost: 1.383(71.121MB/s) |
-+-------------+------------------------------------------------------------+
++--------+-------------+----------------------------------------------------------+
+|                              Flood Attack Summary                               |
++--------+-------------+----------------------------------------------------------+
+|   id   |    addr     |                          report                          |
++--------+-------------+----------------------------------------------------------+
+|   1    | 192.168.5.5 | packets sent: 30(36.387MB), time cost: 7.742s(4.700MB/s) |
++--------+-------------+----------------------------------------------------------+
 ```
 
 Because `retransmit_count` and `repeat_count` only determine the number of times the same packet is retransmitted, I use their product as a variable. If you increase the `num_threads` or `retransmit_count` x `repeat_count` above, the speed of attacks traffic will increase.

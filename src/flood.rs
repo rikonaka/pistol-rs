@@ -56,6 +56,8 @@ use crate::utils::random_ipv4_addr;
 use crate::utils::random_ipv6_addr;
 #[cfg(feature = "flood")]
 use crate::utils::random_port;
+#[cfg(feature = "flood")]
+use crate::utils::time_sec_to_string;
 
 #[cfg(feature = "flood")]
 #[derive(Debug, Clone, Copy)]
@@ -110,9 +112,9 @@ impl fmt::Display for PistolFloods {
         table.add_row(Row::new(vec![
             Cell::new("Flood Attack Summary")
                 .style_spec("c")
-                .with_hspan(2),
+                .with_hspan(3),
         ]));
-        table.add_row(row![c -> "addr", c -> "report"]);
+        table.add_row(row![c -> "id", c -> "addr", c -> "report"]);
 
         // sorted
         let mut btm_addr: BTreeMap<IpAddr, FloodReport> = BTreeMap::new();
@@ -120,8 +122,10 @@ impl fmt::Display for PistolFloods {
             btm_addr.insert(report.addr, report.clone());
         }
 
+        let mut i = 1;
         for (addr, report) in btm_addr {
             let time_cost = report.time_cost;
+            let time_cost_str = time_sec_to_string(time_cost);
             let time_cost = time_cost.as_secs_f64();
             let (size_str, traffic_str) = if report.send_size as f64 / BYTES_PER_GB as f64 > 1.0 {
                 let v = report.send_size as f64 / BYTES_PER_GB as f64;
@@ -137,10 +141,11 @@ impl fmt::Display for PistolFloods {
                 (format!("{}Bytes", v), format!("{:.3}B/s", k))
             };
             let traffic_str = format!(
-                "packets sent: {}({}), time cost: {:.3}({})",
-                report.send_packet, size_str, time_cost, traffic_str
+                "packets sent: {}({}), time cost: {}({})",
+                report.send_packet, size_str, time_cost_str, traffic_str
             );
-            table.add_row(row![c -> addr, c -> traffic_str]);
+            table.add_row(row![c -> i, c -> addr, c -> traffic_str]);
+            i += 1;
         }
         write!(f, "{}", table.to_string())
     }
@@ -188,7 +193,7 @@ fn ipv4_flood_thread(
             for _ in 0..repeat_count {
                 let src_ipv4 = random_ipv4_addr(); // fake src addr
                 let src_port = random_port(); // fake src port
-                println!("src {}:{}", src_ipv4, src_port);
+                // println!("src {}:{}", src_ipv4, src_port);
 
                 let send_buff_size =
                     match func(dst_ipv4, dst_port, src_ipv4, src_port, retransmit_count) {
