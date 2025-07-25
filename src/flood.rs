@@ -562,8 +562,8 @@ mod tests {
         let ports = Some(vec![22]);
         let target1 = Target::new(dst_addr.into(), ports);
         let num_threads = 240; // It can be simply understood as the number of attack threads.
-        let retransmit_count = 240; // The number of times to repeat sending the same attack packet.
-        let repeat_count = 1; // The number of times each thread repeats the attack.
+        let retransmit_count = 480; // The number of times to repeat sending the same attack packet.
+        let repeat_count = 4; // The number of times each thread repeats the attack.
         let ret = tcp_syn_flood(&[target1], num_threads, retransmit_count, repeat_count).unwrap();
         println!("{}", ret);
     }

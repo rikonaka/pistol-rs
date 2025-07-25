@@ -583,7 +583,9 @@ We no longer use `threadpool` to limit the number of threads here, so please do 
 
 If you increase the `num_threads`, `retransmit_count` and `repeat_count` above, the speed of attacks traffic will increase (if possible, increase `retransmit_count` is more efficient than improving `repeat_count` because it does not require rebuilding the package).
 
-The relationship between the three variables in my local test environment
+The `num_threads` parameter here is to control the total number of threads, and the value of `retransmit_count` should be much greater than the value of `repeat_count`.
+
+The relationship between the three variables in my local test environment.
 
 | num_threads | retransmit_count | repeat_count | sending speed |
 | :---------- | :--------------- | :----------- | :------------ |
@@ -596,7 +598,10 @@ The relationship between the three variables in my local test environment
 | 120         | 60               | 1            | 127.775MB/s   |
 | 120         | 120              | 1            | 196.072MB/s   |
 | 240         | 120              | 1            | 0.252GB/s     |
+| 240         | 60               | 4            | 0.116GB/s     |
+| 240         | 240              | 4            | 0.605GB/s     |
 | 240         | 240              | 1            | 0.551GB/s     |
+| 240         | 480              | 4            | 0.636GB/s     |
 
 The above conclusions were drawn on my local VMware virtualized network card. The performance of the attack in a real attack environment depends on factors such as your network bandwidth and network card performance.
 
