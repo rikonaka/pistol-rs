@@ -44,7 +44,7 @@ use crate::utils::get_default_timeout;
 #[cfg(feature = "vs")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "vs")]
-use crate::utils::threads_num_check;
+use crate::utils::num_threads_check;
 #[cfg(feature = "vs")]
 use crate::utils::time_sec_to_string;
 #[cfg(feature = "vs")]
@@ -52,7 +52,7 @@ use crate::vs::dbparser::nmap_service_probes_parser;
 #[cfg(feature = "vs")]
 use crate::vs::vscan::MatchX;
 #[cfg(feature = "vs")]
-use crate::vs::vscan::threads_vs_probe;
+use crate::vs::vscan::vs_scan_thread;
 
 #[cfg(feature = "vs")]
 pub mod dbparser;
@@ -178,7 +178,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 #[cfg(feature = "vs")]
 pub fn vs_scan(
     targets: &[Target],
-    threads_num: Option<usize>,
+    num_threads: Option<usize>,
     only_null_probe: bool,
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
@@ -186,12 +186,12 @@ pub fn vs_scan(
     timeout: Option<Duration>,
 ) -> Result<PistolVsScans, PistolError> {
     let mut ret = PistolVsScans::new();
-    let threads_num = match threads_num {
+    let num_threads = match num_threads {
         Some(t) => t,
         None => {
-            let threads_num = targets.len();
-            let threads_num = threads_num_check(threads_num);
-            threads_num
+            let num_threads = targets.len();
+            let num_threads = num_threads_check(num_threads);
+            num_threads
         }
     };
 
@@ -200,7 +200,7 @@ pub fn vs_scan(
         None => get_default_timeout(),
     };
 
-    let pool = get_threads_pool(threads_num);
+    let pool = get_threads_pool(num_threads);
     let (tx, rx) = channel();
 
     let service_probes = get_nmap_service_probes()?;
@@ -215,7 +215,7 @@ pub fn vs_scan(
             debug!("dst: {}, port: {}", dst_addr, dst_port);
             pool.execute(move || {
                 let start_time = Instant::now();
-                let probe_ret = threads_vs_probe(
+                let probe_ret = vs_scan_thread(
                     dst_addr,
                     dst_port,
                     only_null_probe,
@@ -278,7 +278,7 @@ pub fn vs_scan_raw(
     };
 
     let start_time = Instant::now();
-    match threads_vs_probe(
+    match vs_scan_thread(
         dst_addr,
         dst_port,
         only_null_probe,
@@ -324,10 +324,10 @@ mod tests {
         let timeout = Some(Duration::from_secs_f64(0.5));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
-        let threads_num = Some(8);
+        let num_threads = Some(8);
         let ret = vs_scan(
             &[target],
-            threads_num,
+            num_threads,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,

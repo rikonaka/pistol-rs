@@ -785,10 +785,10 @@ mod tests {
         // Number of attempts, it can also be understood as the maximum number of unsuccessful retries.
         // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
         let max_attempts = 2;
-        let threads_num = Some(8);
+        let num_threads = Some(8);
         let ret = tcp_syn_scan(
             &targets,
-            threads_num,
+            num_threads,
             src_ipv4,
             src_port,
             timeout,
@@ -827,11 +827,11 @@ mod tests {
         );
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
-        let threads_num = Some(8);
+        let num_threads = Some(8);
 
         // The `fingerprint` is the obtained fingerprint of the target OS.
         // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
-        let ret = os_detect(&[target], threads_num, src_ipv4, top_k, timeout).unwrap();
+        let ret = os_detect(&[target], num_threads, src_ipv4, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -861,8 +861,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
-        let threads_num = Some(8);
-        let ret = os_detect(&[target], threads_num, src_ipv6, top_k, timeout).unwrap();
+        let num_threads = Some(8);
+        let ret = os_detect(&[target], num_threads, src_ipv6, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -884,10 +884,10 @@ mod tests {
         // only_udp_recommended = true: only try the udp probe recommended port
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
-        let threads_num = Some(8);
+        let num_threads = Some(8);
         let ret = vs_scan(
             &[target],
-            threads_num,
+            num_threads,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,

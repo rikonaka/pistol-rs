@@ -1195,7 +1195,7 @@ fn isort(arr: &[OsInfo6]) -> Vec<OsInfo6> {
     ret
 }
 
-pub fn threads_os_probe6(
+pub fn os_probe_thread6(
     dst_ipv6: Ipv6Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,

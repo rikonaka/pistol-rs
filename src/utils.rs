@@ -2,6 +2,8 @@ use num_cpus;
 use pnet::datalink::MacAddr;
 use rand::Rng;
 use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
 use tracing::warn;
@@ -11,7 +13,7 @@ use crate::SYSTEM_NET_CACHE;
 
 use crate::error::PistolError;
 
-const MAX_THREADS_NUM: usize = 1000;
+const MAX_THREADS: usize = 1000;
 
 pub fn time_sec_to_string(cost: Duration) -> String {
     if cost.as_secs_f64() > 1.0 {
@@ -21,16 +23,16 @@ pub fn time_sec_to_string(cost: Duration) -> String {
     }
 }
 
-pub fn threads_num_check(threads_num: usize) -> usize {
-    let mut threads_num = threads_num;
-    if threads_num > MAX_THREADS_NUM {
+pub fn num_threads_check(num_threads: usize) -> usize {
+    let mut num_threads = num_threads;
+    if num_threads > MAX_THREADS {
         warn!(
-            "system try to create too many threads (current threads num: {}, fixed threads num: {}), consider set the `threads_num` manual",
-            threads_num, MAX_THREADS_NUM
+            "system try to create too many threads (current threads num: {}, fixed threads num: {}), consider set the `num_threads` manual",
+            num_threads, MAX_THREADS
         );
-        threads_num = MAX_THREADS_NUM;
+        num_threads = MAX_THREADS;
     }
-    threads_num
+    num_threads
 }
 
 pub fn arp_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
@@ -53,6 +55,30 @@ pub fn random_port() -> u16 {
     rng.random_range(10000..=65535)
 }
 
+/// Returns the random ipv4 addr
+pub fn random_ipv4_addr() -> Ipv4Addr {
+    let mut rng = rand::rng();
+    let x0 = rng.random_range(0..=255);
+    let x1 = rng.random_range(0..=255);
+    let x2 = rng.random_range(0..=255);
+    let x3 = rng.random_range(0..=255);
+    Ipv4Addr::new(x0, x1, x2, x3)
+}
+
+/// Returns the random ipv6 addr
+pub fn random_ipv6_addr() -> Ipv6Addr {
+    let mut rng = rand::rng();
+    let x0 = rng.random_range(0..=65535);
+    let x1 = rng.random_range(0..=65535);
+    let x2 = rng.random_range(0..=65535);
+    let x3 = rng.random_range(0..=65535);
+    let x4 = rng.random_range(0..=65535);
+    let x5 = rng.random_range(0..=65535);
+    let x6 = rng.random_range(0..=65535);
+    let x7 = rng.random_range(0..=65535);
+    Ipv6Addr::new(x0, x1, x2, x3, x4, x5, x6, x7)
+}
+
 /// Returns the random port with range
 pub fn random_port_range(start: u16, end: u16) -> u16 {
     let mut rng = rand::rng();
@@ -64,9 +90,9 @@ pub fn get_cpu_num() -> usize {
     num_cpus::get()
 }
 
-pub fn get_threads_pool(threads_num: usize) -> ThreadPool {
-    let pool = if threads_num > 0 {
-        ThreadPool::new(threads_num)
+pub fn get_threads_pool(num_threads: usize) -> ThreadPool {
+    let pool = if num_threads > 0 {
+        ThreadPool::new(num_threads)
     } else {
         let cpus = get_cpu_num();
         ThreadPool::new(cpus)

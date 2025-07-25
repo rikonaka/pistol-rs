@@ -118,12 +118,24 @@ fn get_icmpv6_payload(icmpv6_packet: &Icmpv6Packet) -> Vec<u8> {
     }
 }
 
-/// Use IP address to find local interface
-pub fn find_interface_by_ip(ipaddr: IpAddr) -> Option<NetworkInterface> {
+/// Use source IP address to find local interface
+pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
             let i = ip.ip();
-            if ipaddr == i && !i.is_unspecified() {
+            if src_addr == i {
+                return Some(interface);
+            }
+        }
+    }
+    None
+}
+
+/// Use destination IP address to find local interface
+pub fn find_interface_by_dst(dst_addr: IpAddr) -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        for ip in &interface.ips {
+            if ip.contains(dst_addr) {
                 return Some(interface);
             }
         }
@@ -220,11 +232,14 @@ pub fn get_dst_mac_and_interface(
             None => return Err(PistolError::CanNotFoundInterface),
         }
     } else {
-        match find_interface_by_ip(src_addr) {
+        match find_interface_by_dst(dst_addr) {
             Some(i) => i,
-            None => match search_route_table(dst_addr)? {
+            None => match find_interface_by_src(src_addr) {
                 Some(i) => i,
-                None => return Err(PistolError::CanNotFoundInterface),
+                None => match search_route_table(dst_addr)? {
+                    Some(i) => i,
+                    None => return Err(PistolError::CanNotFoundInterface),
+                },
             },
         }
     };
@@ -1466,7 +1481,7 @@ fn ndp_rs(
     // router solicitation
     let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
-    let interface = match find_interface_by_ip(src_ipv6.into()) {
+    let interface = match find_interface_by_src(src_ipv6.into()) {
         Some(i) => i,
         None => return Err(PistolError::CanNotFoundInterface),
     };
@@ -1707,7 +1722,7 @@ mod tests {
 
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let interface = find_interface_by_ip(src_ipv4.into()).unwrap();
+        let interface = find_interface_by_src(src_ipv4.into()).unwrap();
 
         let (mut sender, _) = match datalink::channel(&interface, config) {
             Ok(Ethernet(tx, rx)) => (tx, rx),

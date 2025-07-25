@@ -51,15 +51,15 @@ use crate::os::dbparser::NmapOSDB;
 #[cfg(feature = "os")]
 use crate::os::osscan::Fingerprint;
 #[cfg(feature = "os")]
-use crate::os::osscan::threads_os_probe;
+use crate::os::osscan::os_probe_thread;
 #[cfg(feature = "os")]
 use crate::os::osscan6::Fingerprint6;
 #[cfg(feature = "os")]
-use crate::os::osscan6::threads_os_probe6;
+use crate::os::osscan6::os_probe_thread6;
 #[cfg(feature = "os")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "os")]
-use crate::utils::threads_num_check;
+use crate::utils::num_threads_check;
 #[cfg(feature = "os")]
 use crate::utils::time_sec_to_string;
 
@@ -340,22 +340,22 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
 #[cfg(feature = "os")]
 pub fn os_detect(
     targets: &[Target],
-    threads_num: Option<usize>,
+    num_threads: Option<usize>,
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<PistolOsDetects, PistolError> {
-    let threads_num = match threads_num {
+    let num_threads = match num_threads {
         Some(t) => t,
         None => {
-            let threads_num = targets.len();
-            let threads_num = threads_num_check(threads_num);
-            threads_num
+            let num_threads = targets.len();
+            let num_threads = num_threads_check(num_threads);
+            num_threads
         }
     };
 
     let (tx, rx) = channel();
-    let pool = get_threads_pool(threads_num);
+    let pool = get_threads_pool(num_threads);
     let mut recv_size = 0;
     let mut ret = PistolOsDetects::new();
     for h in targets {
@@ -379,7 +379,7 @@ pub fn os_detect(
                         let dst_open_tcp_port = dst_ports[0];
                         let dst_closed_tcp_port = dst_ports[1];
                         let dst_closed_udp_port = dst_ports[2];
-                        let os_detect_ret = threads_os_probe(
+                        let os_detect_ret = os_probe_thread(
                             dst_ipv4,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
@@ -424,7 +424,7 @@ pub fn os_detect(
                         let dst_closed_tcp_port = dst_ports[1];
                         let dst_closed_udp_port = dst_ports[2];
 
-                        let os_detect_ret = threads_os_probe6(
+                        let os_detect_ret = os_probe_thread6(
                             dst_ipv6,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
@@ -520,7 +520,7 @@ pub fn os_detect_raw(
             let nmap_os_db = get_nmap_os_db()?;
             debug!("ipv4 nmap os db parse finish");
             let nmap_os_db = nmap_os_db.to_vec();
-            match threads_os_probe(
+            match os_probe_thread(
                 dst_ipv4,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -559,7 +559,7 @@ pub fn os_detect_raw(
             let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
             let linear = gen_linear()?;
             debug!("ipv6 gen linear parse finish");
-            match threads_os_probe6(
+            match os_probe_thread6(
                 dst_ipv6,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
@@ -633,8 +633,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
-        let threads_num = Some(8);
-        let ret = os_detect(&[target1], threads_num, src_addr, top_k, timeout).unwrap();
+        let num_threads = Some(8);
+        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let detects = ret.value();
@@ -672,8 +672,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
-        let threads_num = Some(8);
-        let ret = os_detect(&[target1], threads_num, src_addr, top_k, timeout).unwrap();
+        let num_threads = Some(8);
+        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
     }
     #[test]

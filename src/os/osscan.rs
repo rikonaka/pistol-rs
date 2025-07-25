@@ -1802,7 +1802,7 @@ fn sort_pick(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
     ret
 }
 
-pub fn threads_os_probe(
+pub fn os_probe_thread(
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,

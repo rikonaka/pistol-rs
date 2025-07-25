@@ -272,7 +272,7 @@ fn udp_probe(
     Ok(ret)
 }
 
-pub fn threads_vs_probe(
+pub fn vs_scan_thread(
     dst_addr: IpAddr,
     dst_port: u16,
     only_null_probe: bool,
