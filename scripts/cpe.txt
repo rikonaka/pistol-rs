@@ -1,4 +1,5 @@
-FingerMatch match;
+	{
+		FingerMatch match;
 		match.line = 0;
 		match.numprints = 11;
 		match.OS_name = (char *) "Linux 2.6.38 - 3.2";

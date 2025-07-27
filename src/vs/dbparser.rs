@@ -666,14 +666,13 @@ mod tests {
     use std::io::Write;
     #[test]
     #[ignore]
-    fn test_parser() {
-        // use crate::Logger;
-        // let _ = Logger::init_debug_logging();
+    fn nmap_service_probes_gen() {
         let nsp_str = include_str!("../db/nmap-service-probes");
         let mut nsp_lines = Vec::new();
         for l in nsp_str.lines() {
             nsp_lines.push(l.to_string());
         }
+        println!("read file finish");
         let ret = nmap_service_probes_parser(nsp_lines).unwrap();
         println!("ret len: {}", ret.len());
 

@@ -4,6 +4,11 @@ The library must be run as root (Linux, *BSD), the `stable` version of rust is r
 
 [![Rust](https://github.com/rikonaka/pistol-rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/rikonaka/pistol-rs/actions/workflows/rust.yml)
 
+nmap db version: 7.97
+pistol update date: 2025-7-27
+updated: nmap-mac-prefixes, nmap-os-db, nmap-service-probes
+not updated: nmap-os-db-ipv6 (no changes from the last update 7.95)
+
 ## Import from crates.io
 
 ```toml

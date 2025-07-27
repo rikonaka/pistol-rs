@@ -1211,10 +1211,12 @@ mod tests {
     use std::io::Write;
     use std::time::Instant;
     #[test]
-    #[ignore]
-    fn test_parser() {
-        /* THIS CODES PERFORMENCE IS SO POORLY THAN MY IMAGEINATION */
-        /* SO JUST LEAVE ITS HERE AND NOT USE IT IN OTHER FUNCTIONS */
+    // #[ignore]
+    fn nmap_os_db_gen() {
+        // When updating nmap db,
+        // the code here is used to parse the original nmap-os-db file of nmap
+        // and convert it into the pistol format nmap-os-db,
+        // and then compress this file with zip and put it into the db file.
 
         let start = Instant::now();
         let nmap_os_file = include_str!("../db/nmap-os-db");
