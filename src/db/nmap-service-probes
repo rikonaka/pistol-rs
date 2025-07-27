@@ -2714,7 +2714,7 @@ match pop3 m|^\+OK ([\w._-]+) IceWarp ([\w._-]+) POP3 \w+, \d+ \w+ \d+ \d+:\d+:\
 match pop3 m|^\+OK ([\w._-]+) IceWarp ([\w._-]+) x64 POP3 \w+, \d+ \w+ \d+ \d+:\d+:\d+ [+-]\d+ <[\w._-]+@[\w._-]+>\r\n| p/IceWarp pop3d/ v/$2/ i/x64/ h/$1/ cpe:/a:icewarp:mail_server:$2/
 match pop3 m|^\+OK DavMail ([\w._-]+) POP ready at | p/DavMail pop3d/ v/$1/
 match pop3 m|^\+OK Welcome AltiPop3 POP3 Server\r\n| p/AltiGen AltiServ pop3d/ d/PBX/ cpe:/a:altigen:altiserv/
-match pop3 m|^\+OK Welcome to coremail Mail Pop3 Server \(gzidcs\[[0-9a-f]{32} s\]\)\r\n$| p/coremail pop3d/
+match pop3 m|^\+OK Welcome to coremail Mail Pop3 Server \(gzidcs\[[0-9a-f]{32}s\]\)\r\n$| p/coremail pop3d/
 match pop3 m|^\+OK POP3 Server ([\w._-]+) \(InSciTek OIS\) ready <[\w._-]+@[\w._-]+>\r\n| p/Allworx VoIP server pop3d/ d/VoIP adapter/ h/$1/
 match pop3 m|^\+OK Citadel POP3 server ready\.\r\n$| p/Citadel pop3d/ cpe:/a:citadel:ux/
 match pop3 m|^\+OK POP3 Mail server\r\n| p/MailEnable pop3d/ o/Windows/ cpe:/a:mailenable:mailenable/ cpe:/o:microsoft:windows/a
