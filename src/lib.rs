@@ -117,14 +117,14 @@ impl PistolRunner {
                                 Ok(_) => (),
                                 Err(e) => error!("capture recv packet failed: {}", e),
                             }
-                            let layer_matchs = match Self::get_global_layer_matchs() {
-                                Ok(layer_matchs) => layer_matchs,
+                            let pistol_channels = match Self::get_global_layer_matchs() {
+                                Ok(pcs) => pcs,
                                 Err(e) => {
                                     error!("get global layer matchs failed: {}", e);
                                     continue;
                                 }
                             };
-                            for pc in layer_matchs {
+                            for pc in pistol_channels {
                                 // if any matchs just return
                                 for lm in pc.layer_matchs {
                                     if lm.do_match(ethernet_packet) {
