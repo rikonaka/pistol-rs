@@ -10,7 +10,6 @@ use tracing::warn;
 
 use crate::DEFAULT_TIMEOUT;
 use crate::SYSTEM_NET_CACHE;
-
 use crate::error::PistolError;
 
 const MAX_THREADS: usize = 1000;
@@ -27,7 +26,7 @@ pub fn num_threads_check(num_threads: usize) -> usize {
     let mut num_threads = num_threads;
     if num_threads > MAX_THREADS {
         warn!(
-            "system try to create too many threads (current threads num: {}, fixed threads num: {}), consider set the `num_threads` manual",
+            "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
             num_threads, MAX_THREADS
         );
         num_threads = MAX_THREADS;

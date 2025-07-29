@@ -347,6 +347,7 @@ pub fn mac_scan(
                                 },
                                 Err(_) => {
                                     let _ = tx.send((dst_addr, scan_ret));
+                                    break;
                                 }
                             }
                         }
@@ -374,6 +375,7 @@ pub fn mac_scan(
                                 Err(_) => {
                                     // println!("{}", e);
                                     let _ = tx.send((dst_addr, scan_ret));
+                                    break;
                                 }
                             }
                         }
@@ -793,6 +795,7 @@ fn scan(
                                             scan_ret,
                                             start_time.elapsed(),
                                         ));
+                                        break;
                                     }
                                 }
                             }
@@ -850,6 +853,7 @@ fn scan(
                                             scan_ret,
                                             start_time.elapsed(),
                                         ));
+                                        break;
                                     }
                                 }
                             }

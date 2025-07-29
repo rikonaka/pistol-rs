@@ -343,17 +343,17 @@ fn ping(
     for target in targets {
         let dst_addr = target.addr;
         match dst_addr {
-            IpAddr::V4(dst_ipv4) => {
+            IpAddr::V4(_) => {
                 let src_port = match src_port {
                     Some(p) => p,
                     None => random_port(),
                 };
                 let tx = tx.clone();
-                recv_size += 1;
-                let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+                let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_addr)? {
                     Some(ia) => ia.ipv4_addr()?,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
+                // println!("{} - {}", src_ipv4, dst_ipv4);
                 let dst_port = if target.ports.len() > 0 {
                     Some(target.ports[0])
                 } else {
@@ -364,6 +364,7 @@ fn ping(
                 } else {
                     None
                 };
+                recv_size += 1;
                 pool.execute(move || {
                     for ind in 0..max_attempts {
                         let start_time = Instant::now();
@@ -389,20 +390,20 @@ fn ping(
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
                                     let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                                    break;
                                 }
                             }
                         }
                     }
                 });
             }
-            IpAddr::V6(dst_ipv6) => {
+            IpAddr::V6(_) => {
                 let src_port = match src_port {
                     Some(p) => p,
                     None => random_port(),
                 };
                 let tx = tx.clone();
-                recv_size += 1;
-                let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+                let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_addr)? {
                     Some(ia) => ia.ipv6_addr()?,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
@@ -416,6 +417,7 @@ fn ping(
                 } else {
                     None
                 };
+                recv_size += 1;
                 pool.execute(move || {
                     for ind in 0..max_attempts {
                         let start_time = Instant::now();
@@ -441,6 +443,7 @@ fn ping(
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
                                     let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                                    break;
                                 }
                             }
                         }
@@ -764,6 +767,7 @@ mod max_attempts {
     use crate::PistolRunner;
     use crate::Target;
     use std::str::FromStr;
+    use subnetwork::Ipv4Pool;
     #[test]
     fn test_tcp_syn_ping() {
         let _pr = PistolRunner::init(
@@ -884,12 +888,20 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
-        let addr1 = Ipv4Addr::new(192, 168, 1, 2);
-        let target1 = Target::new(addr1.into(), Some(vec![]));
+        let mut targets = Vec::new();
+        let pool = Ipv4Pool::new(Ipv4Addr::new(192, 168, 5, 1), 24).unwrap();
+        for ip in pool {
+            // println!("{}", ip);
+            let target = Target::new(ip.into(), None);
+            targets.push(target);
+        }
+
+        println!("{}", targets.len());
+
         let max_attempts = 4;
         let num_threads = Some(8);
         let ret = icmp_ping(
-            &[target1],
+            &targets,
             num_threads,
             src_ipv4,
             src_port,
@@ -897,6 +909,7 @@ mod max_attempts {
             max_attempts,
         )
         .unwrap();
+        println!("{}", ret.ping_reports.len());
         println!("{}", ret);
     }
     #[test]
