@@ -21,8 +21,6 @@ use std::net::Ipv4Addr;
 #[cfg(feature = "flood")]
 use std::net::Ipv6Addr;
 #[cfg(feature = "flood")]
-use std::panic::Location;
-#[cfg(feature = "flood")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "flood")]
 use std::thread;
@@ -203,8 +201,7 @@ fn ipv4_flood_thread(
                             0
                         }
                     };
-                tx.send(send_buff_size)
-                    .expect(&format!("tx send failed at {}", Location::caller()));
+                let _ = tx.send(send_buff_size);
             }
         });
     }
@@ -257,8 +254,7 @@ fn ipv6_flood_thread(
                             0
                         }
                     };
-                tx.send(send_buff_size)
-                    .expect(&format!("tx send failed at {}", Location::caller()));
+                let _ = tx.send(send_buff_size);
             }
         });
     }
@@ -300,8 +296,7 @@ fn flood(
                             repeat_count,
                             num_threads,
                         );
-                        tx.send((dst_addr, ret, start_time))
-                            .expect(&format!("tx send failed at {}", Location::caller()));
+                        let _ = tx.send((dst_addr, ret, start_time));
                     });
                 }
             }
@@ -320,8 +315,7 @@ fn flood(
                             repeat_count,
                             num_threads,
                         );
-                        tx.send((dst_addr, ret, start_time))
-                            .expect(&format!("tx send failed at {}", Location::caller()));
+                        let _ = tx.send((dst_addr, ret, start_time));
                     });
                 }
             }

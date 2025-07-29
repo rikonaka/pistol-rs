@@ -21,8 +21,6 @@ use std::net::Ipv4Addr;
 #[cfg(feature = "ping")]
 use std::net::Ipv6Addr;
 #[cfg(feature = "ping")]
-use std::panic::Location;
-#[cfg(feature = "ping")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "ping")]
 use std::time::Duration;
@@ -373,19 +371,15 @@ fn ping(
                             ping_thread(method, dst_ipv4, dst_port, src_ipv4, src_port, timeout);
                         if ind == max_attempts - 1 {
                             // last attempt
-                            tx.send((dst_addr, ping_ret, start_time.elapsed()))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_return, _)) => {
                                     match data_return {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            tx.send((dst_addr, ping_ret, start_time.elapsed()))
-                                                .expect(&format!(
-                                                    "tx send failed at {}",
-                                                    Location::caller()
-                                                ));
+                                            let _ =
+                                                tx.send((dst_addr, ping_ret, start_time.elapsed()));
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
@@ -394,9 +388,7 @@ fn ping(
                                 }
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
-                                    tx.send((dst_addr, ping_ret, start_time.elapsed())).expect(
-                                        &format!("tx send failed at {}", Location::caller()),
-                                    );
+                                    let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
                                 }
                             }
                         }
@@ -431,19 +423,15 @@ fn ping(
                             ping_thread6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
                         if ind == max_attempts - 1 {
                             // last attempt
-                            tx.send((dst_addr, ping_ret, start_time.elapsed()))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_return, _)) => {
                                     match data_return {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            tx.send((dst_addr, ping_ret, start_time.elapsed()))
-                                                .expect(&format!(
-                                                    "tx send failed at {}",
-                                                    Location::caller()
-                                                ));
+                                            let _ =
+                                                tx.send((dst_addr, ping_ret, start_time.elapsed()));
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
@@ -452,9 +440,7 @@ fn ping(
                                 }
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
-                                    tx.send((dst_addr, ping_ret, start_time.elapsed())).expect(
-                                        &format!("tx send failed at {}", Location::caller()),
-                                    );
+                                    let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
                                 }
                             }
                         }

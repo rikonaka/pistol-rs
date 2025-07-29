@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
-use std::panic::Location;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
@@ -309,18 +308,15 @@ fn send_seq_probes(
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
-                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
-                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            tx.send((i, buff.to_vec(), Err(e)))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((i, buff.to_vec(), Err(e)));
                         }
                     }
                 }
@@ -410,18 +406,15 @@ fn send_ie_probes(
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
-                        tx.send((i, buff.to_vec(), Ok((response, rtt))))
-                            .expect(&format!("tx send failed at {}", Location::caller()));
+                        let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
                         break;
                     } else if retry_time == MAX_RETRY - 1 {
-                        tx.send((i, buff.to_vec(), Ok((response, rtt))))
-                            .expect(&format!("tx send failed at {}", Location::caller()));
+                        let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        tx.send((i, buff.to_vec(), Err(e)))
-                            .expect(&format!("tx send failed at {}", Location::caller()));
+                        let _ = tx.send((i, buff.to_vec(), Err(e)));
                     }
                 }
             }
@@ -585,18 +578,15 @@ fn send_tx_probes(
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
-                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
                             break;
                         } else if retry_time == MAX_RETRY - 1 {
-                            tx.send((i, buff.to_vec(), Ok((response, rtt))))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            tx.send((i, buff.to_vec(), Err(e)))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((i, buff.to_vec(), Err(e)));
                         }
                     }
                 }

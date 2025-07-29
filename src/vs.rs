@@ -23,8 +23,6 @@ use std::io::Read;
 #[cfg(feature = "vs")]
 use std::net::IpAddr;
 #[cfg(feature = "vs")]
-use std::panic::Location;
-#[cfg(feature = "vs")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "vs")]
 use std::time::Duration;
@@ -225,8 +223,7 @@ pub fn vs_scan(
                     service_probes,
                     timeout,
                 );
-                tx.send((dst_addr, dst_port, probe_ret, start_time))
-                    .expect(&format!("tx send failed at {}", Location::caller()));
+                let _ = tx.send((dst_addr, dst_port, probe_ret, start_time));
             });
             recv_size += 1;
         }

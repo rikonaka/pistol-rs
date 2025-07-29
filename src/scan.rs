@@ -24,8 +24,6 @@ use std::net::Ipv4Addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::Ipv6Addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use std::panic::Location;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::mpsc::channel;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
@@ -63,9 +61,9 @@ use crate::scan::arp::send_arp_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::random_port;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::num_threads_check;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::utils::random_port;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::time_sec_to_string;
 
@@ -337,23 +335,19 @@ pub fn mac_scan(
                         debug!("arp scan packets: #{}/{}", i + 1, max_attempts);
                         let scan_ret = arp_scan_raw(dst_ipv4, src_addr, timeout);
                         if i == max_attempts - 1 {
-                            tx.send((dst_addr, scan_ret))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((dst_addr, scan_ret));
                         } else {
                             match scan_ret {
                                 Ok((value, _)) => match value {
                                     Some(_) => {
-                                        tx.send((dst_addr, scan_ret)).expect(&format!(
-                                            "tx send failed at {}",
-                                            Location::caller()
-                                        ));
+                                        let _ = tx.send((dst_addr, scan_ret));
                                         break;
                                     }
                                     None => (),
                                 },
-                                Err(_) => tx
-                                    .send((dst_addr, scan_ret))
-                                    .expect(&format!("tx send failed at {}", Location::caller())),
+                                Err(_) => {
+                                    let _ = tx.send((dst_addr, scan_ret));
+                                }
                             }
                         }
                     }
@@ -367,26 +361,19 @@ pub fn mac_scan(
                         debug!("ndp_ns scan packets: #{}/{}", i + 1, max_attempts);
                         let scan_ret = ndp_ns_scan_raw(dst_ipv6, src_addr, timeout);
                         if i == max_attempts - 1 {
-                            tx.send((dst_addr, scan_ret))
-                                .expect(&format!("tx send failed at {}", Location::caller()));
+                            let _ = tx.send((dst_addr, scan_ret));
                         } else {
                             match scan_ret {
                                 Ok((value, _)) => match value {
                                     Some(_) => {
-                                        tx.send((dst_addr, scan_ret)).expect(&format!(
-                                            "tx send failed at {}",
-                                            Location::caller()
-                                        ));
+                                        let _ = tx.send((dst_addr, scan_ret));
                                         break;
                                     }
                                     None => (),
                                 },
                                 Err(_) => {
                                     // println!("{}", e);
-                                    tx.send((dst_addr, scan_ret)).expect(&format!(
-                                        "tx send failed at {}",
-                                        Location::caller()
-                                    ))
+                                    let _ = tx.send((dst_addr, scan_ret));
                                 }
                             }
                         }
@@ -778,23 +765,19 @@ fn scan(
                             );
                             if ind == max_attempts - 1 {
                                 // last attempt
-                                tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()))
-                                    .expect(&format!("tx send failed at {}", Location::caller()));
+                                let _ =
+                                    tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()));
                             } else {
                                 match scan_ret {
                                     Ok((_port_status, data_return, _)) => {
                                         match data_return {
                                             DataRecvStatus::Yes => {
                                                 // conclusions drawn from the returned data
-                                                tx.send((
+                                                let _ = tx.send((
                                                     dst_addr,
                                                     dst_port,
                                                     scan_ret,
                                                     start_time.elapsed(),
-                                                ))
-                                                .expect(&format!(
-                                                    "tx send failed at {}",
-                                                    Location::caller()
                                                 ));
                                                 break; // quit loop now
                                             }
@@ -804,15 +787,11 @@ fn scan(
                                     }
                                     Err(_) => {
                                         // stop probe immediately if an error occurs
-                                        tx.send((
+                                        let _ = tx.send((
                                             dst_addr,
                                             dst_port,
                                             scan_ret,
                                             start_time.elapsed(),
-                                        ))
-                                        .expect(&format!(
-                                            "tx send failed at {}",
-                                            Location::caller()
                                         ));
                                     }
                                 }
@@ -843,23 +822,19 @@ fn scan(
                                 method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
                             );
                             if ind == max_attempts - 1 {
-                                tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()))
-                                    .expect(&format!("tx send failed at {}", Location::caller()));
+                                let _ =
+                                    tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()));
                             } else {
                                 match scan_ret {
                                     Ok((_port_status, data_return, _)) => {
                                         match data_return {
                                             DataRecvStatus::Yes => {
                                                 // conclusions drawn from the returned data
-                                                tx.send((
+                                                let _ = tx.send((
                                                     dst_addr,
                                                     dst_port,
                                                     scan_ret,
                                                     start_time.elapsed(),
-                                                ))
-                                                .expect(&format!(
-                                                    "tx send failed at {}",
-                                                    Location::caller()
                                                 ));
                                                 break; // quit loop now
                                             }
@@ -869,15 +844,11 @@ fn scan(
                                     }
                                     Err(_) => {
                                         // stop probe immediately if an error occurs
-                                        tx.send((
+                                        let _ = tx.send((
                                             dst_addr,
                                             dst_port,
                                             scan_ret,
                                             start_time.elapsed(),
-                                        ))
-                                        .expect(&format!(
-                                            "tx send failed at {}",
-                                            Location::caller()
                                         ));
                                     }
                                 }

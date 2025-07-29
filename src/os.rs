@@ -26,8 +26,6 @@ use std::io::Read;
 #[cfg(feature = "os")]
 use std::net::IpAddr;
 #[cfg(feature = "os")]
-use std::panic::Location;
-#[cfg(feature = "os")]
 use std::sync::mpsc::channel;
 #[cfg(feature = "os")]
 use std::time::Duration;
@@ -407,8 +405,7 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    tx.send((dst_addr, od, start_time))
-                        .expect(&format!("tx send failed at {}", Location::caller()));
+                    let _ = tx.send((dst_addr, od, start_time));
                 });
             }
             IpAddr::V6(_) => {
@@ -452,8 +449,7 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    tx.send((dst_addr, od, start_time))
-                        .expect(&format!("tx send failed at {}", Location::caller()));
+                    let _ = tx.send((dst_addr, od, start_time));
                 });
             }
         }
