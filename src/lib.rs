@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use crate::datalink::Channel::Ethernet;
+use dns_lookup::lookup_host;
 use pcapture::pcapng::PcapNg;
 use pnet::datalink;
 use std::fmt;
@@ -663,14 +664,23 @@ pub use vs::vs_scan;
 #[cfg(feature = "vs")]
 pub use vs::vs_scan_raw;
 
-/* DNS */
-pub use layer::dns_query;
+/// Queries the IP address of a domain name and returns.
+pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
+    let ips: Vec<IpAddr> = lookup_host(hostname)?;
+    Ok(ips)
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
     use subnetwork::CrossIpv4Pool;
+    #[test]
+    fn test_dns_query() {
+        let hostname = "ipv6.sjtu.edu.cn";
+        let ret = dns_query(hostname).unwrap();
+        println!("{:?}", ret);
+    }
     fn simple_top_ports_parser(ports_str: &str) -> Result<Vec<u16>, PistolError> {
         let mut ret = Vec::new();
         let ports_str_split: Vec<&str> = ports_str.split(",").collect();

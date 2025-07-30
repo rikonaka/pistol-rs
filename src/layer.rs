@@ -1,5 +1,4 @@
 // use chrono::Local;
-use dns_lookup::lookup_host;
 use pcapture::pcapng::EnhancedPacketBlock;
 use pcapture::pcapng::GeneralBlock;
 use pnet::datalink;
@@ -1625,22 +1624,11 @@ pub fn layer3_ipv6_send(
     Ok((layer2_payload(&layer2_buff), rtt))
 }
 
-/// Queries the IP address of a domain name and returns.
-pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
-    let ips: Vec<IpAddr> = lookup_host(hostname)?;
-    Ok(ips)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{net::Ipv4Addr, str::FromStr};
-    #[test]
-    fn test_dns_query() {
-        let hostname = "ipv6.sjtu.edu.cn";
-        let ret = dns_query(hostname).unwrap();
-        println!("{:?}", ret);
-    }
+    
     #[test]
     fn test_layer_match() {
         let data: Vec<u8> = vec![
