@@ -535,7 +535,7 @@ impl Target {
         };
         h
     }
-    /// Only supported the IPv4 target (by default, x.0 and x.255 addresses are ignored).
+    /// Only supported the IPv4 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(subnet)?;
         let mut targets = Vec::new();
@@ -560,7 +560,7 @@ impl Target {
         }
         Ok(targets)
     }
-    /// Only supported the IPv6 target (by default, x.0 and x.255 addresses are ignored).
+    /// Only supported the IPv6 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet6(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(subnet)?;
         let mut targets = Vec::new();
