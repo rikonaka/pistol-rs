@@ -58,24 +58,13 @@ use crate::utils::random_port;
 use crate::utils::time_sec_to_string;
 
 #[cfg(feature = "flood")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct FloodReport {
     pub addr: IpAddr,
+    pub origin: Option<String>,
     pub send_packet: usize, // count
     pub send_size: usize,   // KB, MB or GB
     pub time_cost: Duration,
-}
-
-#[cfg(feature = "flood")]
-impl FloodReport {
-    pub fn new(addr: IpAddr) -> FloodReport {
-        FloodReport {
-            addr,
-            send_packet: 0,
-            send_size: 0,
-            time_cost: Duration::new(0, 0),
-        }
-    }
 }
 
 #[cfg(feature = "flood")]
@@ -142,7 +131,12 @@ impl fmt::Display for PistolFloods {
                 "packets sent: {}({}), time cost: {}({})",
                 report.send_packet, size_str, time_cost_str, traffic_str
             );
-            table.add_row(row![c -> i, c -> addr, c -> traffic_str]);
+
+            let addr_str = match report.origin {
+                Some(o) => format!("{}({})", addr, o),
+                None => format!("{}", report.addr),
+            };
+            table.add_row(row![c -> i, c -> addr_str, c -> traffic_str]);
             i += 1;
         }
         write!(f, "{}", table.to_string())
@@ -283,6 +277,7 @@ fn flood(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for dst_port in &target.ports {
+                    let origin = target.origin.clone();
                     let tx = tx.clone();
                     let dst_port = dst_port.clone();
                     recv_size += 1;
@@ -296,12 +291,13 @@ fn flood(
                             repeat_count,
                             num_threads,
                         );
-                        let _ = tx.send((dst_addr, ret, start_time));
+                        let _ = tx.send((dst_addr, origin, ret, start_time));
                     });
                 }
             }
             IpAddr::V6(dst_ipv6) => {
                 for dst_port in &target.ports {
+                    let origin = target.origin.clone();
                     let tx = tx.clone();
                     let dst_port = dst_port.clone();
                     recv_size += 1;
@@ -315,7 +311,7 @@ fn flood(
                             repeat_count,
                             num_threads,
                         );
-                        let _ = tx.send((dst_addr, ret, start_time));
+                        let _ = tx.send((dst_addr, origin, ret, start_time));
                     });
                 }
             }
@@ -324,12 +320,13 @@ fn flood(
 
     let iter = rx.into_iter().take(recv_size);
     let mut flood_reports = Vec::new();
-    for (addr, ret, start_time) in iter {
+    for (addr, origin, ret, start_time) in iter {
         let time_cost = start_time.elapsed();
         match ret {
             Ok((send_packet, send_size)) => {
                 let flood_report = FloodReport {
                     addr,
+                    origin,
                     send_packet,
                     send_size,
                     time_cost,

@@ -92,6 +92,7 @@ impl fmt::Display for PingStatus {
 #[derive(Debug, Clone)]
 pub struct PingReport {
     pub addr: IpAddr,
+    pub origin: Option<String>,
     pub status: PingStatus,
     pub cost: Duration,
 }
@@ -159,9 +160,13 @@ impl fmt::Display for PistolPings {
                 PingStatus::Up => alive_hosts += 1,
                 _ => (),
             }
+            let addr_str = match report.origin {
+                Some(o) => format!("{}({})", report.addr, o),
+                None => format!("{}", report.addr),
+            };
             let status_str = format!("{}", report.status);
             let rtt_str = time_sec_to_string(report.cost);
-            table.add_row(row![c -> i, c -> report.addr, c -> status_str, c -> rtt_str]);
+            table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> rtt_str]);
             i += 1;
         }
 
@@ -342,6 +347,7 @@ fn ping(
 
     for target in targets {
         let dst_addr = target.addr;
+        let origin = target.origin.clone();
         match dst_addr {
             IpAddr::V4(_) => {
                 let src_port = match src_port {
@@ -372,15 +378,20 @@ fn ping(
                             ping_thread(method, dst_ipv4, dst_port, src_ipv4, src_port, timeout);
                         if ind == max_attempts - 1 {
                             // last attempt
-                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                            let _ =
+                                tx.send((dst_addr, origin.clone(), ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_return, _)) => {
                                     match data_return {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            let _ =
-                                                tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                                            let _ = tx.send((
+                                                dst_addr,
+                                                origin.clone(),
+                                                ping_ret,
+                                                start_time.elapsed(),
+                                            ));
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
@@ -389,7 +400,12 @@ fn ping(
                                 }
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
-                                    let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                                    let _ = tx.send((
+                                        dst_addr,
+                                        origin.clone(),
+                                        ping_ret,
+                                        start_time.elapsed(),
+                                    ));
                                     break;
                                 }
                             }
@@ -425,15 +441,20 @@ fn ping(
                             ping_thread6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
                         if ind == max_attempts - 1 {
                             // last attempt
-                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                            let _ =
+                                tx.send((dst_addr, origin.clone(), ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_return, _)) => {
                                     match data_return {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            let _ =
-                                                tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                                            let _ = tx.send((
+                                                dst_addr,
+                                                origin.clone(),
+                                                ping_ret,
+                                                start_time.elapsed(),
+                                            ));
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
@@ -442,7 +463,12 @@ fn ping(
                                 }
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
-                                    let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                                    let _ = tx.send((
+                                        dst_addr,
+                                        origin.clone(),
+                                        ping_ret,
+                                        start_time.elapsed(),
+                                    ));
                                     break;
                                 }
                             }
@@ -455,11 +481,12 @@ fn ping(
 
     let iter = rx.into_iter().take(recv_size);
     let mut reports = Vec::new();
-    for (dst_addr, v, elapsed) in iter {
+    for (dst_addr, origin, v, elapsed) in iter {
         match v {
             Ok((status, _data_return, rtt)) => {
                 let ping_report = PingReport {
                     addr: dst_addr,
+                    origin,
                     status,
                     cost: rtt,
                 };
@@ -469,6 +496,7 @@ fn ping(
                 PistolError::CanNotFoundMacAddress => {
                     let scan_report = PingReport {
                         addr: dst_addr,
+                        origin,
                         status: PingStatus::Down,
                         cost: elapsed,
                     };
@@ -478,6 +506,7 @@ fn ping(
                     error!("ping error: {}", e);
                     let scan_report = PingReport {
                         addr: dst_addr,
+                        origin,
                         status: PingStatus::Error,
                         cost: elapsed,
                     };
@@ -766,7 +795,6 @@ mod max_attempts {
     use crate::PistolLogger;
     use crate::PistolRunner;
     use crate::Target;
-    use crate::dns_query;
     use std::str::FromStr;
     #[test]
     fn test_tcp_syn_ping() {
@@ -881,23 +909,14 @@ mod max_attempts {
     fn test_icmp_ping_debug() {
         let _pr = PistolRunner::init(
             PistolLogger::None,
-            Some(String::from("icmp_ping_debug.pcapng")),
+            None,
             None, // use default value
         )
         .unwrap();
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
-        let ips = dns_query("scanme.nmap.org").unwrap();
-        let mut targets = Vec::new();
-        for ip in ips {
-            // if ip.is_ipv4() { ipv4 test pass
-            if ip.is_ipv6() {
-                println!("this ip: {}", ip);
-                let target = Target::new(ip, None);
-                targets.push(target);
-            }
-        }
+        let targets = Target::from_domain("scanme.nmap.org", None).unwrap();
 
         let max_attempts = 4;
         let num_threads = Some(8);

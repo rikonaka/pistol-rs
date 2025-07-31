@@ -62,6 +62,7 @@ pub mod vscan;
 pub struct PortService {
     pub addr: IpAddr,
     pub port: u16,
+    pub origin: Option<String>,
     pub matchs: Vec<MatchX>,
     pub time_cost: Duration,
 }
@@ -136,10 +137,14 @@ impl fmt::Display for PistolVsScans {
                 if services_str.trim().len() == 0 {
                     services_str = String::from("unknown|closed");
                 }
+                let addr_str = match service.origin {
+                    Some(o) => format!("{}({})", service.addr, o),
+                    None => format!("{}", service.addr),
+                };
                 total_cost += service.time_cost.as_secs_f64();
                 let time_cost_str = time_sec_to_string(service.time_cost);
                 table.add_row(
-                    row![c -> i, c -> service.addr, c -> service.port, c -> services_str, c -> versioninfo_str, c -> time_cost_str],
+                    row![c -> i, c -> addr_str, c -> service.port, c -> services_str, c -> versioninfo_str, c -> time_cost_str],
                 );
                 i += 1;
             }
@@ -205,9 +210,10 @@ pub fn vs_scan(
     debug!("nmap service db load finish");
 
     let mut recv_size = 0;
-    for host in targets {
-        let dst_addr = host.addr;
-        for &dst_port in &host.ports {
+    for target in targets {
+        let dst_addr = target.addr;
+        for &dst_port in &target.ports {
+            let origin = target.origin.clone();
             let tx = tx.clone();
             let service_probes = service_probes.clone();
             debug!("dst: {}, port: {}", dst_addr, dst_port);
@@ -223,7 +229,7 @@ pub fn vs_scan(
                     service_probes,
                     timeout,
                 );
-                let _ = tx.send((dst_addr, dst_port, probe_ret, start_time));
+                let _ = tx.send((dst_addr, dst_port, origin, probe_ret, start_time));
             });
             recv_size += 1;
         }
@@ -231,12 +237,13 @@ pub fn vs_scan(
 
     let rx = rx.into_iter().take(recv_size);
     let mut port_services = Vec::new();
-    for (addr, port, probe_ret, start_time) in rx {
+    for (addr, port, origin, probe_ret, start_time) in rx {
         match probe_ret {
             Ok(matchs) => {
                 let port_service = PortService {
                     addr,
                     port,
+                    origin,
                     matchs,
                     time_cost: start_time.elapsed(),
                 };
@@ -289,6 +296,7 @@ pub fn vs_scan_raw(
             let port_service = PortService {
                 addr: dst_addr,
                 port: dst_port,
+                origin: None,
                 matchs,
                 time_cost: start_time.elapsed(),
             };

@@ -489,10 +489,11 @@ impl fmt::Display for PortStatus {
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PortReport {
     pub addr: IpAddr,
     pub port: u16,
+    pub origin: Option<String>,
     pub status: PortStatus,
     pub cost: Duration, // from layer2
 }
@@ -564,10 +565,14 @@ impl fmt::Display for PistolPortScans {
                     PortStatus::Open => open_ports_num += 1,
                     _ => (),
                 }
+                let addr_str = match report.origin {
+                    Some(o) => format!("{}({})", report.addr, o),
+                    None => format!("{}", report.addr),
+                };
                 let status_str = format!("{}", report.status);
                 let time_cost_str = time_sec_to_string(report.cost);
                 table.add_row(
-                    row![c -> i, c -> report.addr, c -> report.port, c -> status_str, c -> time_cost_str],
+                    row![c -> i, c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
                 );
                 i += 1;
             }
@@ -733,6 +738,7 @@ fn scan(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for &dst_port in &target.ports {
+                    let origin = target.origin.clone();
                     let src_port = match src_port {
                         Some(s) => s,
                         None => {
@@ -767,8 +773,13 @@ fn scan(
                             );
                             if ind == max_attempts - 1 {
                                 // last attempt
-                                let _ =
-                                    tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()));
+                                let _ = tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    origin.clone(),
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                ));
                             } else {
                                 match scan_ret {
                                     Ok((_port_status, data_return, _)) => {
@@ -778,6 +789,7 @@ fn scan(
                                                 let _ = tx.send((
                                                     dst_addr,
                                                     dst_port,
+                                                    origin.clone(),
                                                     scan_ret,
                                                     start_time.elapsed(),
                                                 ));
@@ -792,6 +804,7 @@ fn scan(
                                         let _ = tx.send((
                                             dst_addr,
                                             dst_port,
+                                            origin.clone(),
                                             scan_ret,
                                             start_time.elapsed(),
                                         ));
@@ -805,6 +818,7 @@ fn scan(
             }
             IpAddr::V6(dst_ipv6) => {
                 for &dst_port in &target.ports {
+                    let origin = target.origin.clone();
                     let src_port = match src_port {
                         Some(s) => s,
                         None => {
@@ -825,8 +839,13 @@ fn scan(
                                 method, dst_ipv6, dst_port, src_ipv6, src_port, timeout,
                             );
                             if ind == max_attempts - 1 {
-                                let _ =
-                                    tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()));
+                                let _ = tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    origin.clone(),
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                ));
                             } else {
                                 match scan_ret {
                                     Ok((_port_status, data_return, _)) => {
@@ -836,6 +855,7 @@ fn scan(
                                                 let _ = tx.send((
                                                     dst_addr,
                                                     dst_port,
+                                                    origin.clone(),
                                                     scan_ret,
                                                     start_time.elapsed(),
                                                 ));
@@ -850,6 +870,7 @@ fn scan(
                                         let _ = tx.send((
                                             dst_addr,
                                             dst_port,
+                                            origin.clone(),
                                             scan_ret,
                                             start_time.elapsed(),
                                         ));
@@ -866,13 +887,14 @@ fn scan(
 
     let iter = rx.into_iter().take(recv_size);
     let mut reports = Vec::new();
-    for (dst_addr, dst_port, v, elapsed) in iter {
+    for (dst_addr, dst_port, origin, v, elapsed) in iter {
         match v {
             Ok((port_status, _data_return, rtt)) => {
                 // println!("rtt: {:.3}", rtt.as_secs_f64());
                 let scan_report = PortReport {
                     addr: dst_addr,
                     port: dst_port,
+                    origin,
                     status: port_status,
                     cost: rtt,
                 };
@@ -883,6 +905,7 @@ fn scan(
                     let scan_report = PortReport {
                         addr: dst_addr,
                         port: dst_port,
+                        origin,
                         status: PortStatus::Offline,
                         cost: elapsed,
                     };
@@ -893,6 +916,7 @@ fn scan(
                     let scan_report = PortReport {
                         addr: dst_addr,
                         port: dst_port,
+                        origin,
                         status: PortStatus::Error,
                         cost: elapsed,
                     };
@@ -1601,6 +1625,40 @@ mod max_attempts {
         let num_threads = Some(8);
         let ret = tcp_syn_scan(
             &[target1, target2],
+            num_threads,
+            src_ipv4,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+        .unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_tcp_syn_scan_debug() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+
+        let src_ipv4 = None;
+        let src_port = None;
+        let timeout = Some(Duration::new(1, 0));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let target1 = Target::new(addr1, Some(vec![22, 443, 8080]));
+        let target2 = Target::new(addr2, Some(vec![22, 443, 8080]));
+        let max_attempts = 2;
+        let num_threads = Some(8);
+        let mut targets = vec![target1, target2];
+
+        let target3 = Target::from_domain("scanme.nmap.org", Some(vec![22, 443, 8080])).unwrap();
+        targets.extend(target3);
+
+        let ret = tcp_syn_scan(
+            &targets,
             num_threads,
             src_ipv4,
             src_port,

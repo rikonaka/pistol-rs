@@ -101,8 +101,9 @@ pub struct OsInfo6 {
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct OsDetectV4 {
+pub struct OsDetect4 {
     pub addr: IpAddr,
+    pub origin: Option<String>,
     pub alive: bool,
     pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
@@ -111,8 +112,9 @@ pub struct OsDetectV4 {
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct OsDetectV6 {
+pub struct OsDetect6 {
     pub addr: IpAddr,
+    pub origin: Option<String>,
     pub alive: bool,
     pub fingerprint: Fingerprint6,
     pub detects: Vec<OsInfo6>,
@@ -122,8 +124,8 @@ pub struct OsDetectV6 {
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub enum OsDetect {
-    V4(OsDetectV4),
-    V6(OsDetectV6),
+    V4(OsDetect4),
+    V6(OsDetect6),
 }
 
 #[cfg(feature = "os")]
@@ -182,23 +184,33 @@ impl fmt::Display for PistolOsDetects {
 
         let mut total_cost = 0.0;
         let mut id = 1;
-        for (ip, detect) in btm_addr {
+        for (addr, detect) in btm_addr {
             match detect {
                 OsDetect::V4(o) => {
                     let time_cost_str = time_sec_to_string(o.cost);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         for (i, os_info) in o.detects.iter().enumerate() {
+                            let addr_str = match &o.origin {
+                                Some(origin) => format!("{}({})", addr, origin),
+                                None => format!("{}", addr),
+                            };
+
                             let rank_str = format!("#{}", i + 1);
                             let score_str = format!("{}/{}", os_info.score, os_info.total);
                             let os_details = &os_info.name;
                             let os_cpe = os_info.cpe.join("|");
-                            table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe, c -> time_cost_str]);
+                            table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe, c -> time_cost_str]);
                             id += 1;
                         }
                     } else {
+                        let addr_str = match o.origin {
+                            Some(origin) => format!("{}({})", addr, origin),
+                            None => format!("{}", addr),
+                        };
+
                         let rank_str = format!("#{}", 1);
-                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0/0", c -> "target dead", c -> "", c -> time_cost_str]);
+                        table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> "0/0", c -> "target dead", c -> "", c -> time_cost_str]);
                         id += 1;
                     }
                 }
@@ -207,16 +219,26 @@ impl fmt::Display for PistolOsDetects {
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         for (i, os_info6) in o.detects.iter().enumerate() {
+                            let addr_str = match &o.origin {
+                                Some(origin) => format!("{}({})", addr, origin),
+                                None => format!("{}", addr),
+                            };
+
                             let number_str = format!("#{}", i + 1);
                             let score_str = format!("{:.1}", os_info6.score);
                             let os_str = &os_info6.name;
                             let os_cpe = &os_info6.cpe;
-                            table.add_row(row![c -> id, c -> ip, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe, c -> time_cost_str]);
+                            table.add_row(row![c -> id, c -> addr_str, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe, c -> time_cost_str]);
                             id += 1;
                         }
                     } else {
+                        let addr_str = match o.origin {
+                            Some(origin) => format!("{}({})", addr, origin),
+                            None => format!("{}", addr),
+                        };
+
                         let rank_str = format!("#{}", 1);
-                        table.add_row(row![c -> id, c -> ip, c -> rank_str, c -> "0.0", c -> "target dead", c -> "", c -> time_cost_str]);
+                        table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> "0.0", c -> "target dead", c -> "", c -> time_cost_str]);
                         id += 1;
                     }
                 }
@@ -356,8 +378,8 @@ pub fn os_detect(
     let pool = get_threads_pool(num_threads);
     let mut recv_size = 0;
     let mut ret = PistolOsDetects::new();
-    for h in targets {
-        let dst_addr = h.addr;
+    for target in targets {
+        let dst_addr = target.addr;
         let tx = tx.clone();
         recv_size += 1;
         let ia = match infer_addr(src_addr, dst_addr)? {
@@ -366,11 +388,11 @@ pub fn os_detect(
         };
         match dst_addr {
             IpAddr::V4(_) => {
-                let dst_ports = h.ports.clone();
+                let dst_ports = target.ports.clone();
                 let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");
-
+                let origin = target.origin.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -393,8 +415,9 @@ pub fn os_detect(
                     };
                     let od = match detect_rets {
                         Ok((fingerprint, detects)) => {
-                            let o = OsDetectV4 {
+                            let o = OsDetect4 {
                                 addr: dst_addr,
+                                origin: origin.clone(),
                                 alive: true,
                                 fingerprint,
                                 detects,
@@ -405,15 +428,15 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    let _ = tx.send((dst_addr, od, start_time));
+                    let _ = tx.send((dst_addr, origin.clone(), od, start_time));
                 });
             }
             IpAddr::V6(_) => {
-                let dst_ports = h.ports.clone();
+                let dst_ports = target.ports.clone();
                 let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
                 let linear = gen_linear()?;
                 debug!("ipv6 gen linear parse finish");
-
+                let origin = target.origin.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -437,8 +460,9 @@ pub fn os_detect(
                     };
                     let od = match detect_rets {
                         Ok((fingerprint, detects)) => {
-                            let o = OsDetectV6 {
+                            let o = OsDetect6 {
                                 addr: dst_addr,
+                                origin: origin.clone(),
                                 alive: true,
                                 fingerprint,
                                 detects,
@@ -449,7 +473,7 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    let _ = tx.send((dst_addr, od, start_time));
+                    let _ = tx.send((dst_addr, origin.clone(), od, start_time));
                 });
             }
         }
@@ -457,7 +481,7 @@ pub fn os_detect(
 
     let iter = rx.into_iter().take(recv_size);
     let mut os_detects = Vec::new();
-    for (addr, r, start_time) in iter {
+    for (addr, origin, r, start_time) in iter {
         match r {
             Ok(od) => {
                 os_detects.push(od);
@@ -466,8 +490,9 @@ pub fn os_detect(
                 warn!("os probe error: {}", e);
                 match addr {
                     IpAddr::V4(_) => {
-                        let o = OsDetectV4 {
+                        let o = OsDetect4 {
                             addr,
+                            origin,
                             alive: false,
                             fingerprint: Fingerprint::empty(),
                             detects: Vec::new(),
@@ -477,8 +502,9 @@ pub fn os_detect(
                         os_detects.push(od);
                     }
                     IpAddr::V6(_) => {
-                        let o = OsDetectV6 {
+                        let o = OsDetect6 {
                             addr,
+                            origin,
                             alive: false,
                             fingerprint: Fingerprint6::empty(),
                             detects: Vec::new(),
@@ -527,8 +553,9 @@ pub fn os_detect_raw(
                 timeout,
             ) {
                 Ok((fingerprint, detects)) => {
-                    let o = OsDetectV4 {
+                    let o = OsDetect4 {
                         addr: dst_addr,
+                        origin: None,
                         alive: true,
                         fingerprint,
                         detects,
@@ -539,8 +566,9 @@ pub fn os_detect_raw(
                 }
                 Err(e) => {
                     warn!("os probe error: {}", e);
-                    let o = OsDetectV4 {
+                    let o = OsDetect4 {
                         addr: dst_addr,
+                        origin: None,
                         alive: false,
                         fingerprint: Fingerprint::empty(),
                         detects: Vec::new(),
@@ -566,8 +594,9 @@ pub fn os_detect_raw(
                 timeout,
             ) {
                 Ok((fingerprint, detects)) => {
-                    let o = OsDetectV6 {
+                    let o = OsDetect6 {
                         addr: dst_addr,
+                        origin: None,
                         alive: true,
                         fingerprint,
                         detects,
@@ -578,8 +607,9 @@ pub fn os_detect_raw(
                 }
                 Err(e) => {
                     warn!("os probe error: {}", e);
-                    let o = OsDetectV6 {
+                    let o = OsDetect6 {
                         addr: dst_addr,
+                        origin: None,
                         alive: false,
                         fingerprint: Fingerprint6::empty(),
                         detects: Vec::new(),
