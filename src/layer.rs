@@ -434,6 +434,8 @@ pub fn infer_addr(
                 return Ok(Some(ia));
             }
             None => match search_route_table(dst_addr)? {
+                // Try to get the interface for sending through the system routing table,
+                // and then get the IP on it through the interface.
                 Some(send_interface) => {
                     for ipn in send_interface.ips {
                         match ipn.ip() {
@@ -459,6 +461,9 @@ pub fn infer_addr(
                     }
                 }
                 None => {
+                    // When the above methods do not work,
+                    // try to find an IP address in the same subnet as the target address
+                    // in the local interface as the source address.
                     for interface in interfaces() {
                         for ipn in interface.ips {
                             if ipn.contains(dst_addr) {
@@ -1628,7 +1633,7 @@ pub fn layer3_ipv6_send(
 mod tests {
     use super::*;
     use std::{net::Ipv4Addr, str::FromStr};
-    
+
     #[test]
     fn test_layer_match() {
         let data: Vec<u8> = vec![

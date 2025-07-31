@@ -766,8 +766,8 @@ mod max_attempts {
     use crate::PistolLogger;
     use crate::PistolRunner;
     use crate::Target;
+    use crate::dns_query;
     use std::str::FromStr;
-    use subnetwork::Ipv4Pool;
     #[test]
     fn test_tcp_syn_ping() {
         let _pr = PistolRunner::init(
@@ -888,15 +888,16 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
+        let ips = dns_query("scanme.nmap.org").unwrap();
         let mut targets = Vec::new();
-        let pool = Ipv4Pool::new(Ipv4Addr::new(192, 168, 5, 1), 24).unwrap();
-        for ip in pool {
-            // println!("{}", ip);
-            let target = Target::new(ip.into(), None);
-            targets.push(target);
+        for ip in ips {
+            // if ip.is_ipv4() { ipv4 test pass
+            if ip.is_ipv6() {
+                println!("this ip: {}", ip);
+                let target = Target::new(ip, None);
+                targets.push(target);
+            }
         }
-
-        println!("{}", targets.len());
 
         let max_attempts = 4;
         let num_threads = Some(8);

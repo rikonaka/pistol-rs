@@ -75,7 +75,7 @@ pub enum PistolError {
     CanNotFoundRouteMacAddress,
     #[error("can not found the interface")]
     CanNotFoundInterface,
-    #[error("can not found the source address, please make sure target is alive or set it maunal")]
+    #[error("can not found the source address, please set the source address maunal")]
     CanNotFoundSourceAddress,
     #[error("can not found router address")]
     CanNotFoundRouterAddress,
