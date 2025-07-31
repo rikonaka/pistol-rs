@@ -516,38 +516,108 @@ impl IpCheckMethods for IpAddr {
 pub struct Target {
     pub addr: IpAddr,
     pub ports: Vec<u16>,
+    pub origin: Option<String>, // stores user input for non-IP addresses, such as domain names or subnets
 }
 
 impl Target {
     pub fn new(addr: IpAddr, ports: Option<Vec<u16>>) -> Target {
         let h = match ports {
-            Some(p) => Target { addr, ports: p },
+            Some(p) => Target {
+                addr,
+                ports: p,
+                origin: None,
+            },
             None => Target {
                 addr,
                 ports: vec![],
+                origin: None,
             },
         };
         h
     }
-    // Only supported the IPv4 target.
+    /// Only supported the IPv4 target.
     pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(subnet)?;
         let mut targets = Vec::new();
+
+        let ports = match ports {
+            Some(p) => p,
+            None => Vec::new(),
+        };
+
         for ip in ip_pool {
-            let target = Target::new(ip.into(), ports.clone());
+            let target = Target {
+                addr: ip.into(),
+                ports: ports.clone(),
+                origin: Some(subnet.to_string()),
+            };
             targets.push(target);
         }
         Ok(targets)
     }
-    // Only supported the IPv6 target.
+    /// Only supported the IPv6 target.
     pub fn from_subnet6(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(subnet)?;
         let mut targets = Vec::new();
+
+        let ports = match ports {
+            Some(p) => p,
+            None => Vec::new(),
+        };
+
         for ip in ip_pool {
-            let target = Target::new(ip.into(), ports.clone());
+            let target = Target {
+                addr: ip.into(),
+                ports: ports.clone(),
+                origin: Some(subnet.to_string()),
+            };
             targets.push(target);
         }
         Ok(targets)
+    }
+    /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
+    pub fn from_domain(domain: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
+        let ips = dns_query(domain)?;
+        let mut ret = Vec::new();
+
+        let ports = match ports {
+            Some(p) => p,
+            None => Vec::new(),
+        };
+
+        for ip in ips {
+            if ip.is_ipv4() {
+                let target = Target {
+                    addr: ip,
+                    ports: ports.clone(),
+                    origin: Some(domain.to_string()),
+                };
+                ret.push(target);
+            }
+        }
+        Ok(ret)
+    }
+    /// If possible, convert the domain name to an IPv6 address, otherwise return an error (returns all IPv6 addresses).
+    pub fn from_domain6(domain: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
+        let ips = dns_query(domain)?;
+        let mut ret = Vec::new();
+
+        let ports = match ports {
+            Some(p) => p,
+            None => Vec::new(),
+        };
+
+        for ip in ips {
+            if ip.is_ipv6() {
+                let target = Target {
+                    addr: ip,
+                    ports: ports.clone(),
+                    origin: Some(domain.to_string()),
+                };
+                ret.push(target);
+            }
+        }
+        Ok(ret)
     }
 }
 
