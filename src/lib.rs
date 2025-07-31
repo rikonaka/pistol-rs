@@ -535,7 +535,7 @@ impl Target {
         };
         h
     }
-    /// Only supported the IPv4 target.
+    /// Only supported the IPv4 target (by default, x.0 and x.255 addresses are ignored).
     pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(subnet)?;
         let mut targets = Vec::new();
@@ -545,17 +545,22 @@ impl Target {
             None => Vec::new(),
         };
 
-        for ip in ip_pool {
-            let target = Target {
-                addr: ip.into(),
-                ports: ports.clone(),
-                origin: Some(subnet.to_string()),
-            };
-            targets.push(target);
+        let last = ip_pool.len();
+        for (i, ip) in ip_pool.into_iter().enumerate() {
+            if i == 0 || (last > 0 && i == last - 1) {
+                continue;
+            } else {
+                let target = Target {
+                    addr: ip.into(),
+                    ports: ports.clone(),
+                    origin: Some(subnet.to_string()),
+                };
+                targets.push(target);
+            }
         }
         Ok(targets)
     }
-    /// Only supported the IPv6 target.
+    /// Only supported the IPv6 target (by default, x.0 and x.255 addresses are ignored).
     pub fn from_subnet6(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(subnet)?;
         let mut targets = Vec::new();
@@ -565,13 +570,18 @@ impl Target {
             None => Vec::new(),
         };
 
-        for ip in ip_pool {
-            let target = Target {
-                addr: ip.into(),
-                ports: ports.clone(),
-                origin: Some(subnet.to_string()),
-            };
-            targets.push(target);
+        let last = ip_pool.len();
+        for (i, ip) in ip_pool.into_iter().enumerate() {
+            if i == 0 || (last > 0 && i == last - 1) {
+                continue;
+            } else {
+                let target = Target {
+                    addr: ip.into(),
+                    ports: ports.clone(),
+                    origin: Some(subnet.to_string()),
+                };
+                targets.push(target);
+            }
         }
         Ok(targets)
     }
