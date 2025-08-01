@@ -83,7 +83,7 @@ pub enum DataRecvStatus {
 #[derive(Debug, Clone)]
 pub struct MacReport {
     pub addr: IpAddr,
-    pub mac: MacAddr,
+    pub mac: Option<MacAddr>,
     pub ouis: String, // productions organization name
     pub rtt: Duration,
 }
@@ -143,13 +143,18 @@ impl fmt::Display for PistolMacScans {
         let mut i = 1;
         for (_addr, report) in btm_addr {
             let rtt_str = time_sec_to_string(report.rtt);
-            table.add_row(
-                row![c -> i, c -> report.addr, c -> report.mac, c -> report.ouis, c -> rtt_str],
-            );
-            i += 1;
+            match report.mac {
+                Some(mac) => {
+                    table.add_row(
+                        row![c -> i, c -> report.addr, c -> mac, c -> report.ouis, c -> rtt_str],
+                    );
+                    i += 1;
+                }
+                None => (),
+            }
         }
-        let avg_cost = total_cost.as_seconds_f64() / self.mac_reports.len() as f64;
 
+        let avg_cost = total_cost.as_seconds_f64() / self.mac_reports.len() as f64;
         let summary = format!(
             "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
             total_cost_str,
@@ -425,15 +430,23 @@ pub fn mac_scan(
                         target_ouis = p.ouis.to_string();
                     }
                 }
-                let asr = MacReport {
+                let mr = MacReport {
                     addr: target_addr,
-                    mac: target_mac,
+                    mac: Some(target_mac),
                     ouis: target_ouis,
                     rtt,
                 };
-                mac_scan_reports.push(asr);
+                mac_scan_reports.push(mr);
             }
-            (_, _) => (),
+            (None, rtt) => {
+                let mr = MacReport {
+                    addr: target_addr,
+                    mac: None,
+                    ouis: String::new(),
+                    rtt,
+                };
+                mac_scan_reports.push(mr);
+            }
         }
     }
     ret.finish(mac_scan_reports);
