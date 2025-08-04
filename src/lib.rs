@@ -689,7 +689,7 @@ pub use scan::udp_scan_raw;
 /* Ping */
 
 #[cfg(feature = "ping")]
-pub use ping::icmp_ping;
+pub use ping::icmp_echo_ping;
 #[cfg(feature = "ping")]
 pub use ping::icmp_ping_raw;
 #[cfg(feature = "ping")]

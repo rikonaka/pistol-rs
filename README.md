@@ -45,14 +45,16 @@ So the overall architecture was redesigned. Now each thread sends its own data p
 
 The implementation of the `pistol` host discovery according to the nmap [documentation](https://nmap.org/book/host-discovery.html).
 
-| Method               | Detailed Documentation                                                                         | Note                            |
-| :------------------- | :--------------------------------------------------------------------------------------------- | :------------------------------ |
-| [x] TCP SYN Ping     | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6                     |
-| [x] TCP ACK Ping     | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6                     |
-| [x] UDP Ping         | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       | IPv4 & IPv6                     |
-| [x] ICMP Ping        | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 (ICMP, ICMPv6)      |
-| [x] ARP Scan         | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                | IPv4                            |
-| [ ] IP Protocol Ping | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful |
+| Method                     | Detailed Documentation                                                                         | Note                            |
+| :------------------------- | :--------------------------------------------------------------------------------------------- | :------------------------------ |
+| [x] TCP SYN Ping           | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PS)       | IPv4 & IPv6                     |
+| [x] TCP ACK Ping           | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PA)       | IPv4 & IPv6                     |
+| [x] UDP Ping               | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PU)       | IPv4 & IPv6                     |
+| [x] ICMP Echo Ping         | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 (ICMP, ICMPv6)      |
+| [x] ICMP Timestamp Ping    | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 (ICMP, ICMPv6)      |
+| [x] ICMP Address Mask Ping | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-icmpping) | IPv4 & IPv6 (ICMP, ICMPv6)      |
+| [x] ARP Scan               | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#arp-scan)                | IPv4                            |
+| [ ] IP Protocol Ping       | [nmap reference](https://nmap.org/book/host-discovery-techniques.html#host-discovery-PO)       | Complicated and not very useful |
 
 ## Port Scanning Techniques and Algorithms
 
@@ -64,7 +66,7 @@ Additionally, since version `v3.1.6`, pistol has compiled 100 and 1000 commonly 
 | Method                  | Detailed Documentation                                                       | Note                                    |
 | :---------------------- | :--------------------------------------------------------------------------- | :-------------------------------------- |
 | [x] TCP SYN Scan        | [nmap reference](https://nmap.org/book/synscan.html)                         | IPv4 & IPv6                             |
-| [x] TCP Connect() Scan  | [nmap reference](https://nmap.org/book/scan-methods-connect-scan.html)       | IPv4 & IPv6                             |
+| [x] TCP Connect Scan    | [nmap reference](https://nmap.org/book/scan-methods-connect-scan.html)       | IPv4 & IPv6                             |
 | [x] TCP FIN Scan        | [nmap reference](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6                             |
 | [x] TCP Null Scan       | [nmap reference](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6                             |
 | [x] TCP Xmas Scan       | [nmap reference](https://nmap.org/book/scan-methods-null-fin-xmas-scan.html) | IPv4 & IPv6                             |

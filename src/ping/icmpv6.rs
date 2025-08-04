@@ -67,8 +67,8 @@ pub fn send_icmpv6_ping_packet(
     };
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
-    icmpv6_header.set_sequence_number(1);
     icmpv6_header.set_identifier(rng.random());
+    icmpv6_header.set_sequence_number(1);
     let mut tv_sec = Utc::now().timestamp().to_be_bytes();
     tv_sec.reverse(); // Big-Endian
     let mut tv_usec = Utc::now().timestamp_subsec_millis().to_be_bytes();
@@ -104,6 +104,7 @@ pub fn send_icmpv6_ping_packet(
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
+    // match all icmpv6 reply
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
         icmpv6_type: None,

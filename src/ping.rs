@@ -191,8 +191,10 @@ pub enum PingMethods {
     Syn,
     Ack,
     Udp,
-    Icmp,
-    Icmpv6,
+    IcmpEcho,
+    IcmpTimeStamp,
+    IcmpAddressMask,
+    Icmpv6Echo,
 }
 
 #[cfg(feature = "ping")]
@@ -245,11 +247,21 @@ fn ping_thread(
                 _ => (PingStatus::Down, data_return, rtt),
             }
         }
-        PingMethods::Icmp => {
-            let (ret, data_return, rtt) = icmp::send_icmp_ping_packet(dst_ipv4, src_ipv4, timeout)?;
+        PingMethods::IcmpEcho => {
+            let (ret, data_return, rtt) = icmp::send_icmp_echo_packet(dst_ipv4, src_ipv4, timeout)?;
             (ret, data_return, rtt)
         }
-        PingMethods::Icmpv6 => {
+        PingMethods::IcmpTimeStamp => {
+            let (ret, data_return, rtt) =
+                icmp::send_icmp_timestamp_packet(dst_ipv4, src_ipv4, timeout)?;
+            (ret, data_return, rtt)
+        }
+        PingMethods::IcmpAddressMask => {
+            let (ret, data_return, rtt) =
+                icmp::send_icmp_address_mask_packet(dst_ipv4, src_ipv4, timeout)?;
+            (ret, data_return, rtt)
+        }
+        PingMethods::Icmpv6Echo => {
             return Err(PistolError::PingDetectionMethodError {
                 target: dst_ipv4.into(),
                 method: String::from("icmpv6"),
@@ -309,13 +321,13 @@ fn ping_thread6(
                 _ => (PingStatus::Down, data_return, rtt),
             }
         }
-        PingMethods::Icmp => {
+        PingMethods::IcmpEcho | PingMethods::IcmpTimeStamp | PingMethods::IcmpAddressMask => {
             return Err(PistolError::PingDetectionMethodError {
                 target: dst_ipv6.into(),
                 method: String::from("icmp"),
             });
         }
-        PingMethods::Icmpv6 => icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?,
+        PingMethods::Icmpv6Echo => icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?,
     };
     Ok((ping_status, data_return, rtt))
 }
@@ -365,7 +377,14 @@ fn ping(
                 } else {
                     None
                 };
-                let dst_port = if method != PingMethods::Icmp && method != PingMethods::Icmpv6 {
+
+                let no_port_vec = vec![
+                    PingMethods::IcmpEcho,
+                    PingMethods::IcmpTimeStamp,
+                    PingMethods::Icmpv6Echo,
+                ];
+
+                let dst_port = if !no_port_vec.contains(&method) {
                     dst_port
                 } else {
                     None
@@ -428,11 +447,12 @@ fn ping(
                 } else {
                     None
                 };
-                let dst_port = if method != PingMethods::Icmp && method != PingMethods::Icmpv6 {
-                    dst_port
-                } else {
-                    None
-                };
+                let dst_port =
+                    if method != PingMethods::IcmpEcho && method != PingMethods::Icmpv6Echo {
+                        dst_port
+                    } else {
+                        None
+                    };
                 recv_size += 1;
                 pool.execute(move || {
                     for ind in 0..max_attempts {
@@ -713,7 +733,7 @@ pub fn udp_ping_raw(
     }
 }
 
-/// ICMP Ping.
+/// ICMP Ping (Standard Echo Request).
 /// In addition to the unusual TCP and UDP host discovery types discussed previously,
 /// we can send the standard packets sent by the ubiquitous ping program.
 /// We sends an ICMP type 8 (echo request) packet to the target IP addresses, expecting a type 0 (echo reply) in return from available hosts.
@@ -721,7 +741,7 @@ pub fn udp_ping_raw(
 /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
 /// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 #[cfg(feature = "ping")]
-pub fn icmp_ping(
+pub fn icmp_echo_ping(
     targets: &[Target],
     num_threads: Option<usize>,
     src_addr: Option<IpAddr>,
@@ -732,7 +752,72 @@ pub fn icmp_ping(
     ping(
         targets,
         num_threads,
-        PingMethods::Icmp,
+        PingMethods::IcmpEcho,
+        src_addr,
+        src_port,
+        timeout,
+        max_attempts,
+    )
+}
+
+/// ICMP Ping (Timestamp Request).
+/// While echo request is the standard ICMP ping query, Nmap does not stop there.
+/// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
+/// information request, and address mask request packets as codes 13, 15, and 17,
+/// respectively. While the ostensible purpose for these queries is to learn information such
+/// as address masks and current times, they can easily be used for host discovery.
+/// A system that replies is up and available. Nmap does not currently implement information request packets,
+/// as they are not widely supported. RFC 1122 insists that "a host SHOULD NOT implement these messages".
+/// Timestamp and address mask queries can be sent with the -PP and -PM options, respectively.
+/// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses that the host is available.
+/// These two queries can be valuable when administrators specifically block echo request packets
+/// while forgetting that other ICMP queries can be used for the same purpose.
+#[cfg(feature = "ping")]
+pub fn icmp_timestamp_ping(
+    targets: &[Target],
+    num_threads: Option<usize>,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Option<Duration>,
+    max_attempts: usize,
+) -> Result<PistolPings, PistolError> {
+    ping(
+        targets,
+        num_threads,
+        PingMethods::IcmpTimeStamp,
+        src_addr,
+        src_port,
+        timeout,
+        max_attempts,
+    )
+}
+
+/// ICMP Ping (Address Mask Request).
+/// (Note: in my local test, this request did not return any reply).
+/// While echo request is the standard ICMP ping query, Nmap does not stop there.
+/// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
+/// information request, and address mask request packets as codes 13, 15, and 17,
+/// respectively. While the ostensible purpose for these queries is to learn information such
+/// as address masks and current times, they can easily be used for host discovery.
+/// A system that replies is up and available. Nmap does not currently implement information request packets,
+/// as they are not widely supported. RFC 1122 insists that "a host SHOULD NOT implement these messages".
+/// Timestamp and address mask queries can be sent with the -PP and -PM options, respectively.
+/// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses that the host is available.
+/// These two queries can be valuable when administrators specifically block echo request packets
+/// while forgetting that other ICMP queries can be used for the same purpose.
+#[cfg(feature = "ping")]
+pub fn icmp_address_mask_ping(
+    targets: &[Target],
+    num_threads: Option<usize>,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+    timeout: Option<Duration>,
+    max_attempts: usize,
+) -> Result<PistolPings, PistolError> {
+    ping(
+        targets,
+        num_threads,
+        PingMethods::IcmpAddressMask,
         src_addr,
         src_port,
         timeout,
@@ -753,7 +838,7 @@ pub fn icmpv6_ping(
     ping(
         targets,
         num_threads,
-        PingMethods::Icmpv6,
+        PingMethods::Icmpv6Echo,
         src_addr,
         src_port,
         timeout,
@@ -776,7 +861,7 @@ pub fn icmp_ping_raw(
         IpAddr::V4(_) => {
             let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
             let (ret, _data_return, rtt) =
-                icmp::send_icmp_ping_packet(dst_ipv4, src_ipv4, timeout)?;
+                icmp::send_icmp_echo_packet(dst_ipv4, src_ipv4, timeout)?;
             Ok((ret, rtt))
         }
         IpAddr::V6(_) => {
@@ -874,10 +959,10 @@ mod max_attempts {
         println!("{}", ret);
     }
     #[test]
-    fn test_icmp_ping() {
+    fn test_icmp_echo_ping() {
         let _pr = PistolRunner::init(
             PistolLogger::None,
-            Some(String::from("icmp_ping.pcapng")),
+            None,
             None, // use default value
         )
         .unwrap();
@@ -885,17 +970,52 @@ mod max_attempts {
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
         let addr1 = Ipv4Addr::new(192, 168, 5, 5);
-        let addr2 = Ipv4Addr::new(192, 168, 5, 1);
-        let addr3 = Ipv4Addr::new(192, 168, 5, 100);
-        let addr4 = Ipv4Addr::new(192, 168, 1, 4);
+        // let addr2 = Ipv4Addr::new(192, 168, 5, 1);
+        // let addr3 = Ipv4Addr::new(192, 168, 5, 100);
+        // let addr4 = Ipv4Addr::new(192, 168, 1, 4);
         let target1 = Target::new(addr1.into(), Some(vec![]));
-        let target2 = Target::new(addr2.into(), Some(vec![]));
-        let target3 = Target::new(addr3.into(), Some(vec![]));
-        let target4 = Target::new(addr4.into(), Some(vec![]));
+        // let target2 = Target::new(addr2.into(), Some(vec![]));
+        // let target3 = Target::new(addr3.into(), Some(vec![]));
+        // let target4 = Target::new(addr4.into(), Some(vec![]));
         let max_attempts = 4;
         let num_threads = Some(8);
-        let ret = icmp_ping(
-            &[target1, target2, target3, target4],
+        let ret = icmp_echo_ping(
+            // &[target1, target2, target3, target4],
+            &[target1],
+            num_threads,
+            src_ipv4,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+        .unwrap();
+
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_icmp_timestamp_ping() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+        let src_ipv4 = None;
+        let src_port: Option<u16> = None;
+        let timeout = Some(Duration::new(1, 0));
+        let addr1 = Ipv4Addr::new(192, 168, 5, 5);
+        // let addr2 = Ipv4Addr::new(192, 168, 5, 1);
+        // let addr3 = Ipv4Addr::new(192, 168, 5, 100);
+        // let addr4 = Ipv4Addr::new(192, 168, 1, 4);
+        let target1 = Target::new(addr1.into(), Some(vec![]));
+        // let target2 = Target::new(addr2.into(), Some(vec![]));
+        // let target3 = Target::new(addr3.into(), Some(vec![]));
+        // let target4 = Target::new(addr4.into(), Some(vec![]));
+        let max_attempts = 4;
+        let num_threads = Some(8);
+        let ret = icmp_timestamp_ping(
+            // &[target1, target2, target3, target4],
+            &[target1],
             num_threads,
             src_ipv4,
             src_port,
@@ -920,7 +1040,7 @@ mod max_attempts {
 
         let max_attempts = 4;
         let num_threads = Some(8);
-        let ret = icmp_ping(
+        let ret = icmp_echo_ping(
             &targets,
             num_threads,
             src_ipv4,
@@ -982,7 +1102,7 @@ mod max_attempts {
             );
             let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
             let target = Target::new(addr1, None);
-            let _ret = icmp_ping(
+            let _ret = icmp_echo_ping(
                 &[target],
                 num_threads,
                 None,
