@@ -1,6 +1,7 @@
 use pnet::packet::Packet;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
+use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
@@ -70,14 +71,6 @@ pub fn send_udp_scan_packet(
     let checksum = ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
 
-    let codes_1 = vec![
-        Icmpv6Code(4), // port unreachable
-    ];
-    let codes_2 = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-    ];
-
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
@@ -105,14 +98,22 @@ pub fn send_udp_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes_1 = vec![
+        Icmpv6Code(4), // port unreachable
+    ];
+    let codes_2 = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -126,14 +127,15 @@ pub fn send_udp_scan_packet(
                 IpNextHeaderProtocols::Icmpv6 => {
                     match Icmpv6Packet::new(ipv6_packet.payload()) {
                         Some(icmpv6_packet) => {
-                            // let icmp_type = icmp_packet.get_icmp_type();
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            if codes_1.contains(&icmpv6_code) {
-                                // icmp port unreachable error (type 3, code 3)
-                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
-                            } else if codes_2.contains(&icmpv6_code) {
-                                // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes_1.contains(&icmpv6_code) {
+                                    // icmpv6 port unreachable error (type 1, code 4)
+                                    return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
+                                } else if codes_2.contains(&icmpv6_code) {
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),

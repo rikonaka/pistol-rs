@@ -1563,16 +1563,16 @@ fn ndp_rs(
     let payload_icmpv6 = PayloadMatchIcmpv6 {
         layer3: Some(payload_ip),
         icmpv6_type: Some(Icmpv6Types::RouterSolicit),
-        icmpv6_code: Some(Icmpv6Code(0)),
+        icmpv6_code: None,
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::RouterAdvert), // Type: Router Advertisement (134)
-        icmpv6_code: Some(Icmpv6Code(0)),
+        icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ethernet_type = EtherTypes::Ipv6;
@@ -1582,7 +1582,7 @@ fn ndp_rs(
         &ipv6_buff,
         IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE,
         ethernet_type,
-        vec![layers_match],
+        vec![layer_match],
         timeout,
         true,
     )?;
@@ -1632,8 +1632,9 @@ pub fn layer3_ipv6_send(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{net::Ipv4Addr, str::FromStr};
-
+    use pnet::packet::icmp::IcmpTypes;
+    use std::net::Ipv4Addr;
+    use std::str::FromStr;
     #[test]
     fn test_layer_match() {
         let data: Vec<u8> = vec![
@@ -1668,8 +1669,8 @@ mod tests {
             icmp_code: None,
             payload: Some(payload),
         };
-        let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
-        let x = layers_match.do_match(&data);
+        let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+        let x = layer_match.do_match(&data);
         println!("match ret: {}", x);
     }
     #[test]
@@ -1692,12 +1693,55 @@ mod tests {
         let layer4_icmpv6 = Layer4MatchIcmpv6 {
             layer3: Some(layer3),
             icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
-            icmpv6_code: Some(Icmpv6Code(0)),
+            icmpv6_code: None,
             payload: None,
         };
-        let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
-        let x = layers_match.do_match(&data);
+        let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+        let x = layer_match.do_match(&data);
         println!("match ret: {}", x);
+    }
+    #[test]
+    fn test_layer_match3() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        let src_port = 45982;
+        let dst_port = 33434;
+        let layer3 = Layer3Match {
+            layer2: None,
+            src_addr: None,
+            dst_addr: Some(src_ipv4.into()),
+        };
+        // set the icmp payload matchs
+        let payload_ip = PayloadMatchIp {
+            src_addr: Some(src_ipv4.into()),
+            dst_addr: Some(dst_ipv4.into()),
+        };
+        let payload_tcp_udp = PayloadMatchTcpUdp {
+            layer3: Some(payload_ip),
+            src_port: Some(src_port),
+            dst_port: Some(dst_port),
+        };
+        let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
+        let layer4_icmp = Layer4MatchIcmp {
+            layer3: Some(layer3),
+            icmp_type: Some(IcmpTypes::TimeExceeded),
+            icmp_code: None,
+            payload: Some(payload),
+        };
+        let layer_match_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+        let data = vec![
+            0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
+            0x0, 0x0, 0x58, 0xe, 0x7f, 0x0, 0x0, 0x80, 0x1, 0xa0, 0xd0, 0xc0, 0xa8, 0x5, 0x2, 0xc0,
+            0xa8, 0x5, 0x3, 0xb, 0x0, 0x7c, 0x90, 0x0, 0x0, 0x0, 0x0, 0x45, 0x0, 0x0, 0x3c, 0x9b,
+            0x2f, 0x40, 0x0, 0x1, 0x11, 0x57, 0x2b, 0xc0, 0xa8, 0x5, 0x3, 0xc0, 0xa8, 0x1, 0x3,
+            0xb3, 0x9e, 0x82, 0x9a, 0x0, 0x28, 0x4d, 0x9, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46,
+            0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52, 0x53, 0x54,
+            0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
+        ];
+
+        let ret = layer_match_time_exceeded.do_match(&data);
+        println!("{}", ret);
     }
     #[test]
     fn test_layer2_send() {

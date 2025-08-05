@@ -15,7 +15,7 @@ use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
-use crate::hop::ipv6_get_hops;
+use crate::hop::get_hops_udp6;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::Layer4MatchTcpUdp;
@@ -528,14 +528,14 @@ fn send_seq_probes(
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
         };
-        let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+        let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
                 let st = start_time.elapsed();
                 let ret =
-                    layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true);
+                    layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true);
                 let rt = start_time.elapsed();
                 match ret {
                     Ok((response, rtt)) => {
@@ -641,7 +641,6 @@ fn send_ie_probes(
     let buff_1 = packet6::ie_packet_1_layer3(dst_ipv6, src_ipv6)?;
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
     let buffs = vec![buff_1, buff_2];
-    // let match_object = MatchObject::new_layer4_icmpv6_specific(Icmpv6Types::EchoReply, Icmpv6Code(0));
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
@@ -653,7 +652,7 @@ fn send_ie_probes(
         icmpv6_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -663,7 +662,7 @@ fn send_ie_probes(
         for retry_time in 0..MAX_RETRY {
             let st = start_time.elapsed();
             let ret =
-                layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true);
+                layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true);
             let rt = start_time.elapsed();
             match ret {
                 Ok((response, rtt)) => {
@@ -745,7 +744,7 @@ fn send_nx_probes(
         icmpv6_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -755,7 +754,7 @@ fn send_nx_probes(
         for retry_time in 0..MAX_RETRY {
             let st = start_time.elapsed();
             let ret =
-                layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true);
+                layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true);
             let rt = start_time.elapsed();
             match ret {
                 Ok((response, rtt)) => {
@@ -832,7 +831,7 @@ fn send_u1_probe(
         icmpv6_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
@@ -842,7 +841,7 @@ fn send_u1_probe(
     for _ in 0..MAX_RETRY {
         st = start_time.elapsed();
         let (response, _rtt) =
-            layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true)?;
+            layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true)?;
         rt = start_time.elapsed();
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -882,7 +881,7 @@ fn send_tecn_probe(
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
     };
-    let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
     let buff = packet6::tecn_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_port)?;
     // For those that do not require time, process them in order.
@@ -890,7 +889,7 @@ fn send_tecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
     let (response, _) =
-        layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layers_match], timeout, true)?;
+        layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true)?;
     let rt = start_time.elapsed();
 
     let rr = RequestAndResponse {
@@ -955,19 +954,19 @@ fn send_tx_probes(
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
-    let layers_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-    let layers_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-    let layers_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-    let layers_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-    let layers_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
-    let layers_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+    let layer_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+    let layer_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+    let layer_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+    let layer_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+    let layer_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+    let layer_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
     let ms = vec![
-        layers_match_2,
-        layers_match_3,
-        layers_match_4,
-        layers_match_5,
-        layers_match_6,
-        layers_match_7,
+        layer_match_2,
+        layer_match_3,
+        layer_match_4,
+        layer_match_5,
+        layer_match_6,
+        layer_match_7,
     ];
 
     let buff_2 = packet6::t2_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[0])?;
@@ -1225,7 +1224,7 @@ pub fn os_probe_thread6(
 
     let scan = match need_cal_hops(dst_ipv6.into()) {
         true => {
-            let hops = ipv6_get_hops(dst_ipv6, src_ipv6, timeout)?;
+            let hops = get_hops_udp6(dst_ipv6, src_ipv6, timeout)?;
             get_scan_line(
                 dst_mac,
                 dst_open_tcp_port,
@@ -1519,19 +1518,19 @@ mod tests {
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[5]),
         };
-        let layers_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-        let layers_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-        let layers_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-        let layers_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-        let layers_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
-        let layers_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+        let layer_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+        let layer_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+        let layer_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+        let layer_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+        let layer_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+        let layer_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
         let ms = vec![
-            layers_match_2,
-            layers_match_3,
-            layers_match_4,
-            layers_match_5,
-            layers_match_6,
-            layers_match_7,
+            layer_match_2,
+            layer_match_3,
+            layer_match_4,
+            layer_match_5,
+            layer_match_6,
+            layer_match_7,
         ];
 
         let buff_2 =

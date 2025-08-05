@@ -117,14 +117,20 @@ pub fn send_syn_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -152,16 +158,11 @@ pub fn send_syn_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -253,14 +254,20 @@ pub fn send_fin_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -288,16 +295,11 @@ pub fn send_fin_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -389,14 +391,20 @@ pub fn send_ack_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -421,16 +429,11 @@ pub fn send_ack_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -522,14 +525,20 @@ pub fn send_null_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -554,16 +563,11 @@ pub fn send_null_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -655,14 +659,20 @@ pub fn send_xmas_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -687,16 +697,11 @@ pub fn send_xmas_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -788,14 +793,20 @@ pub fn send_window_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -825,16 +836,11 @@ pub fn send_window_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -926,14 +932,20 @@ pub fn send_maimon_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+
+    let codes = vec![
+        Icmpv6Code(1), // communication with destination administratively prohibited
+        Icmpv6Code(3), // address unreachable
+        Icmpv6Code(4), // port unreachable
+    ];
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,
         src_ipv6,
         &ipv6_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -958,16 +970,11 @@ pub fn send_maimon_scan_packet(
                         Some(icmpv6_packet) => {
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            let codes = vec![
-                                Icmpv6Code(1), // communication with destination administratively prohibited
-                                Icmpv6Code(3), // address unreachable
-                                Icmpv6Code(4), // port unreachable
-                            ];
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable
-                                && codes.contains(&icmpv6_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),

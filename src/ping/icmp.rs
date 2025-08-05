@@ -6,7 +6,6 @@ use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::icmp::MutableIcmpPacket;
 use pnet::packet::icmp::destination_unreachable;
-use pnet::packet::icmp::echo_reply;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
@@ -114,45 +113,34 @@ pub fn send_icmp_echo_packet(
         icmp_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match],
+        vec![layer_match],
         timeout,
         true,
     )?;
     match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => {
-            match ipv4_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Icmp => {
-                    match IcmpPacket::new(ipv4_packet.payload()) {
-                        Some(icmp_packet) => {
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let icmp_code = icmp_packet.get_icmp_code();
-
-                            let codes_2 = vec![
-                                echo_reply::IcmpCodes::NoCode, // 0
-                            ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes_1.contains(&icmp_code) {
-                                    // icmp protocol unreachable error (type 3, code 2)
-                                    return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
-                                }
-                            } else if icmp_type == IcmpTypes::EchoReply {
-                                if codes_2.contains(&icmp_code) {
-                                    return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
-                                }
-                            }
+        Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
+            IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
+                Some(icmp_packet) => {
+                    let icmp_type = icmp_packet.get_icmp_type();
+                    let icmp_code = icmp_packet.get_icmp_code();
+                    if icmp_type == IcmpTypes::DestinationUnreachable {
+                        if codes_1.contains(&icmp_code) {
+                            return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
                         }
-                        None => (),
+                    } else if icmp_type == IcmpTypes::EchoReply {
+                        return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                     }
                 }
-                _ => (),
-            }
-        }
+                None => (),
+            },
+            _ => (),
+        },
         None => (),
     }
     // no response received (even after retransmissions)
@@ -189,6 +177,7 @@ pub fn send_icmp_timestamp_packet(
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
+    // the timestamp package and echo request package are similar, so the structure will not be changed.
     let mut icmp_header = match MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
@@ -215,15 +204,6 @@ pub fn send_icmp_timestamp_packet(
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
-    let codes_1 = vec![
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable,     // 1
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable,     // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
@@ -236,45 +216,31 @@ pub fn send_icmp_timestamp_packet(
         icmp_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match],
+        vec![layer_match],
         timeout,
         true,
     )?;
     match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => {
-            match ipv4_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Icmp => {
-                    match IcmpPacket::new(ipv4_packet.payload()) {
-                        Some(icmp_packet) => {
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let icmp_code = icmp_packet.get_icmp_code();
-
-                            let codes_2 = vec![
-                                echo_reply::IcmpCodes::NoCode, // 0
-                            ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes_1.contains(&icmp_code) {
-                                    // icmp protocol unreachable error (type 3, code 2)
-                                    return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
-                                }
-                            } else if icmp_type == IcmpTypes::TimestampReply {
-                                if codes_2.contains(&icmp_code) {
-                                    return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
-                                }
-                            }
-                        }
-                        None => (),
+        Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
+            IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
+                Some(icmp_packet) => {
+                    let icmp_type = icmp_packet.get_icmp_type();
+                    if icmp_type == IcmpTypes::DestinationUnreachable {
+                        return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
+                    } else if icmp_type == IcmpTypes::TimestampReply {
+                        return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                     }
                 }
-                _ => (),
-            }
-        }
+                None => (),
+            },
+            _ => (),
+        },
         None => (),
     }
     // no response received (even after retransmissions)
@@ -311,6 +277,7 @@ pub fn send_icmp_address_mask_packet(
     let c = ipv4::checksum(&ip_header.to_immutable());
     ip_header.set_checksum(c);
 
+    // the address mask package and echo request package are similar, so the structure will not be changed.
     let mut icmp_header = match MutableEchoRequestPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
@@ -358,13 +325,13 @@ pub fn send_icmp_address_mask_packet(
         icmp_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match],
+        vec![layer_match],
         timeout,
         true,
     )?;
@@ -376,19 +343,13 @@ pub fn send_icmp_address_mask_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-
-                            let codes_2 = vec![
-                                echo_reply::IcmpCodes::NoCode, // 0
-                            ];
                             if icmp_type == IcmpTypes::DestinationUnreachable {
                                 if codes_1.contains(&icmp_code) {
                                     // icmp protocol unreachable error (type 3, code 2)
                                     return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
                                 }
                             } else if icmp_type == IcmpTypes::AddressMaskReply {
-                                if codes_2.contains(&icmp_code) {
-                                    return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
-                                }
+                                return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                             }
                         }
                         None => (),

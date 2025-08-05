@@ -74,7 +74,7 @@ pub fn send_arp_scan_packet(
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layers_match = LayerMatch::Layer3Match(layer3);
+    let layer_match = LayerMatch::Layer3Match(layer3);
 
     let (ret, rtt) = layer2_work(
         dst_mac,
@@ -82,7 +82,7 @@ pub fn send_arp_scan_packet(
         &arp_buffer,
         ARP_HEADER_SIZE,
         ethernet_type,
-        vec![layers_match],
+        vec![layer_match],
         timeout,
         true,
     )?;

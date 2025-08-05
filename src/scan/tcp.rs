@@ -131,14 +131,23 @@ pub fn send_syn_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -165,19 +174,11 @@ pub fn send_syn_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -271,14 +272,23 @@ pub fn send_fin_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -305,19 +315,11 @@ pub fn send_fin_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -412,14 +414,23 @@ pub fn send_ack_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -443,19 +454,11 @@ pub fn send_ack_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -549,14 +552,23 @@ pub fn send_null_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -580,19 +592,11 @@ pub fn send_null_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -687,14 +691,23 @@ pub fn send_xmas_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -718,19 +731,11 @@ pub fn send_xmas_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -824,14 +829,23 @@ pub fn send_window_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -860,19 +874,11 @@ pub fn send_window_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -966,14 +972,23 @@ pub fn send_maimon_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -997,19 +1012,11 @@ pub fn send_maimon_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),
@@ -1116,15 +1123,24 @@ pub fn send_idle_scan_packet(
         payload: Some(payload),
     };
 
-    let layers_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
-    let layers_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
+    let layer_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
+    let layer_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
+
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let ip_buff = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let (ret, rtt_1) = layer3_ipv4_send(
         zombie_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_zombie_1, layers_match_zombie_2],
+        vec![layer_match_zombie_1, layer_match_zombie_2],
         timeout,
         true,
     )?;
@@ -1151,25 +1167,17 @@ pub fn send_idle_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                // dst is unreachable ignore this port
-                                return Ok((
-                                    PortStatus::Unreachable,
-                                    DataRecvStatus::Yes,
-                                    None,
-                                    rtt_1,
-                                ));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    // dst is unreachable ignore this port
+                                    return Ok((
+                                        PortStatus::Unreachable,
+                                        DataRecvStatus::Yes,
+                                        None,
+                                        rtt_1,
+                                    ));
+                                }
                             }
                         }
                         None => (),
@@ -1215,14 +1223,14 @@ pub fn send_idle_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let (ret, rtt_2) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff_3,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -1250,25 +1258,17 @@ pub fn send_idle_scan_packet(
                         Some(icmp_packet) => {
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            let codes = vec![
-                                        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-                                        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-                                        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-                                        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-                                        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-                                        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-                                    ];
-                            if icmp_type == IcmpTypes::DestinationUnreachable
-                                && codes.contains(&icmp_code)
-                            {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                // dst is unreachable ignore this port
-                                return Ok((
-                                    PortStatus::Unreachable,
-                                    DataRecvStatus::Yes,
-                                    None,
-                                    rtt,
-                                ));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    // dst is unreachable ignore this port
+                                    return Ok((
+                                        PortStatus::Unreachable,
+                                        DataRecvStatus::Yes,
+                                        None,
+                                        rtt,
+                                    ));
+                                }
                             }
                         }
                         None => (),
@@ -1322,16 +1322,8 @@ pub fn send_connect_scan_packet(
                 None => utils::get_default_timeout(),
             };
             match TcpStream::connect_timeout(&addr, t) {
-                Ok(_) => Ok((
-                    PortStatus::Open,
-                    DataRecvStatus::Yes,
-                    start_time.elapsed(),
-                )),
-                Err(_) => Ok((
-                    PortStatus::Closed,
-                    DataRecvStatus::No,
-                    start_time.elapsed(),
-                )),
+                Ok(_) => Ok((PortStatus::Open, DataRecvStatus::Yes, start_time.elapsed())),
+                Err(_) => Ok((PortStatus::Closed, DataRecvStatus::No, start_time.elapsed())),
             }
         }
         IpAddr::V6(dst_ipv6) => {
@@ -1341,16 +1333,8 @@ pub fn send_connect_scan_packet(
                 None => utils::get_default_timeout(),
             };
             match TcpStream::connect_timeout(&addr, t) {
-                Ok(_) => Ok((
-                    PortStatus::Open,
-                    DataRecvStatus::Yes,
-                    start_time.elapsed(),
-                )),
-                Err(_) => Ok((
-                    PortStatus::Closed,
-                    DataRecvStatus::No,
-                    start_time.elapsed(),
-                )),
+                Ok(_) => Ok((PortStatus::Open, DataRecvStatus::Yes, start_time.elapsed())),
+                Err(_) => Ok((PortStatus::Closed, DataRecvStatus::No, start_time.elapsed())),
             }
         }
     }

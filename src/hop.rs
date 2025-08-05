@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
@@ -6,26 +7,82 @@ use tracing::debug;
 use crate::error::PistolError;
 use crate::utils::random_port_range;
 
+pub mod icmp;
+pub mod icmpv6;
 pub mod udp;
 pub mod udp6;
+
+pub const UDP_DATA_SIZE: usize = 32;
+const START_PORT: u16 = 33434;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HopStatus {
     TimeExceeded,
+    NoResponse,
     Unreachable,
-    Open,
+    RecvReply,
 }
 
-pub fn ipv4_get_hops(
+pub fn get_hops_icmp(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
+    let mut hops = 0;
+    let mut rng = rand::rng();
+    let mut ip_id = rng.random();
+    let icmp_id = rng.random();
     for ttl in 1..=30 {
-        println!("ttl: {}", ttl);
+        debug!("hops ttl: {}", ttl);
+        let (hop_status, _rtt) = icmp::send_icmp_trace_packet(
+            dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16, timeout,
+        )?;
+        ip_id += 1;
+        match hop_status {
+            HopStatus::RecvReply => return Ok(hops),
+            _ => hops += 1,
+        }
+    }
+    Ok(0)
+}
+
+pub fn get_hops_icmpv6(
+    dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
+    timeout: Option<Duration>,
+) -> Result<u8, PistolError> {
+    let mut hops = 0;
+    let mut rng = rand::rng();
+    let icmp_id = rng.random();
+    for hop_limit in 1..=30 {
+        debug!("hops limit: {}", hop_limit);
+        let (hop_status, _rtt) = icmpv6::send_icmpv6_trace_packet(
+            dst_ipv6,
+            src_ipv6,
+            hop_limit,
+            icmp_id,
+            hop_limit as u16,
+            timeout,
+        )?;
+        match hop_status {
+            HopStatus::RecvReply => return Ok(hops),
+            _ => hops += 1,
+        }
+    }
+    Ok(0)
+}
+
+pub fn get_hops_udp(
+    dst_ipv4: Ipv4Addr,
+    src_ipv4: Ipv4Addr,
+    timeout: Option<Duration>,
+) -> Result<u8, PistolError> {
+    let mut hops = 0;
+    for ttl in 1..=30 {
+        debug!("hops ttl: {}", ttl);
         let random_src_port = random_port_range(1000, 65535);
-        let dst_port = 33433 + ttl as u16;
-        let ret = udp::send_udp_trace_packet(
+        let dst_port = START_PORT + (ttl - 1) as u16;
+        let (hop_status, _rtt) = udp::send_udp_trace_packet(
             dst_ipv4,
             dst_port,
             src_ipv4,
@@ -33,24 +90,35 @@ pub fn ipv4_get_hops(
             ttl,
             timeout,
         )?;
-        if ret {
-            debug!("ipv4 get hops: {}", ttl);
-            return Ok(ttl);
+        match hop_status {
+            HopStatus::TimeExceeded => hops += 1,
+            _ => return Ok(hops),
         }
     }
     Ok(0)
 }
 
-pub fn ipv6_get_hops(
+pub fn get_hops_udp6(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    for ttl in 1..=30 {
-        let ret = send_icmpv6_ping_packet(dst_ipv6, src_ipv6, ttl, timeout)?;
-        if ret {
-            debug!("ipv6 get hops: {}", ttl);
-            return Ok(ttl);
+    let mut hops = 0;
+    for hop_limit in 1..=30 {
+        debug!("hops limit: {}", hop_limit);
+        let random_src_port = random_port_range(1000, 65535);
+        let dst_port = START_PORT + (hop_limit - 1) as u16;
+        let (hop_status, _rtt) = udp6::send_udp_trace_packet(
+            dst_ipv6,
+            dst_port,
+            src_ipv6,
+            random_src_port,
+            hop_limit,
+            timeout,
+        )?;
+        match hop_status {
+            HopStatus::TimeExceeded => hops += 1,
+            _ => return Ok(hops),
         }
     }
     Ok(0)
@@ -61,8 +129,25 @@ mod tests {
     use super::*;
     use crate::PistolLogger;
     use crate::PistolRunner;
+    use std::str::FromStr;
     #[test]
-    fn test_get_hops() {
+    fn test_get_hops_icmp() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        let timeout = Some(Duration::from_secs_f64(0.5));
+        let hops = get_hops_icmp(dst_ipv4, src_ipv4, timeout).unwrap();
+        println!("{}", hops);
+    }
+    #[test]
+    fn test_get_hops_udp() {
         let _pr = PistolRunner::init(
             PistolLogger::None,
             None,
@@ -73,15 +158,22 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
         let timeout = Some(Duration::from_secs_f64(0.5));
-        let hops = ipv4_get_hops(dst_ipv4, src_ipv4, timeout).unwrap();
+        let hops = get_hops_udp(dst_ipv4, src_ipv4, timeout).unwrap();
         println!("{}", hops);
     }
     #[test]
-    fn test_get_hops6() {
-        let src_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
-        let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
-        let timeout = Some(Duration::new(1, 0));
-        let hops = ipv6_get_hops(dst_ipv6, src_ipv6, timeout).unwrap();
+    fn test_get_hops_udp6() {
+        let _pr = PistolRunner::init(
+            PistolLogger::None,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+
+        let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
+        let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
+        let timeout = Some(Duration::from_secs_f64(0.5));
+        let hops = get_hops_udp6(dst_ipv6, src_ipv6, timeout).unwrap();
         println!("{}", hops);
     }
 }

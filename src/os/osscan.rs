@@ -17,7 +17,7 @@ use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
-use crate::hop::ipv4_get_hops;
+use crate::hop::get_hops_udp;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
@@ -298,13 +298,13 @@ fn send_seq_probes(
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
         };
-        let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+        let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
                 let ret =
-                    layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true);
+                    layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -393,7 +393,7 @@ fn send_ie_probes(
         icmp_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -402,7 +402,7 @@ fn send_ie_probes(
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
             let ret =
-                layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true);
+                layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true);
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
@@ -458,7 +458,7 @@ fn send_ecn_probe(
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
     };
-    let layers_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
 
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
@@ -466,7 +466,7 @@ fn send_ecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let (response, _) =
-            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true)?;
+            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true)?;
         if response.len() > 0 {
             let rr = RequestAndResponse {
                 request: buff,
@@ -539,19 +539,19 @@ fn send_tx_probes(
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_1);
-    let layers_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-    let layers_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-    let layers_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-    let layers_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-    let layers_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_1);
+    let layer_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
+    let layer_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
+    let layer_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
+    let layer_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
+    let layer_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
     let ms = vec![
-        layers_match_1,
-        layers_match_2,
-        layers_match_3,
-        layers_match_4,
-        layers_match_5,
-        layers_match_6,
+        layer_match_1,
+        layer_match_2,
+        layer_match_3,
+        layer_match_4,
+        layer_match_5,
+        layer_match_6,
     ];
 
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
@@ -651,7 +651,7 @@ fn send_u1_probe(
         icmp_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     let buff = packet::udp_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
@@ -659,7 +659,7 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let (response, _) =
-            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layers_match], timeout, true)?;
+            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true)?;
 
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -1830,7 +1830,7 @@ pub fn os_probe_thread(
 
     let scan = match need_cal_hops(dst_ipv4.into()) {
         true => {
-            let hops = ipv4_get_hops(dst_ipv4, src_ipv4, timeout)?;
+            let hops = get_hops_udp(dst_ipv4, src_ipv4, timeout)?;
             get_scan_line(
                 dst_mac,
                 dst_open_tcp_port,

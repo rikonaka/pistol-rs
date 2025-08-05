@@ -1,5 +1,6 @@
 use pnet::packet::Packet;
 use pnet::packet::icmp::IcmpPacket;
+use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::icmp::destination_unreachable;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
@@ -77,17 +78,6 @@ pub fn send_udp_scan_packet(
     let checksum = ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
 
-    let codes_1 = vec![
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-    ];
-    let codes_2 = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
@@ -115,14 +105,25 @@ pub fn send_udp_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layers_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layers_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+    let codes_1 = vec![
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+    ];
+    let codes_2 = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
         src_ipv4,
         &ip_buff,
-        vec![layers_match_1, layers_match_2],
+        vec![layer_match_1, layer_match_2],
         timeout,
         true,
     )?;
@@ -136,13 +137,16 @@ pub fn send_udp_scan_packet(
                 IpNextHeaderProtocols::Icmp => {
                     match IcmpPacket::new(ipv4_packet.payload()) {
                         Some(icmp_packet) => {
+                            let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
-                            if codes_1.contains(&icmp_code) {
-                                // icmp port unreachable error (type 3, code 3)
-                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
-                            } else if codes_2.contains(&icmp_code) {
-                                // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes_1.contains(&icmp_code) {
+                                    // icmp port unreachable error (type 3, code 3)
+                                    return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
+                                } else if codes_2.contains(&icmp_code) {
+                                    // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
+                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
+                                }
                             }
                         }
                         None => (),

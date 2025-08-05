@@ -126,10 +126,10 @@ pub fn send_ndp_ns_scan_packet(
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
-        icmpv6_code: Some(Icmpv6Code(0)),
+        icmpv6_code: None,
         payload: None,
     };
-    let layers_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
 
     let ethernet_type = EtherTypes::Ipv6;
     let (ret, rtt) = layer2_work(
@@ -138,7 +138,7 @@ pub fn send_ndp_ns_scan_packet(
         &ipv6_buff,
         IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE,
         ethernet_type,
-        vec![layers_match],
+        vec![layer_match],
         timeout,
         true,
     )?;
