@@ -137,10 +137,11 @@ pub fn send_icmp_trace_packet(
             IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
                 Some(icmp_packet) => {
                     let icmp_type = icmp_packet.get_icmp_type();
+                    let ret_ip = ipv4_packet.get_source();
                     if icmp_type == IcmpTypes::TimeExceeded {
-                        return Ok((HopStatus::TimeExceeded, rtt));
+                        return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
                     } else if icmp_type == IcmpTypes::EchoReply {
-                        return Ok((HopStatus::RecvReply, rtt));
+                        return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
                     }
                 }
                 None => (),

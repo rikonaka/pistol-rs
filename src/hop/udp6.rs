@@ -141,17 +141,19 @@ pub fn send_udp_trace_packet(
             match ipv6_packet.get_next_header() {
                 IpNextHeaderProtocols::Udp => {
                     // any udp response from target port (unusual)
-                    return Ok((HopStatus::RecvReply, rtt));
+                    let ret_ip = ipv6_packet.get_source();
+                    return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
                 }
                 IpNextHeaderProtocols::Icmpv6 => match Icmpv6Packet::new(ipv6_packet.payload()) {
                     Some(icmpv6_packet) => {
                         let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                         let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                        let ret_ip = ipv6_packet.get_source();
                         if icmpv6_type == Icmpv6Types::TimeExceeded {
-                            return Ok((HopStatus::TimeExceeded, rtt));
+                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
                         } else if icmpv6_type == Icmpv6Types::DestinationUnreachable {
                             if icmpv6_code == Icmpv6Code(4) {
-                                return Ok((HopStatus::Unreachable, rtt));
+                                return Ok((HopStatus::Unreachable(ret_ip.into()), rtt));
                             }
                         }
                     }

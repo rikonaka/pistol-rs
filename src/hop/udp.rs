@@ -145,18 +145,20 @@ pub fn send_udp_trace_packet(
     match Ipv4Packet::new(&ret) {
         Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
             IpNextHeaderProtocols::Udp => {
-                return Ok((HopStatus::RecvReply, rtt));
+                let ret_ip = ipv4_packet.get_source();
+                return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
             }
             IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
                 Some(icmp_packet) => {
                     let icmp_type = icmp_packet.get_icmp_type();
                     let icmp_code = icmp_packet.get_icmp_code();
+                    let ret_ip = ipv4_packet.get_source();
                     if icmp_type == IcmpTypes::TimeExceeded {
-                        return Ok((HopStatus::TimeExceeded, rtt));
+                        return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
                     } else if icmp_type == IcmpTypes::DestinationUnreachable {
                         if icmp_code == IcmpCode(3) {
                             // icmp type 3, code 3 (port unreachable)
-                            return Ok((HopStatus::Unreachable, rtt));
+                            return Ok((HopStatus::Unreachable(ret_ip.into()), rtt));
                         }
                     }
                 }

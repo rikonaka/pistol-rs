@@ -110,10 +110,11 @@ pub fn seq_packet_1_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv4_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv4_buff =
+        [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut ipv4_buff) {
         Some(p) => p,
@@ -126,7 +127,7 @@ pub fn seq_packet_1_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -183,9 +184,9 @@ pub fn seq_packet_2_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
+    const TCP_OPTIONS_SIZE: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -198,7 +199,7 @@ pub fn seq_packet_2_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -254,10 +255,10 @@ pub fn seq_packet_3_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -270,7 +271,7 @@ pub fn seq_packet_3_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -328,9 +329,9 @@ pub fn seq_packet_4_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
+    const TCP_OPTIONS_SIZE: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -343,7 +344,7 @@ pub fn seq_packet_4_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -398,9 +399,9 @@ pub fn seq_packet_5_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
+    const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -413,7 +414,7 @@ pub fn seq_packet_5_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -469,9 +470,9 @@ pub fn seq_packet_6_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
+    const TCP_OPTIONS_SIZE: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -484,7 +485,7 @@ pub fn seq_packet_6_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -675,7 +676,7 @@ pub fn ecn_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize = WSCALE_SIZE
+    const TCP_OPTIONS_SIZE: usize = WSCALE_SIZE
         + 1
         + NOP_SIZE
         + 3
@@ -687,7 +688,7 @@ pub fn ecn_packet_layer3(
         + NOP_SIZE
         + 1;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -700,7 +701,7 @@ pub fn ecn_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -763,10 +764,10 @@ pub fn t2_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -779,7 +780,7 @@ pub fn t2_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -835,10 +836,10 @@ pub fn t3_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -851,7 +852,7 @@ pub fn t3_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -907,10 +908,10 @@ pub fn t4_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -923,7 +924,7 @@ pub fn t4_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -979,10 +980,10 @@ pub fn t5_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -995,7 +996,7 @@ pub fn t5_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -1051,10 +1052,10 @@ pub fn t6_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -1067,7 +1068,7 @@ pub fn t6_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);
@@ -1123,10 +1124,10 @@ pub fn t7_packet_layer3(
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -1139,7 +1140,7 @@ pub fn t7_packet_layer3(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length(
-        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE) as u16,
+        (IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE) as u16,
     );
     let id = rng.random();
     ip_header.set_identification(id);

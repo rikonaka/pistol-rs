@@ -1728,7 +1728,7 @@ mod tests {
             icmp_code: None,
             payload: Some(payload),
         };
-        let layer_match_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+        let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
         let data = vec![
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
@@ -1740,7 +1740,79 @@ mod tests {
             0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
         ];
 
-        let ret = layer_match_time_exceeded.do_match(&data);
+        let ret = layer_match_icmp_time_exceeded.do_match(&data);
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_layer_match4() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        let src_port = 59470;
+        let dst_port = 80;
+
+        let layer3 = Layer3Match {
+            layer2: None,
+            src_addr: None, // usually this is the address of the router, not the address of the target machine.
+            dst_addr: Some(src_ipv4.into()),
+        };
+        let payload_ip = PayloadMatchIp {
+            src_addr: Some(src_ipv4.into()),
+            dst_addr: Some(dst_ipv4.into()),
+        };
+        let payload_tcp_udp = PayloadMatchTcpUdp {
+            layer3: Some(payload_ip),
+            src_port: Some(src_port),
+            dst_port: Some(dst_port),
+        };
+        let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
+        let layer4_icmp = Layer4MatchIcmp {
+            layer3: Some(layer3),
+            icmp_type: Some(IcmpTypes::TimeExceeded),
+            icmp_code: None,
+            payload: Some(payload),
+        };
+        let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+
+        let data = vec![
+            0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
+            0x0, 0x0, 0x58, 0x7, 0x5e, 0x0, 0x0, 0x80, 0x1, 0xa7, 0xf1, 0xc0, 0xa8, 0x5, 0x2, 0xc0,
+            0xa8, 0x5, 0x3, 0xb, 0x0, 0x7c, 0x85, 0x0, 0x0, 0x0, 0x0, 0x45, 0x0, 0x0, 0x3c, 0x8a,
+            0x1f, 0x40, 0x0, 0x1, 0x6, 0x68, 0x46, 0xc0, 0xa8, 0x5, 0x3, 0xc0, 0xa8, 0x1, 0x3,
+            0xe8, 0x4e, 0x0, 0x50, 0xb9, 0xc5, 0x70, 0x4a, 0x0, 0x0, 0x0, 0x0, 0xa0, 0x2, 0x16,
+            0xd0, 0xf2, 0x92, 0x0, 0x0, 0x2, 0x4, 0x5, 0xb4, 0x4, 0x2, 0x8, 0xa, 0x78, 0x46, 0x2c,
+            0x56, 0x0, 0x0, 0x0, 0x0, 0x1, 0x3, 0x3, 0x2,
+        ];
+
+        let ret = layer_match_icmp_time_exceeded.do_match(&data);
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_layer_match5() {
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        let src_port = 43951;
+        let dst_port = 80;
+
+        let layer3 = Layer3Match {
+            layer2: None,
+            src_addr: Some(dst_ipv4.into()),
+            dst_addr: Some(src_ipv4.into()),
+        };
+        let layer4_tcp_udp = Layer4MatchTcpUdp {
+            layer3: Some(layer3),
+            src_port: Some(dst_port),
+            dst_port: Some(src_port),
+        };
+        let layer_match_tcp = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+
+        let data = [
+            0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
+            0x0, 0x0, 0x28, 0xb, 0x5e, 0x0, 0x0, 0x80, 0x6, 0xa8, 0x1b, 0xc0, 0xa8, 0x1, 0x3, 0xc0,
+            0xa8, 0x5, 0x3, 0x0, 0x50, 0xab, 0xaf, 0x1b, 0xf7, 0x41, 0x21, 0x40, 0x82, 0x16, 0x74,
+            0x50, 0x14, 0xfa, 0xf0, 0xcd, 0x7a, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        ];
+
+        let ret = layer_match_tcp.do_match(&data);
         println!("{}", ret);
     }
     #[test]

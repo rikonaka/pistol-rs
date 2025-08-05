@@ -38,7 +38,7 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
 
 const TCP_DATA_SIZE: usize = 0;
-const TTL: u8 = 255;
+const HOP_LIMIT: u8 = 255;
 
 pub fn send_syn_scan_packet(
     dst_ipv6: Ipv6Addr,
@@ -65,7 +65,7 @@ pub fn send_syn_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
@@ -202,7 +202,7 @@ pub fn send_fin_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
@@ -339,7 +339,7 @@ pub fn send_ack_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
@@ -473,7 +473,7 @@ pub fn send_null_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
@@ -607,7 +607,7 @@ pub fn send_xmas_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
@@ -741,7 +741,7 @@ pub fn send_window_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 
@@ -880,7 +880,7 @@ pub fn send_maimon_scan_packet(
     let payload_length = TCP_HEADER_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
-    ipv6_header.set_hop_limit(TTL);
+    ipv6_header.set_hop_limit(HOP_LIMIT);
     ipv6_header.set_source(src_ipv6);
     ipv6_header.set_destination(dst_ipv6);
 

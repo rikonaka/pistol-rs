@@ -188,10 +188,10 @@ pub fn seq_packet_2_layer3(
     src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
-    const TCP_OPTIONS_LEN: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
+    const TCP_OPTIONS_SIZE: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
         Some(p) => p,
         None => {
@@ -204,7 +204,7 @@ pub fn seq_packet_2_layer3(
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     ipv6_header.set_flow_label(0x12345);
-    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
     let hop_limit = rng.random_range(30..=50);
@@ -257,11 +257,11 @@ pub fn seq_packet_3_layer3(
     src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
-    const TCP_OPTIONS_LEN: usize =
+    const TCP_OPTIONS_SIZE: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
         Some(p) => p,
         None => {
@@ -274,7 +274,7 @@ pub fn seq_packet_3_layer3(
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     ipv6_header.set_flow_label(0x12345);
-    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
     let hop_limit = rng.random_range(30..=50);
@@ -329,10 +329,10 @@ pub fn seq_packet_4_layer3(
     src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
-    const TCP_OPTIONS_LEN: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
+    const TCP_OPTIONS_SIZE: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
         Some(p) => p,
         None => {
@@ -345,7 +345,7 @@ pub fn seq_packet_4_layer3(
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     ipv6_header.set_flow_label(0x12345);
-    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
     let hop_limit = rng.random_range(30..=50);
@@ -397,10 +397,10 @@ pub fn seq_packet_5_layer3(
     src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
-    const TCP_OPTIONS_LEN: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
+    const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
         Some(p) => p,
         None => {
@@ -413,7 +413,7 @@ pub fn seq_packet_5_layer3(
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     ipv6_header.set_flow_label(0x12345);
-    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
     let hop_limit = rng.random_range(30..=50);
@@ -466,10 +466,10 @@ pub fn seq_packet_6_layer3(
     src_port: u16,
 ) -> Result<Vec<u8>, PistolError> {
     let mut rng = rand::rng();
-    const TCP_OPTIONS_LEN: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
+    const TCP_OPTIONS_SIZE: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE];
+    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
         Some(p) => p,
         None => {
@@ -482,7 +482,7 @@ pub fn seq_packet_6_layer3(
     // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
     // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
     ipv6_header.set_flow_label(0x12345);
-    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_LEN + TCP_DATA_SIZE;
+    let payload_length = TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Tcp);
     let hop_limit = rng.random_range(30..=50);
