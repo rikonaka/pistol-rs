@@ -122,6 +122,7 @@ pub fn send_ndp_ns_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),

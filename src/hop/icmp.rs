@@ -91,6 +91,7 @@ pub fn send_icmp_trace_packet(
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let payload_ip = PayloadMatchIp {
         src_addr: Some(src_ipv4.into()),
@@ -115,6 +116,7 @@ pub fn send_icmp_trace_packet(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),

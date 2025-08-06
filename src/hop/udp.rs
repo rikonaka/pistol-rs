@@ -9,7 +9,6 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::udp::ipv4_checksum;
-use rand::Rng;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
@@ -33,10 +32,10 @@ pub fn send_udp_trace_packet(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    ip_id: u16,
     ttl: u8,
     timeout: Option<Duration>,
 ) -> Result<(HopStatus, Duration), PistolError> {
-    let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
@@ -50,8 +49,7 @@ pub fn send_udp_trace_packet(
     ip_header.set_version(4);
     ip_header.set_header_length(5);
     ip_header.set_total_length((IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
-    let id = rng.random();
-    ip_header.set_identification(id);
+    ip_header.set_identification(ip_id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(ttl);
     ip_header.set_next_level_protocol(IpNextHeaderProtocols::Udp);
@@ -83,6 +81,7 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     // set the icmp payload matchs
     let payload_ip = PayloadMatchIp {
@@ -101,13 +100,14 @@ pub fn send_udp_trace_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     // finally, the UDP packet arrives at the target machine.
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
@@ -115,13 +115,14 @@ pub fn send_udp_trace_packet(
         icmp_code: Some(IcmpCode(3)),
         payload: None,
     };
-    let layer_match_udp_port_unreachable = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_port_unreachable = LayerMatch::Layer4MatchIcmp(layer4_icmp);
 
     // there is a small chance that the target's UDP port will be open.
     let layer3 = Layer3Match {
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: Some(ip_id as u32),
     };
     let layer4 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -135,8 +136,8 @@ pub fn send_udp_trace_packet(
         src_ipv4,
         &ip_buff,
         vec![
-            layer_match_time_exceeded,
-            layer_match_udp_port_unreachable,
+            layer_match_icmp_time_exceeded,
+            layer_match_icmp_port_unreachable,
             layer_match_udp,
         ],
         timeout,

@@ -73,6 +73,7 @@ pub fn send_arp_scan_packet(
         layer2: Some(layer2),
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer_match = LayerMatch::Layer3Match(layer3);
 

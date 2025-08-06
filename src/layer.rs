@@ -540,6 +540,9 @@ pub struct Layer3Match {
     pub layer2: Option<Layer2Match>,
     pub src_addr: Option<IpAddr>, // response packet
     pub dst_addr: Option<IpAddr>, // response packet
+    // same as flow label in ipv6 environment
+    // in ipv4 its 16 bytes, but in ipv6 its 20 bytes, so set it 32 bytes here
+    pub ip_id: Option<u32>,
 }
 
 impl Layer3Match {
@@ -584,6 +587,14 @@ impl Layer3Match {
                     },
                     None => (),
                 }
+                match self.ip_id {
+                    Some(ip_id) => {
+                        if ipv4_packet.get_identification() as u32 != ip_id {
+                            return false;
+                        }
+                    }
+                    None => (),
+                }
                 true
             }
             EtherTypes::Ipv6 => {
@@ -612,7 +623,15 @@ impl Layer3Match {
                         _ => return false,
                     },
                     None => (),
-                };
+                }
+                match self.ip_id {
+                    Some(ip_id) => {
+                        if ipv6_packet.get_flow_label() as u32 != ip_id {
+                            return false;
+                        }
+                    }
+                    None => (),
+                }
                 true
             }
             EtherTypes::Arp => {
@@ -657,12 +676,57 @@ pub struct Layer4MatchTcpUdp {
     pub dst_port: Option<u16>, // response tcp or udp packet dst port
 }
 
+/// for debug use, return (src_ip, dst_ip)
+#[allow(dead_code)]
+fn get_ip(ethernet_packet: &[u8]) -> Option<(IpAddr, IpAddr)> {
+    let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
+        Some(ethernet_packet) => ethernet_packet,
+        None => return None,
+    };
+
+    match ethernet_packet.get_ethertype() {
+        EtherTypes::Ipv4 => {
+            let ipv4_packet = match Ipv4Packet::new(ethernet_packet.payload()) {
+                Some(i) => i,
+                None => return None,
+            };
+            Some((
+                ipv4_packet.get_source().into(),
+                ipv4_packet.get_destination().into(),
+            ))
+        }
+        EtherTypes::Ipv6 => {
+            let ipv6_packet = match Ipv6Packet::new(ethernet_packet.payload()) {
+                Some(i) => i,
+                None => return None,
+            };
+            Some((
+                ipv6_packet.get_source().into(),
+                ipv6_packet.get_destination().into(),
+            ))
+        }
+        _ => None,
+    }
+}
+
 impl Layer4MatchTcpUdp {
     pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+        // let mut is_debug = false;
+        // if let Some((src_ip, dst_ip)) = get_ip(ethernet_packet) {
+        //     let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        //     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        //     if src_ip == src_ipv4 && dst_ip == dst_ipv4 {
+        //         is_debug = true;
+        //     }
+        // }
+
         let m1 = match self.layer3 {
             Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
+        // if is_debug {
+        //     println!("m1: {}", m1);
+        // }
         if !m1 {
             // early stop
             return false;
@@ -720,6 +784,9 @@ impl Layer4MatchTcpUdp {
             }
             _ => (0, 0),
         };
+        // if is_debug {
+        //     println!("read to match src port");
+        // }
         match self.src_port {
             Some(src_port) => {
                 if src_port != r_src_port {
@@ -728,6 +795,13 @@ impl Layer4MatchTcpUdp {
             }
             None => (),
         };
+        // if is_debug {
+        //     println!("src port pass");
+        //     println!(
+        //         "next dst_port: {:?}, r_dst_port: {}",
+        //         self.dst_port, r_dst_port
+        //     );
+        // }
         match self.dst_port {
             Some(dst_port) => {
                 if dst_port != r_dst_port {
@@ -736,6 +810,9 @@ impl Layer4MatchTcpUdp {
             }
             None => (),
         };
+        // if is_debug {
+        //     println!("dst port pass");
+        // }
         true
     }
 }
@@ -1554,6 +1631,7 @@ fn ndp_rs(
         layer2: None,
         src_addr: None,
         dst_addr: None,
+        ip_id: None,
     };
     // set the icmp payload matchs
     let payload_ip = PayloadMatchIp {
@@ -1652,6 +1730,7 @@ mod tests {
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
+            ip_id: None,
         };
         let payload_ip = PayloadMatchIp {
             src_addr: Some(src_ipv4.into()),
@@ -1689,6 +1768,7 @@ mod tests {
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
+            ip_id: None,
         };
         let layer4_icmpv6 = Layer4MatchIcmpv6 {
             layer3: Some(layer3),
@@ -1710,6 +1790,7 @@ mod tests {
             layer2: None,
             src_addr: None,
             dst_addr: Some(src_ipv4.into()),
+            ip_id: None,
         };
         // set the icmp payload matchs
         let payload_ip = PayloadMatchIp {
@@ -1754,6 +1835,7 @@ mod tests {
             layer2: None,
             src_addr: None, // usually this is the address of the router, not the address of the target machine.
             dst_addr: Some(src_ipv4.into()),
+            ip_id: None,
         };
         let payload_ip = PayloadMatchIp {
             src_addr: Some(src_ipv4.into()),
@@ -1790,13 +1872,14 @@ mod tests {
     fn test_layer_match5() {
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        let src_port = 43951;
+        let src_port = 26845;
         let dst_port = 80;
 
         let layer3 = Layer3Match {
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
+            ip_id: None,
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
             layer3: Some(layer3),
@@ -1807,9 +1890,9 @@ mod tests {
 
         let data = [
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
-            0x0, 0x0, 0x28, 0xb, 0x5e, 0x0, 0x0, 0x80, 0x6, 0xa8, 0x1b, 0xc0, 0xa8, 0x1, 0x3, 0xc0,
-            0xa8, 0x5, 0x3, 0x0, 0x50, 0xab, 0xaf, 0x1b, 0xf7, 0x41, 0x21, 0x40, 0x82, 0x16, 0x74,
-            0x50, 0x14, 0xfa, 0xf0, 0xcd, 0x7a, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x28, 0xd, 0x83, 0x0, 0x0, 0x80, 0x6, 0xa5, 0xf6, 0xc0, 0xa8, 0x1, 0x3, 0xc0,
+            0xa8, 0x5, 0x3, 0x0, 0x50, 0x68, 0xdd, 0x48, 0xc4, 0x1, 0xc5, 0xbf, 0x34, 0xcb, 0x88,
+            0x50, 0x14, 0xfa, 0xf0, 0xef, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
 
         let ret = layer_match_tcp.do_match(&data);

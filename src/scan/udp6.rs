@@ -75,6 +75,7 @@ pub fn send_udp_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),

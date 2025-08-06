@@ -92,6 +92,7 @@ pub fn send_icmpv6_ping_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     // match all icmpv6 reply
     let layer4_icmpv6 = Layer4MatchIcmpv6 {

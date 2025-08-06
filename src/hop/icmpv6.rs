@@ -27,6 +27,7 @@ use crate::layer::layer3_ipv6_send;
 pub fn send_icmpv6_trace_packet(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
+    flow_label: u16,
     hop_limit: u8,
     icmpv6_id: u16,
     seq: u16,
@@ -44,9 +45,7 @@ pub fn send_icmpv6_trace_packet(
         }
     };
     ipv6_header.set_version(6);
-    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
-    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
-    ipv6_header.set_flow_label(0x12345);
+    ipv6_header.set_flow_label(flow_label.into());
     let payload_length = ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
@@ -87,6 +86,7 @@ pub fn send_icmpv6_trace_packet(
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let payload_ip = PayloadMatchIp {
         src_addr: Some(src_ipv6.into()),
@@ -111,6 +111,7 @@ pub fn send_icmpv6_trace_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),

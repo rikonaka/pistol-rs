@@ -36,6 +36,11 @@ pub fn get_hops_tcp_syn(
     let mut hops = 0;
     let mut rng = rand::rng();
     let mut ip_id = rng.random();
+    // ensure that this u16 does not overflow
+    if ip_id > u16::MAX - 30 {
+        ip_id -= 30
+    }
+
     let dst_port = match dst_port {
         Some(p) => p,
         None => 80,
@@ -43,6 +48,7 @@ pub fn get_hops_tcp_syn(
     for ttl in 1..=30 {
         debug!("hops ttl: {}", ttl);
         let random_src_port = random_port_range(1000, 65535);
+        // let random_src_port = 61234; // debug use
         let (hop_status, _rtt) = tcp::send_syn_trace_packet(
             dst_ipv4,
             dst_port,
@@ -55,11 +61,12 @@ pub fn get_hops_tcp_syn(
         ip_id += 1;
         println!("{:?}", hop_status);
         match hop_status {
+            HopStatus::TimeExceeded(_) => hops += 1,
             HopStatus::RecvReply(_) => return Ok(hops), // recv echo reply packet
-            _ => hops += 1,
+            _ => (),
         }
     }
-    Ok(0)
+    Ok(hops)
 }
 
 pub fn get_hops_tcp6_syn(
@@ -73,6 +80,13 @@ pub fn get_hops_tcp6_syn(
         Some(p) => p,
         None => 80,
     };
+    let mut rng = rand::rng();
+    let mut flow_label = rng.random();
+    // ensure that this u16 does not overflow
+    if flow_label > u16::MAX - 30 {
+        flow_label -= 30
+    }
+
     for hop_limit in 1..=30 {
         debug!("hops ttl: {}", hop_limit);
         let random_src_port = random_port_range(1000, 65535);
@@ -81,10 +95,12 @@ pub fn get_hops_tcp6_syn(
             dst_port,
             src_ipv6,
             random_src_port,
+            flow_label,
             hop_limit,
             timeout,
         )?;
         // println!("{:?}", hop_status);
+        flow_label += 1;
         match hop_status {
             HopStatus::RecvReply(_) => return Ok(hops), // recv echo reply packet
             _ => hops += 1,
@@ -101,7 +117,11 @@ pub fn get_hops_icmp(
     let mut hops = 0;
     let mut rng = rand::rng();
     let mut ip_id = rng.random();
+    if ip_id > u16::MAX - 30 {
+        ip_id -= 30;
+    }
     let icmp_id = rng.random();
+
     for ttl in 1..=30 {
         debug!("hops ttl: {}", ttl);
         let (hop_status, _rtt) = icmp::send_icmp_trace_packet(
@@ -124,12 +144,19 @@ pub fn get_hops_icmpv6(
 ) -> Result<u8, PistolError> {
     let mut hops = 0;
     let mut rng = rand::rng();
+    let mut flow_label = rng.random();
+    // ensure that this u16 does not overflow
+    if flow_label > u16::MAX - 30 {
+        flow_label -= 30
+    }
     let icmp_id = rng.random();
+
     for hop_limit in 1..=30 {
         debug!("hops limit: {}", hop_limit);
         let (hop_status, _rtt) = icmpv6::send_icmpv6_trace_packet(
             dst_ipv6,
             src_ipv6,
+            flow_label,
             hop_limit,
             icmp_id,
             hop_limit as u16,
@@ -149,6 +176,11 @@ pub fn get_hops_udp(
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     let mut hops = 0;
+    let mut rng = rand::rng();
+    let mut ip_id = rng.random();
+    if ip_id > u16::MAX - 30 {
+        ip_id -= 30;
+    }
     for ttl in 1..=30 {
         debug!("hops ttl: {}", ttl);
         let random_src_port = random_port_range(1000, 65535);
@@ -158,9 +190,11 @@ pub fn get_hops_udp(
             dst_port,
             src_ipv4,
             random_src_port,
+            ip_id,
             ttl,
             timeout,
         )?;
+        ip_id += 1;
         match hop_status {
             HopStatus::TimeExceeded(_) => hops += 1,
             _ => return Ok(hops),
@@ -175,6 +209,11 @@ pub fn get_hops_udp6(
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
     let mut hops = 0;
+    let mut rng = rand::rng();
+    let mut flow_label = rng.random();
+    if flow_label > u16::MAX - 30 {
+        flow_label -= 30;
+    }
     for hop_limit in 1..=30 {
         debug!("hops limit: {}", hop_limit);
         let random_src_port = random_port_range(1000, 65535);
@@ -184,9 +223,11 @@ pub fn get_hops_udp6(
             dst_port,
             src_ipv6,
             random_src_port,
+            flow_label,
             hop_limit,
             timeout,
         )?;
+        flow_label += 1;
         match hop_status {
             HopStatus::TimeExceeded(_) => hops += 1,
             _ => return Ok(hops),
@@ -214,7 +255,7 @@ mod tests {
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         // let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Some(Duration::from_secs_f64(3.0));
         let hops = get_hops_tcp_syn(dst_ipv4, None, src_ipv4, timeout).unwrap();
         println!("{}", hops);
     }

@@ -94,6 +94,7 @@ pub fn send_syn_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -231,6 +232,7 @@ pub fn send_fin_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -368,6 +370,7 @@ pub fn send_ack_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -502,6 +505,7 @@ pub fn send_null_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -636,6 +640,7 @@ pub fn send_xmas_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -770,6 +775,7 @@ pub fn send_window_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -909,6 +915,7 @@ pub fn send_maimon_scan_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),

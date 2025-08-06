@@ -105,6 +105,7 @@ pub fn send_icmp_echo_packet(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     // match all icmp reply
     let layer4_icmp = Layer4MatchIcmp {
@@ -208,6 +209,7 @@ pub fn send_icmp_timestamp_packet(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     // match all icmp reply
     let layer4_icmp = Layer4MatchIcmp {
@@ -317,6 +319,7 @@ pub fn send_icmp_address_mask_packet(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     // match all icmp reply
     let layer4_icmp = Layer4MatchIcmp {

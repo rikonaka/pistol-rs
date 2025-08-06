@@ -292,6 +292,7 @@ fn send_seq_probes(
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
+            ip_id: None,
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
             layer3: Some(layer3),
@@ -386,6 +387,7 @@ fn send_ie_probes(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
@@ -401,8 +403,7 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            let ret =
-                layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true);
+            let ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true);
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
@@ -452,6 +453,7 @@ fn send_ecn_probe(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -508,6 +510,7 @@ fn send_tx_probes(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -644,6 +647,7 @@ fn send_u1_probe(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
+        ip_id: None,
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
