@@ -17,7 +17,7 @@ use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
-use crate::hop::get_hops_udp;
+use crate::hop::udp_trace;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
@@ -292,7 +292,6 @@ fn send_seq_probes(
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
-            
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
             layer3: Some(layer3),
@@ -387,7 +386,6 @@ fn send_ie_probes(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
@@ -453,7 +451,6 @@ fn send_ecn_probe(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -510,7 +507,6 @@ fn send_tx_probes(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -647,7 +643,6 @@ fn send_u1_probe(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
@@ -1834,7 +1829,7 @@ pub fn os_probe_thread(
 
     let scan = match need_cal_hops(dst_ipv4.into()) {
         true => {
-            let hops = get_hops_udp(dst_ipv4, src_ipv4, timeout)?;
+            let hops = udp_trace(dst_ipv4.into(), src_ipv4.into(), timeout)?;
             get_scan_line(
                 dst_mac,
                 dst_open_tcp_port,

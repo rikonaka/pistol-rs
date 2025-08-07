@@ -88,6 +88,12 @@ pub enum PistolError {
     #[error("subnetwork error")]
     RegexError(#[from] regex::Error),
 
+    /* HOP ERROR */
+    #[error(
+        "the destination address {dst_addr} and source address {src_addr} protocols do not match"
+    )]
+    AddressProtocolError { dst_addr: IpAddr, src_addr: IpAddr },
+
     /* OTHER ERROR */
     #[error("std error")]
     IOError(#[from] std::io::Error),
