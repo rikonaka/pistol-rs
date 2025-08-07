@@ -17,7 +17,7 @@ use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
-use crate::hop::udp_trace;
+use crate::hop::icmp_trace;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
@@ -1829,7 +1829,7 @@ pub fn os_probe_thread(
 
     let scan = match need_cal_hops(dst_ipv4.into()) {
         true => {
-            let hops = udp_trace(dst_ipv4.into(), src_ipv4.into(), timeout)?;
+            let hops = icmp_trace(dst_ipv4.into(), src_ipv4.into(), timeout)?;
             get_scan_line(
                 dst_mac,
                 dst_open_tcp_port,
