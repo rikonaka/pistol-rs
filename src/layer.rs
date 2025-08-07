@@ -52,6 +52,7 @@ use crate::PISTOL_RUNNER_IS_RUNNING;
 use crate::SYSTEM_NET_CACHE;
 use crate::UNIFIED_RECV_MATCHS;
 
+use crate::DST_CACHE;
 use crate::PistolChannel;
 use crate::error::PistolError;
 use crate::route::DefaultRoute;
@@ -175,7 +176,7 @@ fn dst_in_local(dst_addr: IpAddr) -> bool {
         }
     }
     // all data for other addresses are sent to the default route
-    debug!("the dst ip {} is not in local net", dst_addr);
+    debug!("dst ip {} is not in local net", dst_addr);
     false
 }
 
@@ -188,7 +189,7 @@ fn dst_in_host(dst_addr: IpAddr) -> bool {
             }
         }
     }
-    debug!("the dst ip {} is not in host", dst_addr);
+    debug!("dst ip {} is not in host", dst_addr);
     false
 }
 
@@ -220,11 +221,69 @@ fn search_route_table(dst_addr: IpAddr) -> Result<Option<NetworkInterface>, Pist
     Ok(snc.search_route(dst_addr))
 }
 
+/// Destination mac address and interface cache
+pub struct DstCache {
+    pub dst_addr: IpAddr,
+    pub src_addr: IpAddr,
+    pub mac: MacAddr,
+    pub interface: NetworkInterface,
+}
+
+// the same target address does not need to be searched again
+fn update_dst_cache(
+    dst_addr: IpAddr,
+    src_addr: IpAddr,
+    mac: MacAddr,
+    interface: NetworkInterface,
+) -> Result<(), PistolError> {
+    match DST_CACHE.lock() {
+        Ok(mut dst_cache) => {
+            if !dst_cache.contains_key(&dst_addr) {
+                let dc = DstCache {
+                    dst_addr,
+                    src_addr,
+                    mac,
+                    interface,
+                };
+                let _ = dst_cache.insert(dst_addr, dc);
+            }
+            Ok(())
+        }
+        Err(e) => Err(PistolError::TryLockGlobalVarFailed {
+            var_name: String::from("DST_CACHE"),
+            e: e.to_string(),
+        }),
+    }
+}
+
+fn get_dst_cache(dst_addr: IpAddr) -> Result<Option<(MacAddr, NetworkInterface)>, PistolError> {
+    match DST_CACHE.lock() {
+        Ok(dst_cache) => {
+            let ret = dst_cache.get(&dst_addr);
+            if let Some(dc) = ret {
+                debug!("dst ip {} found in cache", dst_addr);
+                Ok(Some((dc.mac, dc.interface.clone())))
+            } else {
+                debug!("dst ip {} not found in cache", dst_addr);
+                Ok(None)
+            }
+        }
+        Err(e) => Err(PistolError::TryLockGlobalVarFailed {
+            var_name: String::from("DST_CACHE"),
+            e: e.to_string(),
+        }),
+    }
+}
+
 pub fn get_dst_mac_and_interface(
     dst_addr: IpAddr,
     src_addr: IpAddr,
     timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
+    if let Some((dst_mac, src_interface)) = get_dst_cache(dst_addr)? {
+        return Ok((dst_mac, src_interface));
+    }
+
     let src_interface = if src_addr == dst_addr {
         match find_loopback_interface() {
             Some(i) => i,
@@ -356,6 +415,7 @@ pub fn get_dst_mac_and_interface(
             }
         }
     };
+    update_dst_cache(dst_addr, src_addr, dst_mac, src_interface.clone())?;
     Ok((dst_mac, src_interface))
 }
 
@@ -540,9 +600,6 @@ pub struct Layer3Match {
     pub layer2: Option<Layer2Match>,
     pub src_addr: Option<IpAddr>, // response packet
     pub dst_addr: Option<IpAddr>, // response packet
-    // same as flow label in ipv6 environment
-    // in ipv4 its 16 bytes, but in ipv6 its 20 bytes, so set it 32 bytes here
-    pub ip_id: Option<u32>,
 }
 
 impl Layer3Match {
@@ -587,14 +644,6 @@ impl Layer3Match {
                     },
                     None => (),
                 }
-                match self.ip_id {
-                    Some(ip_id) => {
-                        if ipv4_packet.get_identification() as u32 != ip_id {
-                            return false;
-                        }
-                    }
-                    None => (),
-                }
                 true
             }
             EtherTypes::Ipv6 => {
@@ -622,14 +671,6 @@ impl Layer3Match {
                         }
                         _ => return false,
                     },
-                    None => (),
-                }
-                match self.ip_id {
-                    Some(ip_id) => {
-                        if ipv6_packet.get_flow_label() as u32 != ip_id {
-                            return false;
-                        }
-                    }
                     None => (),
                 }
                 true
@@ -1631,7 +1672,6 @@ fn ndp_rs(
         layer2: None,
         src_addr: None,
         dst_addr: None,
-        ip_id: None,
     };
     // set the icmp payload matchs
     let payload_ip = PayloadMatchIp {
@@ -1730,7 +1770,6 @@ mod tests {
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
-            ip_id: None,
         };
         let payload_ip = PayloadMatchIp {
             src_addr: Some(src_ipv4.into()),
@@ -1768,7 +1807,6 @@ mod tests {
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
-            ip_id: None,
         };
         let layer4_icmpv6 = Layer4MatchIcmpv6 {
             layer3: Some(layer3),
@@ -1790,7 +1828,6 @@ mod tests {
             layer2: None,
             src_addr: None,
             dst_addr: Some(src_ipv4.into()),
-            ip_id: None,
         };
         // set the icmp payload matchs
         let payload_ip = PayloadMatchIp {
@@ -1835,7 +1872,6 @@ mod tests {
             layer2: None,
             src_addr: None, // usually this is the address of the router, not the address of the target machine.
             dst_addr: Some(src_ipv4.into()),
-            ip_id: None,
         };
         let payload_ip = PayloadMatchIp {
             src_addr: Some(src_ipv4.into()),
@@ -1879,7 +1915,6 @@ mod tests {
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
-            ip_id: None,
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
             layer3: Some(layer3),

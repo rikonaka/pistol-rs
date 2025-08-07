@@ -30,7 +30,6 @@ pub fn send_udp_trace_packet(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    flow_label: u16,
     hop_limit: u8,
     timeout: Option<Duration>,
 ) -> Result<(HopStatus, Duration), PistolError> {
@@ -45,7 +44,9 @@ pub fn send_udp_trace_packet(
         }
     };
     ipv6_header.set_version(6);
-    ipv6_header.set_flow_label(flow_label.into());
+    // In all cases, the IPv6 flow label is 0x12345, on platforms that allow us to set it.
+    // On platforms that do not (which includes non-Linux Unix platforms when not using Ethernet to send), the flow label will be 0.
+    ipv6_header.set_flow_label(0x12345);
     let payload_length = UDP_HEADER_SIZE + UDP_DATA_SIZE;
     ipv6_header.set_payload_length(payload_length as u16);
     ipv6_header.set_next_header(IpNextHeaderProtocols::Udp);
@@ -76,7 +77,6 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
     };
     let payload_ip = PayloadMatchIp {
         src_addr: Some(src_ipv6.into()),
@@ -101,7 +101,6 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
@@ -116,7 +115,6 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: Some(flow_label as u32),
     };
     let layer4 = Layer4MatchTcpUdp {
         layer3: Some(layer3),

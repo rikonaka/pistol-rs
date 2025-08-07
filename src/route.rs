@@ -527,13 +527,16 @@ pub struct NeighborCache {}
 impl NeighborCache {
     #[cfg(target_os = "linux")]
     pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
-        // Examples:
+        // Debian 12:
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
         // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
         // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
         // 192.168.1.128 dev ens36 lladdr a8:9c:ed:d5:00:4c STALE
         // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
         // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
+        // fe80::250:56ff:fec0:2222 dev ens33 router FAILED
+        // CentOS 7:
+        // 192.168.3.456 dev em2 lladdr fc:e3:3c:a6:a9:8c REACHABLE
         let c = Command::new("sh").args(["-c", "ip neigh show"]).output()?;
         let output = String::from_utf8_lossy(&c.stdout);
         let lines: Vec<&str> = output

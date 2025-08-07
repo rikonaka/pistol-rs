@@ -4,8 +4,10 @@ use crate::datalink::Channel::Ethernet;
 use dns_lookup::lookup_host;
 use pcapture::pcapng::PcapNg;
 use pnet::datalink;
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
+use std::io::ErrorKind;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
 use std::net::Ipv6Addr;
@@ -37,11 +39,17 @@ pub mod utils;
 pub mod vs;
 
 use crate::error::PistolError;
+use crate::layer::DstCache;
 use crate::layer::LayerMatch;
 use crate::layer::layer2_capture;
 use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
+
+static DST_CACHE: LazyLock<Arc<Mutex<HashMap<IpAddr, DstCache>>>> = LazyLock::new(|| {
+    let hm = HashMap::new();
+    Arc::new(Mutex::new(hm))
+});
 
 static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(|| {
     let snc = SystemNetCache::init().expect("can not init the system net cache");
@@ -140,7 +148,10 @@ impl PistolRunner {
                                 }
                             }
                         }
-                        Err(e) => warn!("layer2 recv failed: {}", e), // many timeout error
+                        Err(e) => match e.kind() {
+                            ErrorKind::TimedOut => (),
+                            _ => warn!("layer2 recv failed: {}", e), // many timeout error
+                        },
                     }
                 }
             });
@@ -746,8 +757,12 @@ pub use vs::vs_scan_raw;
 
 /// Queries the IP address of a domain name and returns.
 pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
-    let ips: Vec<IpAddr> = lookup_host(hostname)?;
-    Ok(ips)
+    let ips = lookup_host(hostname)?;
+    let mut ret = Vec::new();
+    for ip in ips {
+        ret.push(ip);
+    }
+    Ok(ret)
 }
 
 #[cfg(test)]

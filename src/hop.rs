@@ -16,7 +16,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-pub const UDP_DATA_SIZE: usize = 32;
+const UDP_DATA_SIZE: usize = 32;
 const START_PORT: u16 = 33434;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,29 +27,29 @@ pub enum HopStatus {
     RecvReply(IpAddr),
 }
 
+/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 pub fn get_hops_tcp_syn(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>, // default is 80
     src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    let mut hops = 0;
     let mut rng = rand::rng();
     let mut ip_id = rng.random();
     // ensure that this u16 does not overflow
     if ip_id > u16::MAX - 30 {
         ip_id -= 30
     }
-
     let dst_port = match dst_port {
         Some(p) => p,
         None => 80,
     };
+    let mut last_response_ttl = 0;
+
     for ttl in 1..=30 {
-        debug!("hops ttl: {}", ttl);
         let random_src_port = random_port_range(1000, 65535);
         // let random_src_port = 61234; // debug use
-        let (hop_status, _rtt) = tcp::send_syn_trace_packet(
+        let (hop_status, rtt) = tcp::send_syn_trace_packet(
             dst_ipv4,
             dst_port,
             src_ipv4,
@@ -59,133 +59,147 @@ pub fn get_hops_tcp_syn(
             timeout,
         )?;
         ip_id += 1;
-        println!("{:?}", hop_status);
+        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
         match hop_status {
-            HopStatus::TimeExceeded(_) => hops += 1,
-            HopStatus::RecvReply(_) => return Ok(hops), // recv echo reply packet
+            HopStatus::TimeExceeded(_) => {
+                last_response_ttl = ttl;
+            }
+            HopStatus::RecvReply(_) => {
+                // tcp rst packet, means packet arrive the target machine
+                return Ok(ttl);
+            }
             _ => (),
         }
     }
-    Ok(hops)
+    Ok(last_response_ttl)
 }
 
+/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 pub fn get_hops_tcp6_syn(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>, // default is 80
     src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    let mut hops = 0;
     let dst_port = match dst_port {
         Some(p) => p,
         None => 80,
     };
-    let mut rng = rand::rng();
-    let mut flow_label = rng.random();
-    // ensure that this u16 does not overflow
-    if flow_label > u16::MAX - 30 {
-        flow_label -= 30
-    }
+    let mut last_response_hop_limit = 0;
 
     for hop_limit in 1..=30 {
-        debug!("hops ttl: {}", hop_limit);
         let random_src_port = random_port_range(1000, 65535);
-        let (hop_status, _rtt) = tcp6::send_syn_trace_packet(
+        let (hop_status, rtt) = tcp6::send_syn_trace_packet(
             dst_ipv6,
             dst_port,
             src_ipv6,
             random_src_port,
-            flow_label,
             hop_limit,
             timeout,
         )?;
-        // println!("{:?}", hop_status);
-        flow_label += 1;
+        debug!(
+            "hop_limit: {}, {:?} - {:.2}s",
+            hop_limit,
+            hop_status,
+            rtt.as_secs_f64()
+        );
         match hop_status {
-            HopStatus::RecvReply(_) => return Ok(hops), // recv echo reply packet
-            _ => hops += 1,
+            HopStatus::TimeExceeded(_) => {
+                last_response_hop_limit = hop_limit;
+            }
+            HopStatus::RecvReply(_) => {
+                // tcp rst packet, means packet arrive the target machine
+                return Ok(hop_limit);
+            }
+            _ => (),
         }
     }
-    Ok(0)
+    Ok(last_response_hop_limit)
 }
 
+/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 pub fn get_hops_icmp(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    let mut hops = 0;
     let mut rng = rand::rng();
     let mut ip_id = rng.random();
     if ip_id > u16::MAX - 30 {
         ip_id -= 30;
     }
     let icmp_id = rng.random();
+    let mut last_response_ttl = 0;
 
     for ttl in 1..=30 {
-        debug!("hops ttl: {}", ttl);
-        let (hop_status, _rtt) = icmp::send_icmp_trace_packet(
+        let (hop_status, rtt) = icmp::send_icmp_trace_packet(
             dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16, timeout,
         )?;
         ip_id += 1;
-        // println!("{:?}", hop_status);
+        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
         match hop_status {
-            HopStatus::RecvReply(_) => return Ok(hops), // recv echo reply packet
-            _ => hops += 1,
+            HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
+            // recv echo reply, means packet arrive the target machine
+            HopStatus::RecvReply(_) => return Ok(ttl),
+            _ => (),
         }
     }
-    Ok(0)
+
+    Ok(last_response_ttl)
 }
 
+/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 pub fn get_hops_icmpv6(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    let mut hops = 0;
     let mut rng = rand::rng();
-    let mut flow_label = rng.random();
-    // ensure that this u16 does not overflow
-    if flow_label > u16::MAX - 30 {
-        flow_label -= 30
-    }
     let icmp_id = rng.random();
+    let mut last_response_hop_limit = 0;
 
     for hop_limit in 1..=30 {
-        debug!("hops limit: {}", hop_limit);
-        let (hop_status, _rtt) = icmpv6::send_icmpv6_trace_packet(
+        let (hop_status, rtt) = icmpv6::send_icmpv6_trace_packet(
             dst_ipv6,
             src_ipv6,
-            flow_label,
             hop_limit,
             icmp_id,
             hop_limit as u16,
             timeout,
         )?;
+        debug!(
+            "hop_limit: {}, {:?} - {:.2}s",
+            hop_limit,
+            hop_status,
+            rtt.as_secs_f64()
+        );
         match hop_status {
-            HopStatus::RecvReply(_) => return Ok(hops), // recv echo reply packet
-            _ => hops += 1,
+            HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
+            // recv echo reply, means packet arrive the target machine
+            HopStatus::RecvReply(_) => return Ok(hop_limit),
+            _ => (),
         }
     }
-    Ok(0)
+    Ok(last_response_hop_limit)
 }
 
+/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 pub fn get_hops_udp(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    let mut hops = 0;
     let mut rng = rand::rng();
     let mut ip_id = rng.random();
     if ip_id > u16::MAX - 30 {
         ip_id -= 30;
     }
+    let mut last_response_ttl = 0;
+
     for ttl in 1..=30 {
-        debug!("hops ttl: {}", ttl);
         let random_src_port = random_port_range(1000, 65535);
         let dst_port = START_PORT + (ttl - 1) as u16;
-        let (hop_status, _rtt) = udp::send_udp_trace_packet(
+        let (hop_status, rtt) = udp::send_udp_trace_packet(
             dst_ipv4,
             dst_port,
             src_ipv4,
@@ -195,45 +209,51 @@ pub fn get_hops_udp(
             timeout,
         )?;
         ip_id += 1;
+        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
         match hop_status {
-            HopStatus::TimeExceeded(_) => hops += 1,
-            _ => return Ok(hops),
+            HopStatus::TimeExceeded(_) | HopStatus::Unreachable(_) => last_response_ttl = ttl,
+            // icmpunreachable, means packet arrive the target machine
+            HopStatus::RecvReply(_) => return Ok(ttl),
+            _ => (),
         }
     }
-    Ok(0)
+    Ok(last_response_ttl)
 }
 
+/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 pub fn get_hops_udp6(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
-    let mut hops = 0;
-    let mut rng = rand::rng();
-    let mut flow_label = rng.random();
-    if flow_label > u16::MAX - 30 {
-        flow_label -= 30;
-    }
+    let mut last_response_hop_limit = 0;
     for hop_limit in 1..=30 {
-        debug!("hops limit: {}", hop_limit);
         let random_src_port = random_port_range(1000, 65535);
         let dst_port = START_PORT + (hop_limit - 1) as u16;
-        let (hop_status, _rtt) = udp6::send_udp_trace_packet(
+        let (hop_status, rtt) = udp6::send_udp_trace_packet(
             dst_ipv6,
             dst_port,
             src_ipv6,
             random_src_port,
-            flow_label,
             hop_limit,
             timeout,
         )?;
-        flow_label += 1;
+        debug!(
+            "hop_limit: {}, {:?} - {:.2}s",
+            hop_limit,
+            hop_status,
+            rtt.as_secs_f64()
+        );
         match hop_status {
-            HopStatus::TimeExceeded(_) => hops += 1,
-            _ => return Ok(hops),
+            HopStatus::TimeExceeded(_) | HopStatus::Unreachable(_) => {
+                last_response_hop_limit = hop_limit
+            }
+            // icmpunreachable, means packet arrive the target machine
+            HopStatus::RecvReply(_) => return Ok(hop_limit),
+            _ => (),
         }
     }
-    Ok(0)
+    Ok(last_response_hop_limit)
 }
 
 #[cfg(test)]
@@ -245,17 +265,17 @@ mod tests {
     #[test]
     fn test_get_hops_tcp() {
         let _pr = PistolRunner::init(
-            PistolLogger::None,
-            Some(String::from("hops.pcapng")),
+            PistolLogger::Debug,
+            None,
             None, // use default value
         )
         .unwrap();
 
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
-        // let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
+        let dst_ipv4 = Ipv4Addr::new(182, 61, 244, 181);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let timeout = Some(Duration::from_secs_f64(3.0));
+        let timeout = Some(Duration::from_secs_f64(5.0));
         let hops = get_hops_tcp_syn(dst_ipv4, None, src_ipv4, timeout).unwrap();
         println!("{}", hops);
     }
@@ -268,26 +288,27 @@ mod tests {
         )
         .unwrap();
 
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
-        // let dst_ipv4 = Ipv4Addr::new(114, 114, 114, 114);
+        let dst_ipv4 = Ipv4Addr::new(182, 61, 244, 181);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Some(Duration::from_secs_f64(5.0));
         let hops = get_hops_icmp(dst_ipv4, src_ipv4, timeout).unwrap();
         println!("{}", hops);
     }
     #[test]
     fn test_get_hops_udp() {
         let _pr = PistolRunner::init(
-            PistolLogger::None,
+            PistolLogger::Debug,
             None,
             None, // use default value
         )
         .unwrap();
 
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
+        let dst_ipv4 = Ipv4Addr::new(182, 61, 244, 181);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Some(Duration::from_secs_f64(1.0));
         let hops = get_hops_udp(dst_ipv4, src_ipv4, timeout).unwrap();
         println!("{}", hops);
     }
@@ -302,7 +323,7 @@ mod tests {
 
         let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Some(Duration::from_secs_f64(5.0));
         let hops = get_hops_udp6(dst_ipv6, src_ipv6, timeout).unwrap();
         println!("{}", hops);
     }

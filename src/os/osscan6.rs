@@ -522,7 +522,7 @@ fn send_seq_probes(
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
-            ip_id: None,
+            
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
             layer3: Some(layer3),
@@ -646,7 +646,7 @@ fn send_ie_probes(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
+        
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
@@ -739,7 +739,7 @@ fn send_nx_probes(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
+        
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
@@ -827,7 +827,7 @@ fn send_u1_probe(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
+        
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         layer3: Some(layer3),
@@ -879,7 +879,7 @@ fn send_tecn_probe(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
+        
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -927,7 +927,7 @@ fn send_tx_probes(
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        ip_id: None,
+        
     };
 
     let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
@@ -1492,7 +1492,7 @@ mod tests {
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
-            ip_id: None,
+            
         };
 
         let layer4_tcp_udp_2 = Layer4MatchTcpUdp {

@@ -81,7 +81,7 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
-        ip_id: None,
+        
     };
     // set the icmp payload matchs
     let payload_ip = PayloadMatchIp {
@@ -107,7 +107,7 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        ip_id: None,
+        
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
@@ -122,7 +122,6 @@ pub fn send_udp_trace_packet(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        ip_id: Some(ip_id as u32),
     };
     let layer4 = Layer4MatchTcpUdp {
         layer3: Some(layer3),

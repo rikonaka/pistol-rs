@@ -292,7 +292,7 @@ fn send_seq_probes(
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
-            ip_id: None,
+            
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
             layer3: Some(layer3),
@@ -387,7 +387,7 @@ fn send_ie_probes(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        ip_id: None,
+        
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
@@ -453,7 +453,7 @@ fn send_ecn_probe(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        ip_id: None,
+        
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -510,7 +510,7 @@ fn send_tx_probes(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        ip_id: None,
+        
     };
     let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
         layer3: Some(layer3),
@@ -647,7 +647,7 @@ fn send_u1_probe(
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        ip_id: None,
+        
     };
     let layer4_icmp = Layer4MatchIcmp {
         layer3: Some(layer3),
