@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 pub mod error;
 pub mod flood;
-pub mod hop;
+pub mod trace;
 pub mod layer;
 pub mod os;
 pub mod ping;
@@ -701,6 +701,10 @@ pub use scan::udp_scan_raw;
 
 #[cfg(feature = "ping")]
 pub use ping::icmp_echo_ping;
+#[cfg(feature = "ping")]
+pub use ping::icmp_timestamp_ping;
+#[cfg(feature = "ping")]
+pub use ping::icmp_address_mask_ping;
 #[cfg(feature = "ping")]
 pub use ping::icmp_ping_raw;
 #[cfg(feature = "ping")]

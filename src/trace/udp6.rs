@@ -12,8 +12,8 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::hop::HopStatus;
-use crate::hop::UDP_DATA_SIZE;
+use crate::trace::HopStatus;
+use crate::trace::UDP_DATA_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;

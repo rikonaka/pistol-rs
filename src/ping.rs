@@ -60,6 +60,8 @@ use crate::utils::num_threads_check;
 use crate::utils::random_port;
 #[cfg(feature = "ping")]
 use crate::utils::time_sec_to_string;
+#[cfg(feature = "ping")]
+use tracing::warn;
 
 #[cfg(feature = "ping")]
 const SYN_PING_DEFAULT_PORT: u16 = 80;
@@ -760,6 +762,32 @@ pub fn icmp_echo_ping(
     )
 }
 
+#[cfg(feature = "ping")]
+pub fn icmp_echo_ping_raw(
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    timeout: Option<Duration>,
+) -> Result<PingStatus, PistolError> {
+    let ia = match infer_addr(src_addr, dst_addr)? {
+        Some(ia) => ia,
+        None => return Err(PistolError::CanNotFoundSourceAddress),
+    };
+    match dst_addr {
+        IpAddr::V4(_) => {
+            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (ret, _data_return, _rtt) =
+                icmp::send_icmp_echo_packet(dst_ipv4, src_ipv4, timeout)?;
+            Ok(ret)
+        }
+        IpAddr::V6(_) => {
+            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (ret, _data_return, _rtt) =
+                icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
+            Ok(ret)
+        }
+    }
+}
+
 /// ICMP Ping (Timestamp Request).
 /// While echo request is the standard ICMP ping query, Nmap does not stop there.
 /// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
@@ -790,6 +818,33 @@ pub fn icmp_timestamp_ping(
         timeout,
         max_attempts,
     )
+}
+
+#[cfg(feature = "ping")]
+pub fn icmp_timestamp_ping_raw(
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    timeout: Option<Duration>,
+) -> Result<PingStatus, PistolError> {
+    let ia = match infer_addr(src_addr, dst_addr)? {
+        Some(ia) => ia,
+        None => return Err(PistolError::CanNotFoundSourceAddress),
+    };
+    match dst_addr {
+        IpAddr::V4(_) => {
+            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (ret, _data_return, _rtt) =
+                icmp::send_icmp_timestamp_packet(dst_ipv4, src_ipv4, timeout)?;
+            Ok(ret)
+        }
+        IpAddr::V6(_) => {
+            warn!("ipv6 address not supported the icmp timestamp ping");
+            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (ret, _data_return, _rtt) =
+                icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
+            Ok(ret)
+        }
+    }
 }
 
 /// ICMP Ping (Address Mask Request).
@@ -823,6 +878,33 @@ pub fn icmp_address_mask_ping(
         timeout,
         max_attempts,
     )
+}
+
+#[cfg(feature = "ping")]
+pub fn icmp_address_mask_ping_raw(
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    timeout: Option<Duration>,
+) -> Result<PingStatus, PistolError> {
+    let ia = match infer_addr(src_addr, dst_addr)? {
+        Some(ia) => ia,
+        None => return Err(PistolError::CanNotFoundSourceAddress),
+    };
+    match dst_addr {
+        IpAddr::V4(_) => {
+            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (ret, _data_return, _rtt) =
+                icmp::send_icmp_address_mask_packet(dst_ipv4, src_ipv4, timeout)?;
+            Ok(ret)
+        }
+        IpAddr::V6(_) => {
+            warn!("ipv6 address not supported the icmp address mask ping");
+            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (ret, _data_return, _rtt) =
+                icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
+            Ok(ret)
+        }
+    }
 }
 
 /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
