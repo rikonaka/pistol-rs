@@ -89,7 +89,7 @@ Additionally, since version `v3.1.6`, pistol has compiled 100 and 1000 commonly 
 | [x] UDP Flood         | IPv4 & IPv6 support                |
 | [x] ICMP Flood        | IPv4 & IPv6 support (ICMP, ICMPv6) |
 
-## Route Trace
+## Trace Route
 
 | Method            | Note                                |
 | :---------------- | :---------------------------------- |
