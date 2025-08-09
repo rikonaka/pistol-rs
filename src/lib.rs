@@ -702,11 +702,17 @@ pub use scan::udp_scan_raw;
 #[cfg(feature = "ping")]
 pub use ping::icmp_address_mask_ping;
 #[cfg(feature = "ping")]
+pub use ping::icmp_address_mask_ping_raw;
+#[cfg(feature = "ping")]
 pub use ping::icmp_echo_ping;
+#[cfg(feature = "ping")]
+pub use ping::icmp_echo_ping_raw;
 #[cfg(feature = "ping")]
 pub use ping::icmp_ping_raw;
 #[cfg(feature = "ping")]
 pub use ping::icmp_timestamp_ping;
+#[cfg(feature = "ping")]
+pub use ping::icmp_timestamp_ping_raw;
 #[cfg(feature = "ping")]
 pub use ping::tcp_ack_ping;
 #[cfg(feature = "ping")]
