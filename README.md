@@ -31,7 +31,7 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 
 ## Cargo Feature Flags
 
-Since version v3.2.0, features are supported, keywords including `scan`, `ping`, `flood`, `os`, `vs`.
+Since version v3.2.0, features are supported, keywords including `scan`, `ping`, `flood`, `os`, `vs`, `trace`.
 
 ## New Architecture
 

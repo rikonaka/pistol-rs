@@ -29,12 +29,12 @@ use uuid::Uuid;
 
 pub mod error;
 pub mod flood;
-pub mod trace;
 pub mod layer;
 pub mod os;
 pub mod ping;
 pub mod route;
 pub mod scan;
+pub mod trace;
 pub mod utils;
 pub mod vs;
 
@@ -700,13 +700,13 @@ pub use scan::udp_scan_raw;
 /* Ping */
 
 #[cfg(feature = "ping")]
-pub use ping::icmp_echo_ping;
-#[cfg(feature = "ping")]
-pub use ping::icmp_timestamp_ping;
-#[cfg(feature = "ping")]
 pub use ping::icmp_address_mask_ping;
 #[cfg(feature = "ping")]
+pub use ping::icmp_echo_ping;
+#[cfg(feature = "ping")]
 pub use ping::icmp_ping_raw;
+#[cfg(feature = "ping")]
+pub use ping::icmp_timestamp_ping;
 #[cfg(feature = "ping")]
 pub use ping::tcp_ack_ping;
 #[cfg(feature = "ping")]
@@ -719,6 +719,14 @@ pub use ping::tcp_syn_ping_raw;
 pub use ping::udp_ping;
 #[cfg(feature = "ping")]
 pub use ping::udp_ping_raw;
+
+/* Trace */
+#[cfg(feature = "trace")]
+pub use trace::icmp_trace;
+#[cfg(feature = "trace")]
+pub use trace::syn_trace;
+#[cfg(feature = "trace")]
+pub use trace::udp_trace;
 
 /* Flood */
 
@@ -772,7 +780,9 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "scan", feature = "os", feature = "vs"))]
     use std::net::Ipv4Addr;
+    #[cfg(feature = "scan")]
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_dns_query() {
@@ -863,6 +873,7 @@ mod tests {
         // println!("{:?}", top_1000_tcp_ports);
     }
     #[test]
+    #[cfg(feature = "scan")]
     fn example_tcp_syn_scan() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.
@@ -907,6 +918,7 @@ mod tests {
         println!("{}", ret);
     }
     #[test]
+    #[cfg(feature = "os")]
     fn example_os_detect() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.
@@ -944,6 +956,7 @@ mod tests {
         println!("{}", ret);
     }
     #[test]
+    #[cfg(feature = "os")]
     fn example_os_detect_ipv6() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.
@@ -975,6 +988,7 @@ mod tests {
         println!("{}", ret);
     }
     #[test]
+    #[cfg(feature = "vs")]
     fn example_vs_scan() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.

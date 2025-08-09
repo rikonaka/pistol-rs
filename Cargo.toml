@@ -1,6 +1,6 @@
 [package]
 name = "pistol"
-version = "4.0.11"
+version = "4.0.12"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A Rust Library about Cybersecurity"
@@ -35,9 +35,10 @@ tracing = "^0"
 tracing-subscriber = "^0"
 
 [features]
-default = ["scan", "ping", "flood", "os", "vs"]
+default = ["scan", "ping", "flood", "os", "vs", "trace"]
 scan = []
 ping = []
 flood = []
 os = []
 vs = []
+trace = []
