@@ -31,7 +31,7 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 
 ## Cargo Feature Flags
 
-Since version v3.2.0, features fields are supported, including `scan`, `ping`, `flood`, `os`, `vs`.
+Since version v3.2.0, features are supported, keywords including `scan`, `ping`, `flood`, `os`, `vs`.
 
 ## New Architecture
 
@@ -81,13 +81,13 @@ Additionally, since version `v3.1.6`, pistol has compiled 100 and 1000 commonly 
 
 ## Flood Attack
 
-| Method                | Note                               |
-| :-------------------- | :--------------------------------- |
-| [x] TCP SYN Flood     | IPv4 & IPv6 support                |
-| [x] TCP ACK Flood     | IPv4 & IPv6 support                |
-| [x] TCP ACK PSH Flood | IPv4 & IPv6 support                |
-| [x] UDP Flood         | IPv4 & IPv6 support                |
-| [x] ICMP Flood        | IPv4 & IPv6 support (ICMP, ICMPv6) |
+| Method                | Note                                |
+| :-------------------- | :---------------------------------- |
+| [x] TCP SYN Flood     | IPv4 & IPv6 support                 |
+| [x] TCP ACK Flood     | IPv4 & IPv6 support                 |
+| [x] TCP ACK PSH Flood | IPv4 & IPv6 support                 |
+| [x] UDP Flood         | IPv4 & IPv6 support                 |
+| [x] ICMP Flood        | IPv4 (ICMP) & IPv6 (ICMPv6) support |
 
 ## Trace Route
 
