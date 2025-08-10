@@ -35,7 +35,7 @@ const FIN_MASK: u8 = 0b00000001;
 const PROGRAM_ESTIMATION_ERROR_ISR: f64 = 0.0;
 const PROGRAM_ESTIMATION_ERROR_SP: f64 = 0.0;
 
-fn get_ipv4_packet(ipv4_buff: &[u8]) -> Result<Ipv4Packet, PistolError> {
+fn get_ipv4_packet<'a>(ipv4_buff: &'a [u8]) -> Result<Ipv4Packet<'a>, PistolError> {
     if ipv4_buff.len() > 0 {
         match Ipv4Packet::new(ipv4_buff) {
             Some(p) => return Ok(p),
@@ -45,7 +45,7 @@ fn get_ipv4_packet(ipv4_buff: &[u8]) -> Result<Ipv4Packet, PistolError> {
     Err(PistolError::GetIpv4PacketFailed)
 }
 
-fn get_tcp_packet(tcp_buff: &[u8]) -> Result<TcpPacket, PistolError> {
+fn get_tcp_packet<'a>(tcp_buff: &'a [u8]) -> Result<TcpPacket<'a>, PistolError> {
     if tcp_buff.len() > 0 {
         match TcpPacket::new(tcp_buff) {
             Some(p) => return Ok(p),
@@ -55,7 +55,7 @@ fn get_tcp_packet(tcp_buff: &[u8]) -> Result<TcpPacket, PistolError> {
     Err(PistolError::GetTcpPacketFailed)
 }
 
-fn get_icmp_packet(icmp_buff: &[u8]) -> Result<IcmpPacket, PistolError> {
+fn get_icmp_packet<'a>(icmp_buff: &'a [u8]) -> Result<IcmpPacket<'a>, PistolError> {
     if icmp_buff.len() > 0 {
         match IcmpPacket::new(icmp_buff) {
             Some(p) => return Ok(p),
@@ -65,7 +65,7 @@ fn get_icmp_packet(icmp_buff: &[u8]) -> Result<IcmpPacket, PistolError> {
     Err(PistolError::GetIcmpPacketFailed)
 }
 
-fn get_udp_packet(udp_buff: &[u8]) -> Result<UdpPacket, PistolError> {
+fn get_udp_packet<'a>(udp_buff: &'a [u8]) -> Result<UdpPacket<'a>, PistolError> {
     if udp_buff.len() > 0 {
         match UdpPacket::new(udp_buff) {
             Some(p) => return Ok(p),

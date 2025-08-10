@@ -43,7 +43,7 @@ fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Vec<u8> {
     }
 }
 
-fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolError> {
+fn get_ipv6_packet<'a>(ipv6_buff: &'a [u8]) -> Result<Ipv6Packet<'a>, PistolError> {
     // println!("{}", ipv6_buff.len());
     if ipv6_buff.len() > 0 {
         match Ipv6Packet::new(ipv6_buff) {
@@ -54,7 +54,7 @@ fn get_ipv6_packet(ipv6_buff: &[u8]) -> Result<Ipv6Packet, PistolError> {
     Err(PistolError::GetIpv6PacketFailed)
 }
 
-fn get_icmpv6_packet(icmpv6_buff: &[u8]) -> Result<Icmpv6Packet, PistolError> {
+fn get_icmpv6_packet<'a>(icmpv6_buff: &'a [u8]) -> Result<Icmpv6Packet<'a>, PistolError> {
     if icmpv6_buff.len() > 0 {
         match Icmpv6Packet::new(icmpv6_buff) {
             Some(p) => return Ok(p),
@@ -64,7 +64,7 @@ fn get_icmpv6_packet(icmpv6_buff: &[u8]) -> Result<Icmpv6Packet, PistolError> {
     Err(PistolError::GetIcmpv6PacketFailed)
 }
 
-fn get_tcp_packet(tcp_buff: &[u8]) -> Result<TcpPacket, PistolError> {
+fn get_tcp_packet<'a>(tcp_buff: &'a [u8]) -> Result<TcpPacket<'a>, PistolError> {
     if tcp_buff.len() > 0 {
         match TcpPacket::new(tcp_buff) {
             Some(p) => return Ok(p),
