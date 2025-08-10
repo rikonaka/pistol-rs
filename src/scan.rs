@@ -516,10 +516,10 @@ pub struct PortReport {
 pub struct PistolPortScans {
     // The order of this Vec is the same as the order in which the data packets are received.
     // The detection that receives the data first is in the front.
-    port_reports: Vec<PortReport>,
-    start_time: DateTime<Local>,
-    end_time: DateTime<Local>,
-    max_attempts: usize,
+    pub port_reports: Vec<PortReport>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
+    pub max_attempts: usize,
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]

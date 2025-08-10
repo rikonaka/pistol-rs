@@ -1,6 +1,6 @@
 [package]
 name = "pistol"
-version = "4.0.14"
+version = "4.0.15"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A Rust Library about Cybersecurity"
