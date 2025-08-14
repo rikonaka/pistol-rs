@@ -176,7 +176,7 @@ fn dst_in_local(dst_addr: IpAddr) -> bool {
         }
     }
     // all data for other addresses are sent to the default route
-    debug!("dst ip {} is not in local net", dst_addr);
+    debug!("dst {} is not in local net", dst_addr);
     false
 }
 
@@ -189,7 +189,7 @@ fn dst_in_host(dst_addr: IpAddr) -> bool {
             }
         }
     }
-    debug!("dst ip {} is not in host", dst_addr);
+    debug!("dst {} is not in host", dst_addr);
     false
 }
 
@@ -261,10 +261,10 @@ fn get_dst_cache(dst_addr: IpAddr) -> Result<Option<(MacAddr, NetworkInterface)>
         Ok(dst_cache) => {
             let ret = dst_cache.get(&dst_addr);
             if let Some(dc) = ret {
-                debug!("dst ip {} found in cache", dst_addr);
+                debug!("dst {} found in cache", dst_addr);
                 Ok(Some((dc.mac, dc.interface.clone())))
             } else {
-                debug!("dst ip {} not found in cache", dst_addr);
+                debug!("dst {} not found in cache", dst_addr);
                 Ok(None)
             }
         }

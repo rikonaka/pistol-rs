@@ -17,7 +17,6 @@ use tracing::debug;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
-use crate::trace::icmp_trace;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
@@ -63,6 +62,7 @@ use crate::os::rr::RequestAndResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
+use crate::trace::icmp_trace;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
@@ -1814,6 +1814,7 @@ pub fn os_probe_thread(
         src_ipv4,
         timeout,
     )?;
+    debug!("send all probes done");
 
     let good_results = true;
     // form get_scan_line function
@@ -1858,12 +1859,19 @@ pub fn os_probe_thread(
     let seqx = seq_fingerprint(&ap);
     match seqx {
         Ok(seqx) => {
+            debug!("SEQX");
             let opsx = ops_fingerprint(&ap)?;
+            debug!("OPSX");
             let winx = win_fingerprint(&ap)?;
+            debug!("WINX");
             let ecnx = ecn_fingerprint(&ap)?;
+            debug!("ECNX");
             let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap)?;
+            debug!("TX");
             let u1x = u1_fingerprint(&ap)?;
+            debug!("U1X");
             let iex = ie_fingerprint(&ap)?;
+            debug!("IEX");
 
             debug!("generate the fingerprint");
             let target_fingerprint = Fingerprint {
