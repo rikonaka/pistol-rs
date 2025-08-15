@@ -14,6 +14,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
 use tracing::debug;
+use tracing::warn;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
@@ -329,7 +330,10 @@ fn send_seq_probes(
     let mut seq_hm = HashMap::new();
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
+        if response.len() == 0 {
+            warn!("SQX-{} response is null", i);
+        }
         let rr = RequestAndResponse { request, response };
         seq_hm.insert(i, rr);
     }
@@ -424,7 +428,7 @@ fn send_ie_probes(
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
         let rr = RequestAndResponse { request, response };
         ies.insert(i, rr);
     }
@@ -464,7 +468,7 @@ fn send_ecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let (response, _) =
+        let (response, _rtt) =
             layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true)?;
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -596,7 +600,7 @@ fn send_tx_probes(
     let mut tx_hm = HashMap::new();
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
         let rr = RequestAndResponse { request, response };
         tx_hm.insert(i, rr);
     }
@@ -657,7 +661,7 @@ fn send_u1_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let (response, _) =
+        let (response, _rtt) =
             layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true)?;
 
         if response.len() > 0 {
@@ -1220,13 +1224,15 @@ pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
     let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
     let (df, t, tg, w, o, cc, q) = match r.as_str() {
         "Y" => {
-            let df = tcp_udp_df(&ap.ecn.ecn.response)?;
-            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response, &ap.u1)?;
-            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response)?;
-            let w = tcp_w(&ap.ecn.ecn.response)?;
-            let o = tcp_o(&ap.ecn.ecn.response)?;
-            let cc = tcp_cc(&ap.ecn.ecn.response)?;
-            let q = tcp_q(&ap.ecn.ecn.response)?;
+            debug!("KKKKK");
+            let df = tcp_udp_df(&ap.ecn.ecn.response, "ecn")?;
+            debug!("KKKKK");
+            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response, &ap.u1, "ecn")?;
+            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response, "ecn")?;
+            let w = tcp_w(&ap.ecn.ecn.response, "ecn")?;
+            let o = tcp_o(&ap.ecn.ecn.response, "ecn")?;
+            let cc = tcp_cc(&ap.ecn.ecn.response, "ecn")?;
+            let q = tcp_q(&ap.ecn.ecn.response, "ecn")?;
 
             (df, t, tg, w, o, cc, q)
         }
@@ -1404,20 +1410,24 @@ impl fmt::Display for TXX {
     }
 }
 
-fn _tx_fingerprint(tx: &RequestAndResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolError> {
+fn tx_fingerprint_func(
+    tx: &RequestAndResponse,
+    u1rr: &U1RR,
+    name: &str,
+) -> Result<TXX, PistolError> {
     let r = tcp_udp_icmp_r(&tx.response)?;
     let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
         "Y" => {
-            let df = tcp_udp_df(&tx.response)?;
-            let t = tcp_udp_icmp_t(&tx.response, u1rr)?;
-            let tg = tcp_udp_icmp_tg(&tx.response)?;
-            let w = tcp_w(&tx.response)?;
-            let s = tcp_s(&tx.request, &tx.response)?;
-            let a = tcp_a(&tx.request, &tx.response)?;
-            let f = tcp_f(&tx.response)?;
-            let o = tcp_o(&tx.response)?;
-            let rd = tcp_rd(&tx.response)?;
-            let q = tcp_q(&tx.response)?;
+            let df = tcp_udp_df(&tx.response, &name.to_lowercase())?;
+            let t = tcp_udp_icmp_t(&tx.response, u1rr, &name.to_lowercase())?;
+            let tg = tcp_udp_icmp_tg(&tx.response, &name.to_lowercase())?;
+            let w = tcp_w(&tx.response, &name.to_lowercase())?;
+            let s = tcp_s(&tx.request, &tx.response, &name.to_lowercase())?;
+            let a = tcp_a(&tx.request, &tx.response, &name.to_lowercase())?;
+            let f = tcp_f(&tx.response, &name.to_lowercase())?;
+            let o = tcp_o(&tx.response, &name.to_lowercase())?;
+            let rd = tcp_rd(&tx.response, &name.to_lowercase())?;
+            let q = tcp_q(&tx.response, &name.to_lowercase())?;
 
             (df, t, tg, w, s, a, f, o, rd, q)
         }
@@ -1456,13 +1466,13 @@ pub fn tx_fingerprint(
     ap: &AllPacketRR,
 ) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX), PistolError> {
     // The final line related to these probes, T1, contains various test values for packet #1.
-    let t1 = _tx_fingerprint(&ap.seq.seq1, &ap.u1, "T1")?;
-    let t2 = _tx_fingerprint(&ap.tx.t2, &ap.u1, "T2")?;
-    let t3 = _tx_fingerprint(&ap.tx.t3, &ap.u1, "T3")?;
-    let t4 = _tx_fingerprint(&ap.tx.t4, &ap.u1, "T4")?;
-    let t5 = _tx_fingerprint(&ap.tx.t5, &ap.u1, "T5")?;
-    let t6 = _tx_fingerprint(&ap.tx.t6, &ap.u1, "T6")?;
-    let t7 = _tx_fingerprint(&ap.tx.t7, &ap.u1, "T7")?;
+    let t1 = tx_fingerprint_func(&ap.seq.seq1, &ap.u1, "T1")?;
+    let t2 = tx_fingerprint_func(&ap.tx.t2, &ap.u1, "T2")?;
+    let t3 = tx_fingerprint_func(&ap.tx.t3, &ap.u1, "T3")?;
+    let t4 = tx_fingerprint_func(&ap.tx.t4, &ap.u1, "T4")?;
+    let t5 = tx_fingerprint_func(&ap.tx.t5, &ap.u1, "T5")?;
+    let t6 = tx_fingerprint_func(&ap.tx.t6, &ap.u1, "T6")?;
+    let t7 = tx_fingerprint_func(&ap.tx.t7, &ap.u1, "T7")?;
 
     Ok((t1, t2, t3, t4, t5, t6, t7))
 }
@@ -1611,16 +1621,16 @@ pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
     let r = tcp_udp_icmp_r(&ap.u1.u1.response)?;
     let (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud) = match r.as_str() {
         "Y" => {
-            let df = tcp_udp_df(&ap.u1.u1.response)?;
-            let t = tcp_udp_icmp_t(&ap.u1.u1.response, &ap.u1)?;
-            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response)?;
+            let df = tcp_udp_df(&ap.u1.u1.response, "u1")?;
+            let t = tcp_udp_icmp_t(&ap.u1.u1.response, &ap.u1, "u1")?;
+            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response, "u1")?;
             let ipl = udp_ipl(&ap.u1)?;
-            let un = udp_un(&ap.u1)?;
-            let ripl = udp_ripl(&ap.u1)?;
-            let rid = udp_rid(&ap.u1)?;
-            let ripck = udp_ripck(&ap.u1)?;
-            let ruck = udp_ruck(&ap.u1)?;
-            let rud = udp_rud(&ap.u1)?;
+            let un = udp_un(&ap.u1, "u1")?;
+            let ripl = udp_ripl(&ap.u1, "u1")?;
+            let rid = udp_rid(&ap.u1, "u1")?;
+            let ripck = udp_ripck(&ap.u1, "u1")?;
+            let ruck = udp_ruck(&ap.u1, "u1")?;
+            let rud = udp_rud(&ap.u1, "u1")?;
 
             (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud)
         }
@@ -1737,10 +1747,10 @@ pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolError> {
     let (r, dfi, t, tg, cd) = if r1 == "Y" && r2 == "Y" {
         // The R value is only true (Y) if both probes elicit responses.
         let r = String::from("Y");
-        let dfi = icmp_dfi(&ap.ie)?;
-        let t = tcp_udp_icmp_t(&ap.ie.ie1.response, &ap.u1)?;
-        let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response)?;
-        let cd = icmp_cd(&ap.ie)?;
+        let dfi = icmp_dfi(&ap.ie, "ie")?;
+        let t = tcp_udp_icmp_t(&ap.ie.ie1.response, &ap.u1, "ie")?;
+        let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response, "ie")?;
+        let cd = icmp_cd(&ap.ie, "ie")?;
 
         (r, dfi, t, tg, cd)
     } else {
@@ -1817,43 +1827,18 @@ pub fn os_probe_thread(
     debug!("send all probes done");
 
     let good_results = true;
-    // form get_scan_line function
-    let need_cal_hops = |dst_addr: IpAddr| -> bool {
-        if dst_addr.is_loopback() {
-            false
-        } else if !dst_addr.is_global_x() {
-            false
-        } else {
-            true
-        }
-    };
 
-    let scan = match need_cal_hops(dst_ipv4.into()) {
-        true => {
-            let hops = icmp_trace(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-            get_scan_line(
-                dst_mac,
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-                dst_ipv4.into(),
-                hops,
-                good_results,
-            )
-        }
-        false => {
-            let hops = 0;
-            get_scan_line(
-                dst_mac,
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-                dst_ipv4.into(),
-                hops,
-                good_results,
-            )
-        }
-    };
+    debug!("send trace packet");
+    let hops = icmp_trace(dst_ipv4.into(), src_ipv4.into(), timeout)?;
+    let scan = get_scan_line(
+        dst_mac,
+        dst_open_tcp_port,
+        dst_closed_tcp_port,
+        dst_closed_udp_port,
+        dst_ipv4.into(),
+        hops,
+        good_results,
+    );
 
     // Use seq to judge target is alive or not.
     let seqx = seq_fingerprint(&ap);
@@ -1914,5 +1899,80 @@ pub fn os_probe_thread(
             }
         }
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pnet::packet::ipv4::Ipv4Packet;
+
+    use super::*;
+    use crate::PistolLogger;
+    use crate::PistolRunner;
+    use tracing::error;
+    use tracing::info;
+    #[test]
+    fn test_send_probes() {
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            Some(String::from("debug2.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
+        let build_ipv4_packet = |buff: &[u8], debug_info: &str| {
+            if let Some(_ipv4_packet) = Ipv4Packet::new(buff) {
+                info!("{} build ipv4 success", debug_info);
+            } else {
+                error!("{} build ipv4 failed", debug_info);
+            }
+        };
+
+        // t2, t5, t7, u1
+        // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 6);
+        // let dst_open_tcp_port = 22;
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 4);
+        let dst_open_tcp_port = 3389;
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        let timeout = Some(Duration::from_secs_f64(1.0));
+
+        let dst_closed_tcp_port = 7890;
+        let dst_closed_udp_port = 8901;
+
+        debug!("send all probes now");
+
+        let seq = send_seq_probes(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout).unwrap();
+        build_ipv4_packet(&seq.seq1.response, "seq1");
+        build_ipv4_packet(&seq.seq2.response, "seq2");
+        build_ipv4_packet(&seq.seq3.response, "seq3");
+        build_ipv4_packet(&seq.seq4.response, "seq4");
+        build_ipv4_packet(&seq.seq5.response, "seq5");
+
+        let ie = send_ie_probes(dst_ipv4, src_ipv4, timeout).unwrap();
+        build_ipv4_packet(&ie.ie1.response, "ie1");
+        build_ipv4_packet(&ie.ie2.response, "ie2");
+
+        let ecn = send_ecn_probe(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout).unwrap();
+        build_ipv4_packet(&ecn.ecn.response, "ecn");
+
+        let tx = send_tx_probes(
+            dst_ipv4,
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            src_ipv4,
+            timeout,
+        )
+        .unwrap();
+        build_ipv4_packet(&tx.t2.response, "t2");
+        build_ipv4_packet(&tx.t3.response, "t3");
+        build_ipv4_packet(&tx.t4.response, "t4");
+        build_ipv4_packet(&tx.t5.response, "t5");
+        build_ipv4_packet(&tx.t6.response, "t6");
+        build_ipv4_packet(&tx.t7.response, "t7");
+
+        let u1 = send_u1_probe(dst_ipv4, dst_closed_udp_port, src_ipv4, timeout).unwrap();
+        build_ipv4_packet(&u1.u1.response, "u1");
+
+        debug!("send all probes done");
     }
 }

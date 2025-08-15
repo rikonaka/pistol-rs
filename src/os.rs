@@ -643,12 +643,15 @@ mod tests {
         .unwrap();
 
         let src_addr = None;
-        let dst_open_tcp_port = 3389;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
         // let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        // let dst_open_tcp_port = 22;
+        // let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 6));
+        // let dst_open_tcp_port = 22;
         let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
+        let dst_open_tcp_port = 3389;
         let target1 = Target::new(
             addr1,
             Some(vec![

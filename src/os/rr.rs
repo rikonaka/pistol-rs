@@ -13,8 +13,8 @@ pub struct RequestAndResponse {
 impl RequestAndResponse {
     pub fn empty() -> RequestAndResponse {
         RequestAndResponse {
-            request: vec![],
-            response: vec![],
+            request: Vec::new(),
+            response: Vec::new(),
         }
     }
 }
@@ -63,6 +63,10 @@ pub struct AllPacketRR {
     pub ecn: ECNRR,
     pub tx: TXRR,
     pub u1: U1RR,
+}
+
+impl AllPacketRR {
+    pub fn build(&mut self) {}
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

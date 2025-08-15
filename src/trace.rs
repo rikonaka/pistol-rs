@@ -75,18 +75,19 @@ pub fn syn_trace(
                         timeout,
                     )?;
                     ip_id += 1;
-                    debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
                     match hop_status {
                         HopStatus::TimeExceeded(_) => {
                             last_response_ttl = ttl;
                         }
                         HopStatus::RecvReply(_) => {
                             // tcp rst packet, means packet arrive the target machine
+                            debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
                             return Ok(ttl);
                         }
                         _ => (),
                     }
                 }
+                debug!("last ttl: {}", last_response_ttl);
                 Ok(last_response_ttl)
             } else {
                 return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
@@ -105,23 +106,25 @@ pub fn syn_trace(
                         hop_limit,
                         timeout,
                     )?;
-                    debug!(
-                        "hop_limit: {}, {:?} - {:.2}s",
-                        hop_limit,
-                        hop_status,
-                        rtt.as_secs_f64()
-                    );
+
                     match hop_status {
                         HopStatus::TimeExceeded(_) => {
                             last_response_hop_limit = hop_limit;
                         }
                         HopStatus::RecvReply(_) => {
+                            debug!(
+                                "hop_limit: {}, {:?} - {:.2}s",
+                                hop_limit,
+                                hop_status,
+                                rtt.as_secs_f64()
+                            );
                             // tcp rst packet, means packet arrive the target machine
                             return Ok(hop_limit);
                         }
                         _ => (),
                     }
                 }
+                debug!("last hop limit: {}", last_response_hop_limit);
                 Ok(last_response_hop_limit)
             } else {
                 return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
@@ -152,14 +155,17 @@ pub fn icmp_trace(
                         dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16, timeout,
                     )?;
                     ip_id += 1;
-                    debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
                     match hop_status {
                         HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
                         // recv echo reply, means packet arrive the target machine
-                        HopStatus::RecvReply(_) => return Ok(ttl),
+                        HopStatus::RecvReply(_) => {
+                            debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
+                            return Ok(ttl);
+                        }
                         _ => (),
                     }
                 }
+                debug!("last ttl: {}", last_response_ttl);
                 Ok(last_response_ttl)
             } else {
                 return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
@@ -177,19 +183,23 @@ pub fn icmp_trace(
                         hop_limit as u16,
                         timeout,
                     )?;
-                    debug!(
-                        "hop_limit: {}, {:?} - {:.2}s",
-                        hop_limit,
-                        hop_status,
-                        rtt.as_secs_f64()
-                    );
+
                     match hop_status {
                         HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
                         // recv echo reply, means packet arrive the target machine
-                        HopStatus::RecvReply(_) => return Ok(hop_limit),
+                        HopStatus::RecvReply(_) => {
+                            debug!(
+                                "hop_limit: {}, {:?} - {:.2}s",
+                                hop_limit,
+                                hop_status,
+                                rtt.as_secs_f64()
+                            );
+                            return Ok(hop_limit);
+                        }
                         _ => (),
                     }
                 }
+                debug!("last hop limit: {}", last_response_hop_limit);
                 Ok(last_response_hop_limit)
             } else {
                 return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
@@ -227,14 +237,17 @@ pub fn udp_trace(
                         timeout,
                     )?;
                     ip_id += 1;
-                    debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
                     match hop_status {
                         HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
                         // icmpunreachable, means packet arrive the target machine
-                        HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => return Ok(ttl),
+                        HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
+                            debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
+                            return Ok(ttl);
+                        }
                         _ => (),
                     }
                 }
+                debug!("last ttl: {}", last_response_ttl);
                 Ok(last_response_ttl)
             } else {
                 return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
@@ -254,21 +267,23 @@ pub fn udp_trace(
                         hop_limit,
                         timeout,
                     )?;
-                    debug!(
-                        "hop_limit: {}, {:?} - {:.2}s",
-                        hop_limit,
-                        hop_status,
-                        rtt.as_secs_f64()
-                    );
+
                     match hop_status {
                         HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
                         // icmpunreachable, means packet arrive the target machine
                         HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
+                            debug!(
+                                "hop limit: {}, {:?} - {:.2}s",
+                                hop_limit,
+                                hop_status,
+                                rtt.as_secs_f64()
+                            );
                             return Ok(hop_limit);
                         }
                         _ => (),
                     }
                 }
+                debug!("last hop limit: {}", last_response_hop_limit);
                 Ok(last_response_hop_limit)
             } else {
                 return Err(PistolError::AddressProtocolError { dst_addr, src_addr });

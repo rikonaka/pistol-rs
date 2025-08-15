@@ -6,18 +6,18 @@ pub enum PistolError {
     /* OS DETECT ERROR */
     #[error("calculation of diff vec failed, the input vec length is not enough")]
     CalcDiffFailed,
-    #[error("get ipv4 packet failed")]
-    GetIpv4PacketFailed,
-    #[error("get ipv6 packet failed")]
-    GetIpv6PacketFailed,
-    #[error("get icmp packet failed")]
-    GetIcmpPacketFailed,
-    #[error("get icmpv6 packet failed")]
-    GetIcmpv6PacketFailed,
-    #[error("get tcp packet failed")]
-    GetTcpPacketFailed,
-    #[error("get udp packet failed")]
-    GetUdpPacketFailed,
+    #[error("build {probe_name} ipv4 packet failed")]
+    BuildIpv4PacketFailed { probe_name: String },
+    #[error("build {probe_name} ipv6 packet failed")]
+    BuildIpv6PacketFailed { probe_name: String },
+    #[error("build {probe_name} icmp packet failed")]
+    BuildIcmpPacketFailed { probe_name: String },
+    #[error("build {probe_name} icmpv6 packet failed")]
+    BuildIcmpv6PacketFailed { probe_name: String },
+    #[error("build {probe_name} tcp packet failed")]
+    BuildTcpPacketFailed { probe_name: String },
+    #[error("build udp packet failed")]
+    BuildUdpPacketFailed { probe_name: String },
     #[error("calculation of isr failed")]
     CalcISRFailed,
     #[error("calculation of ss failed")]
