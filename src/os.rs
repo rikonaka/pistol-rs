@@ -635,6 +635,37 @@ mod tests {
     use std::str::FromStr;
     #[test]
     fn test_os_detect() {
+        /* The target is Windows Server 2025
+        -- pistol
+        SCAN(V=PISTOL%D=8/18%OT=3389%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A2EE36%P=RUST)
+        SEQ(SP=115%GCD=1%ISR=111%TI=I%TS=A)
+        OPS(O1=M5B4NW0ST11%O2=M5B4NW0ST11%O3=M5B4NW0NNT11%O4=M5B4NW0ST11%O5=M5B4NW0ST11%O6=M5B4ST11)
+        WIN(W1=FA00%W2=FA00%W3=FA00%W4=FA00%W5=FA00%W6=FA00)
+        ECN(R=Y%DF=Y%T=81%W=FA00%O=M5B4NW0NNS%CC=Y%Q=)
+        T1(R=Y%DF=Y%T=81%S=O%A=S+%F=AS%RD=0%Q=)
+        T2(R=N)
+        T3(R=N)
+        T4(R=N)
+        T5(R=N)
+        T6(R=N)
+        T7(R=N)
+        U1(R=N%UN=0)
+        IE(R=N)
+
+        -- nmap
+        SCAN(V=7.95%E=4%D=8/18%OT=3389%CT=%CU=%PV=Y%DS=1%DC=D%G=N%M=000C29%TM=68A2EE8D%P=x86_64-pc-linux-gnu)
+        SEQ(SP=106%GCD=1%ISR=108%TI=I%TS=A)
+        OPS(O1=M5B4NW0ST11%O2=M5B4NW0ST11%O3=M5B4NW0NNT11%O4=M5B4NW0ST11%O5=M5B4NW0ST11%O6=M5B4ST11)
+        WIN(W1=FA00%W2=FA00%W3=FA00%W4=FA00%W5=FA00%W6=FA00)
+        ECN(R=Y%DF=Y%TG=80%W=FA00%O=M5B4NW0NNS%CC=Y%Q=)
+        T1(R=Y%DF=Y%TG=80%S=O%A=S+%F=AS%RD=0%Q=)
+        T2(R=N)
+        T3(R=N)
+        T4(R=N)
+        U1(R=N)
+        IE(R=N)
+        */
+
         let _pr = PistolRunner::init(
             PistolLogger::Debug,
             Some(String::from("os_detect.pcapng")),
@@ -650,7 +681,7 @@ mod tests {
         // let dst_open_tcp_port = 22;
         // let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 6));
         // let dst_open_tcp_port = 22;
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 128));
         let dst_open_tcp_port = 3389;
         let target1 = Target::new(
             addr1,

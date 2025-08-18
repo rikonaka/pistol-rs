@@ -11,7 +11,7 @@ use crate::os::osscan::SEQX;
 use crate::os::osscan::TXX;
 use crate::os::osscan::U1X;
 use crate::os::osscan::WINX;
-use crate::utils::SpHex;
+use crate::utils::PistolHex;
 
 fn bool_score(bool_vec: Vec<bool>) -> usize {
     let mut score = 0;
@@ -125,7 +125,7 @@ impl NmapData {
                             let start: usize = match start.parse() {
                                 Ok(s) => s,
                                 Err(_) => {
-                                    let he = SpHex::new_hex(start);
+                                    let he = PistolHex::new_hex(start);
                                     let e_u32 = he.decode()?;
                                     e_u32 as usize
                                 }
@@ -133,7 +133,7 @@ impl NmapData {
                             let end: usize = match end.parse() {
                                 Ok(e) => e,
                                 Err(_) => {
-                                    let he = SpHex::new_hex(end);
+                                    let he = PistolHex::new_hex(end);
                                     let e_u32 = he.decode()?;
                                     e_u32 as usize
                                 }
@@ -150,7 +150,7 @@ impl NmapData {
                             let start: usize = match start.parse() {
                                 Ok(s) => s,
                                 Err(_) => {
-                                    let he = SpHex::new_hex(start);
+                                    let he = PistolHex::new_hex(start);
                                     let e_u32 = he.decode()?;
                                     e_u32 as usize
                                 }
@@ -167,7 +167,7 @@ impl NmapData {
                             let end: usize = match end.parse() {
                                 Ok(e) => e,
                                 Err(_) => {
-                                    let he = SpHex::new_hex(end);
+                                    let he = PistolHex::new_hex(end);
                                     let e_u32 = he.decode()?;
                                     e_u32 as usize
                                 }
@@ -178,7 +178,7 @@ impl NmapData {
                         None => (),
                     }
                 } else {
-                    let he = SpHex::new_hex(it);
+                    let he = PistolHex::new_hex(it);
                     let e_u32 = he.decode()?;
                     let single = NmapSingleValue::new(e_u32 as usize);
                     single_values.push(single);

@@ -15,7 +15,7 @@ use crate::os::rr::IERR;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
-use crate::utils::SpHex;
+use crate::utils::PistolHex;
 
 const CWR_MASK: u8 = 0b10000000;
 const ECE_MASK: u8 = 0b01000000;
@@ -599,7 +599,7 @@ fn get_tsval(ipv4_response: &[u8], probe_name: &str) -> Result<u32, PistolError>
         }
     }
     if tsval_vec.len() != 0 {
-        let tsval = SpHex::vec_4u8_to_u32(&tsval_vec);
+        let tsval = PistolHex::convert_4u8_to_u32(&tsval_vec)?;
         Ok(tsval)
     } else {
         Err(PistolError::TsValIsNull)
@@ -688,7 +688,7 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
     for option in options_vec {
         match option.number {
             TcpOptionNumbers::MSS => {
-                let data = SpHex::vec_4u8_to_u32(&option.data);
+                let data = PistolHex::convert_4u8_to_u32(&option.data)?;
                 let o_str = format!("M{:X}", data);
                 o_ret += &o_str;
             }
@@ -702,7 +702,7 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                 o_ret += "N";
             }
             TcpOptionNumbers::WSCALE => {
-                let data = SpHex::vec_4u8_to_u32(&option.data);
+                let data = PistolHex::convert_4u8_to_u32(&option.data)?;
                 let o_str = format!("W{:X}", data);
                 o_ret += &o_str;
             }
@@ -718,8 +718,8 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                         t1.push(option.data[i]);
                     }
                 }
-                let t0_u32 = SpHex::vec_4u8_to_u32(&t0);
-                let t1_u32 = SpHex::vec_4u8_to_u32(&t1);
+                let t0_u32 = PistolHex::convert_4u8_to_u32(&t0)?;
+                let t1_u32 = PistolHex::convert_4u8_to_u32(&t1)?;
                 if t0_u32 == 0 {
                     o_ret += "0";
                 } else {
@@ -996,10 +996,14 @@ pub fn udp_ipl(u1: &U1RR) -> Result<usize, PistolError> {
 pub fn udp_un(u1: &U1RR, probe_name: &str) -> Result<u32, PistolError> {
     let response = &u1.u1.response;
     let ipv4_packet = build_ipv4_packet(response, probe_name)?;
-    let icmp_packet = build_icmp_packet(ipv4_packet.payload(), probe_name)?;
-    let rest_of_header = icmp_packet.payload()[0..4].to_vec();
-    let un = SpHex::vec_4u8_to_u32(&rest_of_header);
-    Ok(un)
+    let icmp_packet = ipv4_packet.payload().to_vec();
+    if icmp_packet.len() > 4 {
+        let rest_of_header = icmp_packet[4..icmp_packet.len() - 1].to_vec();
+        let un = PistolHex::convert_4u8_to_u32(&rest_of_header)?;
+        Ok(un)
+    } else {
+        Err(PistolError::CalcUNFailed)
+    }
 }
 
 /// Returned probe IP total length value (RIPL)

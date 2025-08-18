@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::error::PistolError;
 use crate::os::rr::AllPacketRR6;
-use crate::utils::SpHex;
+use crate::utils::PistolHex;
 
 const CWR_MASK: u8 = 0b10000000;
 const ECE_MASK: u8 = 0b01000000;
@@ -310,7 +310,7 @@ fn tcp_option_mss(ipv6_buff: &[u8], probe_name: &str) -> Result<f64, PistolError
             for option in options {
                 match option.number {
                     TcpOptionNumbers::MSS => {
-                        let mss = SpHex::vec_4u8_to_u32(&option.data);
+                        let mss = PistolHex::convert_4u8_to_u32(&option.data)?;
                         return Ok(mss as f64);
                     }
                     _ => (),

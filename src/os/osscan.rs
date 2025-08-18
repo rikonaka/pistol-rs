@@ -1224,9 +1224,7 @@ pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
     let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
     let (df, t, tg, w, o, cc, q) = match r.as_str() {
         "Y" => {
-            debug!("KKKKK");
             let df = tcp_udp_df(&ap.ecn.ecn.response, "ecn")?;
-            debug!("KKKKK");
             let t = tcp_udp_icmp_t(&ap.ecn.ecn.response, &ap.u1, "ecn")?;
             let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response, "ecn")?;
             let w = tcp_w(&ap.ecn.ecn.response, "ecn")?;

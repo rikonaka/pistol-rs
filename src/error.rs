@@ -22,6 +22,8 @@ pub enum PistolError {
     CalcISRFailed,
     #[error("calculation of ss failed")]
     CalcSSFailed,
+    #[error("icmp length is not enough")]
+    CalcUNFailed,
     #[error("not enough port value for os detect")]
     OSDetectPortsNotEnough,
     #[error("os detect results is null")]
@@ -111,4 +113,6 @@ pub enum PistolError {
     TryLockGlobalVarFailed { var_name: String, e: String },
     #[error("tracing error")]
     SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
+    #[error("convert {v} value to u32 failed")]
+    ConvertU32Failed { v: String },
 }

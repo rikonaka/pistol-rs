@@ -639,6 +639,12 @@ Therefore, until `libpnet` fixes this bug, IPv6 on Windows is not supported yet.
 
 Bug issue: https://github.com/libpnet/libpnet/issues/686
 
+## Bugs About Nmap
+
+Since I sent emails to the nmap mailing list several times but never received a response, I will not repeat that step and instead post the Nmap bugs I found here.
+
+### Bug 1 (nmap version 7.95)
+
 ## Some Unsolvable Problems
 
 **Probe the loopback address and local machine**
