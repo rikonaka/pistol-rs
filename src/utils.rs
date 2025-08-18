@@ -121,24 +121,21 @@ impl PistolHex {
             hex_str.to_string()
         }
     }
-    pub fn convert_4u8_to_u32(input: &[u8]) -> Result<u32, PistolError> {
-        if input.len() == 4 {
-            let input: Vec<u32> = input.into_iter().map(|&x| x as u32).collect();
-            let a = input[0] << 24;
-            let b = input[1] << 16;
-            let c = input[2] << 8;
-            let d = input[3];
-            let ret = a + b + c + d;
-            Ok(ret)
-        } else {
-            let v = format!("{:?}", input);
-            Err(PistolError::ConvertU32Failed { v })
+    pub fn convert_4u8_to_u32(input: &[u8]) -> u32 {
+        let mut ret = 0;
+        let mut i = input.len();
+        for v in input {
+            let mut new_v = *v as u32;
+            i -= 1;
+            new_v <<= i * 8;
+            ret += new_v;
         }
+        ret
     }
     pub fn decode(&self) -> Result<u32, PistolError> {
         match &self.hex {
             Some(hex_str) => match hex::decode(hex_str) {
-                Ok(d) => Self::convert_4u8_to_u32(&d),
+                Ok(d) => Ok(Self::convert_4u8_to_u32(&d)),
                 Err(e) => Err(e.into()),
             },
             None => panic!("set value before decode!"),
@@ -153,8 +150,8 @@ mod tests {
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1, 1, 1];
-        let r = PistolHex::convert_4u8_to_u32(&v).unwrap();
-        assert_eq!(r, 4369);
+        let r = PistolHex::convert_4u8_to_u32(&v);
+        assert_eq!(r, 16843009);
 
         let s = "51E80C";
         let h = PistolHex::new_hex(s);

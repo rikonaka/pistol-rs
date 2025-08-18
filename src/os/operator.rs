@@ -583,27 +583,20 @@ fn get_tsval(ipv4_response: &[u8], probe_name: &str) -> Result<u32, PistolError>
     let ipv4_packet = build_ipv4_packet(ipv4_response, probe_name)?;
     let tcp_packet = build_tcp_packet(ipv4_packet.payload(), probe_name)?;
     let options_vec = tcp_packet.get_options();
-    let mut tsval_vec: Vec<u8> = Vec::new();
     for option in options_vec {
         match option.number {
             TcpOptionNumbers::TIMESTAMPS => {
-                // println!("{:?}", option.data);
-                for i in 0..option.data.len() {
-                    if i < 4 {
-                        // get first 4 u8 values
-                        tsval_vec.push(option.data[i]);
-                    }
+                // get first 4 u8 values
+                if option.data.len() >= 4 {
+                    let tsval_vec = option.data[0..4].to_vec();
+                    let tsval = PistolHex::convert_4u8_to_u32(&tsval_vec);
+                    return Ok(tsval);
                 }
             }
             _ => (),
         }
     }
-    if tsval_vec.len() != 0 {
-        let tsval = PistolHex::convert_4u8_to_u32(&tsval_vec)?;
-        Ok(tsval)
-    } else {
-        Err(PistolError::TsValIsNull)
-    }
+    Err(PistolError::TsValIsNull)
 }
 
 /// TCP timestamp option algorithm (TS)
@@ -688,7 +681,7 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
     for option in options_vec {
         match option.number {
             TcpOptionNumbers::MSS => {
-                let data = PistolHex::convert_4u8_to_u32(&option.data)?;
+                let data = PistolHex::convert_4u8_to_u32(&option.data);
                 let o_str = format!("M{:X}", data);
                 o_ret += &o_str;
             }
@@ -702,7 +695,7 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                 o_ret += "N";
             }
             TcpOptionNumbers::WSCALE => {
-                let data = PistolHex::convert_4u8_to_u32(&option.data)?;
+                let data = PistolHex::convert_4u8_to_u32(&option.data);
                 let o_str = format!("W{:X}", data);
                 o_ret += &o_str;
             }
@@ -718,8 +711,8 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                         t1.push(option.data[i]);
                     }
                 }
-                let t0_u32 = PistolHex::convert_4u8_to_u32(&t0)?;
-                let t1_u32 = PistolHex::convert_4u8_to_u32(&t1)?;
+                let t0_u32 = PistolHex::convert_4u8_to_u32(&t0);
+                let t1_u32 = PistolHex::convert_4u8_to_u32(&t1);
                 if t0_u32 == 0 {
                     o_ret += "0";
                 } else {
@@ -999,7 +992,7 @@ pub fn udp_un(u1: &U1RR, probe_name: &str) -> Result<u32, PistolError> {
     let icmp_packet = ipv4_packet.payload().to_vec();
     if icmp_packet.len() > 4 {
         let rest_of_header = icmp_packet[4..icmp_packet.len() - 1].to_vec();
-        let un = PistolHex::convert_4u8_to_u32(&rest_of_header)?;
+        let un = PistolHex::convert_4u8_to_u32(&rest_of_header);
         Ok(un)
     } else {
         Err(PistolError::CalcUNFailed)
