@@ -991,7 +991,7 @@ fn send_tx_probes(
     };
     let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
         name: String::from("os scan 6 tx tcp_udp 7"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
@@ -1563,7 +1563,7 @@ mod tests {
         };
         let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
             name: String::from("test tcp_udp 7"),
-            layer3: Some(layer3.clone()),
+            layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[5]),
         };

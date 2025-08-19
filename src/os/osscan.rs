@@ -186,8 +186,8 @@ pub fn get_scan_line(
     hops: u8,
     good_results: bool,
 ) -> String {
-    // Nmap version number (V).
-    let v = "PISTOL";
+    // Nmap version number (V), we will our own version number like pistol_4.0.16 here.
+    let v = format!("pistol_{}", env!("CARGO_PKG_VERSION"));
     // Date of scan (D) in the form month/day.
     let now: DateTime<Local> = Local::now();
     let date = format!("{}", now.format("%-m/%-d"));

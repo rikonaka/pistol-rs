@@ -129,7 +129,7 @@ pub fn send_syn_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp syn scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -273,7 +273,7 @@ pub fn send_fin_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp fin scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -418,7 +418,7 @@ pub fn send_ack_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp ack scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -559,7 +559,7 @@ pub fn send_null_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp null scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -701,7 +701,7 @@ pub fn send_xmas_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp xmas scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -842,7 +842,7 @@ pub fn send_window_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp window scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -988,7 +988,7 @@ pub fn send_maimon_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp maimon scan icmp"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
@@ -1245,7 +1245,7 @@ pub fn send_idle_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4MatchIcmp {
         name: String::from("tcp zombie scan icmp 2"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),

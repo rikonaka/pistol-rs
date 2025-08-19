@@ -648,6 +648,22 @@ mod tests {
         T4(R=N)
         U1(R=N)
         IE(R=N)
+
+        -- pistol
+        SCAN(V=PISTOL%D=8/19%OT=3389%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A41EB0%P=RUST)
+        SEQ(SP=114%GCD=2%ISR=113%TI=I%TS=A)
+        OPS(O1=M5B4NW0ST11%O2=M5B4NW0ST11%O3=M5B4NW0NNT11%O4=M5B4NW0ST11%O5=M5B4NW0ST11%O6=M5B4ST11)
+        WIN(W1=FA00%W2=FA00%W3=FA00%W4=FA00%W5=FA00%W6=FA00)
+        ECN(R=Y%DF=Y%TG=80%W=FA00%O=M5B4NW0NNS%CC=Y%Q=)
+        T1(R=Y%DF=Y%TG=80%S=O%A=S+%F=AS%RD=0%Q=)
+        T2(R=N)
+        T3(R=N)
+        T4(R=N)
+        T5(R=N)
+        T6(R=N)
+        T7(R=N)
+        U1(R=N%UN=0)
+        IE(R=N)
         */
 
         let _pr = PistolRunner::init(

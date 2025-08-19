@@ -115,7 +115,7 @@ pub fn send_syn_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 syn scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
@@ -255,7 +255,7 @@ pub fn send_fin_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 fin scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
@@ -395,7 +395,7 @@ pub fn send_ack_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 ack scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
@@ -532,7 +532,7 @@ pub fn send_null_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 null scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
@@ -669,7 +669,7 @@ pub fn send_xmas_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 xmas scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
@@ -806,7 +806,7 @@ pub fn send_window_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 windows scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
@@ -948,7 +948,7 @@ pub fn send_maimon_scan_packet(
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
         name: String::from("tcp6 maimon scan icmpv6"),
-        layer3: Some(layer3.clone()),
+        layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
