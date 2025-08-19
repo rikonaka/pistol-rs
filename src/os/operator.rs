@@ -589,7 +589,7 @@ fn get_tsval(ipv4_response: &[u8], probe_name: &str) -> Result<u32, PistolError>
                 // get first 4 u8 values
                 if option.data.len() >= 4 {
                     let tsval_vec = option.data[0..4].to_vec();
-                    let tsval = PistolHex::convert_4u8_to_u32(&tsval_vec);
+                    let tsval = PistolHex::be_vec_to_u32(&tsval_vec)?;
                     return Ok(tsval);
                 }
             }
@@ -681,7 +681,7 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
     for option in options_vec {
         match option.number {
             TcpOptionNumbers::MSS => {
-                let data = PistolHex::convert_4u8_to_u32(&option.data);
+                let data = PistolHex::be_vec_to_u32(&option.data)?;
                 let o_str = format!("M{:X}", data);
                 o_ret += &o_str;
             }
@@ -695,7 +695,7 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                 o_ret += "N";
             }
             TcpOptionNumbers::WSCALE => {
-                let data = PistolHex::convert_4u8_to_u32(&option.data);
+                let data = PistolHex::be_vec_to_u32(&option.data)?;
                 let o_str = format!("W{:X}", data);
                 o_ret += &o_str;
             }
@@ -711,8 +711,8 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                         t1.push(option.data[i]);
                     }
                 }
-                let t0_u32 = PistolHex::convert_4u8_to_u32(&t0);
-                let t1_u32 = PistolHex::convert_4u8_to_u32(&t1);
+                let t0_u32 = PistolHex::be_vec_to_u32(&t0)?;
+                let t1_u32 = PistolHex::be_vec_to_u32(&t1)?;
                 if t0_u32 == 0 {
                     o_ret += "0";
                 } else {
@@ -783,20 +783,7 @@ pub fn tcp_udp_df(ipv4_response: &[u8], probe_name: &str) -> Result<String, Pist
     Ok(ret)
 }
 
-/// IP initial time-to-live (T)
-pub fn tcp_udp_icmp_t(
-    ipv4_response: &[u8],
-    u1rr: &U1RR,
-    probe_name: &str,
-) -> Result<u16, PistolError> {
-    let hops = udp_hops(u1rr, probe_name)?;
-    let ipv4_packet = build_ipv4_packet(ipv4_response, probe_name)?;
-    let ipv4_ttl = ipv4_packet.get_ttl();
-    // Avoid overflow in integer addition.
-    Ok(hops as u16 + ipv4_ttl as u16)
-}
-
-fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Result<u8, PistolError> {
+fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Result<Option<u8>, PistolError> {
     let request = build_ipv4_packet(&u1rr.u1.request, probe_name)?; // must have request
     match build_ipv4_packet(&u1rr.u1.response, probe_name) {
         Ok(ipv4_packet) => {
@@ -807,31 +794,57 @@ fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Result<u8, PistolError> {
             let ttl_2 = r_ipv4_packet.get_ttl();
             let hops = ttl_1 - ttl_2;
             // It is not uncommon for Nmap to receive no response to the U1 probe.
-            Ok(hops)
+            Ok(Some(hops))
         }
         Err(e) => {
             // It is common for Nmap to receive no response when target is Windows.
             warn!("udp hops calc failed: {}", e);
-            Ok(1)
+            Ok(None)
         }
     }
 }
 
+/// IP initial time-to-live (T)
+pub fn tcp_udp_icmp_t(
+    ipv4_response: &[u8],
+    u1rr: &U1RR,
+    probe_name: &str,
+) -> Result<Option<u16>, PistolError> {
+    let hops = udp_hops(u1rr, probe_name)?;
+    match hops {
+        Some(hops) => {
+            let ipv4_packet = build_ipv4_packet(ipv4_response, probe_name)?;
+            let ipv4_ttl = ipv4_packet.get_ttl();
+            // avoid overflow in integer addition
+            Ok(Some(hops as u16 + ipv4_ttl as u16))
+        }
+        None => Ok(None), // no udp return, ignore t and use tg instead
+    }
+}
+
 /// IP initial time-to-live guess (TG)
-pub fn tcp_udp_icmp_tg(ipv4_response: &[u8], probe_name: &str) -> Result<u8, PistolError> {
-    let response = build_ipv4_packet(ipv4_response, probe_name)?;
-    let response_ttl = response.get_ttl();
-    let ret = if response_ttl <= 32 {
-        32
-    } else if response_ttl <= 64 {
-        64
-    } else if response_ttl <= 128 {
-        128
+pub fn tcp_udp_icmp_tg(ipv4_response: &[u8], probe_name: &str) -> Result<u16, PistolError> {
+    let ipv4_packet = build_ipv4_packet(ipv4_response, probe_name)?;
+    let ipv4_ttl = ipv4_packet.get_ttl() as u16;
+    let regual_ttl_vec = vec![32, 64, 128, 255];
+    let mut guess_value = 0;
+    for r in regual_ttl_vec {
+        if ipv4_ttl > r {
+            if ipv4_ttl - r <= 5 {
+                guess_value = r;
+            }
+        } else {
+            if r - ipv4_ttl <= 5 {
+                guess_value = r;
+            }
+        }
+    }
+    if guess_value != 0 {
+        Ok(guess_value)
     } else {
-        // if response <= 255
-        255
-    };
-    Ok(ret)
+        // take the observed value
+        Ok(ipv4_ttl)
+    }
 }
 
 /// Explicit congestion notification (CC)
@@ -990,9 +1003,9 @@ pub fn udp_un(u1: &U1RR, probe_name: &str) -> Result<u32, PistolError> {
     let response = &u1.u1.response;
     let ipv4_packet = build_ipv4_packet(response, probe_name)?;
     let icmp_packet = ipv4_packet.payload().to_vec();
-    if icmp_packet.len() > 4 {
-        let rest_of_header = icmp_packet[4..icmp_packet.len() - 1].to_vec();
-        let un = PistolHex::convert_4u8_to_u32(&rest_of_header);
+    if icmp_packet.len() >= 8 {
+        let rest_of_header = icmp_packet[4..8].to_vec();
+        let un = PistolHex::be_vec_to_u32(&rest_of_header)?;
         Ok(un)
     } else {
         Err(PistolError::CalcUNFailed)

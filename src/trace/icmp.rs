@@ -16,7 +16,6 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::trace::HopStatus;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Match;
@@ -26,6 +25,7 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmp;
 use crate::layer::PayloadMatchIp;
 use crate::layer::layer3_ipv4_send;
+use crate::trace::HopStatus;
 
 pub fn send_icmp_trace_packet(
     dst_ipv4: Ipv4Addr,
@@ -88,10 +88,10 @@ pub fn send_icmp_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Match {
+        name: String::from("icmp trace time exceeded layer3"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let payload_ip = PayloadMatchIp {
         src_addr: Some(src_ipv4.into()),
@@ -104,6 +104,7 @@ pub fn send_icmp_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmp(payload_icmp);
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("icmp trace time exceeded icmp"),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
@@ -113,12 +114,13 @@ pub fn send_icmp_trace_packet(
 
     // icmp reply
     let layer3 = Layer3Match {
+        name: String::from("icmp trace reply layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("icmp trace reply icmp"),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::EchoReply),
         icmp_code: None,

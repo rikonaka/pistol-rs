@@ -310,7 +310,7 @@ fn tcp_option_mss(ipv6_buff: &[u8], probe_name: &str) -> Result<f64, PistolError
             for option in options {
                 match option.number {
                     TcpOptionNumbers::MSS => {
-                        let mss = PistolHex::convert_4u8_to_u32(&option.data);
+                        let mss = PistolHex::be_vec_to_u32(&option.data)?;
                         return Ok(mss as f64);
                     }
                     _ => (),

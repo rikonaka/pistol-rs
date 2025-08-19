@@ -634,24 +634,8 @@ mod tests {
     use std::net::Ipv6Addr;
     use std::str::FromStr;
     #[test]
-    fn test_os_detect() {
-        /* The target is Windows Server 2025
-        -- pistol
-        SCAN(V=PISTOL%D=8/18%OT=3389%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A2EE36%P=RUST)
-        SEQ(SP=115%GCD=1%ISR=111%TI=I%TS=A)
-        OPS(O1=M5B4NW0ST11%O2=M5B4NW0ST11%O3=M5B4NW0NNT11%O4=M5B4NW0ST11%O5=M5B4NW0ST11%O6=M5B4ST11)
-        WIN(W1=FA00%W2=FA00%W3=FA00%W4=FA00%W5=FA00%W6=FA00)
-        ECN(R=Y%DF=Y%T=81%W=FA00%O=M5B4NW0NNS%CC=Y%Q=)
-        T1(R=Y%DF=Y%T=81%S=O%A=S+%F=AS%RD=0%Q=)
-        T2(R=N)
-        T3(R=N)
-        T4(R=N)
-        T5(R=N)
-        T6(R=N)
-        T7(R=N)
-        U1(R=N%UN=0)
-        IE(R=N)
-
+    fn test_os_detect_windows_server_2025() {
+        /*
         -- nmap
         SCAN(V=7.95%E=4%D=8/18%OT=3389%CT=%CU=%PV=Y%DS=1%DC=D%G=N%M=000C29%TM=68A2EE8D%P=x86_64-pc-linux-gnu)
         SEQ(SP=106%GCD=1%ISR=108%TI=I%TS=A)
@@ -692,7 +676,80 @@ mod tests {
             ]),
         );
 
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Some(Duration::from_secs_f64(1.0));
+        let top_k = 3;
+        let num_threads = Some(8);
+        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
+        println!("{}", ret);
+
+        let detects = ret.value();
+        for od in detects {
+            match od {
+                OsDetect::V4(r) => {
+                    println!("{}", r.fingerprint);
+                }
+                _ => (),
+            }
+        }
+    }
+
+    #[test]
+    fn test_os_detect_centos_7() {
+        /*
+        -- nmap
+        SCAN(V=7.95%E=4%D=8/19%OT=22%CT=%CU=%PV=Y%DS=1%DC=D%G=N%M=000C29%TM=68A3D962%P=x86_64-pc-linux-gnu)
+        SEQ(SP=105%GCD=1%ISR=10B%TI=Z%TS=A)
+        SEQ(SP=FF%GCD=1%ISR=10C%TI=Z%II=I%TS=A)
+        OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
+        WIN(W1=7120%W2=7120%W3=7120%W4=7120%W5=7120%W6=7120)
+        ECN(R=Y%DF=Y%TG=40%W=7210%O=M5B4NNSNW7%CC=Y%Q=)
+        T1(R=Y%DF=Y%TG=40%S=O%A=S+%F=AS%RD=0%Q=)
+        T2(R=N)
+        T3(R=N)
+        T4(R=Y%DF=Y%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+        U1(R=N)
+        IE(R=Y%DFI=N%TG=40%CD=S)
+
+        -- pistol
+        SCAN(V=PISTOL%D=8/19%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A3F024%P=RUST)
+        SEQ(SP=114%GCD=1%ISR=112%TI=Z%TS=A)
+        OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
+        WIN(W1=7120%W2=7120%W3=7120%W4=7120%W5=7120%W6=7120)
+        ECN(R=Y%DF=Y%T=40%W=7210%O=M5B4NNSNW7%CC=Y%Q=)
+        T1(R=Y%DF=Y%T=40%S=O%A=S+%F=AS%RD=0%Q=)
+        T2(R=N)
+        T3(R=N)
+        T4(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+        T5(R=N)
+        T6(R=N)
+        T7(R=N)
+        U1(R=Y%DF=N%T=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
+        IE(R=Y%DFI=N%T=40%CD=S)
+        */
+
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            Some(String::from("os_detect.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
+        let src_addr = None;
+        let dst_closed_tcp_port = 8765;
+        let dst_closed_udp_port = 9876;
+
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
+        let dst_open_tcp_port = 22;
+        let target1 = Target::new(
+            addr1,
+            Some(vec![
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+
+        let timeout = Some(Duration::from_secs_f64(1.0));
         let top_k = 3;
         let num_threads = Some(8);
         let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();

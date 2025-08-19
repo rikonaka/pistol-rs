@@ -72,13 +72,14 @@ pub fn send_udp_scan_packet(
     udp_header.set_checksum(checksum);
 
     let layer3 = Layer3Match {
+        name: String::from("udp6 scan layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("udp6 scan tcp_udp"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -94,6 +95,7 @@ pub fn send_udp_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        name: String::from("udp6 scan icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,

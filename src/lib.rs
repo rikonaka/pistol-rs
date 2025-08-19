@@ -22,6 +22,7 @@ use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
 use tracing::Level;
+use tracing::debug;
 use tracing::error;
 use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
@@ -137,6 +138,7 @@ impl PistolRunner {
                                 // if any matchs just return
                                 for lm in pc.layer_matchs {
                                     if lm.do_match(ethernet_packet) {
+                                        debug!("{} has returned", lm.name());
                                         // send the matched result to user thread
                                         match pc.channel.send(ethernet_packet.to_vec()) {
                                             Ok(_) => (),

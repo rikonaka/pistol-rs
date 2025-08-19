@@ -119,18 +119,19 @@ pub fn send_ndp_ns_scan_packet(
     icmpv6_header.set_checksum(checksum);
 
     let layer3 = Layer3Match {
+        name: String::from("ndp_ns scan layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        name: String::from("ndp_ns scan icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6.clone());
 
     let ethernet_type = EtherTypes::Ipv6;
     let (ret, rtt) = layer2_work(

@@ -102,13 +102,14 @@ pub fn send_icmp_echo_packet(
     ];
 
     let layer3 = Layer3Match {
+        name: String::from("ping echo layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     // match all icmp reply
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("ping echo icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -206,13 +207,14 @@ pub fn send_icmp_timestamp_packet(
     icmp_header.set_checksum(checksum);
 
     let layer3 = Layer3Match {
+        name: String::from("ping timestamp layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     // match all icmp reply
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("ping timestamp icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -316,13 +318,14 @@ pub fn send_icmp_address_mask_packet(
     ];
 
     let layer3 = Layer3Match {
+        name: String::from("ping address mask layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
-        
     };
     // match all icmp reply
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("ping address mask icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,

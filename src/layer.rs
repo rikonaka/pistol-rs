@@ -261,7 +261,7 @@ fn get_dst_cache(dst_addr: IpAddr) -> Result<Option<(MacAddr, NetworkInterface)>
         Ok(dst_cache) => {
             let ret = dst_cache.get(&dst_addr);
             if let Some(dc) = ret {
-                debug!("dst {} found in cache", dst_addr);
+                // debug!("dst {} found in cache", dst_addr);
                 Ok(Some((dc.mac, dc.interface.clone())))
             } else {
                 debug!("dst {} not found in cache", dst_addr);
@@ -553,8 +553,9 @@ pub fn infer_addr(
     Ok(None)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layer2Match {
+    pub name: String,
     pub src_mac: Option<MacAddr>,         // response packet src mac
     pub dst_mac: Option<MacAddr>,         // response packet dst mac
     pub ethernet_type: Option<EtherType>, // reponse packet ethernet type
@@ -595,8 +596,9 @@ impl Layer2Match {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layer3Match {
+    pub name: String,
     pub layer2: Option<Layer2Match>,
     pub src_addr: Option<IpAddr>, // response packet
     pub dst_addr: Option<IpAddr>, // response packet
@@ -604,7 +606,7 @@ pub struct Layer3Match {
 
 impl Layer3Match {
     pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
-        let m1 = match self.layer2 {
+        let m1 = match &self.layer2 {
             Some(layers) => layers.do_match(ethernet_packet),
             None => true,
         };
@@ -710,8 +712,9 @@ impl Layer3Match {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layer4MatchTcpUdp {
+    pub name: String,
     pub layer3: Option<Layer3Match>,
     pub src_port: Option<u16>, // response tcp or udp packet src port
     pub dst_port: Option<u16>, // response tcp or udp packet dst port
@@ -761,7 +764,7 @@ impl Layer4MatchTcpUdp {
         //     }
         // }
 
-        let m1 = match self.layer3 {
+        let m1 = match &self.layer3 {
             Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
@@ -1162,8 +1165,9 @@ impl PayloadMatch {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layer4MatchIcmp {
+    pub name: String,
     pub layer3: Option<Layer3Match>,
     pub icmp_type: Option<IcmpType>,   // response icmp packet types
     pub icmp_code: Option<IcmpCode>,   // response icmp packet codes
@@ -1172,7 +1176,7 @@ pub struct Layer4MatchIcmp {
 
 impl Layer4MatchIcmp {
     pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
-        let m1 = match self.layer3 {
+        let m1 = match &self.layer3 {
             Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
@@ -1227,8 +1231,9 @@ impl Layer4MatchIcmp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layer4MatchIcmpv6 {
+    pub name: String,
     pub layer3: Option<Layer3Match>,
     pub icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
     pub icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
@@ -1237,7 +1242,7 @@ pub struct Layer4MatchIcmpv6 {
 
 impl Layer4MatchIcmpv6 {
     pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
-        let m1 = match self.layer3 {
+        let m1 = match &self.layer3 {
             Some(layer3) => layer3.do_match(ethernet_packet),
             None => true,
         };
@@ -1297,7 +1302,7 @@ impl Layer4MatchIcmpv6 {
 
 /// or rules
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LayerMatch {
     Layer2Match(Layer2Match),
     Layer3Match(Layer3Match),
@@ -1318,6 +1323,15 @@ impl LayerMatch {
             }
         } else {
             false
+        }
+    }
+    pub fn name(&self) -> String {
+        match self {
+            LayerMatch::Layer2Match(l2) => l2.name.clone(),
+            LayerMatch::Layer3Match(l3) => l3.name.clone(),
+            LayerMatch::Layer4MatchTcpUdp(tcp_udp) => tcp_udp.name.clone(),
+            LayerMatch::Layer4MatchIcmp(icmp) => icmp.name.clone(),
+            LayerMatch::Layer4MatchIcmpv6(icmpv6) => icmpv6.name.clone(),
         }
     }
 }
@@ -1669,6 +1683,7 @@ fn ndp_rs(
     //     dst_addr: Some(route_addr_1.into()),
     // };
     let layer3 = Layer3Match {
+        name: String::from("ndp_ns layer3"),
         layer2: None,
         src_addr: None,
         dst_addr: None,
@@ -1685,6 +1700,7 @@ fn ndp_rs(
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        name: String::from("ndp_ns icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::RouterAdvert), // Type: Router Advertisement (134)
         icmpv6_code: None,
@@ -1767,6 +1783,7 @@ mod tests {
         let dst_port = 8080;
         let src_port = 29450;
         let layer3 = Layer3Match {
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
@@ -1782,6 +1799,7 @@ mod tests {
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
         let layer4_icmp = Layer4MatchIcmp {
+            name: String::from("test icmp"),
             layer3: Some(layer3),
             icmp_type: None,
             icmp_code: None,
@@ -1804,11 +1822,13 @@ mod tests {
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
         let layer3 = Layer3Match {
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
         let layer4_icmpv6 = Layer4MatchIcmpv6 {
+            name: String::from("test icmpv6"),
             layer3: Some(layer3),
             icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
             icmpv6_code: None,
@@ -1825,6 +1845,7 @@ mod tests {
         let src_port = 45982;
         let dst_port = 33434;
         let layer3 = Layer3Match {
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: None,
             dst_addr: Some(src_ipv4.into()),
@@ -1841,6 +1862,7 @@ mod tests {
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
         let layer4_icmp = Layer4MatchIcmp {
+            name: String::from("test icmp"),
             layer3: Some(layer3),
             icmp_type: Some(IcmpTypes::TimeExceeded),
             icmp_code: None,
@@ -1869,6 +1891,7 @@ mod tests {
         let dst_port = 80;
 
         let layer3 = Layer3Match {
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: None, // usually this is the address of the router, not the address of the target machine.
             dst_addr: Some(src_ipv4.into()),
@@ -1884,6 +1907,7 @@ mod tests {
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
         let layer4_icmp = Layer4MatchIcmp {
+            name: String::from("test icmp"),
             layer3: Some(layer3),
             icmp_type: Some(IcmpTypes::TimeExceeded),
             icmp_code: None,
@@ -1912,11 +1936,13 @@ mod tests {
         let dst_port = 80;
 
         let layer3 = Layer3Match {
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
+            name: String::from("test tcp_udp"),
             layer3: Some(layer3),
             src_port: Some(dst_port),
             dst_port: Some(src_port),

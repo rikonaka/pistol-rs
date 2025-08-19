@@ -13,7 +13,6 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::trace::HopStatus;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Match;
@@ -23,6 +22,7 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
 use crate::layer::layer3_ipv6_send;
+use crate::trace::HopStatus;
 
 pub fn send_icmpv6_trace_packet(
     dst_ipv6: Ipv6Addr,
@@ -84,10 +84,10 @@ pub fn send_icmpv6_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Match {
+        name: String::from("icmpv6 trace time exceeded layer3"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
-        
     };
     let payload_ip = PayloadMatchIp {
         src_addr: Some(src_ipv6.into()),
@@ -100,6 +100,7 @@ pub fn send_icmpv6_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmp);
     let layer4_icmp = Layer4MatchIcmpv6 {
+        name: String::from("icmpv6 trace time exceeded icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::TimeExceeded),
         icmpv6_code: None,
@@ -109,12 +110,13 @@ pub fn send_icmpv6_trace_packet(
 
     // icmp reply
     let layer3 = Layer3Match {
+        name: String::from("icmpv6 trace reply layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        name: String::from("icmpv6 trace reply icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,

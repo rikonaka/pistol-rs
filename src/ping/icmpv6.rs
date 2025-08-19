@@ -89,13 +89,14 @@ pub fn send_icmpv6_ping_packet(
     icmp_header.set_checksum(checksum);
 
     let layer3 = Layer3Match {
+        name: String::from("ping6 layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
-        
     };
     // match all icmpv6 reply
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        name: String::from("ping6 icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,

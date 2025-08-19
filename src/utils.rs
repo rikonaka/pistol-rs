@@ -104,41 +104,40 @@ pub fn get_default_timeout() -> Duration {
 }
 
 pub struct PistolHex {
-    pub hex: Option<String>, // hex => dec
+    pub hex: String, // hex => dec
 }
 
 impl PistolHex {
     pub fn new_hex(hex_str: &str) -> PistolHex {
-        PistolHex {
-            hex: Some(PistolHex::length_completion(hex_str).to_string()),
-        }
-    }
-    pub fn length_completion(hex_str: &str) -> String {
         let hex_str_len = hex_str.len();
-        if hex_str_len % 2 == 1 {
+        let after_fix = if hex_str_len % 2 == 1 {
             format!("0{}", hex_str)
         } else {
             hex_str.to_string()
+        };
+        PistolHex { hex: after_fix }
+    }
+    pub fn be_vec_to_u32(input: &[u8]) -> Result<u32, PistolError> {
+        if input.len() <= 4 {
+            let padding_size = 4 - input.len();
+            let mut after_padding = vec![0; padding_size];
+            for &i in input {
+                after_padding.push(i as u32);
+            }
+            let a = after_padding[0] << 24;
+            let b = after_padding[1] << 16;
+            let c = after_padding[2] << 8;
+            let d = after_padding[3];
+            Ok(a + b + c + d)
+        } else {
+            let v = format!("{:?}", input);
+            Err(PistolError::InputTooLoog { v })
         }
     }
-    pub fn convert_4u8_to_u32(input: &[u8]) -> u32 {
-        let mut ret = 0;
-        let mut i = input.len();
-        for v in input {
-            let mut new_v = *v as u32;
-            i -= 1;
-            new_v <<= i * 8;
-            ret += new_v;
-        }
-        ret
-    }
-    pub fn decode(&self) -> Result<u32, PistolError> {
-        match &self.hex {
-            Some(hex_str) => match hex::decode(hex_str) {
-                Ok(d) => Ok(Self::convert_4u8_to_u32(&d)),
-                Err(e) => Err(e.into()),
-            },
-            None => panic!("set value before decode!"),
+    pub fn decode_as_u32(&self) -> Result<u32, PistolError> {
+        match hex::decode(&self.hex) {
+            Ok(d) => Self::be_vec_to_u32(&d),
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -150,22 +149,22 @@ mod tests {
     #[test]
     fn test_convert() {
         let v: Vec<u8> = vec![1, 1, 1, 1];
-        let r = PistolHex::convert_4u8_to_u32(&v);
+        let r = PistolHex::be_vec_to_u32(&v).unwrap();
         assert_eq!(r, 16843009);
 
         let s = "51E80C";
         let h = PistolHex::new_hex(s);
-        let r = h.decode().unwrap();
+        let r = h.decode_as_u32().unwrap();
         assert_eq!(r, 5367820);
 
         let s = "1C";
         let h = PistolHex::new_hex(s);
-        let r = h.decode().unwrap();
+        let r = h.decode_as_u32().unwrap();
         assert_eq!(r, 28);
 
         let s = "A";
         let h = PistolHex::new_hex(s);
-        let r = h.decode().unwrap();
+        let r = h.decode_as_u32().unwrap();
         assert_eq!(r, 10);
     }
     #[test]

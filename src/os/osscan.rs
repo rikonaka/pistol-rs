@@ -290,11 +290,13 @@ fn send_seq_probes(
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
         let layer3 = Layer3Match {
+            name: format!("os scan seq {} layer3", i + 1),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
+            name: format!("os scan seq {} tcp_udp", i + 1),
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
@@ -304,8 +306,14 @@ fn send_seq_probes(
         let tx = tx.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret =
-                    layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true);
+                let ret = layer3_ipv4_send(
+                    dst_ipv4,
+                    src_ipv4,
+                    &buff,
+                    vec![layer_match.clone()],
+                    timeout,
+                    true,
+                );
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -387,11 +395,13 @@ fn send_ie_probes(
     let buffs = vec![buff_1, buff_2];
 
     let layer3 = Layer3Match {
+        name: String::from("os scan ie layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("os scan ie icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -405,7 +415,14 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            let ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true);
+            let ret = layer3_ipv4_send(
+                dst_ipv4,
+                src_ipv4,
+                &buff,
+                vec![layer_match.clone()],
+                timeout,
+                true,
+            );
             match ret {
                 Ok((response, rtt)) => {
                     if response.len() > 0 {
@@ -452,11 +469,13 @@ fn send_ecn_probe(
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Match {
+        name: String::from("os scan ecn layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
+        name: String::from("os scan ecn tcp_udp"),
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
@@ -468,8 +487,14 @@ fn send_ecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let (response, _rtt) =
-            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true)?;
+        let (response, _rtt) = layer3_ipv4_send(
+            dst_ipv4,
+            src_ipv4,
+            &buff,
+            vec![layer_match.clone()],
+            timeout,
+            true,
+        )?;
         if response.len() > 0 {
             let rr = RequestAndResponse {
                 request: buff,
@@ -508,37 +533,44 @@ fn send_tx_probes(
     }
 
     let layer3 = Layer3Match {
+        name: String::from("os scan tx layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("os scan ecn tcp_udp 1"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
     let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("os scan ecn tcp_udp 2"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
     let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("os scan ecn tcp_udp 3"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
     let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("os scan ecn tcp_udp 4"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
     let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("os scan ecn tcp_udp 5"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
     let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
-        layer3: Some(layer3),
+        name: String::from("os scan ecn tcp_udp 6"),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
@@ -574,10 +606,11 @@ fn send_tx_probes(
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
-        let m = ms[i];
+        let m = ms[i].clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![m], timeout, true);
+                let ret =
+                    layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![m.clone()], timeout, true);
                 match ret {
                     Ok((response, rtt)) => {
                         if response.len() > 0 {
@@ -644,11 +677,13 @@ fn send_u1_probe(
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Match {
+        name: String::from("os scan u1 layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("os scan u1 icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -661,8 +696,14 @@ fn send_u1_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let (response, _rtt) =
-            layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![layer_match], timeout, true)?;
+        let (response, _rtt) = layer3_ipv4_send(
+            dst_ipv4,
+            src_ipv4,
+            &buff,
+            vec![layer_match.clone()],
+            timeout,
+            true,
+        )?;
 
         if response.len() > 0 {
             let rr = RequestAndResponse {
@@ -1110,8 +1151,8 @@ pub struct ECNX {
     // R, DF, T, TG, W, O, CC, and Q tests.
     pub r: String,
     pub df: String,
-    pub t: u16,
-    pub tg: u8,
+    pub t: Option<u16>, // if udp probe has no returns, use tg instead of t
+    pub tg: u16,
     pub w: u16,
     pub o: String,
     pub cc: String,
@@ -1123,7 +1164,7 @@ impl ECNX {
         ECNX {
             r: String::new(),
             df: String::new(),
-            t: 0,
+            t: None,
             tg: 0,
             w: 0,
             o: String::new(),
@@ -1157,12 +1198,12 @@ impl fmt::Display for ECNX {
                     };
                     output += &df_str;
                 }
-                if self.t > 0 {
+                if let Some(t) = self.t {
                     let t_str = if first_elem {
                         first_elem = false;
-                        format!("T={:X}", self.t)
+                        format!("T={:X}", t)
                     } else {
-                        format!("%T={:X}", self.t)
+                        format!("%T={:X}", t)
                     };
                     output += &t_str;
                 } else if self.tg > 0 {
@@ -1237,7 +1278,7 @@ pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
         _ => {
             //  If there is no reply, remaining fields for the test are omitted.
             let df = String::new();
-            let t = 0;
+            let t = Some(0);
             let tg = 0;
             let w = 0;
             let o = String::new();
@@ -1265,8 +1306,8 @@ pub struct TXX {
     // R, DF, T, TG, W, S, A, F, O, RD, and Q tests.
     pub r: String,
     pub df: String,
-    pub t: u16,
-    pub tg: u8,
+    pub t: Option<u16>,
+    pub tg: u16,
     pub w: u16,
     pub s: String,
     pub a: String,
@@ -1282,7 +1323,7 @@ impl TXX {
             name: String::new(),
             r: String::new(),
             df: String::new(),
-            t: 0,
+            t: None,
             tg: 0,
             w: 0,
             s: String::new(),
@@ -1319,12 +1360,12 @@ impl fmt::Display for TXX {
                     };
                     output += &df_str;
                 }
-                if self.t > 0 {
+                if let Some(t) = self.t {
                     let t_str = if first_elem {
                         first_elem = false;
-                        format!("T={:X}", self.t)
+                        format!("T={:X}", t)
                     } else {
-                        format!("%T={:X}", self.t)
+                        format!("%T={:X}", t)
                     };
                     output += &t_str;
                 } else if self.tg > 0 {
@@ -1431,7 +1472,7 @@ fn tx_fingerprint_func(
         }
         _ => {
             let df = String::new();
-            let t = 0;
+            let t = Some(0);
             let tg = 0;
             let w = 0;
             let s = String::new();
@@ -1480,8 +1521,8 @@ pub struct U1X {
     // R, DF, T, TG, IPL, UN, RIPL, RID, RIPCK, RUCK, and RUD tests.
     pub r: String,
     pub df: String,
-    pub t: u16,
-    pub tg: u8,
+    pub t: Option<u16>,
+    pub tg: u16,
     pub ipl: usize,
     pub un: u32,
     pub ripl: String,
@@ -1496,7 +1537,7 @@ impl U1X {
         U1X {
             r: String::new(),
             df: String::new(),
-            t: 0,
+            t: None,
             tg: 0,
             ipl: 0,
             un: 0,
@@ -1531,12 +1572,12 @@ impl fmt::Display for U1X {
             };
             output += &df_str;
         }
-        if self.t > 0 {
+        if let Some(t) = self.t {
             let t_str = if first_elem {
                 first_elem = false;
-                format!("T={:X}", self.t)
+                format!("T={:X}", t)
             } else {
-                format!("%T={:X}", self.t)
+                format!("%T={:X}", t)
             };
             output += &t_str;
         } else if self.tg > 0 {
@@ -1634,7 +1675,7 @@ pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
         }
         _ => {
             let df = String::new();
-            let t = 0;
+            let t = Some(0);
             let tg = 0;
             let ipl = 0;
             let un = 0;
@@ -1668,8 +1709,8 @@ pub struct IEX {
     // R, DFI, T, TG, and CD tests.
     pub r: String,
     pub dfi: String,
-    pub t: u16,
-    pub tg: u8,
+    pub t: Option<u16>,
+    pub tg: u16,
     pub cd: String,
 }
 
@@ -1678,7 +1719,7 @@ impl IEX {
         IEX {
             r: String::new(),
             dfi: String::new(),
-            t: 0,
+            t: None,
             tg: 0,
             cd: String::new(),
         }
@@ -1707,12 +1748,12 @@ impl fmt::Display for IEX {
             };
             output += &dfi_str;
         }
-        if self.t > 0 {
+        if let Some(t) = self.t {
             let t_str = if first_elem {
                 first_elem = false;
-                format!("T={:X}", self.t)
+                format!("T={:X}", t)
             } else {
-                format!("%T={:X}", self.t)
+                format!("%T={:X}", t)
             };
             output += &t_str;
         } else if self.tg > 0 {
@@ -1754,7 +1795,7 @@ pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolError> {
     } else {
         let r = String::from("N");
         let dfi = String::new();
-        let t = 0;
+        let t = Some(0);
         let tg = 0;
         let cd = String::new();
 

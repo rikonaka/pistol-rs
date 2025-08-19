@@ -113,4 +113,6 @@ pub enum PistolError {
     TryLockGlobalVarFailed { var_name: String, e: String },
     #[error("tracing error")]
     SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
+    #[error("input {v} is too loog to convert to u32")]
+    InputTooLoog { v: String },
 }

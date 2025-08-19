@@ -126,7 +126,7 @@ impl NmapData {
                                 Ok(s) => s,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(start);
-                                    let e_u32 = he.decode()?;
+                                    let e_u32 = he.decode_as_u32()?;
                                     e_u32 as usize
                                 }
                             };
@@ -134,7 +134,7 @@ impl NmapData {
                                 Ok(e) => e,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(end);
-                                    let e_u32 = he.decode()?;
+                                    let e_u32 = he.decode_as_u32()?;
                                     e_u32 as usize
                                 }
                             };
@@ -151,7 +151,7 @@ impl NmapData {
                                 Ok(s) => s,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(start);
-                                    let e_u32 = he.decode()?;
+                                    let e_u32 = he.decode_as_u32()?;
                                     e_u32 as usize
                                 }
                             };
@@ -168,7 +168,7 @@ impl NmapData {
                                 Ok(e) => e,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(end);
-                                    let e_u32 = he.decode()?;
+                                    let e_u32 = he.decode_as_u32()?;
                                     e_u32 as usize
                                 }
                             };
@@ -179,7 +179,7 @@ impl NmapData {
                     }
                 } else {
                     let he = PistolHex::new_hex(it);
-                    let e_u32 = he.decode()?;
+                    let e_u32 = he.decode_as_u32()?;
                     let single = NmapSingleValue::new(e_u32 as usize);
                     single_values.push(single);
                 }
@@ -433,8 +433,8 @@ impl ECNDB {
                 "N" => (),
                 _ => {
                     let df_check = self.df.check_string(&ecnx.df);
-                    let t_check = if ecnx.t > 0 {
-                        self.t.check_usize(ecnx.t as usize)
+                    let t_check = if let Some(t) = ecnx.t {
+                        self.t.check_usize(t as usize)
                     } else {
                         self.tg.check_usize(ecnx.tg as usize)
                     };
@@ -474,8 +474,8 @@ impl TXDB {
                 "N" => (),
                 _ => {
                     let df_check = self.df.check_string(&txx.df);
-                    let t_check = if txx.t > 0 {
-                        self.t.check_usize(txx.t as usize)
+                    let t_check = if let Some(t) = txx.t {
+                        self.t.check_usize(t as usize)
                     } else {
                         self.tg.check_usize(txx.tg as usize)
                     };
@@ -540,8 +540,8 @@ impl U1DB {
                 "N" => (),
                 _ => {
                     let df_check = self.df.check_string(&u1x.df);
-                    let t_check = if u1x.t > 0 {
-                        self.t.check_usize(u1x.t as usize)
+                    let t_check = if let Some(t) = u1x.t {
+                        self.t.check_usize(t as usize)
                     } else {
                         self.tg.check_usize(u1x.tg as usize)
                     };
@@ -599,8 +599,8 @@ impl IEDB {
                 "N" => (),
                 _ => {
                     let dfi_check = self.dfi.check_string(&iex.dfi);
-                    let t_check = if iex.t > 0 {
-                        self.t.check_usize(iex.t as usize)
+                    let t_check = if let Some(t) = iex.t {
+                        self.t.check_usize(t as usize)
                     } else {
                         self.tg.check_usize(iex.tg as usize)
                     };

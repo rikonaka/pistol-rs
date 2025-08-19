@@ -16,7 +16,6 @@ use std::panic::Location;
 use std::time::Duration;
 
 use crate::error::PistolError;
-use crate::trace::HopStatus;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
@@ -27,6 +26,7 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
+use crate::trace::HopStatus;
 
 const TCP_DATA_SIZE: usize = 0;
 // TCP options size
@@ -102,10 +102,10 @@ pub fn send_syn_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Match {
+        name: String::from("tcp trace time exceeded layer3"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
-        
     };
     let payload_ip = PayloadMatchIp {
         src_addr: Some(src_ipv4.into()),
@@ -118,6 +118,7 @@ pub fn send_syn_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmp = Layer4MatchIcmp {
+        name: String::from("tcp trace time exceeded icmp"),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
@@ -127,11 +128,13 @@ pub fn send_syn_trace_packet(
 
     // tcp syn, ack or rst packet
     let layer3 = Layer3Match {
+        name: String::from("tcp trace reply layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
+        name: String::from("tcp trace reply tcp_udp"),
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
