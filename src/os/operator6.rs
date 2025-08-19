@@ -4,6 +4,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
 use std::iter::zip;
+use tracing::debug;
 use tracing::warn;
 
 use crate::error::PistolError;
@@ -160,19 +161,28 @@ fn ipv6_hlim(ipv6_response: &[u8], probe_name: &str) -> Result<f64, PistolError>
             0.0
         }
     };
-    let er_lim = 5;
-    let hlim = if (32 - er_lim) as f64 <= hlim && hlim <= (32 + 5) as f64 {
-        32
-    } else if (64 - er_lim) as f64 <= hlim && hlim <= (64 + 5) as f64 {
-        64
-    } else if (128 - er_lim) as f64 <= hlim && hlim <= (128 + 5) as f64 {
-        128
-    } else if (255 - er_lim) as f64 <= hlim && hlim <= (255 + 5) as f64 {
-        255
+
+    let er_lim = 5.0;
+    let regual_hlim_vec = vec![32.0, 64.0, 128.0, 255.0];
+    let mut fin_hlim = 0.0;
+    for r in regual_hlim_vec {
+        if hlim > r {
+            if hlim - r <= er_lim {
+                fin_hlim = r;
+            }
+        } else {
+            if r - hlim <= er_lim {
+                fin_hlim = r;
+            }
+        }
+    }
+
+    if fin_hlim != 0.0 {
+        Ok(fin_hlim)
     } else {
-        -1
-    };
-    Ok(hlim as f64)
+        // default value of machine learning alg
+        Ok(-1.0)
+    }
 }
 
 /// TCP window size.
@@ -310,7 +320,12 @@ fn tcp_option_mss(ipv6_buff: &[u8], probe_name: &str) -> Result<f64, PistolError
             for option in options {
                 match option.number {
                     TcpOptionNumbers::MSS => {
-                        let mss = PistolHex::be_vec_to_u32(&option.data)?;
+                        let data = if option.data.len() > 4 {
+                            &option.data[0..4]
+                        } else {
+                            &option.data
+                        };
+                        let mss = PistolHex::be_vec_to_u32(data)?;
                         return Ok(mss as f64);
                     }
                     _ => (),
@@ -392,24 +407,27 @@ pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolError> {
     let ipv6_probe_names: Vec<&str> = vec![
         "S1", "S2", "S3", "S4", "S5", "S6", "IE1", "IE2", "NS", "U1", "TECN", "T2", "T3", "T4",
         "T5", "T6", "T7",
-    ]; // 17 * 3 + 1 => 51 + 1 features
+    ]; // 17 * 3 + 1 => 51 + 1 => 52 features
     let tcp_probe_names: Vec<&str> = vec![
         "S1", "S2", "S3", "S4", "S5", "S6", "TECN", "T2", "T3", "T4", "T5", "T6", "T7",
     ]; // 637 features
     let icmpv6_probe_names: Vec<&str> = vec!["IE1", "IE2", "NS"]; // 6 features
 
     let mut features: Vec<f64> = Vec::new();
-    for name in ipv6_probe_names {
-        let ipv6_response = get_response_by_name(ap, name);
-        let (plen, tc) = ipv6_plen_tc(&ipv6_response, &name.to_lowercase())?;
-        // println!("name: {}, plen: {}", name, plen);
+    for probe_name in ipv6_probe_names {
+        let ipv6_response = get_response_by_name(ap, probe_name);
+        let (plen, tc) = ipv6_plen_tc(&ipv6_response, &probe_name.to_lowercase())?;
         features.push(plen);
         features.push(tc);
-        let hlim = ipv6_hlim(&ipv6_response, &name.to_lowercase())?;
+        let hlim = ipv6_hlim(&ipv6_response, &probe_name.to_lowercase())?;
         features.push(hlim);
+        debug!(
+            "probe name: {}, plen: {}, tc: {}, hlim: {}",
+            probe_name, plen, tc, hlim
+        );
     }
     let isr = tcp_isr(ap)?;
-    // println!("{}", isr);
+    debug!("ISR: {}", isr);
     features.push(isr);
 
     for name in tcp_probe_names {

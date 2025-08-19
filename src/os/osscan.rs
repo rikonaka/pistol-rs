@@ -1883,19 +1883,19 @@ pub fn os_probe_thread(
     let seqx = seq_fingerprint(&ap);
     match seqx {
         Ok(seqx) => {
-            debug!("SEQX");
+            debug!("SEQX fingerprint parse done");
             let opsx = ops_fingerprint(&ap)?;
-            debug!("OPSX");
+            debug!("OPSX parse done");
             let winx = win_fingerprint(&ap)?;
-            debug!("WINX");
+            debug!("WINX parse done");
             let ecnx = ecn_fingerprint(&ap)?;
-            debug!("ECNX");
+            debug!("ECNX parse done");
             let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap)?;
-            debug!("TX");
+            debug!("TX parse done");
             let u1x = u1_fingerprint(&ap)?;
-            debug!("U1X");
+            debug!("U1X parse done");
             let iex = ie_fingerprint(&ap)?;
-            debug!("IEX");
+            debug!("IEX parse done");
 
             debug!("generate the fingerprint");
             let target_fingerprint = Fingerprint {
@@ -1932,6 +1932,7 @@ pub fn os_probe_thread(
 
             let detect_rets = sort_pick(&sort_vec, top_k);
             if detect_rets.len() > 0 {
+                debug!("ipv4 fingerprint:\n{}", target_fingerprint);
                 Ok((target_fingerprint, detect_rets))
             } else {
                 Err(PistolError::OSDetectResultsNullError)

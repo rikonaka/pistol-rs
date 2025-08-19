@@ -10,6 +10,8 @@ use std::fs::File;
 use std::io::ErrorKind;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
+use std::net::Ipv4Addr;
+#[cfg(feature = "os")]
 use std::net::Ipv6Addr;
 use std::result;
 use std::str::FromStr;
@@ -495,21 +497,151 @@ trait Ipv6CheckMethods {
     fn is_global_x(&self) -> bool;
 }
 
-/// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,
-/// use this trait instead until its become stable function.
 #[cfg(feature = "os")]
 impl Ipv6CheckMethods for Ipv6Addr {
     fn is_global_x(&self) -> bool {
-        let octets = self.octets();
-        let is_local = if octets[0] == 0b11111110 && octets[1] >> 6 == 0b00000010 {
-            true
-        } else {
-            false
-        };
-        !is_local
+        let ip = self;
+        let segments = ip.segments();
+
+        // Unspecified (::/128)
+        if ip.is_unspecified() {
+            return false;
+        }
+
+        // Loopback (::1/128)
+        if ip.is_loopback() {
+            return false;
+        }
+
+        // Unique local (fc00::/7)
+        if (segments[0] & 0xfe00) == 0xfc00 {
+            return false;
+        }
+
+        // Link-local (fe80::/10)
+        if ip.is_unicast_link_local() {
+            return false;
+        }
+
+        // Multicast (ff00::/8)
+        if ip.is_multicast() {
+            return false;
+        }
+
+        // IPv4-mapped (::ffff:0:0/96)
+        if segments[0] == 0
+            && segments[1] == 0
+            && segments[2] == 0
+            && segments[3] == 0
+            && segments[4] == 0
+            && segments[5] == 0xffff
+        {
+            return false;
+        }
+
+        // IPv4-compatible (::/96) — deprecated
+        if segments[0] == 0
+            && segments[1] == 0
+            && segments[2] == 0
+            && segments[3] == 0
+            && segments[4] == 0
+            && segments[5] == 0
+        {
+            return false;
+        }
+
+        // 2001:db8::/32 documentation
+        if (segments[0] == 0x2001) && (segments[1] == 0x0db8) {
+            return false;
+        }
+
+        // 2001:10::/28 ORCHIDv2
+        if (segments[0] & 0xfff0) == 0x2001 && (segments[1] >> 12) == 0x0001 {
+            return false;
+        }
+
+        // 64:ff9b::/96 IPv4/IPv6 translation
+        if segments[0] == 0x64 && segments[1] == 0xff9b {
+            return false;
+        }
+
+        // If none of the exclusions matched, it's global
+        true
     }
 }
 
+#[cfg(feature = "os")]
+trait Ipv4CheckMethods {
+    fn is_global_x(&self) -> bool;
+}
+
+#[cfg(feature = "os")]
+impl Ipv4CheckMethods for Ipv4Addr {
+    fn is_global_x(&self) -> bool {
+        let ip = self;
+        let octets = ip.octets();
+
+        // RFC 1918 private
+        if ip.is_private() {
+            return false;
+        }
+
+        // 127.0.0.0/8 loopback
+        if ip.is_loopback() {
+            return false;
+        }
+
+        // 169.254.0.0/16 link-local
+        if ip.is_link_local() {
+            return false;
+        }
+
+        // 255.255.255.255 broadcast
+        if ip.is_broadcast() {
+            return false;
+        }
+
+        // 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 documentation
+        if ip.is_documentation() {
+            return false;
+        }
+
+        // 0.0.0.0/8 unspecified
+        if ip.is_unspecified() {
+            return false;
+        }
+
+        // 224.0.0.0/4 multicast
+        if ip.is_multicast() {
+            return false;
+        }
+
+        // 240.0.0.0/4 reserved
+        if octets[0] >= 240 {
+            return false;
+        }
+
+        // 100.64.0.0/10 shared address space (RFC 6598)
+        if octets[0] == 100 && (octets[1] & 0b1100_0000) == 64 {
+            return false;
+        }
+
+        // 192.0.0.0/24 IETF protocol assignments
+        if octets[0] == 192 && octets[1] == 0 && octets[2] == 0 {
+            return false;
+        }
+
+        // 198.18.0.0/15 benchmarking
+        if octets[0] == 198 && (octets[1] & 0b1111_1110) == 18 {
+            return false;
+        }
+
+        true
+    }
+}
+
+/// Ipv4Addr::is_global() and Ipv6Addr::is_global() is a nightly-only experimental API,
+/// use this trait instead until its become stable function.
 #[cfg(feature = "os")]
 trait IpCheckMethods {
     fn is_global_x(&self) -> bool;
@@ -519,7 +651,7 @@ trait IpCheckMethods {
 impl IpCheckMethods for IpAddr {
     fn is_global_x(&self) -> bool {
         match self {
-            IpAddr::V4(ipv4) => !ipv4.is_private(),
+            IpAddr::V4(ipv4) => ipv4.is_global_x(),
             IpAddr::V6(ipv6) => ipv6.is_global_x(),
         }
     }

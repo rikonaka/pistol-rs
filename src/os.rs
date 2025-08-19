@@ -190,18 +190,24 @@ impl fmt::Display for PistolOsDetects {
                     let time_cost_str = time_sec_to_string(o.cost);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
-                        for (i, os_info) in o.detects.iter().enumerate() {
-                            let addr_str = match &o.origin {
-                                Some(origin) => format!("{}({})", addr, origin),
-                                None => format!("{}", addr),
-                            };
+                        if o.detects.len() > 0 {
+                            for (i, os_info) in o.detects.iter().enumerate() {
+                                let addr_str = match &o.origin {
+                                    Some(origin) => format!("{}({})", addr, origin),
+                                    None => format!("{}", addr),
+                                };
 
-                            let rank_str = format!("#{}", i + 1);
-                            let score_str = format!("{}/{}", os_info.score, os_info.total);
-                            let os_details = &os_info.name;
-                            let os_cpe = os_info.cpe.join("|");
-                            table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe, c -> time_cost_str]);
-                            id += 1;
+                                let rank_str = format!("#{}", i + 1);
+                                let score_str = format!("{}/{}", os_info.score, os_info.total);
+                                let os_details = &os_info.name;
+                                let os_cpe = os_info.cpe.join("|");
+                                table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> score_str, c -> os_details, c -> os_cpe, c -> time_cost_str]);
+                                id += 1;
+                            }
+                        } else {
+                            table.add_row(Row::new(vec![
+                                Cell::new("there are no matching results, which is very uncommon and is maybe a bug").with_hspan(7),
+                            ]));
                         }
                     } else {
                         let addr_str = match o.origin {
@@ -218,18 +224,22 @@ impl fmt::Display for PistolOsDetects {
                     let time_cost_str = time_sec_to_string(o.cost);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
-                        for (i, os_info6) in o.detects.iter().enumerate() {
-                            let addr_str = match &o.origin {
-                                Some(origin) => format!("{}({})", addr, origin),
-                                None => format!("{}", addr),
-                            };
+                        if o.detects.len() > 0 {
+                            for (i, os_info6) in o.detects.iter().enumerate() {
+                                let addr_str = match &o.origin {
+                                    Some(origin) => format!("{}({})", addr, origin),
+                                    None => format!("{}", addr),
+                                };
 
-                            let number_str = format!("#{}", i + 1);
-                            let score_str = format!("{:.1}", os_info6.score);
-                            let os_str = &os_info6.name;
-                            let os_cpe = &os_info6.cpe;
-                            table.add_row(row![c -> id, c -> addr_str, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe, c -> time_cost_str]);
-                            id += 1;
+                                let number_str = format!("#{}", i + 1);
+                                let score_str = format!("{:.1}", os_info6.score);
+                                let os_str = &os_info6.name;
+                                let os_cpe = &os_info6.cpe;
+                                table.add_row(row![c -> id, c -> addr_str, c -> number_str, c -> score_str, c -> os_str, c -> os_cpe, c -> time_cost_str]);
+                                id += 1;
+                            }
+                        } else {
+                            table.add_row(Row::new(vec![Cell::new("no results, usually caused by a novelty value greater than 15.0").with_hspan(7)]));
                         }
                     } else {
                         let addr_str = match o.origin {
@@ -782,9 +792,42 @@ mod tests {
         }
     }
     #[test]
-    fn test_os_detect6() {
+    fn test_os_detect6_centos_7() {
+        /*
+        -- nmap
+        SCAN(V=7.95%E=6%D=8/19%OT=22%CT=%CU=43325%PV=N%DS=1%DC=D%G=Y%M=000C29%TM=68A4363F%P=x86_64-pc-linux-gnu)
+        S1(P=6000{4}280640XX{32}0016c7a2c2c785dcac3c69aea0126f90d6fc0000020405a00402080a01c245aeff{4}01030307%ST=0.07947%RT=0.080582)
+        S2(P=6000{4}280640XX{32}0016c7a3a6b3dd08ac3c69afa0126f909b7e0000020405a00402080a01c24612ff{4}01030307%ST=0.180041%RT=0.180935)
+        S3(P=6000{4}280640XX{32}0016c7a4e5cd8492ac3c69b0a0126f90b7750000020405a00101080a01c24676ff{4}01030307%ST=0.279382%RT=0.280225)
+        S4(P=6000{4}280640XX{32}0016c7a54200f6b5ac3c69b1a0126f90e5b80000020405a00402080a01c246daff{4}01030307%ST=0.379506%RT=0.380849)
+        S5(P=6000{4}280640XX{32}0016c7a6a9fe8bd7ac3c69b2a0126f90e8320000020405a00402080a01c2473eff{4}01030307%ST=0.47953%RT=0.480549)
+        S6(P=6000{4}240640XX{32}0016c7a76d2a8034ac3c69b390126f9044520000020405a00402080a01c247a2ff{4}%ST=0.579882%RT=0.581002)
+        IE1(P=6000{4}803a40XX{32}81093eafabcd00{122}%ST=0.61657%RT=0.61718)
+        IE2(P=6000{4}583a40XX{32}0401400a00{3}386001234500280032XX{32}3c00010400{4}2b00010400{12}3a00010400{4}8000402fabcd0001%ST=0.666876%RT=0.668181)
+        NS(P=6000{4}183affXX{32}880009df4000{3}XX{16}%ST=0.719135%RT=0.720038)
+        U1(P=6000{3}01643a40XX{32}0101d53200{4}6001234501341139XX{32}c733a93d01348fec43{300}%ST=0.766442%RT=0.767309)
+        TECN(P=6000{4}200640XX{32}0016c7a8d45582a8ac3c69b48052708035e80000020405a00101040201030307%ST=0.815959%RT=0.816861)
+        T4(P=6000{4}140640XX{32}0016c7aba5421c1400{4}5004000093090000%ST=0.964467%RT=0.966983)
+        EXTRA(FL=12345)
+
+        -- pistol
+        SCAN(V=pistol_4.0.16%E=6%D=8/19%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A44A76%P=RUST)
+        S1(P=600{2}028640fe800{3}0XX{32}%ST=0.000578%RT=0.025954)
+        S2(P=600{2}028640fe800{3}0XX{32}%ST=0.100911%RT=0.121613)
+        S3(P=600{2}028640fe800{3}0XX{32}%ST=0.201081%RT=0.221879)
+        S4(P=600{2}028640fe800{3}0XX{32}%ST=0.304505%RT=0.325537)
+        S5(P=600{2}028640fe800{3}0XX{32}%ST=0.404598%RT=0.417561)
+        S6(P=600{2}024640fe800{3}0XX{30}%ST=0.504899%RT=0.525877)
+        IE1(P=600{2}0803a40fe800{3}0XX{32}00{44}%ST=0.605082%RT=0.649687)
+        IE2(P=600{2}0583a40fe800{3}0XX{32}78e837a77371778c3c01400{2}2b01400{6}3a01400{2}800402fabcd01%ST=0.649706%RT=0.665666)
+        NS(P=600{2}0183afffe800{3}0XX{24}%ST=3.285946%RT=3.309598)
+        U1(P=600{2}1643a40fe800{3}0XX{32}78e837a77371778c84932694134553643{300}%ST=3.309699%RT=3.330450)
+        TECN(P=600{2}020640fe800{3}0XX{28}%ST=3.330488%RT=3.357514)
+        T4(P=600{2}014640fe800{3}0XX{22}%ST=3.558762%RT=3.578006)
+        */
+
         let _pr = PistolRunner::init(
-            PistolLogger::None,
+            PistolLogger::Debug,
             Some(String::from("os_detect6.pcapng")),
             None, // use default value
         )
@@ -794,7 +837,7 @@ mod tests {
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let addr1 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
+        let addr1 = Ipv6Addr::from_str("fe80::78e8:37a7:7371:778c").unwrap();
         let target1 = Target::new(
             addr1.into(),
             Some(vec![
@@ -809,6 +852,65 @@ mod tests {
         let num_threads = Some(8);
         let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
+        // let fingerprint = ret.
+    }
+
+    #[test]
+    fn test_os_detect6_windows_server_2025() {
+        /*
+        -- nmap
+        SCAN(V=7.95%E=6%D=8/19%OT=3389%CT=%CU=%PV=N%DS=1%DC=D%G=Y%M=000C29%TM=68A43D15%P=x86_64-pc-linux-gnu)
+        S1(P=60029ebf00280640XX{32}0d3d99c6689af490e73b9337a012fa0052090000020405a0010303000402080a0132496eff{4}%ST=0.021405%RT=0.022599)
+        S2(P=600bef1e00280640XX{32}0d3d99c7576e06a5e73b9338a012fa0050bb0000020405a0010303000402080a013249d2ff{4}%ST=0.121547%RT=0.123118)
+        S3(P=60085d5d00280640XX{32}0d3d99c86fb65611e73b9339a012fa00eba10000020405a0010303000101080a01324a36ff{4}%ST=0.221461%RT=0.222517)
+        S4(P=600377f700280640XX{32}0d3d99c924b05409e73b933aa012fa0035490000020405a0010303000402080a01324a9aff{4}%ST=0.321468%RT=0.322621)
+        S5(P=6002f85a00280640XX{32}0d3d99ca782ca544e73b933ba012fa00902a0000020405a0010303000402080a01324aff{5}%ST=0.422417%RT=0.423493)
+        S6(P=60073a4400240640XX{32}0d3d99cb694a6beae73b933c9012fa00ec080000020405a00402080a01324b62ff{4}%ST=0.521465%RT=0.522136)
+        NS(P=6000{4}203affXX{32}88002df86000{3}XX{16}0201000c29fd51d5%ST=0.665484%RT=0.667043)
+        TECN(P=6024d63100200640XX{32}0d3d99ccedaa00fae73b933d8052fa0031f50000020405a00103030001010402%ST=0.765114%RT=0.766728)
+        EXTRA(FL=12345)
+
+        -- pistol
+        SCAN(V=pistol_4.0.16%E=6%D=8/19%OT=3389%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A44AB8%P=RUST)
+        S1(P=6035c32028640fe800{3}0XX{32}%ST=0.000614%RT=0.025889)
+        S2(P=60422f7028640fe800{3}0XX{32}%ST=0.101024%RT=0.121866)
+        S3(P=601ec7c028640fe800{3}0XX{32}%ST=0.201362%RT=0.221899)
+        S4(P=6029497028640fe800{3}0XX{32}%ST=0.301671%RT=0.325907)
+        S5(P=60ab322028640fe800{3}0XX{32}%ST=0.401920%RT=0.417880)
+        S6(P=6085ab7024640fe800{3}0XX{30}%ST=0.502095%RT=0.517830)
+        IE2(P=600{2}0203afffe800{3}0XX{28}%ST=4.794143%RT=4.938212)
+        NS(P=600{2}0203afffe800{3}0XX{28}%ST=5.030986%RT=5.045860)
+        TECN(P=60241b4e020640fe800{3}0XX{28}%ST=7.666182%RT=7.681859)
+        EXTRA(FL=12345)
+        */
+
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            Some(String::from("os_detect6.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
+        let src_addr = None;
+        let dst_open_tcp_port = 3389;
+        let dst_closed_tcp_port = 8765;
+        let dst_closed_udp_port = 9876;
+        let addr1 = Ipv6Addr::from_str("fe80::5dd9:4cd2:82ac:d35").unwrap();
+        let target1 = Target::new(
+            addr1.into(),
+            Some(vec![
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+
+        let timeout = Some(Duration::from_secs_f64(0.5));
+        let top_k = 3;
+        let num_threads = Some(8);
+        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
+        println!("{}", ret);
+        // let fingerprint = ret.
     }
     #[test]
     fn test_os_detect_raw() {

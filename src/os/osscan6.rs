@@ -4,7 +4,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::iter::zip;
-use std::net::IpAddr;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
@@ -12,8 +11,8 @@ use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
 use tracing::debug;
+use tracing::warn;
 
-use crate::IpCheckMethods;
 use crate::error::PistolError;
 use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
@@ -427,13 +426,18 @@ impl Fingerprint6 {
 
 impl fmt::Display for Fingerprint6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = format!("{}", self.scan);
+        let mut output = String::new();
+        let scan_str = format!("{}", self.scan);
         let s1x_str = format!("\n{}", self.s1x);
         let s2x_str = format!("\n{}", self.s2x);
         let s3x_str = format!("\n{}", self.s3x);
         let s4x_str = format!("\n{}", self.s4x);
         let s5x_str = format!("\n{}", self.s5x);
         let s6x_str = format!("\n{}", self.s6x);
+        let ie1x_str = format!("\n{}", self.ie1x);
+        let ie2x_str = format!("\n{}", self.ie2x);
+        // let nix_str = format!("\n{}", self.ni); // ignored by nmap
+        let nsx_str = format!("\n{}", self.ns);
         let u1x_str = format!("\n{}", self.u1x);
         let tecnx_str = format!("\n{}", self.tecnx);
         let t2x_str = format!("\n{}", self.t2x);
@@ -443,6 +447,9 @@ impl fmt::Display for Fingerprint6 {
         let t6x_str = format!("\n{}", self.t6x);
         let t7x_str = format!("\n{}", self.t7x);
         let extra_str = format!("\nEXTRA(FL={})", self.extra);
+        if scan_str.trim().len() > 0 {
+            output += &scan_str;
+        }
         if s1x_str.trim().len() > 0 {
             output += &s1x_str;
         }
@@ -460,6 +467,18 @@ impl fmt::Display for Fingerprint6 {
         }
         if s6x_str.trim().len() > 0 {
             output += &s6x_str;
+        }
+        if ie1x_str.trim().len() > 0 {
+            output += &ie1x_str;
+        }
+        if ie2x_str.trim().len() > 0 {
+            output += &ie2x_str;
+        }
+        // if nix_str.trim().len() > 0 {
+        //     output += &nix_str;
+        // }
+        if nsx_str.trim().len() > 0 {
+            output += &nsx_str;
         }
         if u1x_str.trim().len() > 0 {
             output += &u1x_str;
@@ -519,13 +538,13 @@ fn send_seq_probes(
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
         let layer3 = Layer3Match {
-            name: format!("os scan 6 seq {} layer3", i + 1),
+            name: format!("os scan6 seq {} layer3", i + 1),
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
         let layer4_tcp_udp = Layer4MatchTcpUdp {
-            name: format!("os scan 6 seq {} tcp_udp", i + 1),
+            name: format!("os scan6 seq {} tcp_udp", i + 1),
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
@@ -650,13 +669,13 @@ fn send_ie_probes(
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
     let buffs = vec![buff_1, buff_2];
     let layer3 = Layer3Match {
-        name: String::from("os scan 6 ie layer3"),
+        name: String::from("os scan6 ie layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: String::from("os scan 6 ie icmpv6"),
+        name: String::from("os scan6 ie icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -750,13 +769,13 @@ fn send_nx_probes(
     // let buffs = vec![buff_1];
     // let buffs = vec![buff_2];
     let layer3 = Layer3Match {
-        name: String::from("os scan 6 nx layer3"),
+        name: String::from("os scan6 nx layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: String::from("os scan 6 nx icmpv6"),
+        name: String::from("os scan6 nx icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -845,13 +864,13 @@ fn send_u1_probe(
     let src_port = random_port();
     let buff = packet6::udp_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_port)?;
     let layer3 = Layer3Match {
-        name: String::from("os scan 6 u1 layer3"),
+        name: String::from("os scan6 u1 layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: String::from("os scan 6 u1 icmpv6"),
+        name: String::from("os scan6 u1 icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -904,13 +923,13 @@ fn send_tecn_probe(
     let src_port = random_port();
 
     let layer3 = Layer3Match {
-        name: String::from("os scan 6 tecn layer3"),
+        name: String::from("os scan6 tecn layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tecn tcp_udp"),
+        name: String::from("os scan6 tecn tcp_udp"),
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
@@ -953,44 +972,44 @@ fn send_tx_probes(
     }
 
     let layer3 = Layer3Match {
-        name: String::from("os scan 6 tx layer3"),
+        name: String::from("os scan6 tx layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
 
     let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tx tcp_udp 2"),
+        name: String::from("os scan6 tx tcp_udp 2"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
     let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tx tcp_udp 3"),
+        name: String::from("os scan6 tx tcp_udp 3"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
     let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tx tcp_udp 4"),
+        name: String::from("os scan6 tx tcp_udp 4"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
     let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tx tcp_udp 5"),
+        name: String::from("os scan6 tx tcp_udp 5"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
     let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tx tcp_udp 6"),
+        name: String::from("os scan6 tx tcp_udp 6"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
     let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
-        name: String::from("os scan 6 tx tcp_udp 7"),
+        name: String::from("os scan6 tx tcp_udp 7"),
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
@@ -1130,6 +1149,8 @@ fn send_all_probes(
     let seq = send_seq_probes(dst_ipv6, dst_open_tcp_port, src_ipv6, timeout, start_time)?;
     let ie = send_ie_probes(dst_ipv6, src_ipv6, timeout, start_time)?;
     let nx = send_nx_probes(dst_ipv6, src_ipv6, src_mac, timeout, start_time)?;
+    // debug!("nx ni len: {}", nx.ni.response.len());
+    // debug!("nx ns len: {}", nx.ns.response.len());
     let u1 = send_u1_probe(dst_ipv6, dst_closed_udp_port, src_ipv6, timeout, start_time)?;
     let tecn = send_tecn_probe(dst_ipv6, dst_open_tcp_port, src_ipv6, timeout, start_time)?;
     let tx = send_tx_probes(
@@ -1154,11 +1175,8 @@ fn send_all_probes(
 }
 
 fn predict_value(features: &[f64], wvec: &[Vec<f64>]) -> Vec<f64> {
-    /*
-       features [695]
-       wvec [92, 695]
-
-    */
+    // features [695]
+    // wvec [92, 695]
     let vec_time = |x: &[f64], y: &[f64]| -> f64 {
         assert_eq!(x.len(), y.len());
         let mut sum = 0.0;
@@ -1251,52 +1269,30 @@ pub fn os_probe_thread6(
         src_mac, // for ns probe use
         timeout,
     )?;
+    debug!("send all probes done");
 
     let good_results = true;
     // form get_scan_line function
-    let need_cal_hops = |dst_addr: IpAddr| -> bool {
-        if dst_addr.is_loopback() {
-            false
-        } else if !dst_addr.is_global_x() {
-            false
-        } else {
-            true
-        }
-    };
-
-    let scan = match need_cal_hops(dst_ipv6.into()) {
-        true => {
-            let hops = icmp_trace(dst_ipv6.into(), src_ipv6.into(), timeout)?;
-            get_scan_line(
-                dst_mac,
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-                dst_ipv6.into(),
-                hops,
-                good_results,
-            )
-        }
-        false => {
-            let hops = 0;
-            get_scan_line(
-                dst_mac,
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-                dst_ipv6.into(),
-                hops,
-                good_results,
-            )
-        }
-    };
+    let hops = icmp_trace(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let scan = get_scan_line(
+        dst_mac,
+        dst_open_tcp_port,
+        dst_closed_tcp_port,
+        dst_closed_udp_port,
+        dst_ipv6.into(),
+        hops,
+        good_results,
+    );
 
     let features = vectorize(&ap)?;
+    debug!("featured vectorize done");
     let features = apply_scale(&features, &linear.scale);
+    debug!("apply scale done");
     let predict = predict_value(&features, &linear.w);
+    debug!("predict done");
 
     let mut detect_rets = Vec::new();
-    for (i, (name, score)) in zip(&linear.infolist, &predict).into_iter().enumerate() {
+    for (i, (name, &score)) in zip(&linear.infolist, &predict).into_iter().enumerate() {
         let class = &linear.cpe[i].osclass;
         if class.len() > 0 {
             let class = class[0].join(" | ");
@@ -1305,12 +1301,13 @@ pub fn os_probe_thread6(
                 name: name.to_string(),
                 class,
                 cpe,
-                score: *score,
+                score,
                 label: i,
             };
             detect_rets.push(dr);
         }
     }
+    debug!("detect rets len: {}", detect_rets.len());
 
     let detect_rets = isort(&detect_rets);
     let mut perfect_match = 1;
@@ -1319,22 +1316,11 @@ pub fn os_probe_thread6(
             perfect_match += 1;
         }
     }
+    debug!("prefect match: {}", perfect_match);
 
-    // println!("{}", perfect_match);
     let label = detect_rets[0].label;
     let novelty = novelty_of(&features, &linear.mean[label], &linear.variance[label]);
-
-    let status = if perfect_match == 1 {
-        const FP_NOVELTY_THRESHOLD: f64 = 15.0;
-        // println!("{}", novelty);
-        if novelty < FP_NOVELTY_THRESHOLD {
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    debug!("novelty: {}", novelty);
 
     let s1x = SEQX6 {
         name: String::from("S1"),
@@ -1443,6 +1429,17 @@ pub fn os_probe_thread6(
         rt: ap.tx.rt7,
     };
 
+    const FP_NOVELTY_THRESHOLD: f64 = 15.0;
+    let status = if perfect_match == 1 {
+        if novelty < FP_NOVELTY_THRESHOLD {
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     let target_fingerprint = Fingerprint6 {
         scan,
         s1x,
@@ -1486,9 +1483,15 @@ pub fn os_probe_thread6(
         }
         ret
     } else {
+        warn!(
+            "os scan6 novelty {} > FP_NOVELTY_THRESHOLD {}, so there are no results returned",
+            novelty, FP_NOVELTY_THRESHOLD
+        );
         let ret = vec![];
         ret
     };
+
+    debug!("ipv6 fingerprint:\n{}", target_fingerprint);
     Ok((target_fingerprint, ret))
 }
 

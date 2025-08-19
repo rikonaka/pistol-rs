@@ -681,8 +681,13 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
     for option in options_vec {
         match option.number {
             TcpOptionNumbers::MSS => {
-                let data = PistolHex::be_vec_to_u32(&option.data)?;
-                let o_str = format!("M{:X}", data);
+                let data = if option.data.len() > 4 {
+                    &option.data[0..4]
+                } else {
+                    &option.data
+                };
+                let mss = PistolHex::be_vec_to_u32(data)?;
+                let o_str = format!("M{:X}", mss);
                 o_ret += &o_str;
             }
             TcpOptionNumbers::SACK_PERMITTED => {
@@ -695,22 +700,37 @@ pub fn tcp_o(ipv4_response: &[u8], probe_name: &str) -> Result<String, PistolErr
                 o_ret += "N";
             }
             TcpOptionNumbers::WSCALE => {
-                let data = PistolHex::be_vec_to_u32(&option.data)?;
-                let o_str = format!("W{:X}", data);
+                let data = if option.data.len() > 4 {
+                    &option.data[0..4]
+                } else {
+                    &option.data
+                };
+                let wscale = PistolHex::be_vec_to_u32(data)?;
+                let o_str = format!("W{:X}", wscale);
                 o_ret += &o_str;
             }
             TcpOptionNumbers::TIMESTAMPS => {
                 o_ret += "T";
-                let mut t0 = Vec::new();
-                let mut t1 = Vec::new();
-                for i in 0..option.data.len() {
-                    if i < 4 {
-                        // get first 4 u8 values
-                        t0.push(option.data[i]);
+                let t0 = if option.data.len() > 0 {
+                    if option.data.len() >= 4 {
+                        option.data[0..4].to_vec()
                     } else {
-                        t1.push(option.data[i]);
+                        option.data[0..option.data.len() - 1].to_vec()
                     }
-                }
+                } else {
+                    vec![0; 4]
+                };
+
+                let t1 = if option.data.len() > 4 {
+                    if option.data.len() >= 8 {
+                        option.data[4..8].to_vec()
+                    } else {
+                        option.data[4..option.data.len() - 1].to_vec()
+                    }
+                } else {
+                    vec![0; 4]
+                };
+
                 let t0_u32 = PistolHex::be_vec_to_u32(&t0)?;
                 let t1_u32 = PistolHex::be_vec_to_u32(&t1)?;
                 if t0_u32 == 0 {
@@ -826,19 +846,23 @@ pub fn tcp_udp_icmp_t(
 pub fn tcp_udp_icmp_tg(ipv4_response: &[u8], probe_name: &str) -> Result<u16, PistolError> {
     let ipv4_packet = build_ipv4_packet(ipv4_response, probe_name)?;
     let ipv4_ttl = ipv4_packet.get_ttl() as u16;
+
+    let er_lim = 5;
     let regual_ttl_vec = vec![32, 64, 128, 255];
     let mut guess_value = 0;
+
     for r in regual_ttl_vec {
         if ipv4_ttl > r {
-            if ipv4_ttl - r <= 5 {
+            if ipv4_ttl - r <= er_lim {
                 guess_value = r;
             }
         } else {
-            if r - ipv4_ttl <= 5 {
+            if r - ipv4_ttl <= er_lim {
                 guess_value = r;
             }
         }
     }
+
     if guess_value != 0 {
         Ok(guess_value)
     } else {
@@ -1003,8 +1027,12 @@ pub fn udp_un(u1: &U1RR, probe_name: &str) -> Result<u32, PistolError> {
     let response = &u1.u1.response;
     let ipv4_packet = build_ipv4_packet(response, probe_name)?;
     let icmp_packet = ipv4_packet.payload().to_vec();
-    if icmp_packet.len() >= 8 {
-        let rest_of_header = icmp_packet[4..8].to_vec();
+    if icmp_packet.len() > 4 {
+        let rest_of_header = if icmp_packet.len() >= 8 {
+            icmp_packet[4..8].to_vec()
+        } else {
+            icmp_packet[4..icmp_packet.len() - 1].to_vec()
+        };
         let un = PistolHex::be_vec_to_u32(&rest_of_header)?;
         Ok(un)
     } else {
