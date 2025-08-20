@@ -88,7 +88,7 @@ pub fn send_icmp_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Match {
-        name: String::from("icmp trace time exceeded layer3"),
+        name: "icmp trace time exceeded layer3",
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
@@ -104,7 +104,7 @@ pub fn send_icmp_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmp(payload_icmp);
     let layer4_icmp = Layer4MatchIcmp {
-        name: String::from("icmp trace time exceeded icmp"),
+        name: "icmp trace time exceeded icmp",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
@@ -114,13 +114,13 @@ pub fn send_icmp_trace_packet(
 
     // icmp reply
     let layer3 = Layer3Match {
-        name: String::from("icmp trace reply layer3"),
+        name: "icmp trace reply layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4MatchIcmp {
-        name: String::from("icmp trace reply icmp"),
+        name: "icmp trace reply icmp",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::EchoReply),
         icmp_code: None,

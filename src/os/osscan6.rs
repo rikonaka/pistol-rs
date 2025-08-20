@@ -1,4 +1,5 @@
 use pnet::datalink::MacAddr;
+use pnet::packet::icmpv6::Icmpv6Type;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -537,14 +538,18 @@ fn send_seq_probes(
     let start = SystemTime::now();
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
+        let name_string = format!("os scan6 seq {} layer3", i + 1);
+        let name = Box::leak(name_string.into_boxed_str());
         let layer3 = Layer3Match {
-            name: format!("os scan6 seq {} layer3", i + 1),
+            name,
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
+        let name_string = format!("os scan6 seq {} tcp_udp", i + 1);
+        let name = Box::leak(name_string.into_boxed_str());
         let layer4_tcp_udp = Layer4MatchTcpUdp {
-            name: format!("os scan6 seq {} tcp_udp", i + 1),
+            name,
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
@@ -591,7 +596,7 @@ fn send_seq_probes(
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
         let rr = RequestAndResponse { request, response };
         seqs.insert(i, rr);
         sts.insert(i, st);
@@ -669,19 +674,44 @@ fn send_ie_probes(
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
     let buffs = vec![buff_1, buff_2];
     let layer3 = Layer3Match {
-        name: String::from("os scan6 ie layer3"),
+        name: "os scan6 ie layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: String::from("os scan6 ie icmpv6"),
+    // They do, however, respond with different ICMPv6 errors with icmpv6 types 1, 2, 3, 4.
+    let layer4_icmpv6_1 = Layer4MatchIcmpv6 {
+        name: "os scan6 ie icmpv6 type 1",
         layer3: Some(layer3),
-        icmpv6_type: None,
+        icmpv6_type: Some(Icmpv6Type(1)),
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer4_icmpv6_2 = Layer4MatchIcmpv6 {
+        name: "os scan6 ie icmpv6 type 2",
+        layer3: Some(layer3),
+        icmpv6_type: Some(Icmpv6Type(2)),
+        icmpv6_code: None,
+        payload: None,
+    };
+    let layer4_icmpv6_3 = Layer4MatchIcmpv6 {
+        name: "os scan6 ie icmpv6 type 3",
+        layer3: Some(layer3),
+        icmpv6_type: Some(Icmpv6Type(3)),
+        icmpv6_code: None,
+        payload: None,
+    };
+    let layer4_icmpv6_4 = Layer4MatchIcmpv6 {
+        name: "os scan6 ie icmpv6 type 4",
+        layer3: Some(layer3),
+        icmpv6_type: Some(Icmpv6Type(4)),
+        icmpv6_code: None,
+        payload: None,
+    };
+    let layer_match_1 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_1);
+    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_2);
+    let layer_match_3 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_3);
+    let layer_match_4 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_4);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -694,7 +724,12 @@ fn send_ie_probes(
                 dst_ipv6,
                 src_ipv6,
                 &buff,
-                vec![layer_match.clone()],
+                vec![
+                    layer_match_1.clone(),
+                    layer_match_2.clone(),
+                    layer_match_3.clone(),
+                    layer_match_4.clone(),
+                ],
                 timeout,
                 true,
             );
@@ -723,7 +758,7 @@ fn send_ie_probes(
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
         let rr = RequestAndResponse { request, response };
         ies.insert(i, rr);
         sts.insert(i, st);
@@ -769,13 +804,13 @@ fn send_nx_probes(
     // let buffs = vec![buff_1];
     // let buffs = vec![buff_2];
     let layer3 = Layer3Match {
-        name: String::from("os scan6 nx layer3"),
+        name: "os scan6 nx layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: String::from("os scan6 nx icmpv6"),
+        name: "os scan6 nx icmpv6",
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -823,7 +858,7 @@ fn send_nx_probes(
 
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
         let rr = RequestAndResponse { request, response };
         nxs.insert(i, rr);
         sts.insert(i, st);
@@ -864,13 +899,13 @@ fn send_u1_probe(
     let src_port = random_port();
     let buff = packet6::udp_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_port)?;
     let layer3 = Layer3Match {
-        name: String::from("os scan6 u1 layer3"),
+        name: "os scan6 u1 layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: String::from("os scan6 u1 icmpv6"),
+        name: "os scan6 u1 icmpv6",
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -883,7 +918,7 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let mut st = start_time.elapsed();
     let mut rt = start_time.elapsed();
-    for _ in 0..MAX_RETRY {
+    for _retry_time in 0..MAX_RETRY {
         st = start_time.elapsed();
         let (response, _rtt) = layer3_ipv6_send(
             dst_ipv6,
@@ -923,13 +958,13 @@ fn send_tecn_probe(
     let src_port = random_port();
 
     let layer3 = Layer3Match {
-        name: String::from("os scan6 tecn layer3"),
+        name: "os scan6 tecn layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tecn tcp_udp"),
+        name: "os scan6 tecn tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
@@ -941,7 +976,7 @@ fn send_tecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
-    let (response, _) =
+    let (response, _rtt) =
         layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true)?;
     let rt = start_time.elapsed();
 
@@ -972,44 +1007,44 @@ fn send_tx_probes(
     }
 
     let layer3 = Layer3Match {
-        name: String::from("os scan6 tx layer3"),
+        name: "os scan6 tx layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
 
     let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tx tcp_udp 2"),
-        layer3: Some(layer3.clone()),
+        name: "os scan6 tx tcp_udp 2",
+        layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
     let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tx tcp_udp 3"),
-        layer3: Some(layer3.clone()),
+        name: "os scan6 tx tcp_udp 3",
+        layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
     let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tx tcp_udp 4"),
-        layer3: Some(layer3.clone()),
+        name: "os scan6 tx tcp_udp 4",
+        layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
     let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tx tcp_udp 5"),
-        layer3: Some(layer3.clone()),
+        name: "os scan6 tx tcp_udp 5",
+        layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
     let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tx tcp_udp 6"),
-        layer3: Some(layer3.clone()),
+        name: "os scan6 tx tcp_udp 6",
+        layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
     let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
-        name: String::from("os scan6 tx tcp_udp 7"),
+        name: "os scan6 tx tcp_udp 7",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
@@ -1072,7 +1107,7 @@ fn send_tx_probes(
 
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
-        let (response, _) = ret?;
+        let (response, _rtt) = ret?;
         let rr = RequestAndResponse { request, response };
         txs.insert(i, rr);
         sts.insert(i, st);
@@ -1528,44 +1563,44 @@ mod tests {
         println!("src_ports: {:?}", src_ports);
 
         let layer3 = Layer3Match {
-            name: String::from("test layer3"),
+            name: "test layer3",
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
 
         let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
-            name: String::from("test tcp_udp 2"),
-            layer3: Some(layer3.clone()),
+            name: "test tcp_udp 2",
+            layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[0]),
         };
         let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
-            name: String::from("test tcp_udp 3"),
-            layer3: Some(layer3.clone()),
+            name: "test tcp_udp 3",
+            layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[1]),
         };
         let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
-            name: String::from("test tcp_udp 4"),
-            layer3: Some(layer3.clone()),
+            name: "test tcp_udp 4",
+            layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[2]),
         };
         let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
-            name: String::from("test tcp_udp 5"),
-            layer3: Some(layer3.clone()),
+            name: "test tcp_udp 5",
+            layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[3]),
         };
         let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
-            name: String::from("test tcp_udp 6"),
-            layer3: Some(layer3.clone()),
+            name: "test tcp_udp 6",
+            layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[4]),
         };
         let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
-            name: String::from("test tcp_udp 7"),
+            name: "test tcp_udp 7",
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[5]),

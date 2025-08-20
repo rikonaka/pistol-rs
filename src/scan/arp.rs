@@ -65,13 +65,13 @@ pub fn send_arp_scan_packet(
 
     let ethernet_type = EtherTypes::Arp;
     let layer2 = Layer2Match {
-        name: String::from("arp scan layer2"),
+        name: "arp scan layer2",
         src_mac: None,
         dst_mac: Some(src_mac),
         ethernet_type: Some(ethernet_type),
     };
     let layer3 = Layer3Match {
-        name: String::from("arp scan layer3"),
+        name: "arp scan layer3",
         layer2: Some(layer2),
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
