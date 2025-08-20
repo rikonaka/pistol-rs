@@ -262,7 +262,7 @@ impl RouteTable {
         let mut routes = HashMap::new();
 
         // regex
-        let default_route_re = Regex::new(r"default (?P<via>[^\s]+) \w+ (?P<dev>[^\s]+)([^\s]+)?")?;
+        let default_route_re = Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
 
         for line in system_route_lines {
