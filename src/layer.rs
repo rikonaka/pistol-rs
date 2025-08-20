@@ -135,8 +135,12 @@ pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
 pub fn find_interface_by_dst(dst_addr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
-            if ip.contains(dst_addr) {
-                return Some(interface);
+            // ipn 0.0.0.0/0 contains all ip address
+            if !ip.ip().is_unspecified() {
+                if ip.contains(dst_addr) {
+                    // debug!("ipn {} contains dst addr {}", ip, dst_addr);
+                    return Some(interface);
+                }
             }
         }
     }
@@ -280,6 +284,7 @@ pub fn get_dst_mac_and_interface(
     src_addr: IpAddr,
     timeout: Option<Duration>,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
+    // search in the program cache
     if let Some((dst_mac, src_interface)) = get_dst_cache(dst_addr)? {
         return Ok((dst_mac, src_interface));
     }
@@ -455,8 +460,8 @@ impl InferAddr {
 /// because the loopback address only works at the transport layer
 /// and cannot send data frames.
 pub fn infer_addr(
-    src_addr: Option<IpAddr>,
     dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
 ) -> Result<Option<InferAddr>, PistolError> {
     if dst_addr.is_loopback() {
         for interface in interfaces() {
@@ -1574,10 +1579,12 @@ pub fn layer3_ipv4_send(
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
-    // println!("dst: {}, src: {}", dst_ipv4, src_ipv4);
     let (dst_mac, interface) =
         get_dst_mac_and_interface(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-    // println!("send interface: {}", interface.name);
+    debug!(
+        "dst: {}, src: {}, sending interface: {}, {:?}",
+        dst_ipv4, src_ipv4, interface.name, interface.ips
+    );
     let ethernet_type = EtherTypes::Ipv4;
     let payload_len = ethernet_payload.len();
     let (layer2_buff, rtt) = layer2_work(
@@ -1766,9 +1773,28 @@ pub fn layer3_ipv6_send(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PistolLogger;
+    use crate::PistolRunner;
     use pnet::packet::icmp::IcmpTypes;
-    use std::net::Ipv4Addr;
     use std::str::FromStr;
+    #[test]
+    fn test_infer_addr() {
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 129);
+        let ia = infer_addr(dst_ipv4.into(), None).unwrap();
+        if let Some(ia) = ia {
+            let timeout = Some(Duration::from_secs_f64(1.0));
+            let (_mac, interface) =
+                get_dst_mac_and_interface(ia.dst_addr, ia.src_addr, timeout).unwrap();
+            println!("{}", interface.name);
+        }
+        println!("{:?}", ia);
+    }
     #[test]
     fn test_layer_match() {
         let data: Vec<u8> = vec![

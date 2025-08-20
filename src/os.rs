@@ -392,7 +392,7 @@ pub fn os_detect(
         let dst_addr = target.addr;
         let tx = tx.clone();
         recv_size += 1;
-        let ia = match infer_addr(src_addr, dst_addr)? {
+        let ia = match infer_addr(dst_addr, src_addr)? {
             Some(ia) => ia,
             None => return Err(PistolError::CanNotFoundSourceAddress),
         };
@@ -542,7 +542,7 @@ pub fn os_detect_raw(
     timeout: Option<Duration>,
 ) -> Result<OsDetect, PistolError> {
     let start_time = Instant::now();
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };

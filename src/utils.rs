@@ -180,4 +180,10 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn interface_list() {
+        for interface in interfaces() {
+            println!("list interface: {}, {:?}", interface.name, interface.ips);
+        }
+    }
 }

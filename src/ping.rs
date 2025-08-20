@@ -369,7 +369,7 @@ fn ping(
                     None => random_port(),
                 };
                 let tx = tx.clone();
-                let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_addr)? {
+                let (dst_ipv4, src_ipv4) = match infer_addr(dst_addr, src_addr)? {
                     Some(ia) => ia.ipv4_addr()?,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
@@ -440,7 +440,7 @@ fn ping(
                     None => random_port(),
                 };
                 let tx = tx.clone();
-                let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_addr)? {
+                let (dst_ipv6, src_ipv6) = match infer_addr(dst_addr, src_addr)? {
                     Some(ia) => ia.ipv6_addr()?,
                     None => return Err(PistolError::CanNotFoundSourceAddress),
                 };
@@ -577,7 +577,7 @@ pub fn tcp_syn_ping_raw(
         Some(p) => p,
         None => random_port(),
     };
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -641,7 +641,7 @@ pub fn tcp_ack_ping_raw(
         Some(p) => p,
         None => random_port(),
     };
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -705,7 +705,7 @@ pub fn udp_ping_raw(
         Some(p) => p,
         None => random_port(),
     };
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -768,7 +768,7 @@ pub fn icmp_echo_ping_raw(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<PingStatus, PistolError> {
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -826,7 +826,7 @@ pub fn icmp_timestamp_ping_raw(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<PingStatus, PistolError> {
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -886,7 +886,7 @@ pub fn icmp_address_mask_ping_raw(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<PingStatus, PistolError> {
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -935,7 +935,7 @@ pub fn icmp_ping_raw(
     src_addr: Option<IpAddr>,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };

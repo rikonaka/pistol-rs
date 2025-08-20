@@ -10,7 +10,7 @@ use std::net::Ipv4Addr;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
-use std::time::SystemTime;
+use std::time::Instant;
 use tracing::debug;
 use tracing::warn;
 
@@ -284,7 +284,7 @@ fn send_seq_probes(
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
     // let buffs = vec![buff_4];
 
-    let start = SystemTime::now();
+    let start = Instant::now();
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
         let name_string = format!("os scan seq {} layer3", i + 1);
@@ -347,7 +347,7 @@ fn send_seq_probes(
         let rr = RequestResponse { request, response };
         seq_hm.insert(i, rr);
     }
-    let elapsed = start.elapsed()?.as_secs_f64();
+    let elapsed = start.elapsed().as_secs_f64();
 
     let seq1 = seq_hm
         .get(&0)
@@ -730,9 +730,13 @@ fn send_all_probes(
     src_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<AllPacketRR, PistolError> {
+    debug!("sending SEQ probe");
     let seq = send_seq_probes(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
+    debug!("sending IE probe");
     let ie = send_ie_probes(dst_ipv4, src_ipv4, timeout)?;
+    debug!("sending ECN probe");
     let ecn = send_ecn_probe(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
+    debug!("sending TX probe");
     let tx = send_tx_probes(
         dst_ipv4,
         dst_open_tcp_port,
@@ -740,6 +744,7 @@ fn send_all_probes(
         src_ipv4,
         timeout,
     )?;
+    debug!("sending U1 probe");
     let u1 = send_u1_probe(dst_ipv4, dst_closed_udp_port, src_ipv4, timeout)?;
 
     let ap = AllPacketRR {

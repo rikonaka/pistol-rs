@@ -8,7 +8,6 @@ use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
-use std::time::SystemTime;
 use tracing::debug;
 use tracing::warn;
 
@@ -533,7 +532,7 @@ fn send_seq_probes(
     let buff_6 = packet6::seq_packet_6_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[5])?;
     let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
 
-    let start = SystemTime::now();
+    let start = Instant::now();
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
         let name_string = format!("os scan6 seq {} layer3", i + 1);
@@ -600,9 +599,9 @@ fn send_seq_probes(
         sts.insert(i, st);
         rts.insert(i, rt);
     }
-    let elapsed = start.elapsed()?.as_secs_f64();
+    let elapsed = start.elapsed().as_secs_f64();
 
-    let seq1 = seqs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq1: RequestResponse = seqs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
     let seq2 = seqs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
     let seq3 = seqs.get(&2).map_or(RequestResponse::empty(), |x| x.clone());
     let seq4 = seqs.get(&3).map_or(RequestResponse::empty(), |x| x.clone());
@@ -1147,13 +1146,17 @@ fn send_all_probes(
     timeout: Option<Duration>,
 ) -> Result<AllPacketRR6, PistolError> {
     let start_time = Instant::now();
+    debug!("sending SEQ probe");
     let seq = send_seq_probes(dst_ipv6, dst_open_tcp_port, src_ipv6, timeout, start_time)?;
+    debug!("sending IE probe");
     let ie = send_ie_probes(dst_ipv6, src_ipv6, timeout, start_time)?;
+    debug!("sending NX probe");
     let nx = send_nx_probes(dst_ipv6, src_ipv6, src_mac, timeout, start_time)?;
-    // debug!("nx ni len: {}", nx.ni.response.len());
-    // debug!("nx ns len: {}", nx.ns.response.len());
+    debug!("sending U1 probe");
     let u1 = send_u1_probe(dst_ipv6, dst_closed_udp_port, src_ipv6, timeout, start_time)?;
+    debug!("sending TECN probe");
     let tecn = send_tecn_probe(dst_ipv6, dst_open_tcp_port, src_ipv6, timeout, start_time)?;
+    debug!("sending TX probe");
     let tx = send_tx_probes(
         dst_ipv6,
         src_ipv6,

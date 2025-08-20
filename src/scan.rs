@@ -206,7 +206,7 @@ pub fn arp_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let dst_mac = MacAddr::broadcast();
-    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+    let (dst_ipv4, src_ipv4) = match infer_addr(dst_ipv4.into(), src_addr)? {
         Some(ia) => ia.ipv4_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -231,7 +231,7 @@ pub fn ndp_ns_scan_raw(
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
-    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+    let (dst_ipv6, src_ipv6) = match infer_addr(dst_ipv6.into(), src_addr)? {
         Some(ia) => ia.ipv6_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
@@ -765,7 +765,7 @@ fn scan(
                     );
                     let tx = tx.clone();
                     recv_size += 1;
-                    let (dst_ipv4, src_ipv4) = match infer_addr(src_addr, dst_ipv4.into())? {
+                    let (dst_ipv4, src_ipv4) = match infer_addr(dst_ipv4.into(), src_addr)? {
                         Some(ia) => ia.ipv4_addr()?,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
@@ -841,7 +841,7 @@ fn scan(
                     };
                     let tx = tx.clone();
                     recv_size += 1;
-                    let (dst_ipv6, src_ipv6) = match infer_addr(src_addr, dst_ipv6.into())? {
+                    let (dst_ipv6, src_ipv6) = match infer_addr(dst_ipv6.into(), src_addr)? {
                         Some(ia) => ia.ipv6_addr()?,
                         None => return Err(PistolError::CanNotFoundSourceAddress),
                     };
@@ -1474,7 +1474,7 @@ fn scan_raw(
         None => random_port(),
     };
 
-    let ia = match infer_addr(src_addr, dst_addr)? {
+    let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };

@@ -154,7 +154,6 @@ impl RouteTable {
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
                                 warn!("invaild default route string: [{}]", line);
                                 continue; // not raise error here
                             }
@@ -204,7 +203,6 @@ impl RouteTable {
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
                                 warn!("invaild route string: [{}]", line);
                                 continue; // not raise error here
                             }
@@ -284,7 +282,6 @@ impl RouteTable {
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
                                 warn!("invaild default route string: [{}]", line);
                                 continue; // not raise error here
                             }
@@ -336,8 +333,6 @@ impl RouteTable {
                         let dev = match find_interface_by_name(dev_str) {
                             Some(i) => i,
                             None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
-                                warn!("invaild route string: [{}]", line);
                                 continue; // not raise error here
                             }
                         };
@@ -441,8 +436,10 @@ impl RouteTable {
                                 }
                             }
                             None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
-                                warn!("invaild default route string: [{}]", line);
+                                warn!(
+                                    "default route string [{}] has no interface, id {}",
+                                    line, if_index
+                                );
                                 continue; // not raise error here
                             }
                         }
@@ -460,7 +457,7 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        let find_interface = |if_index: u32| -> Option<NetworkInterface> {
+                        let find_interface_by_id = |if_index: u32| -> Option<NetworkInterface> {
                             for interface in interfaces() {
                                 if if_index == interface.index {
                                     return Some(interface);
@@ -478,11 +475,10 @@ impl RouteTable {
                             }
                         };
                         let dst = RouteAddr::IpNetwork(dst);
-                        let dev = find_interface(if_index);
+                        let dev = find_interface_by_id(if_index);
                         let dev = match dev {
                             Some(i) => i,
                             None => {
-                                // return Err(InvalidRouteFormat::new(line.to_string()).into());
                                 warn!("invaild default route string: [{}]", line);
                                 continue; // not raise error here
                             }
@@ -667,6 +663,7 @@ impl NeighborCache {
         // Examples:
         // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
         // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
+        // 12 ff05::c Permanent ActiveStore
         let c = Command::new("powershell")
             .args(["Get-NetNeighbor"])
             .output()?;
@@ -780,8 +777,6 @@ mod tests {
     }
     #[test]
     fn test_network_cache() {
-        // use crate::Logger;
-        // let _ = Logger::init_debug_logging();
         let snc = SystemNetCache::init().unwrap();
         for (a, n) in snc.routes {
             println!("a: {:?}, n: {}", a, n.name);
