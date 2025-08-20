@@ -1,5 +1,3 @@
-use serde::Deserialize;
-use serde::Serialize;
 use std::io::Read;
 use std::io::Write;
 use std::net::IpAddr;
@@ -67,7 +65,7 @@ fn vs_probe_data_to_string(input: &[u8]) -> String {
     ret
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum MatchX {
     Match(Match),
     SoftMatch(SoftMatch),

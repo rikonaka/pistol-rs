@@ -79,7 +79,7 @@ pub mod packet6;
 pub mod rr;
 
 #[cfg(feature = "os")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct OsInfo {
     pub name: String,
     pub class: Vec<String>,
@@ -90,7 +90,7 @@ pub struct OsInfo {
 }
 
 #[cfg(feature = "os")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct OsInfo6 {
     pub name: String,
     pub class: String,
@@ -265,14 +265,14 @@ impl fmt::Display for PistolOsDetects {
 }
 
 #[cfg(feature = "os")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NmapJsonParameters {
     pub name: String,
     pub value: Vec<f64>,
 }
 
 #[cfg(feature = "os")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CPE {
     pub name: String,
     pub osclass: Vec<Vec<String>>,
@@ -660,7 +660,7 @@ mod tests {
         IE(R=N)
 
         -- pistol
-        SCAN(V=PISTOL%D=8/19%OT=3389%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A41EB0%P=RUST)
+        SCAN(V=pistol_4.0.16%D=8/19%OT=3389%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A41EB0%P=RUST)
         SEQ(SP=114%GCD=2%ISR=113%TI=I%TS=A)
         OPS(O1=M5B4NW0ST11%O2=M5B4NW0ST11%O3=M5B4NW0NNT11%O4=M5B4NW0ST11%O5=M5B4NW0ST11%O6=M5B4ST11)
         WIN(W1=FA00%W2=FA00%W3=FA00%W4=FA00%W5=FA00%W6=FA00)
@@ -737,7 +737,7 @@ mod tests {
         IE(R=Y%DFI=N%TG=40%CD=S)
 
         -- pistol
-        SCAN(V=PISTOL%D=8/19%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A3F024%P=RUST)
+        SCAN(V=pistol_4.0.16%D=8/19%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=68A3F024%P=RUST)
         SEQ(SP=114%GCD=1%ISR=112%TI=Z%TS=A)
         OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
         WIN(W1=7120%W2=7120%W3=7120%W4=7120%W5=7120%W6=7120)

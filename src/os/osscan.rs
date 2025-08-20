@@ -3,8 +3,6 @@ use chrono::Local;
 use chrono::Utc;
 use pnet::datalink::MacAddr;
 use rand::Rng;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -59,7 +57,7 @@ use crate::os::packet;
 use crate::os::rr::AllPacketRR;
 use crate::os::rr::ECNRR;
 use crate::os::rr::IERR;
-use crate::os::rr::RequestAndResponse;
+use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
@@ -86,7 +84,7 @@ const MAX_RETRY: usize = 5; // nmap default
 // U1(R=Y%DF=N%T=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
 // IE(R=Y%DFI=N%T=40%CD=S)
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Fingerprint {
     pub scan: String,
     pub seqx: SEQX,
@@ -346,29 +344,29 @@ fn send_seq_probes(
         if response.len() == 0 {
             warn!("SQX-{} response is null", i);
         }
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         seq_hm.insert(i, rr);
     }
     let elapsed = start.elapsed()?.as_secs_f64();
 
     let seq1 = seq_hm
         .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let seq2 = seq_hm
         .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let seq3 = seq_hm
         .get(&2)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let seq4 = seq_hm
         .get(&3)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let seq5 = seq_hm
         .get(&4)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let seq6 = seq_hm
         .get(&5)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
 
     let seqrr = SEQRR {
         seq1,
@@ -450,16 +448,12 @@ fn send_ie_probes(
     let iter = rx.into_iter().take(2);
     for (i, request, ret) in iter {
         let (response, _rtt) = ret?;
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         ies.insert(i, rr);
     }
 
-    let ie1 = ies
-        .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let ie2 = ies
-        .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let ie1 = ies.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
+    let ie2 = ies.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
 
     let ie = IERR { ie1, ie2 };
     Ok(ie)
@@ -500,7 +494,7 @@ fn send_ecn_probe(
             true,
         )?;
         if response.len() > 0 {
-            let rr = RequestAndResponse {
+            let rr = RequestResponse {
                 request: buff,
                 response,
             };
@@ -510,7 +504,7 @@ fn send_ecn_probe(
         }
     }
 
-    let rr = RequestAndResponse {
+    let rr = RequestResponse {
         request: buff,
         response: vec![],
     };
@@ -638,28 +632,28 @@ fn send_tx_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret) in iter {
         let (response, _rtt) = ret?;
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         tx_hm.insert(i, rr);
     }
 
     let t2 = tx_hm
         .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let t3 = tx_hm
         .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let t4 = tx_hm
         .get(&2)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let t5 = tx_hm
         .get(&3)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let t6 = tx_hm
         .get(&4)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
     let t7 = tx_hm
         .get(&5)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::empty(), |x| x.clone());
 
     let txrr = TXRR {
         t2,
@@ -710,7 +704,7 @@ fn send_u1_probe(
         )?;
 
         if response.len() > 0 {
-            let rr = RequestAndResponse {
+            let rr = RequestResponse {
                 request: buff,
                 response,
             };
@@ -719,7 +713,7 @@ fn send_u1_probe(
             return Ok(u1);
         }
     }
-    let rr = RequestAndResponse {
+    let rr = RequestResponse {
         request: buff,
         response: vec![],
     };
@@ -759,7 +753,7 @@ fn send_all_probes(
     Ok(ap)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SEQX {
     // SP, GCD, ISR, TI, CI, II, SS, and TS.
     pub sp: u32,
@@ -882,7 +876,7 @@ pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct OPSX {
     pub o1: String,
     pub o2: String,
@@ -1017,7 +1011,7 @@ pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct WINX {
     pub w1: u16,
     pub w2: u16,
@@ -1150,7 +1144,7 @@ pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ECNX {
     // R, DF, T, TG, W, O, CC, and Q tests.
     pub r: String,
@@ -1304,7 +1298,7 @@ pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TXX {
     pub name: String,
     // R, DF, T, TG, W, S, A, F, O, RD, and Q tests.
@@ -1453,11 +1447,7 @@ impl fmt::Display for TXX {
     }
 }
 
-fn tx_fingerprint_func(
-    tx: &RequestAndResponse,
-    u1rr: &U1RR,
-    name: &str,
-) -> Result<TXX, PistolError> {
+fn tx_fingerprint_func(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolError> {
     let r = tcp_udp_icmp_r(&tx.response)?;
     let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
         "Y" => {
@@ -1520,7 +1510,7 @@ pub fn tx_fingerprint(
     Ok((t1, t2, t3, t4, t5, t6, t7))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct U1X {
     // R, DF, T, TG, IPL, UN, RIPL, RID, RIPCK, RUCK, and RUD tests.
     pub r: String,
@@ -1708,7 +1698,7 @@ pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct IEX {
     // R, DFI, T, TG, and CD tests.
     pub r: String,

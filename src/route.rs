@@ -3,8 +3,6 @@ use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
 use pnet::ipnetwork::IpNetwork;
 use regex::Regex;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -64,7 +62,7 @@ fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DefaultRoute {
     pub via: IpAddr,           // Next hop gateway address
     pub dev: NetworkInterface, // Device interface name
@@ -80,13 +78,13 @@ impl fmt::Display for DefaultRoute {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RouteAddr {
     IpNetwork(IpNetwork),
     IpAddr(IpAddr),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RouteTable {
     pub default_route: Option<DefaultRoute>,
     pub default_route6: Option<DefaultRoute>,
@@ -685,7 +683,7 @@ impl NeighborCache {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SystemNetCache {
     pub default_route: Option<DefaultRoute>,
     pub default_route6: Option<DefaultRoute>,

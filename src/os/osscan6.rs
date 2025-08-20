@@ -1,7 +1,5 @@
 use pnet::datalink::MacAddr;
 use pnet::packet::icmpv6::Icmpv6Type;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::iter::zip;
@@ -30,7 +28,7 @@ use crate::os::packet6;
 use crate::os::rr::AllPacketRR6;
 use crate::os::rr::IERR6;
 use crate::os::rr::NXRR6;
-use crate::os::rr::RequestAndResponse;
+use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR6;
 use crate::os::rr::TECNRR6;
 use crate::os::rr::TXRR6;
@@ -134,10 +132,10 @@ fn p_as_nmap_format(input: &[u8]) -> String {
     new_p
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SEQX6 {
     pub name: String,
-    pub rr: RequestAndResponse,
+    pub rr: RequestResponse,
     pub st: Duration,
     pub rt: Duration,
 }
@@ -146,7 +144,7 @@ impl SEQX6 {
     pub fn empty() -> SEQX6 {
         SEQX6 {
             name: String::new(),
-            rr: RequestAndResponse::empty(),
+            rr: RequestResponse::empty(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -171,10 +169,10 @@ impl fmt::Display for SEQX6 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct IEX6 {
     pub name: String,
-    pub rr: RequestAndResponse,
+    pub rr: RequestResponse,
     pub st: Duration,
     pub rt: Duration,
 }
@@ -183,7 +181,7 @@ impl IEX6 {
     pub fn empty() -> IEX6 {
         IEX6 {
             name: String::new(),
-            rr: RequestAndResponse::empty(),
+            rr: RequestResponse::empty(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -208,10 +206,10 @@ impl fmt::Display for IEX6 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NX6 {
     pub name: String,
-    pub rr: RequestAndResponse,
+    pub rr: RequestResponse,
     pub st: Duration,
     pub rt: Duration,
 }
@@ -220,7 +218,7 @@ impl NX6 {
     pub fn empty() -> NX6 {
         NX6 {
             name: String::new(),
-            rr: RequestAndResponse::empty(),
+            rr: RequestResponse::empty(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -245,9 +243,9 @@ impl fmt::Display for NX6 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct U1X6 {
-    pub rr: RequestAndResponse,
+    pub rr: RequestResponse,
     pub st: Duration,
     pub rt: Duration,
 }
@@ -255,7 +253,7 @@ pub struct U1X6 {
 impl U1X6 {
     pub fn empty() -> U1X6 {
         U1X6 {
-            rr: RequestAndResponse::empty(),
+            rr: RequestResponse::empty(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -279,9 +277,9 @@ impl fmt::Display for U1X6 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TECNX6 {
-    pub rr: RequestAndResponse,
+    pub rr: RequestResponse,
     pub st: Duration,
     pub rt: Duration,
 }
@@ -289,7 +287,7 @@ pub struct TECNX6 {
 impl TECNX6 {
     pub fn empty() -> TECNX6 {
         TECNX6 {
-            rr: RequestAndResponse::empty(),
+            rr: RequestResponse::empty(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -313,10 +311,10 @@ impl fmt::Display for TECNX6 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TX6 {
     pub name: String,
-    pub rr: RequestAndResponse,
+    pub rr: RequestResponse,
     pub st: Duration,
     pub rt: Duration,
 }
@@ -325,7 +323,7 @@ impl TX6 {
     pub fn empty() -> TX6 {
         TX6 {
             name: String::new(),
-            rr: RequestAndResponse::empty(),
+            rr: RequestResponse::empty(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -350,7 +348,7 @@ impl fmt::Display for TX6 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Fingerprint6 {
     // Some fields just for display.
     pub scan: String,
@@ -597,31 +595,19 @@ fn send_seq_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
         let (response, _rtt) = ret?;
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         seqs.insert(i, rr);
         sts.insert(i, st);
         rts.insert(i, rt);
     }
     let elapsed = start.elapsed()?.as_secs_f64();
 
-    let seq1 = seqs
-        .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let seq2 = seqs
-        .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let seq3 = seqs
-        .get(&2)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let seq4 = seqs
-        .get(&3)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let seq5 = seqs
-        .get(&4)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let seq6 = seqs
-        .get(&5)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let seq1 = seqs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq2 = seqs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq3 = seqs.get(&2).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq4 = seqs.get(&3).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq5 = seqs.get(&4).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq6 = seqs.get(&5).map_or(RequestResponse::empty(), |x| x.clone());
 
     let st1 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let st2 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
@@ -759,18 +745,14 @@ fn send_ie_probes(
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
         let (response, _rtt) = ret?;
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         ies.insert(i, rr);
         sts.insert(i, st);
         rts.insert(i, rt);
     }
 
-    let ie1 = ies
-        .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let ie2 = ies
-        .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let ie1 = ies.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
+    let ie2 = ies.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
 
     let st1 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let st2 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
@@ -859,18 +841,14 @@ fn send_nx_probes(
     let iter = rx.into_iter().take(2);
     for (i, request, ret, st, rt) in iter {
         let (response, _rtt) = ret?;
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         nxs.insert(i, rr);
         sts.insert(i, st);
         rts.insert(i, rt);
     }
 
-    let ni = nxs
-        .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let ns = nxs
-        .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let ni = nxs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
+    let ns = nxs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
 
     let sti = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let sts = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
@@ -930,7 +908,7 @@ fn send_u1_probe(
         )?;
         rt = start_time.elapsed();
         if response.len() > 0 {
-            let rr = RequestAndResponse {
+            let rr = RequestResponse {
                 request: buff,
                 response,
             };
@@ -940,7 +918,7 @@ fn send_u1_probe(
         }
     }
 
-    let rr = RequestAndResponse {
+    let rr = RequestResponse {
         request: buff,
         response: vec![],
     };
@@ -980,7 +958,7 @@ fn send_tecn_probe(
         layer3_ipv6_send(dst_ipv6, src_ipv6, &buff, vec![layer_match], timeout, true)?;
     let rt = start_time.elapsed();
 
-    let rr = RequestAndResponse {
+    let rr = RequestResponse {
         request: buff,
         response,
     };
@@ -1108,30 +1086,18 @@ fn send_tx_probes(
     let iter = rx.into_iter().take(6);
     for (i, request, ret, st, rt) in iter {
         let (response, _rtt) = ret?;
-        let rr = RequestAndResponse { request, response };
+        let rr = RequestResponse { request, response };
         txs.insert(i, rr);
         sts.insert(i, st);
         rts.insert(i, rt);
     }
 
-    let t2 = txs
-        .get(&0)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let t3 = txs
-        .get(&1)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let t4 = txs
-        .get(&2)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let t5 = txs
-        .get(&3)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let t6 = txs
-        .get(&4)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
-    let t7 = txs
-        .get(&5)
-        .map_or(RequestAndResponse::empty(), |x| x.clone());
+    let t2 = txs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
+    let t3 = txs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
+    let t4 = txs.get(&2).map_or(RequestResponse::empty(), |x| x.clone());
+    let t5 = txs.get(&3).map_or(RequestResponse::empty(), |x| x.clone());
+    let t6 = txs.get(&4).map_or(RequestResponse::empty(), |x| x.clone());
+    let t7 = txs.get(&5).map_or(RequestResponse::empty(), |x| x.clone());
 
     let st2 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let st3 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
