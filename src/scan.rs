@@ -736,12 +736,16 @@ fn scan(
     let num_threads = match num_threads {
         Some(t) => t,
         None => {
-            let num_threads = targets.len();
-            let num_threads = num_threads_check(num_threads);
+            let mut init_numm_threads = 0;
+            for t in targets {
+                init_numm_threads += t.ports.len();
+            }
+            let num_threads = num_threads_check(init_numm_threads);
             num_threads
         }
     };
 
+    debug!("scan will create {} threads to do the jobs", num_threads);
     let pool = get_threads_pool(num_threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -760,7 +764,7 @@ fn scan(
                         }
                     };
                     debug!(
-                        "target [{}] port [{}] src port [{}]",
+                        "sending scan packet to [{}] port [{}] and src port [{}]",
                         dst_addr, dst_port, src_port
                     );
                     let tx = tx.clone();
@@ -773,7 +777,7 @@ fn scan(
                     pool.execute(move || {
                         for ind in 0..max_attempts {
                             let start_time = Instant::now();
-                            debug!("target [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
+                            debug!("sending scan packet to [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
                             let scan_ret = scan_thread(
                                 method,
                                 dst_ipv4,
@@ -1621,8 +1625,8 @@ mod max_attempts {
     #[test]
     fn test_tcp_syn_scan() {
         let _pr = PistolRunner::init(
-            PistolLogger::None,
-            Some(String::from("tcp_syn_scan.pcapng")),
+            PistolLogger::Debug,
+            None, // Some(String::from("tcp_syn_scan.pcapng")),
             None, // use default value
         )
         .unwrap();
@@ -1630,14 +1634,13 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target1 = Target::new(addr1, Some(vec![22, 80, 443, 8080, 8081]));
-        let target2 = Target::new(addr2, Some(vec![22, 80, 443, 8080, 8081]));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
+        let ports: Vec<u16> = (1..100).collect();
+        let target1 = Target::new(addr1, Some(ports));
         let max_attempts = 2;
-        let num_threads = Some(8);
+        let num_threads = None;
         let ret = tcp_syn_scan(
-            &[target1, target2],
+            &[target1],
             num_threads,
             src_ipv4,
             src_port,
