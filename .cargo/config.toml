@@ -1,2 +1,5 @@
 [target.x86_64-unknown-linux-gnu]
 runner = 'sudo -E'
+
+[target.x86_64-unknown-freebsd]
+runner = 'sudo -E'
