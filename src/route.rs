@@ -262,7 +262,8 @@ impl RouteTable {
         let mut routes = HashMap::new();
 
         // regex
-        let default_route_re = Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
+        let default_route_re =
+            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
 
         for line in system_route_lines {
@@ -591,6 +592,7 @@ impl NeighborCache {
         // # ndp -a
         // Neighbor                             Linklayer Address  Netif Expire    1s 5s
         // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
+        // fe80::20c:29ff:feb8:a41%em0          00:0c:29:b8:0a:41    em0 permanent R
         let c = Command::new("sh").args(["-c", "arp -a"]).output()?;
         let arp_output = String::from_utf8_lossy(&c.stdout);
         let c = Command::new("sh").args(["-c", "ndp -a"]).output()?;
@@ -604,6 +606,7 @@ impl NeighborCache {
 
         // regex
         let neighbor_re = Regex::new(r"\?\s+\((?P<addr>[^\s]+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
+        let neighbor_re6 = Regex::new(r"(?P<addr>[^\s]+)\s+(?P<mac>[^\s]+).+")?;
 
         let mut ret = HashMap::new();
         for line in lines {
@@ -628,7 +631,33 @@ impl NeighborCache {
                     };
                     ret.insert(addr, mac);
                 }
-                None => warn!("line: [{}] neighbor_re no match", line),
+                // it maybe the ipv6 addr
+                None => match neighbor_re6.captures(line) {
+                    Some(caps) => {
+                        let addr_str = caps.name("addr").map_or("", |m| m.as_str());
+                        let addr_str = ipv6_addr_bsd_fix(addr_str)?;
+                        let addr: IpAddr = match addr_str.parse() {
+                            Ok(a) => a,
+                            Err(e) => {
+                                warn!("parse neighbor 'addr' error:  {e}");
+                                continue;
+                            }
+                        };
+                        let mac = caps.name("mac").map_or("", |m| m.as_str());
+                        let mac: MacAddr = match mac.parse() {
+                            Ok(m) => m,
+                            Err(e) => {
+                                warn!("parse neighbor 'mac' error:  {e}");
+                                continue;
+                            }
+                        };
+                        ret.insert(addr, mac);
+                    }
+                    None => warn!(
+                        "line: [{}] neighbor_re and neighbor_re6 both no match",
+                        line
+                    ),
+                },
             }
         }
         Ok(ret)
