@@ -46,14 +46,13 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::DEFAULT_TIMEOUT;
+use crate::DST_CACHE;
 use crate::PISTOL_PCAPNG;
 use crate::PISTOL_PCAPNG_FLAG;
 use crate::PISTOL_RUNNER_IS_RUNNING;
+use crate::PistolChannel;
 use crate::SYSTEM_NET_CACHE;
 use crate::UNIFIED_RECV_MATCHS;
-
-use crate::DST_CACHE;
-use crate::PistolChannel;
 use crate::error::PistolError;
 use crate::route::DefaultRoute;
 use crate::scan::arp::send_arp_scan_packet;
@@ -132,19 +131,41 @@ pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
 }
 
 /// Use destination IP address to find local interface
-pub fn find_interface_by_dst(dst_addr: IpAddr) -> Option<NetworkInterface> {
+pub fn find_interface_by_dst(dst_addr: IpAddr) -> Result<Option<NetworkInterface>, PistolError> {
+    // use route table to search
+    let snc = match SYSTEM_NET_CACHE.lock() {
+        Ok(snc) => snc.clone(),
+        Err(e) => {
+            return Err(PistolError::TryLockGlobalVarFailed {
+                var_name: String::from("SYSTEM_NET_CACHE"),
+                e: e.to_string(),
+            });
+        }
+    };
+
+    let routes = snc.routes;
+    for (route_addr, interface) in routes {
+        if route_addr.contains(dst_addr) {
+            debug!("route addr {} contains {}", route_addr, dst_addr);
+            return Ok(Some(interface));
+        } else {
+            debug!("route addr {} not contains {}", route_addr, dst_addr);
+        }
+    }
+
+    // try second method
     for interface in interfaces() {
         for ip in &interface.ips {
             // ipn 0.0.0.0/0 contains all ip address
             if !ip.ip().is_unspecified() {
                 if ip.contains(dst_addr) {
                     // debug!("ipn {} contains dst addr {}", ip, dst_addr);
-                    return Some(interface);
+                    return Ok(Some(interface));
                 }
             }
         }
     }
-    None
+    Ok(None)
 }
 
 fn find_loopback_interface() -> Option<NetworkInterface> {
@@ -159,7 +180,7 @@ fn find_loopback_interface() -> Option<NetworkInterface> {
 fn get_default_route() -> Result<Option<DefaultRoute>, PistolError> {
     // release the lock when leaving the function
     let snc = match SYSTEM_NET_CACHE.lock() {
-        Ok(snc) => snc,
+        Ok(snc) => snc.clone(),
         Err(e) => {
             return Err(PistolError::TryLockGlobalVarFailed {
                 var_name: String::from("SYSTEM_NET_CACHE"),
@@ -167,7 +188,7 @@ fn get_default_route() -> Result<Option<DefaultRoute>, PistolError> {
             });
         }
     };
-    Ok(snc.default_route.clone())
+    Ok(snc.default_route)
 }
 
 /// Check if the target IP address is in the local.
@@ -295,7 +316,7 @@ pub fn get_dst_mac_and_interface(
             None => return Err(PistolError::CanNotFoundInterface),
         }
     } else {
-        match find_interface_by_dst(dst_addr) {
+        match find_interface_by_dst(dst_addr)? {
             Some(i) => i,
             None => match find_interface_by_src(src_addr) {
                 Some(i) => i,

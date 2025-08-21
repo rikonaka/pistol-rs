@@ -777,7 +777,10 @@ fn scan(
                     pool.execute(move || {
                         for ind in 0..max_attempts {
                             let start_time = Instant::now();
-                            debug!("sending scan packet to [{}] port [{}] try [{}]", dst_addr, dst_port, ind);
+                            debug!(
+                                "sending scan packet to [{}] port [{}] try [{}]",
+                                dst_addr, dst_port, ind
+                            );
                             let scan_ret = scan_thread(
                                 method,
                                 dst_ipv4,
@@ -1626,7 +1629,7 @@ mod max_attempts {
     fn test_tcp_syn_scan() {
         let _pr = PistolRunner::init(
             PistolLogger::Debug,
-            None, // Some(String::from("tcp_syn_scan.pcapng")),
+            Some(String::from("tcp_syn_scan.pcapng")),
             None, // use default value
         )
         .unwrap();
@@ -1634,9 +1637,10 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
-        let ports: Vec<u16> = (1..100).collect();
-        let target1 = Target::new(addr1, Some(ports));
+        // let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
+        // let ports: Vec<u16> = (1..100).collect();
+        let target1 = Target::new(addr1, Some(vec![5432]));
         let max_attempts = 2;
         let num_threads = None;
         let ret = tcp_syn_scan(

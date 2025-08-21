@@ -1,0 +1,21 @@
+default via 192.168.7.1 dev wlan0 proto dhcp src 192.168.7.100 metric 600 
+10.8.0.0/24 dev tun0 proto kernel scope link src 10.8.0.199 
+10.179.141.128/26 dev eth0 proto kernel scope link src 10.179.141.188 metric 100 
+10.179.201.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.202.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.203.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.204.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.205.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.206.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.207.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.208.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.209.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.210.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.211.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.212.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.213.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.214.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.215.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.225.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+10.179.252.0/24 via 10.179.141.129 dev eth0 proto static metric 100 
+192.168.7.0/24 dev wlan0 proto kernel scope link src 192.168.7.100 metric 600

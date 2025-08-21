@@ -84,6 +84,31 @@ pub enum RouteAddr {
     IpAddr(IpAddr),
 }
 
+impl fmt::Display for RouteAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output_str = match self {
+            RouteAddr::IpNetwork(ipn) => format!("{}", ipn),
+            RouteAddr::IpAddr(ip) => format!("{}", ip),
+        };
+        write!(f, "{}", output_str)
+    }
+}
+
+impl RouteAddr {
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        match self {
+            RouteAddr::IpNetwork(ip_network) => ip_network.contains(ip),
+            RouteAddr::IpAddr(ip_addr) => {
+                if *ip_addr == ip {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RouteTable {
     pub default_route: Option<DefaultRoute>,
@@ -137,6 +162,7 @@ impl RouteTable {
         let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
 
         for line in system_route_lines {
+            debug!("system route line: {}", line);
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
                 match default_route_re.captures(&line) {
@@ -223,29 +249,25 @@ impl RouteTable {
     }
     #[cfg(target_os = "linux")]
     pub fn init() -> Result<RouteTable, PistolError> {
-        let system_route_lines = || -> Result<Vec<String>, PistolError> {
-            // Linux
-            // ubuntu22.04 output:
-            // default via 192.168.72.2 dev ens33
-            // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-            // fe80::/64 dev ens33 proto kernel metric 256 pref medium
-            // centos7 output:
-            // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-            // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
-            let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
-            let ipv4_output = String::from_utf8_lossy(&c.stdout);
-            let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
-            let ipv6_output = String::from_utf8_lossy(&c.stdout);
-            let output = ipv4_output.to_string() + &ipv6_output;
-            let lines: Vec<String> = output
-                .lines()
-                .map(|x| x.trim().to_string())
-                .filter(|v| v.len() > 0)
-                .collect();
-            Ok(lines)
-        };
-        let system_route_lines = system_route_lines()?;
+        // Linux
+        // ubuntu22.04 output:
+        // default via 192.168.72.2 dev ens33
+        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+        // fe80::/64 dev ens33 proto kernel metric 256 pref medium
+        // centos7 output:
+        // default via 192.168.72.2 dev ens33 proto dhcp metric 100
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
+        let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
+        let ipv4_output = String::from_utf8_lossy(&c.stdout);
+        let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
+        let ipv6_output = String::from_utf8_lossy(&c.stdout);
+        let output = ipv4_output.to_string() + &ipv6_output;
+        let system_route_lines: Vec<String> = output
+            .lines()
+            .map(|x| x.trim().to_string())
+            .filter(|v| v.len() > 0)
+            .collect();
         RouteTable::parser(system_route_lines)
     }
     #[cfg(any(
@@ -356,25 +378,21 @@ impl RouteTable {
         target_os = "netbsd"
     ))]
     pub fn init() -> Result<RouteTable, PistolError> {
-        let system_route_lines = || -> Result<Vec<String>, PistolError> {
-            // default 192.168.72.2 UGS em0
-            // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-            // 127.0.0.1          link#2             UH          lo0
-            let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
-            let output = String::from_utf8_lossy(&c.stdout);
-            let lines: Vec<String> = output
-                .lines()
-                .map(|x| x.trim().to_string())
-                .filter(|v| {
-                    v.len() > 0
-                        && !v.contains("Destination")
-                        && !v.contains("Routing tables")
-                        && !v.contains("Internet")
-                })
-                .collect();
-            Ok(lines)
-        };
-        let system_route_lines = system_route_lines()?;
+        // default 192.168.72.2 UGS em0
+        // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
+        // 127.0.0.1          link#2             UH          lo0
+        let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
+        let output = String::from_utf8_lossy(&c.stdout);
+        let system_route_lines: Vec<String> = output
+            .lines()
+            .map(|x| x.trim().to_string())
+            .filter(|v| {
+                v.len() > 0
+                    && !v.contains("Destination")
+                    && !v.contains("Routing tables")
+                    && !v.contains("Internet")
+            })
+            .collect();
         RouteTable::parser(system_route_lines)
     }
     #[cfg(target_os = "windows")]
@@ -499,19 +517,15 @@ impl RouteTable {
     }
     #[cfg(target_os = "windows")]
     pub fn init() -> Result<RouteTable, PistolError> {
-        let system_route_lines = || -> Result<Vec<String>, PistolError> {
-            // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
-            // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
-            let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
-            let output = String::from_utf8_lossy(&c.stdout);
-            let route_lines: Vec<String> = output
-                .lines()
-                .map(|x| x.trim().to_string())
-                .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
-                .collect();
-            Ok(route_lines)
-        };
-        let system_route_lines = system_route_lines()?;
+        // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
+        // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
+        let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+        let output = String::from_utf8_lossy(&c.stdout);
+        let system_route_lines: Vec<String> = output
+            .lines()
+            .map(|x| x.trim().to_string())
+            .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
+            .collect();
         RouteTable::parser(system_route_lines)
     }
 }
@@ -765,8 +779,24 @@ impl SystemNetCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PistolLogger;
+    use crate::PistolRunner;
     use pnet::datalink::interfaces;
     use std::fs::read_to_string;
+    #[test]
+    fn test_network_cache() {
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+
+        let snc = SystemNetCache::init().unwrap();
+        for (a, n) in snc.routes {
+            println!("a: {:?}, n: {}", a, n.name);
+        }
+    }
     #[test]
     fn test_neighbor() {
         let n = NeighborCache::init().unwrap();
@@ -774,18 +804,6 @@ mod tests {
 
         let r = RouteTable::init().unwrap();
         println!("{:?}", r);
-    }
-    #[test]
-    fn test_network_cache() {
-        let snc = SystemNetCache::init().unwrap();
-        for (a, n) in snc.routes {
-            println!("a: {:?}, n: {}", a, n.name);
-        }
-        // println!("routes: {:?}", snc.routes);
-        // println!("default ipv4 route: {:?}", snc.default_route);
-        // println!("default ipv6 route: {:?}", snc.default_route6);
-        // println!("neighbor cache: {:?}", snc.neighbor);
-        // println!("{:?}", nc);
     }
     #[test]
     fn test_windows_interface() {
