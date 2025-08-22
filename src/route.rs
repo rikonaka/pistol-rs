@@ -228,7 +228,7 @@ impl InnerRouteTable {
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
-                                warn!("parse route table 'via' {} error: {}", via_str, e);
+                                warn!("parse route table 'via' [{}] error: {}", via_str, e);
                                 continue;
                             }
                         };
@@ -325,14 +325,18 @@ impl InnerRouteTable {
             if default_route_judge(&line) {
                 // default 192.168.72.2 UGS em0
                 // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-                let line_split: Vec<&str> = line.split(" ").map(|x| x.trim()).collect();
+                let line_split: Vec<&str> = line
+                    .split(" ")
+                    .map(|x| x.trim())
+                    .filter(|x| x.len() > 0)
+                    .collect();
                 if line_split.len() >= 2 {
                     let via_str = line_split[1];
                     let via_str = ipv6_addr_bsd_fix(via_str)?;
                     let via: IpAddr = match via_str.parse() {
                         Ok(v) => v,
                         Err(e) => {
-                            warn!("parse route table 'via' {} error: {}", via_str, e);
+                            warn!("parse route table 'via' [{}] error: {}", via_str, e);
                             continue;
                         }
                     };
@@ -355,7 +359,11 @@ impl InnerRouteTable {
                 }
             } else {
                 // 127.0.0.1          link#2             UH          lo0
-                let line_split: Vec<&str> = line.split(" ").map(|x| x.trim()).collect();
+                let line_split: Vec<&str> = line
+                    .split(" ")
+                    .map(|x| x.trim())
+                    .filter(|x| x.len() > 0)
+                    .collect();
                 if line_split.len() >= 2 {
                     let dst_str = line_split[0];
                     let dst_str = ipv6_addr_bsd_fix(dst_str)?;
@@ -424,7 +432,7 @@ impl InnerRouteTable {
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
-                                warn!("parse route table 'via' {} error: {}", via_str, e);
+                                warn!("parse route table 'via' [{}[ error: {}", via_str, e);
                                 continue;
                             }
                         };
