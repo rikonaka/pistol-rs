@@ -1637,48 +1637,24 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        // let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
+        #[cfg(target_os = "linux")]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
-        // let ports: Vec<u16> = (1..100).collect();
-        let target1 = Target::new(addr1, Some(vec![5432]));
+        #[cfg(target_os = "linux")]
+        let ports = vec![22, 5432];
+        #[cfg(target_os = "windows")]
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
+        #[cfg(target_os = "windows")]
+        let ports = vec![80, 3389];
+        #[cfg(target_os = "freebsd")]
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
+        #[cfg(target_os = "freebsd")]
+        let ports = vec![80, 3389];
+
+        let target1 = Target::new(addr1, Some(ports));
         let max_attempts = 2;
         let num_threads = None;
         let ret = tcp_syn_scan(
             &[target1],
-            num_threads,
-            src_ipv4,
-            src_port,
-            timeout,
-            max_attempts,
-        )
-        .unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_tcp_syn_scan_debug() {
-        let _pr = PistolRunner::init(
-            PistolLogger::None,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
-        let src_ipv4 = None;
-        let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
-        let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target1 = Target::new(addr1, Some(vec![22, 443, 3389]));
-        let target2 = Target::new(addr2, Some(vec![22, 443, 8080]));
-        let max_attempts = 2;
-        let num_threads = Some(8);
-        let mut targets = vec![target1, target2];
-
-        let target3 = Target::from_domain("scanme.nmap.org", Some(vec![22, 443, 8080])).unwrap();
-        targets.extend(target3);
-
-        let ret = tcp_syn_scan(
-            &targets,
             num_threads,
             src_ipv4,
             src_port,

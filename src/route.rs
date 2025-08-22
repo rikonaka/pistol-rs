@@ -116,6 +116,12 @@ impl RouteAddr {
             }
         }
     }
+    pub fn is_unspecified(&self) -> bool {
+        match self {
+            RouteAddr::IpNetwork(ip_network) => ip_network.ip().is_unspecified(),
+            RouteAddr::IpAddr(ip_addr) => ip_addr.is_unspecified(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -367,7 +373,7 @@ impl InnerRouteTable {
                         default_route6 = Some(inner_default_route);
                     }
                 } else {
-                    warn!("line: [{}] default route no match", line);
+                    warn!("line: [{}] default route split no match", line);
                 }
             } else {
                 // 127.0.0.1          link#2             UH          lo0
@@ -405,7 +411,7 @@ impl InnerRouteTable {
                     let inner_route_info = InnerRouteInfo { dev, via };
                     routes.insert(dst, inner_route_info);
                 } else {
-                    warn!("line: [{}] route no match", line);
+                    warn!("line: [{}] route split no match", line);
                 }
             }
         }
@@ -430,7 +436,7 @@ impl InnerRouteTable {
             if default_route_judge(&line) {
                 // 19 0.0.0.0/0 192.168.1.4 256 35 ActiveStore
                 let default_route_re =
-                    Regex::new(r"(?P<index>[^\s]+)\s+[^\s]+\s+(?P<via>[^\s]+)(.+)?")?;
+                    Regex::new(r"^(?P<index>[^\s]+)\s+[^\s]+\s+(?P<via>[^\s]+)(.+)?")?;
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
@@ -470,7 +476,7 @@ impl InnerRouteTable {
                 // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
                 // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
                 let route_re =
-                    Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
+                    Regex::new(r"^(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
@@ -954,9 +960,13 @@ impl SystemNetCache {
     pub fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
         self.neighbor.insert(ip, mac);
     }
-    pub fn search_route(&self, ip: IpAddr) -> Option<RouteInfo> {
+    pub fn search_route_table(&self, ip: IpAddr) -> Option<RouteInfo> {
         for (dst, route_info) in &self.routes {
-            if dst.contains(ip) {
+            if !dst.is_unspecified() && dst.contains(ip) {
+                debug!(
+                    "route table {} contains target ip, route info dev: {}, via: {}",
+                    dst, route_info.dev.name, route_info.via
+                );
                 return Some(route_info.clone());
             }
         }

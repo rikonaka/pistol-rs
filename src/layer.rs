@@ -151,7 +151,7 @@ fn search_route_table(dst_addr: IpAddr) -> Result<Option<RouteInfo>, PistolError
             });
         }
     };
-    Ok(snc.search_route(dst_addr))
+    Ok(snc.search_route_table(dst_addr))
 }
 
 fn find_loopback_interface() -> Option<NetworkInterface> {
@@ -298,12 +298,23 @@ pub fn get_dst_mac_and_src_if(
             Some(route_info) => route_info,
             None => return Err(PistolError::CanNotFoundInterface),
         };
+        debug!(
+            "search route table done, dev {} via {}",
+            route_info.dev.name, route_info.via
+        );
         (route_info.dev, route_info.via)
     };
     debug!(
         "src interface: {}, via addr: {}",
         src_interface.name, via_addr
     );
+
+    // we need to fix 0.0.0.0
+    let via_addr = if via_addr.is_unspecified() {
+        dst_addr
+    } else {
+        via_addr
+    };
 
     let dst_mac = match search_mac(via_addr)? {
         Some(m) => m,
