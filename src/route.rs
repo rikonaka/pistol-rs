@@ -154,12 +154,9 @@ impl fmt::Display for InnerDefaultRoute {
     }
 }
 
-// intermediate layer representation, used for testing
 #[derive(Debug, Clone)]
-struct InnerRouteTable {
-    pub default_route: Option<InnerDefaultRoute>,
-    pub default_route6: Option<InnerDefaultRoute>,
-    // (192.168.1.0/24, ens33)
+struct InnerRouteInfo {
+    /// linux and unix interface name
     #[cfg(any(
         target_os = "linux",
         target_os = "freebsd",
@@ -167,10 +164,21 @@ struct InnerRouteTable {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    pub routes: HashMap<RouteAddr, String>,
-    // (192.168.1.0/24, if_index) windows
+    dev: String,
+    /// windows interface ids
     #[cfg(target_os = "windows")]
-    pub routes: HashMap<RouteAddr, u32>,
+    dev: u32,
+    via: String,
+}
+
+// intermediate layer representation, used for testing
+#[derive(Debug, Clone)]
+struct InnerRouteTable {
+    default_route: Option<InnerDefaultRoute>,
+    default_route6: Option<InnerDefaultRoute>,
+    /// (192.168.1.0/24, (dev_name, via_ip)) linux and unix
+    /// (192.168.1.0/24, (if_index, via_ip)) windows
+    routes: HashMap<RouteAddr, InnerRouteInfo>,
 }
 
 impl fmt::Display for InnerRouteTable {
@@ -253,9 +261,11 @@ impl InnerRouteTable {
                 // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
                 // fe80::/64 dev ens33 proto kernel metric 256 pref medium
                 // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
+                // 10.179.252.0/24 via 10.179.141.129 dev eth0 proto static metric 100
                 let route_re_1 = Regex::new(r"^(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
-                let route_re_2 =
-                    Regex::new(r"^(?P<subnet>[^\s]+)\s+via\s+[^\s]+\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
+                let route_re_2 = Regex::new(
+                    r"^(?P<subnet>[^\s]+)\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?",
+                )?;
                 // there are many regex to match different output
                 let caps = if let Some(caps) = route_re_1.captures(&line) {
                     Some(caps)
@@ -289,7 +299,9 @@ impl InnerRouteTable {
                         dst
                     };
                     let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
-                    routes.insert(dst, dev);
+                    let via = caps.name("via").map_or("", |m| m.as_str()).to_string();
+                    let inner_route_info = InnerRouteInfo { dev, via };
+                    routes.insert(dst, inner_route_info);
                 } else {
                     warn!("line: [{}] route_re_1 and route_re_2 both no match", line);
                 }
@@ -364,7 +376,7 @@ impl InnerRouteTable {
                     .map(|x| x.trim())
                     .filter(|x| x.len() > 0)
                     .collect();
-                if line_split.len() >= 2 {
+                if line_split.len() >= 3 {
                     let dst_str = line_split[0];
                     let dst_str = ipv6_addr_bsd_fix(dst_str)?;
                     let dst = if dst_str.contains("/") {
@@ -389,7 +401,9 @@ impl InnerRouteTable {
                         dst
                     };
                     let dev = line_split[line_split.len() - 1].to_string();
-                    routes.insert(dst, dev);
+                    let via = line_split[1].to_string();
+                    let inner_route_info = InnerRouteInfo { dev, via };
+                    routes.insert(dst, inner_route_info);
                 } else {
                     warn!("line: [{}] route no match", line);
                 }
@@ -455,7 +469,8 @@ impl InnerRouteTable {
             } else {
                 // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
                 // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
-                let route_re = Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+[^\s]+(.+)?")?;
+                let route_re =
+                    Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
@@ -476,7 +491,9 @@ impl InnerRouteTable {
                             }
                         };
                         let dst = RouteAddr::IpNetwork(dst);
-                        routes.insert(dst, if_index);
+                        let via = caps.name("via").map_or("", |m| m.as_str()).to_string();
+                        let inner_route_info = InnerRouteInfo { dev: if_index, via };
+                        routes.insert(dst, inner_route_info);
                     }
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
@@ -492,10 +509,16 @@ impl InnerRouteTable {
 }
 
 #[derive(Debug, Clone)]
+pub struct RouteInfo {
+    pub dev: NetworkInterface,
+    pub via: IpAddr,
+}
+
+#[derive(Debug, Clone)]
 pub struct RouteTable {
     pub default_route: Option<DefaultRoute>,
     pub default_route6: Option<DefaultRoute>,
-    pub routes: HashMap<RouteAddr, NetworkInterface>,
+    pub routes: HashMap<RouteAddr, RouteInfo>,
 }
 
 impl fmt::Display for RouteTable {
@@ -506,7 +529,7 @@ impl fmt::Display for RouteTable {
                 RouteAddr::IpAddr(i) => i.to_string(),
                 RouteAddr::IpNetwork(i) => i.to_string(),
             };
-            let interface_name = n.name.clone();
+            let interface_name = n.dev.name.clone();
             new_routes.insert(addr, interface_name);
         }
         let mut output = String::new();
@@ -662,7 +685,16 @@ impl RouteTable {
         };
 
         let mut routes = HashMap::new();
-        for (r, dev_name_or_if_index) in inner_route_table.routes {
+        for (r, inner_route_info) in inner_route_table.routes {
+            let dev_str = inner_route_info.dev;
+            let via_str = inner_route_info.via;
+            let via: IpAddr = match via_str.parse() {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                    continue;
+                }
+            };
             #[cfg(any(
                 target_os = "linux",
                 target_os = "freebsd",
@@ -670,21 +702,23 @@ impl RouteTable {
                 target_os = "netbsd",
                 target_os = "macos"
             ))]
-            match find_interface_by_name(&dev_name_or_if_index) {
+            match find_interface_by_name(&dev_str) {
                 Some(dev) => {
-                    routes.insert(r, dev);
-                }
-                None => warn!("can not found interface by name [{}]", dev_name_or_if_index),
-            }
-            #[cfg(target_os = "windows")]
-            match find_interface_by_index(dev_name_or_if_index) {
-                Some(dev) => {
-                    routes.insert(r, dev);
+                    let route_info = RouteInfo { dev, via };
+                    routes.insert(r, route_info);
                 }
                 None => warn!(
-                    "can not found interface by if_index [{}]",
-                    dev_name_or_if_index
+                    "can not found interface by name [{}], via [{}]",
+                    dev_str, via
                 ),
+            }
+            #[cfg(target_os = "windows")]
+            match find_interface_by_index(dev_str) {
+                Some(dev) => {
+                    let route_info = RouteInfo { dev, via };
+                    routes.insert(r, route_info);
+                }
+                None => warn!("can not found interface by if_index [{}]", dev_str),
             }
         }
 
@@ -893,7 +927,7 @@ impl NeighborCache {
 pub struct SystemNetCache {
     pub default_route: Option<DefaultRoute>,
     pub default_route6: Option<DefaultRoute>,
-    pub routes: HashMap<RouteAddr, NetworkInterface>,
+    pub routes: HashMap<RouteAddr, RouteInfo>,
     pub neighbor: HashMap<IpAddr, MacAddr>,
 }
 
@@ -911,29 +945,19 @@ impl SystemNetCache {
         };
         Ok(snc)
     }
-    pub fn search_mac(&self, ipaddr: IpAddr) -> Option<MacAddr> {
-        let mac = match self.neighbor.get(&ipaddr) {
-            Some(m) => Some(*m),
+    pub fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
+        match self.neighbor.get(&ip) {
+            Some(&m) => Some(m),
             None => None,
-        };
-        mac
+        }
     }
-    pub fn update_neighbor_cache(&mut self, ipaddr: IpAddr, mac: MacAddr) {
-        self.neighbor.insert(ipaddr, mac);
+    pub fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
+        self.neighbor.insert(ip, mac);
     }
-    pub fn search_route(&self, ipaddr: IpAddr) -> Option<NetworkInterface> {
-        for (dst, dev) in &self.routes {
-            match dst {
-                RouteAddr::IpAddr(dst) => {
-                    if *dst == ipaddr {
-                        return Some(dev.clone());
-                    }
-                }
-                RouteAddr::IpNetwork(dst) => {
-                    if dst.contains(ipaddr) {
-                        return Some(dev.clone());
-                    }
-                }
+    pub fn search_route(&self, ip: IpAddr) -> Option<RouteInfo> {
+        for (dst, route_info) in &self.routes {
+            if dst.contains(ip) {
+                return Some(route_info.clone());
             }
         }
         None
@@ -958,7 +982,7 @@ mod tests {
 
         let snc = SystemNetCache::init().unwrap();
         for (a, n) in snc.routes {
-            println!("a: {:?}, n: {}", a, n.name);
+            println!("a: {:?}, n: {}, v: {}", a, n.dev, n.via);
         }
     }
     #[test]
