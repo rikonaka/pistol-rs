@@ -228,7 +228,7 @@ impl InnerRouteTable {
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
-                                warn!("parse route table 'via' error:  {e}");
+                                warn!("parse route table 'via' {} error: {}", via_str, e);
                                 continue;
                             }
                         };
@@ -332,7 +332,7 @@ impl InnerRouteTable {
                     let via: IpAddr = match via_str.parse() {
                         Ok(v) => v,
                         Err(e) => {
-                            warn!("parse route table 'via' error:  {e}");
+                            warn!("parse route table 'via' {} error: {}", via_str, e);
                             continue;
                         }
                     };
@@ -424,7 +424,7 @@ impl InnerRouteTable {
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
-                                warn!("parse route table 'via' error:  {e}");
+                                warn!("parse route table 'via' {} error: {}", via_str, e);
                                 continue;
                             }
                         };
