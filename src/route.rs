@@ -423,7 +423,7 @@ impl InnerRouteTable {
                         let if_index: u32 = match if_index.parse() {
                             Ok(i) => i,
                             Err(e) => {
-                                warn!("parse route table if_index [{}] error: {}", if_index, e);
+                                warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
                                 continue;
                             }
                         };
@@ -462,13 +462,13 @@ impl InnerRouteTable {
                         let if_index: u32 = match if_index.parse() {
                             Ok(i) => i,
                             Err(e) => {
-                                warn!("parse route table if_index [{}] error: {}", if_index, e);
+                                warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
                                 continue;
                             }
                         };
 
-                        let dst = caps.name("dst").map_or("", |m| m.as_str());
-                        let dst = match IpNetwork::from_str(dst) {
+                        let dst_str = caps.name("dst").map_or("", |m| m.as_str());
+                        let dst = match IpNetwork::from_str(dst_str) {
                             Ok(d) => d,
                             Err(e) => {
                                 warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
