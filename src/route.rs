@@ -213,9 +213,10 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
+            // default via 192.168.72.2 dev ens33
+            // default via 192.168.72.2 dev ens33 proto dhcp metric 100
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
-                // regex
                 let default_route_re =
                     Regex::new(r"^default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
                 match default_route_re.captures(&line) {
@@ -245,7 +246,10 @@ impl InnerRouteTable {
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
-                // regex
+                // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
+                // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+                // fe80::/64 dev ens33 proto kernel metric 256 pref medium
+                // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
                 let route_re_1 = Regex::new(r"^(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
                 let route_re_2 =
                     Regex::new(r"^(?P<subnet>[^\s]+)\s+via\s+[^\s]+\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
@@ -306,14 +310,13 @@ impl InnerRouteTable {
         let mut default_route6 = None;
         let mut routes = HashMap::new();
 
-        // regex
-        let default_route_re =
-            Regex::new(r"^default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
-        let route_re = Regex::new(r"^(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
-
         for line in system_route_lines {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
+                // default 192.168.72.2 UGS em0
+                // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
+                let default_route_re =
+                    Regex::new(r"^default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let via_str = caps.name("via").map_or("", |m| m.as_str());
@@ -343,9 +346,11 @@ impl InnerRouteTable {
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
+                // 127.0.0.1          link#2             UH          lo0
+                let route_re = Regex::new(r"^(?P<dst>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
                 match route_re.captures(&line) {
                     Some(caps) => {
-                        let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
+                        let dst_str = caps.name("dst").map_or("", |m| m.as_str());
                         let dst_str = ipv6_addr_bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
                             let dst = match IpNetwork::from_str(&dst_str) {
@@ -396,7 +401,7 @@ impl InnerRouteTable {
             if default_route_judge(&line) {
                 // 19 0.0.0.0/0 192.168.1.4 256 35 ActiveStore
                 let default_route_re =
-                    Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
+                    Regex::new(r"(?P<index>[^\s]+)\s+[^\s]+\s+(?P<via>[^\s]+)(.+)?")?;
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
@@ -435,8 +440,7 @@ impl InnerRouteTable {
             } else {
                 // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
                 // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
-                let route_re =
-                    Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
+                let route_re = Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+[^\s]+(.+)?")?;
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
@@ -514,15 +518,6 @@ impl fmt::Display for RouteTable {
 
 impl RouteTable {
     fn exec_system_command() -> Result<Vec<String>, PistolError> {
-        // Linux
-        // ubuntu22.04 output:
-        // default via 192.168.72.2 dev ens33
-        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-        // fe80::/64 dev ens33 proto kernel metric 256 pref medium
-        // centos7 output:
-        // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
         #[cfg(target_os = "linux")]
         let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
         #[cfg(target_os = "linux")]
@@ -534,9 +529,6 @@ impl RouteTable {
         #[cfg(target_os = "linux")]
         let output = ipv4_output.to_string() + &ipv6_output;
 
-        // default 192.168.72.2 UGS em0
-        // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-        // 127.0.0.1          link#2             UH          lo0
         #[cfg(any(
             target_os = "freebsd",
             target_os = "openbsd",

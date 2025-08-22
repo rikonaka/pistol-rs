@@ -1666,9 +1666,9 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
         let addr2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let target1 = Target::new(addr1, Some(vec![22, 443, 8080]));
+        let target1 = Target::new(addr1, Some(vec![22, 443, 3389]));
         let target2 = Target::new(addr2, Some(vec![22, 443, 8080]));
         let max_attempts = 2;
         let num_threads = Some(8);
