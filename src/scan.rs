@@ -1640,7 +1640,7 @@ mod max_attempts {
         #[cfg(target_os = "linux")]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
         #[cfg(target_os = "linux")]
-        let ports = vec![22, 5432];
+        let ports = vec![22, 80, 5432, 8080];
         #[cfg(target_os = "windows")]
         let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
         #[cfg(target_os = "windows")]
