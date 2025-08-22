@@ -311,6 +311,9 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
+            if line.starts_with("R") || line.starts_with("I") || line.starts_with("D") {
+                continue;
+            }
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
                 // default 192.168.72.2 UGS em0
@@ -347,7 +350,8 @@ impl InnerRouteTable {
                 }
             } else {
                 // 127.0.0.1          link#2             UH          lo0
-                let route_re = Regex::new(r"^(?P<dst>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
+                let route_re =
+                    Regex::new(r"^(?P<dst>[^\s]+)\s+[^\s]+\s+[^\s]+\s+(?P<dev>[^\s]+)(.+)?")?;
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let dst_str = caps.name("dst").map_or("", |m| m.as_str());
@@ -1000,7 +1004,7 @@ mod tests {
             target_os = "netbsd",
             target_os = "macos"
         ))]
-        let routetable_str = read_to_string("./tests/macos_routetable.txt").unwrap();
+        let routetable_str = read_to_string("./tests/unix_routetable.txt").unwrap();
 
         #[cfg(target_os = "windows")]
         let routetable_str = read_to_string("./tests/windows_routetable.txt").unwrap();
