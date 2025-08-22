@@ -1,5 +1,12 @@
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "macos"
+))]
 use pnet::datalink::interfaces;
 use pnet::ipnetwork::IpNetwork;
 use regex::Regex;
@@ -12,6 +19,8 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::error::PistolError;
+#[cfg(target_os = "windows")]
+use crate::layer::find_interface_by_index;
 
 #[cfg(any(
     target_os = "linux",
@@ -111,6 +120,8 @@ impl RouteAddr {
 
 #[derive(Debug, Clone)]
 struct InnerDefaultRoute {
+    via: IpAddr,
+    // only the name is stored here, not converted into a formal NetworkInterface struct
     #[cfg(any(
         target_os = "linux",
         target_os = "freebsd",
@@ -118,11 +129,9 @@ struct InnerDefaultRoute {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    via: IpAddr,
-    #[cfg(target_os = "windows")]
-    if_index: String,
-    // only the name is stored here, not converted into a formal NetworkInterface struct
     dev: String,
+    #[cfg(target_os = "windows")]
+    if_index: u32,
 }
 
 impl fmt::Display for InnerDefaultRoute {
@@ -135,10 +144,10 @@ impl fmt::Display for InnerDefaultRoute {
             target_os = "macos"
         ))]
         let default_routes_string =
-            format!("default dst: {}, default interface: {}", self.via, self.dev);
+            format!("default via: {}, default interface: {}", self.via, self.dev);
         #[cfg(target_os = "windows")]
         let default_routes_string = format!(
-            "default dst: {}, default interface index: {}",
+            "default via: {}, default interface index: {}",
             self.via, self.if_index
         );
         write!(f, "{}", default_routes_string)
@@ -299,8 +308,8 @@ impl InnerRouteTable {
 
         // regex
         let default_route_re =
-            Regex::new(r"default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
-        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
+            Regex::new(r"^default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
+        let route_re = Regex::new(r"^(?P<subnet>[^\s]+)\s+link#\d+\s+\w+\s+(?P<dev>[^\s]+)")?;
 
         for line in system_route_lines {
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
@@ -337,7 +346,6 @@ impl InnerRouteTable {
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
-
                         let dst_str = ipv6_addr_bsd_fix(dst_str)?;
                         let dst = if dst_str.contains("/") {
                             let dst = match IpNetwork::from_str(&dst_str) {
@@ -374,38 +382,47 @@ impl InnerRouteTable {
         })
     }
     #[cfg(target_os = "windows")]
-    fn parser(system_route_lines: &[String]) -> Result<RouteTable, PistolError> {
+    fn parser(system_route_lines: &[String]) -> Result<InnerRouteTable, PistolError> {
         let mut default_route = None;
         let mut default_route6 = None;
         let mut routes = HashMap::new();
 
-        // regex
-        let default_route_re =
-            Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
-        let route_re = Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
-
         for line in system_route_lines {
+            if line.starts_with("-") || line.starts_with("i") {
+                continue;
+            }
             let default_route_judge =
                 |line: &str| -> bool { line.contains("0.0.0.0/0") || line.contains("::/0") };
             if default_route_judge(&line) {
+                // 19 0.0.0.0/0 192.168.1.4 256 35 ActiveStore
+                let default_route_re =
+                    Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
                         let if_index: u32 = match if_index.parse() {
                             Ok(i) => i,
                             Err(e) => {
-                                warn!("parse route table 'if_index' error:  {e}");
+                                warn!("parse route table if_index [{}] error: {}", if_index, e);
                                 continue;
                             }
                         };
-                        let via = caps.name("via").map_or("", |m| m.as_str()).to_string();
+
+                        let via_str = caps.name("via").map_or("", |m| m.as_str());
+                        let via: IpAddr = match via_str.parse() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                warn!("parse route table 'via' error:  {e}");
+                                continue;
+                            }
+                        };
 
                         let mut is_ipv4 = true;
                         if via_str.contains(":") {
                             is_ipv4 = false;
                         }
 
-                        let inner_default_route = InnerDefaultRoute { if_index, dev };
+                        let inner_default_route = InnerDefaultRoute { via, if_index };
 
                         if is_ipv4 {
                             default_route = Some(inner_default_route);
@@ -416,13 +433,17 @@ impl InnerRouteTable {
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
+                // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
+                // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
+                let route_re =
+                    Regex::new(r"(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
                 match route_re.captures(&line) {
                     Some(caps) => {
                         let if_index = caps.name("index").map_or("", |m| m.as_str());
                         let if_index: u32 = match if_index.parse() {
                             Ok(i) => i,
                             Err(e) => {
-                                warn!("parse route table 'if_index' error:  {e}");
+                                warn!("parse route table if_index [{}] error: {}", if_index, e);
                                 continue;
                             }
                         };
@@ -531,8 +552,8 @@ impl RouteTable {
         ))]
         let output = String::from_utf8_lossy(&c.stdout);
 
-        // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
-        // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
+        // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
+        // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
         #[cfg(target_os = "windows")]
         let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
         #[cfg(target_os = "windows")]
@@ -549,7 +570,21 @@ impl RouteTable {
         let system_route_lines = Self::exec_system_command()?;
         let inner_route_table = InnerRouteTable::parser(&system_route_lines)?;
         let default_route = if let Some(inner_default_route) = inner_route_table.default_route {
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "macos"
+            ))]
             let dev_name = inner_default_route.dev;
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "macos"
+            ))]
             match find_interface_by_name(&dev_name) {
                 Some(dev) => Some(DefaultRoute {
                     via: inner_default_route.via,
@@ -560,11 +595,38 @@ impl RouteTable {
                     None
                 }
             }
+            #[cfg(target_os = "windows")]
+            let if_index = inner_default_route.if_index;
+            #[cfg(target_os = "windows")]
+            match find_interface_by_index(if_index) {
+                Some(dev) => Some(DefaultRoute {
+                    via: inner_default_route.via,
+                    dev,
+                }),
+                None => {
+                    warn!("can not found interface by if_index [{}]", if_index);
+                    None
+                }
+            }
         } else {
             None
         };
         let default_route6 = if let Some(inner_default_route6) = inner_route_table.default_route6 {
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "macos"
+            ))]
             let dev_name = inner_default_route6.dev;
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "macos"
+            ))]
             match find_interface_by_name(&dev_name) {
                 Some(dev) => Some(DefaultRoute {
                     via: inner_default_route6.via,
@@ -575,17 +637,47 @@ impl RouteTable {
                     None
                 }
             }
+            #[cfg(target_os = "windows")]
+            let if_index = inner_default_route6.if_index;
+            #[cfg(target_os = "windows")]
+            match find_interface_by_index(if_index) {
+                Some(dev) => Some(DefaultRoute {
+                    via: inner_default_route6.via,
+                    dev,
+                }),
+                None => {
+                    warn!("can not found interface by if_index [{}]", if_index);
+                    None
+                }
+            }
         } else {
             None
         };
 
         let mut routes = HashMap::new();
-        for (r, dev_name) in inner_route_table.routes {
-            match find_interface_by_name(&dev_name) {
+        for (r, dev_name_or_if_index) in inner_route_table.routes {
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "macos"
+            ))]
+            match find_interface_by_name(&dev_name_or_if_index) {
                 Some(dev) => {
                     routes.insert(r, dev);
                 }
                 None => warn!("can not found interface by name [{}]", dev_name),
+            }
+            #[cfg(target_os = "windows")]
+            match find_interface_by_index(dev_name_or_if_index) {
+                Some(dev) => {
+                    routes.insert(r, dev);
+                }
+                None => warn!(
+                    "can not found interface by if_index [{}]",
+                    dev_name_or_if_index
+                ),
             }
         }
 
@@ -801,10 +893,8 @@ pub struct SystemNetCache {
 impl SystemNetCache {
     pub fn init() -> Result<SystemNetCache, PistolError> {
         let route_table = RouteTable::init()?;
-        debug!("route table init done");
         debug!("route table: {}", route_table);
         let neighbor_cache = NeighborCache::init()?;
-        debug!("neighbor cache init done");
         debug!("neighbor cache: {:?}", neighbor_cache);
         let snc = SystemNetCache {
             default_route: route_table.default_route,
@@ -931,7 +1021,8 @@ mod tests {
         let mut routetables = Vec::new();
         let mut tmp = Vec::new();
         for r in &routetable_fix {
-            if r.len() != 0 {
+            if r != "+++" {
+                // split line
                 tmp.push(r.clone());
             } else {
                 routetables.push(tmp.clone());

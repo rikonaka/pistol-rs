@@ -73,3 +73,107 @@ ff02::%utun0/32                         fe80::27a5:7220:507b:b2b1%utun0         
 ff02::%utun1/32                         fe80::9a55:83bb:1893:c3e3%utun1         UmCI                utun1       
 ff02::%utun2/32                         fe80::ce81:b1c:bd2c:69e%utun2           UmCI                utun2       
 ff02::%utun3/32                         fe80::f918:d594:abb5:de0e%utun3         UmCI                utun3
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+192.168.100.0/24   192.168.1.1        UGSc           100     500    en0
+169.254.0.0/16     link#1             U               0      200    en0
+172.16.0.0/12      192.168.1.1        UGSc           50      400    en0
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+default            192.168.2.1        UGSc          50      1000   en1
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+192.168.100.0/24   192.168.1.1        UGSc           100     500    en0
++++
+Routing tables
+
+Internet6:
+Destination                       Gateway                       Flags       Netif Expire
+::/0                               fe80::1                       UGSc       en0
+2001:db8::/32                      link#4                        UCS        en1
+fe80::/10                          link#1                        U          en0
+fd00:abcd::/64                     2001:db8::1                   UGSc       en0
+fe80::/64                          link#4                        U          en1
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+172.16.0.0/12      192.168.1.1        UGSc           50      400    en0
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+169.254.0.0/16     link#1             U               0      200    en0
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+192.168.100.0/24   192.168.1.1        UGSc           100     500    en0
+169.254.0.0/16     link#1             U               0      200    en0
+172.16.0.0/12      192.168.1.1        UGSc           50      400    en0
+
+Internet6:
+Destination                       Gateway                       Flags       Netif Expire
+::/0                               fe80::1                       UGSc       en0
+2001:db8::/32                      link#4                        UCS        en1
+fe80::/10                          link#1                        U          en0
+fd00:abcd::/64                     2001:db8::1                   UGSc       en0
+fe80::/64                          link#4                        U          en1
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+172.16.0.0/12      192.168.1.1        UGSc           50      400    en0
+
+Internet6:
+Destination                       Gateway                       Flags       Netif Expire
+::/0                               fe80::1                       UGSc       en0
+2001:db8::/32                      link#4                        UCS        en1
+fe80::/10                          link#1                        U          en0
+fd00:abcd::/64                     2001:db8::1                   UGSc       en0
+fe80::/64                          link#4                        U          en1
++++
+Routing tables
+
+Internet:
+Destination        Gateway            Flags        Refs      Use   Netif Expire
+default            192.168.1.1        UGSc          100     2000   en0
+default            192.168.2.1        UGSc          50      1000   en1
+10.0.0.0/8         link#4             UCS           100     1500   en1
+192.168.1.0/24     link#1             U              1      1000   en0
+192.168.100.0/24   192.168.1.1        UGSc           100     500    en0
+172.16.0.0/12      192.168.1.1        UGSc           50      400    en0
+
+Internet6:
+Destination                       Gateway                       Flags       Netif Expire
+::/0                               fe80::1                       UGSc       en0
+2001:db8::/32                      link#4                        UCS        en1
+fe80::/10                          link#1                        U          en0
+fd00:abcd::/64                     2001:db8::1                   UGSc       en0
+fe80::/64                          link#4                        U          en1
