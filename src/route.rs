@@ -373,7 +373,7 @@ impl InnerRouteTable {
                             let dst = RouteAddr::IpAddr(dst);
                             dst
                         };
-                        let dev_str = caps.name("dev").map_or("", |m| m.as_str()).to_string();
+                        let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
                         routes.insert(dst, dev);
                     }
                     None => warn!("line: [{}] route_re no match", line),
@@ -659,7 +659,7 @@ impl RouteTable {
                 Some(dev) => {
                     routes.insert(r, dev);
                 }
-                None => warn!("can not found interface by name [{}]", dev_name),
+                None => warn!("can not found interface by name [{}]", dev_name_or_if_index),
             }
             #[cfg(target_os = "windows")]
             match find_interface_by_index(dev_name_or_if_index) {
