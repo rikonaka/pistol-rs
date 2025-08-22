@@ -65,3 +65,74 @@ ifIndex DestinationPrefix                              NextHop                  
 6       fe80::/64                                      ::                                               256 25       ActiveStore
 10      fe80::/64                                      ::                                               256 25       ActiveStore
 1       ::1/128                                        ::                                               256 75       ActiveStore
+
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric
+------- -----------------            -------                             ------------
+3       0.0.0.0/0                   192.168.1.1                        30
+4       10.0.0.0/8                  On-link                             10
+4       192.168.1.0/24              On-link                             10
+4       192.168.100.0/24            192.168.1.1                        20
+4       192.168.200.0/24            On-link                             10
+3       169.254.0.0/16              On-link                             10
+4       172.16.0.0/12               192.168.1.1                        50
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  InterfaceAlias
+------- -----------------            -------                             ------------ ---------------
+3       0.0.0.0/0                   192.168.1.1                        30           Ethernet
+4       10.0.0.0/8                  On-link                             10           Wi-Fi
+4       192.168.1.0/24              On-link                             10           Ethernet
+4       192.168.100.0/24            192.168.1.1                        20           Ethernet
+4       192.168.200.0/24            On-link                             10           Ethernet
+3       169.254.0.0/16              On-link                             10           Ethernet
+4       172.16.0.0/12               192.168.1.1                        50           Wi-Fi
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  RouteSource
+------- -----------------            -------                             ------------ ------------
+3       0.0.0.0/0                   192.168.1.1                        30           Dhcp
+4       10.0.0.0/8                  On-link                             10           Kernel
+4       192.168.1.0/24              On-link                             10           Kernel
+4       192.168.100.0/24            192.168.1.1                        20           Static
+4       192.168.200.0/24            On-link                             10           Static
+3       169.254.0.0/16              On-link                             10           Kernel
+4       172.16.0.0/12               192.168.1.1                        50           Static
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  RouteSource
+------- -----------------            -------                             ------------ ------------
+3       ::/0                        fe80::1                             30           Dhcp
+4       2001:db8::/32               On-link                             10           Kernel
+4       2001:db8:abcd::/64          2001:db8::1                         20           Static
+4       fe80::/10                   On-link                             10           Kernel
+3       fe80::/64                   On-link                             10           Dhcp
+4       fd00:abcd::/64              2001:db8::1                         50           Static
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  RouteSource
+------- -----------------            -------                             ------------ ------------
+3       0.0.0.0/0                   192.168.1.1                        30           Dhcp
+4       0.0.0.0/0                   192.168.2.1                        20           Static
+4       10.0.0.0/8                  On-link                             10           Kernel
+3       192.168.1.0/24              On-link                             10           Kernel
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  InterfaceAlias
+------- -----------------            -------                             ------------ ---------------
+3       0.0.0.0/0                   192.168.1.1                        30           Ethernet
+4       10.0.0.0/8                  On-link                             10           Wi-Fi
+4       192.168.1.0/24              On-link                             10           Ethernet
+4       192.168.100.0/24            192.168.1.1                        20           Ethernet
+4       172.16.0.0/12               192.168.2.1                        50           Wi-Fi
+3       169.254.0.0/16              On-link                             10           Ethernet
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  InterfaceAlias
+------- -----------------            -------                             ------------ ---------------
+3       0.0.0.0/0                   192.168.1.1                        30           Ethernet
+4       10.0.0.0/8                  On-link                             10           Wi-Fi
+4       192.168.1.0/24              On-link                             10           Ethernet
+4       172.16.0.0/12               192.168.2.1                        50           Wi-Fi
+4       2001:db8::/32               On-link                             10           Ethernet
+
+ifIndex DestinationPrefix            NextHop                             RouteMetric  RouteType  LinkState
+------- -----------------            -------                             ------------ --------- ----------
+3       0.0.0.0/0                   192.168.1.1                        30           Direct    Up
+4       10.0.0.0/8                  On-link                             10           Direct    Up
+4       192.168.1.0/24              On-link                             10           Direct    Up
+4       172.16.0.0/12               192.168.1.1                        50           Static    Down

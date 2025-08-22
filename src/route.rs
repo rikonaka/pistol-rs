@@ -15,10 +15,10 @@ use crate::error::PistolError;
 
 #[cfg(any(
     target_os = "linux",
-    target_os = "macos",
     target_os = "freebsd",
     target_os = "openbsd",
-    target_os = "netbsd"
+    target_os = "netbsd",
+    target_os = "macos"
 ))]
 fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
@@ -30,10 +30,10 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 }
 
 #[cfg(any(
-    target_os = "macos",
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
+    target_os = "macos"
 ))]
 fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
     // Remove the %em0 .etc
@@ -110,13 +110,61 @@ impl RouteAddr {
 }
 
 #[derive(Debug, Clone)]
-pub struct RouteTable {
-    pub default_route: Option<DefaultRoute>,
-    pub default_route6: Option<DefaultRoute>,
-    pub routes: HashMap<RouteAddr, NetworkInterface>,
+struct InnerDefaultRoute {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "macos"
+    ))]
+    via: IpAddr,
+    #[cfg(target_os = "windows")]
+    if_index: String,
+    // only the name is stored here, not converted into a formal NetworkInterface struct
+    dev: String,
 }
 
-impl fmt::Display for RouteTable {
+impl fmt::Display for InnerDefaultRoute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "macos"
+        ))]
+        let default_routes_string =
+            format!("default dst: {}, default interface: {}", self.via, self.dev);
+        #[cfg(target_os = "windows")]
+        let default_routes_string = format!(
+            "default dst: {}, default interface index: {}",
+            self.via, self.if_index
+        );
+        write!(f, "{}", default_routes_string)
+    }
+}
+
+// intermediate layer representation, used for testing
+#[derive(Debug, Clone)]
+struct InnerRouteTable {
+    pub default_route: Option<InnerDefaultRoute>,
+    pub default_route6: Option<InnerDefaultRoute>,
+    // (192.168.1.0/24, ens33)
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "macos"
+    ))]
+    pub routes: HashMap<RouteAddr, String>,
+    // (192.168.1.0/24, if_index) windows
+    #[cfg(target_os = "windows")]
+    pub routes: HashMap<RouteAddr, u32>,
+}
+
+impl fmt::Display for InnerRouteTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut new_routes = HashMap::new();
         for (r, n) in &self.routes {
@@ -124,8 +172,7 @@ impl fmt::Display for RouteTable {
                 RouteAddr::IpAddr(i) => i.to_string(),
                 RouteAddr::IpNetwork(i) => i.to_string(),
             };
-            let interface_name = n.name.clone();
-            new_routes.insert(addr, interface_name);
+            new_routes.insert(addr, n);
         }
         let mut output = String::new();
         match &self.default_route {
@@ -140,7 +187,7 @@ impl fmt::Display for RouteTable {
             }
             None => (),
         }
-        let routes_string = format!("{:?}", new_routes);
+        let routes_string = format!("routes: {:?}", new_routes);
         output += &routes_string;
         match output.strip_suffix(", ") {
             Some(o) => write!(f, "{}", o),
@@ -149,22 +196,19 @@ impl fmt::Display for RouteTable {
     }
 }
 
-impl RouteTable {
+impl InnerRouteTable {
     #[cfg(target_os = "linux")]
-    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolError> {
-        let mut default_ipv4_route = None;
-        let mut default_ipv6_route = None;
+    fn parser(system_route_lines: &[String]) -> Result<InnerRouteTable, PistolError> {
+        let mut default_route = None;
+        let mut default_route6 = None;
         let mut routes = HashMap::new();
 
-        // regex
-        let default_route_re =
-            Regex::new(r"default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
-        let route_re = Regex::new(r"(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
-
         for line in system_route_lines {
-            debug!("system route line: {}", line);
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
+                // regex
+                let default_route_re =
+                    Regex::new(r"^default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
                 match default_route_re.captures(&line) {
                     Some(caps) => {
                         let via_str = caps.name("via").map_or("", |m| m.as_str());
@@ -175,110 +219,82 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        // debug!("via: {}", via);
-                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
-                        let dev = match find_interface_by_name(dev_str) {
-                            Some(i) => i,
-                            None => {
-                                warn!("invaild default route string: [{}]", line);
-                                continue; // not raise error here
-                            }
-                        };
-                        // debug!("dev: {}", dev.name);
+                        let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
+                        let inner_default_route = InnerDefaultRoute { via, dev };
+
                         let mut is_ipv4 = true;
                         if via_str.contains(":") {
                             is_ipv4 = false;
                         }
 
-                        let default_route = DefaultRoute { via, dev };
-
                         if is_ipv4 {
-                            default_ipv4_route = Some(default_route);
+                            default_route = Some(inner_default_route);
                         } else {
-                            default_ipv6_route = Some(default_route);
+                            default_route6 = Some(inner_default_route);
                         }
                     }
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
             } else {
-                match route_re.captures(&line) {
-                    Some(caps) => {
-                        let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
-                        let dst = if dst_str.contains("/") {
-                            let dst = match IpNetwork::from_str(dst_str) {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    warn!("parse route table 'dst' error:  {e}");
-                                    continue;
-                                }
-                            };
-                            let dst = RouteAddr::IpNetwork(dst);
-                            dst
-                        } else {
-                            let dst: IpAddr = match dst_str.parse() {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    warn!("parse route table 'dst' error:  {e}");
-                                    continue;
-                                }
-                            };
-                            let dst = RouteAddr::IpAddr(dst);
-                            dst
-                        };
-                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
-                        let dev = match find_interface_by_name(dev_str) {
-                            Some(i) => i,
-                            None => {
-                                warn!("invaild route string: [{}]", line);
-                                continue; // not raise error here
+                // regex
+                let route_re_1 = Regex::new(r"^(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
+                let route_re_2 =
+                    Regex::new(r"^(?P<subnet>[^\s]+)\s+via\s+[^\s]+\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
+                // there are many regex to match different output
+                let caps = if let Some(caps) = route_re_1.captures(&line) {
+                    Some(caps)
+                } else if let Some(caps) = route_re_2.captures(&line) {
+                    Some(caps)
+                } else {
+                    None
+                };
+
+                if let Some(caps) = caps {
+                    let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
+                    let dst = if dst_str.contains("/") {
+                        let dst = match IpNetwork::from_str(dst_str) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                warn!("parse route table 'dst' error:  {e}");
+                                continue;
                             }
                         };
-                        routes.insert(dst, dev);
-                    }
-                    None => warn!("line: [{}] route_re no match", line),
+                        let dst = RouteAddr::IpNetwork(dst);
+                        dst
+                    } else {
+                        let dst: IpAddr = match dst_str.parse() {
+                            Ok(d) => d,
+                            Err(e) => {
+                                warn!("parse route table 'dst' error:  {e}");
+                                continue;
+                            }
+                        };
+                        let dst = RouteAddr::IpAddr(dst);
+                        dst
+                    };
+                    let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
+                    routes.insert(dst, dev);
+                } else {
+                    warn!("line: [{}] route_re_1 and route_re_2 both no match", line);
                 }
             }
         }
 
-        let rt = RouteTable {
-            default_route: default_ipv4_route,
-            default_route6: default_ipv6_route,
+        Ok(InnerRouteTable {
+            default_route,
+            default_route6,
             routes,
-        };
-        Ok(rt)
-    }
-    #[cfg(target_os = "linux")]
-    pub fn init() -> Result<RouteTable, PistolError> {
-        // Linux
-        // ubuntu22.04 output:
-        // default via 192.168.72.2 dev ens33
-        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-        // fe80::/64 dev ens33 proto kernel metric 256 pref medium
-        // centos7 output:
-        // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
-        let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
-        let ipv4_output = String::from_utf8_lossy(&c.stdout);
-        let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
-        let ipv6_output = String::from_utf8_lossy(&c.stdout);
-        let output = ipv4_output.to_string() + &ipv6_output;
-        let system_route_lines: Vec<String> = output
-            .lines()
-            .map(|x| x.trim().to_string())
-            .filter(|v| v.len() > 0)
-            .collect();
-        RouteTable::parser(system_route_lines)
+        })
     }
     #[cfg(any(
-        target_os = "macos",
         target_os = "freebsd",
         target_os = "openbsd",
-        target_os = "netbsd"
+        target_os = "netbsd",
+        target_os = "macos"
     ))]
-    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolError> {
-        let mut default_ipv4_route = None;
-        let mut default_ipv6_route = None;
+    fn parser(system_route_lines: &[String]) -> Result<InnerRouteTable, PistolError> {
+        let mut default_route = None;
+        let mut default_route6 = None;
         let mut routes = HashMap::new();
 
         // regex
@@ -300,26 +316,19 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
-                        let dev = match find_interface_by_name(dev_str) {
-                            Some(i) => i,
-                            None => {
-                                warn!("invaild default route string: [{}]", line);
-                                continue; // not raise error here
-                            }
-                        };
+                        let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
 
                         let mut is_ipv4 = true;
                         if via_str.contains(":") {
                             is_ipv4 = false;
                         }
 
-                        let default_route = DefaultRoute { via, dev };
+                        let inner_default_route = InnerDefaultRoute { via, dev };
 
                         if is_ipv4 {
-                            default_ipv4_route = Some(default_route);
+                            default_route = Some(inner_default_route);
                         } else {
-                            default_ipv6_route = Some(default_route);
+                            default_route6 = Some(inner_default_route);
                         }
                     }
                     None => warn!("line: [{}] default_route_re no match", line),
@@ -351,54 +360,23 @@ impl RouteTable {
                             let dst = RouteAddr::IpAddr(dst);
                             dst
                         };
-                        let dev_str = caps.name("dev").map_or("", |m| m.as_str());
-                        let dev = match find_interface_by_name(dev_str) {
-                            Some(i) => i,
-                            None => {
-                                continue; // not raise error here
-                            }
-                        };
+                        let dev_str = caps.name("dev").map_or("", |m| m.as_str()).to_string();
                         routes.insert(dst, dev);
                     }
                     None => warn!("line: [{}] route_re no match", line),
                 }
             }
         }
-        let rt = RouteTable {
-            default_route: default_ipv4_route,
-            default_route6: default_ipv6_route,
+        Ok(InnerRouteTable {
+            default_route,
+            default_route6,
             routes,
-        };
-        Ok(rt)
-    }
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    pub fn init() -> Result<RouteTable, PistolError> {
-        // default 192.168.72.2 UGS em0
-        // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-        // 127.0.0.1          link#2             UH          lo0
-        let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
-        let output = String::from_utf8_lossy(&c.stdout);
-        let system_route_lines: Vec<String> = output
-            .lines()
-            .map(|x| x.trim().to_string())
-            .filter(|v| {
-                v.len() > 0
-                    && !v.contains("Destination")
-                    && !v.contains("Routing tables")
-                    && !v.contains("Internet")
-            })
-            .collect();
-        RouteTable::parser(system_route_lines)
+        })
     }
     #[cfg(target_os = "windows")]
-    fn parser(system_route_lines: Vec<String>) -> Result<RouteTable, PistolError> {
-        let mut default_ipv4_route = None;
-        let mut default_ipv6_route = None;
+    fn parser(system_route_lines: &[String]) -> Result<RouteTable, PistolError> {
+        let mut default_route = None;
+        let mut default_route6 = None;
         let mut routes = HashMap::new();
 
         // regex
@@ -420,46 +398,19 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        let find_interface = |if_index: u32| -> Option<NetworkInterface> {
-                            for interface in interfaces() {
-                                if if_index == interface.index {
-                                    return Some(interface);
-                                }
-                            }
-                            None
-                        };
+                        let via = caps.name("via").map_or("", |m| m.as_str()).to_string();
 
-                        let via_str = caps.name("via").map_or("", |m| m.as_str());
-                        let via: IpAddr = match via_str.parse() {
-                            Ok(v) => v,
-                            Err(e) => {
-                                warn!("parse route table 'via' error:  {e}");
-                                continue;
-                            }
-                        };
-                        let dev = find_interface(if_index);
-                        match dev {
-                            Some(dev) => {
-                                let mut is_ipv4 = true;
-                                if via_str.contains(":") {
-                                    is_ipv4 = false;
-                                }
+                        let mut is_ipv4 = true;
+                        if via_str.contains(":") {
+                            is_ipv4 = false;
+                        }
 
-                                let default_route = DefaultRoute { via, dev };
+                        let inner_default_route = InnerDefaultRoute { if_index, dev };
 
-                                if is_ipv4 {
-                                    default_ipv4_route = Some(default_route);
-                                } else {
-                                    default_ipv6_route = Some(default_route);
-                                }
-                            }
-                            None => {
-                                warn!(
-                                    "default route string [{}] has no interface, id {}",
-                                    line, if_index
-                                );
-                                continue; // not raise error here
-                            }
+                        if is_ipv4 {
+                            default_route = Some(inner_default_route);
+                        } else {
+                            default_route6 = Some(inner_default_route);
                         }
                     }
                     None => warn!("line: [{}] default_route_re no match", line),
@@ -475,14 +426,6 @@ impl RouteTable {
                                 continue;
                             }
                         };
-                        let find_interface_by_id = |if_index: u32| -> Option<NetworkInterface> {
-                            for interface in interfaces() {
-                                if if_index == interface.index {
-                                    return Some(interface);
-                                }
-                            }
-                            None
-                        };
 
                         let dst = caps.name("dst").map_or("", |m| m.as_str());
                         let dst = match IpNetwork::from_str(dst) {
@@ -493,40 +436,164 @@ impl RouteTable {
                             }
                         };
                         let dst = RouteAddr::IpNetwork(dst);
-                        let dev = find_interface_by_id(if_index);
-                        let dev = match dev {
-                            Some(i) => i,
-                            None => {
-                                warn!("invaild default route string: [{}]", line);
-                                continue; // not raise error here
-                            }
-                        };
-                        routes.insert(dst, dev);
+                        routes.insert(dst, if_index);
                     }
                     None => warn!("line: [{}] default_route_re no match", line),
                 }
             }
         }
 
-        let rt = RouteTable {
-            default_route: default_ipv4_route,
-            default_route6: default_ipv6_route,
+        Ok(InnerRouteTable {
+            default_route,
+            default_route6,
             routes,
-        };
-        Ok(rt)
+        })
     }
-    #[cfg(target_os = "windows")]
-    pub fn init() -> Result<RouteTable, PistolError> {
+}
+
+#[derive(Debug, Clone)]
+pub struct RouteTable {
+    pub default_route: Option<DefaultRoute>,
+    pub default_route6: Option<DefaultRoute>,
+    pub routes: HashMap<RouteAddr, NetworkInterface>,
+}
+
+impl fmt::Display for RouteTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut new_routes = HashMap::new();
+        for (r, n) in &self.routes {
+            let addr = match r {
+                RouteAddr::IpAddr(i) => i.to_string(),
+                RouteAddr::IpNetwork(i) => i.to_string(),
+            };
+            let interface_name = n.name.clone();
+            new_routes.insert(addr, interface_name);
+        }
+        let mut output = String::new();
+        match &self.default_route {
+            Some(r) => {
+                output += &format!("ipv4: {}, ", r);
+            }
+            None => (),
+        }
+        match &self.default_route6 {
+            Some(r) => {
+                output += &format!("ipv6: {}, ", r);
+            }
+            None => (),
+        }
+        let routes_string = format!("routes: {:?}", new_routes);
+        output += &routes_string;
+        match output.strip_suffix(", ") {
+            Some(o) => write!(f, "{}", o),
+            None => write!(f, "{}", output),
+        }
+    }
+}
+
+impl RouteTable {
+    fn exec_system_command() -> Result<Vec<String>, PistolError> {
+        // Linux
+        // ubuntu22.04 output:
+        // default via 192.168.72.2 dev ens33
+        // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
+        // fe80::/64 dev ens33 proto kernel metric 256 pref medium
+        // centos7 output:
+        // default via 192.168.72.2 dev ens33 proto dhcp metric 100
+        // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
+        #[cfg(target_os = "linux")]
+        let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
+        #[cfg(target_os = "linux")]
+        let ipv4_output = String::from_utf8_lossy(&c.stdout);
+        #[cfg(target_os = "linux")]
+        let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
+        #[cfg(target_os = "linux")]
+        let ipv6_output = String::from_utf8_lossy(&c.stdout);
+        #[cfg(target_os = "linux")]
+        let output = ipv4_output.to_string() + &ipv6_output;
+
+        // default 192.168.72.2 UGS em0
+        // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
+        // 127.0.0.1          link#2             UH          lo0
+        #[cfg(any(
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "macos"
+        ))]
+        let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
+        #[cfg(any(
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "macos"
+        ))]
+        let output = String::from_utf8_lossy(&c.stdout);
+
         // 17      255.255.255.255/32                             0.0.0.0                                          256 25       ActiveStore
         // 17      fe80::d547:79a9:84eb:767d/128                  ::                                               256 25       ActiveStore
+        #[cfg(target_os = "windows")]
         let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+        #[cfg(target_os = "windows")]
         let output = String::from_utf8_lossy(&c.stdout);
+
         let system_route_lines: Vec<String> = output
             .lines()
             .map(|x| x.trim().to_string())
-            .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
+            .filter(|v| v.len() > 0)
             .collect();
-        RouteTable::parser(system_route_lines)
+        Ok(system_route_lines)
+    }
+    pub fn init() -> Result<RouteTable, PistolError> {
+        let system_route_lines = Self::exec_system_command()?;
+        let inner_route_table = InnerRouteTable::parser(&system_route_lines)?;
+        let default_route = if let Some(inner_default_route) = inner_route_table.default_route {
+            let dev_name = inner_default_route.dev;
+            match find_interface_by_name(&dev_name) {
+                Some(dev) => Some(DefaultRoute {
+                    via: inner_default_route.via,
+                    dev,
+                }),
+                None => {
+                    warn!("can not found interface by name [{}]", dev_name);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let default_route6 = if let Some(inner_default_route6) = inner_route_table.default_route6 {
+            let dev_name = inner_default_route6.dev;
+            match find_interface_by_name(&dev_name) {
+                Some(dev) => Some(DefaultRoute {
+                    via: inner_default_route6.via,
+                    dev,
+                }),
+                None => {
+                    warn!("can not found interface by name [{}]", dev_name);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let mut routes = HashMap::new();
+        for (r, dev_name) in inner_route_table.routes {
+            match find_interface_by_name(&dev_name) {
+                Some(dev) => {
+                    routes.insert(r, dev);
+                }
+                None => warn!("can not found interface by name [{}]", dev_name),
+            }
+        }
+
+        Ok(RouteTable {
+            default_route,
+            default_route6,
+            routes,
+        })
     }
 }
 
@@ -586,10 +653,10 @@ impl NeighborCache {
         Ok(ret)
     }
     #[cfg(any(
-        target_os = "macos",
         target_os = "freebsd",
         target_os = "openbsd",
-        target_os = "netbsd"
+        target_os = "netbsd",
+        target_os = "macos"
     ))]
     pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // Examples:
@@ -835,19 +902,47 @@ mod tests {
     }
     #[test]
     fn test_all() {
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            None,
+            None, // use default value
+        )
+        .unwrap();
+
         #[cfg(target_os = "linux")]
         let routetable_str = read_to_string("./tests/linux_routetable.txt").unwrap();
+
         #[cfg(any(
-            target_os = "macos",
             target_os = "freebsd",
             target_os = "openbsd",
-            target_os = "netbsd"
+            target_os = "netbsd",
+            target_os = "macos"
         ))]
         let routetable_str = read_to_string("./tests/macos_routetable.txt").unwrap();
+
         #[cfg(target_os = "windows")]
         let routetable_str = read_to_string("./tests/windows_routetable.txt").unwrap();
-        let routetable: Vec<String> = routetable_str.lines().map(|x| x.to_string()).collect();
-        let ret = RouteTable::parser(routetable).unwrap();
-        println!("{}", ret);
+
+        let routetable_fix: Vec<String> = routetable_str
+            .lines()
+            .map(|x| x.trim().to_string())
+            .collect();
+
+        let mut routetables = Vec::new();
+        let mut tmp = Vec::new();
+        for r in &routetable_fix {
+            if r.len() != 0 {
+                tmp.push(r.clone());
+            } else {
+                routetables.push(tmp.clone());
+                tmp.clear();
+            }
+        }
+
+        for t in routetables {
+            let ret = InnerRouteTable::parser(&t).unwrap();
+            println!("{}", ret);
+            println!("-------------------------------------------------------------------------");
+        }
     }
 }

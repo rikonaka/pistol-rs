@@ -117,6 +117,15 @@ fn get_icmpv6_payload(icmpv6_packet: &Icmpv6Packet) -> Vec<u8> {
     }
 }
 
+pub fn find_interface_by_index(if_index: u32) -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        if if_index == interface.index {
+            return Some(interface);
+        }
+    }
+    None
+}
+
 /// Use source IP address to find local interface
 pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
