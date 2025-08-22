@@ -271,7 +271,7 @@ impl InnerRouteTable {
                         let dst = match IpNetwork::from_str(dst_str) {
                             Ok(d) => d,
                             Err(e) => {
-                                warn!("parse route table 'dst' error:  {e}");
+                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
                                 continue;
                             }
                         };
@@ -281,7 +281,7 @@ impl InnerRouteTable {
                         let dst: IpAddr = match dst_str.parse() {
                             Ok(d) => d,
                             Err(e) => {
-                                warn!("parse route table 'dst' error:  {e}");
+                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
                                 continue;
                             }
                         };
@@ -371,7 +371,7 @@ impl InnerRouteTable {
                         let dst = match IpNetwork::from_str(&dst_str) {
                             Ok(d) => d,
                             Err(e) => {
-                                warn!("parse route table 'dst' error:  {e}");
+                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
                                 continue;
                             }
                         };
@@ -381,7 +381,7 @@ impl InnerRouteTable {
                         let dst: IpAddr = match dst_str.parse() {
                             Ok(d) => d,
                             Err(e) => {
-                                warn!("parse route table 'dst' error:  {e}");
+                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
                                 continue;
                             }
                         };
@@ -471,7 +471,7 @@ impl InnerRouteTable {
                         let dst = match IpNetwork::from_str(dst) {
                             Ok(d) => d,
                             Err(e) => {
-                                warn!("parse route table 'dst' error:  {e}");
+                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
                                 continue;
                             }
                         };
