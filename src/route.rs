@@ -213,6 +213,9 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
+            if line.len() == 0 {
+                continue;
+            }
             // default via 192.168.72.2 dev ens33
             // default via 192.168.72.2 dev ens33 proto dhcp metric 100
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
@@ -311,76 +314,76 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
-            if line.starts_with("R") || line.starts_with("I") || line.starts_with("D") {
+            if line.len() == 0
+                || line.starts_with("R")
+                || line.starts_with("I")
+                || line.starts_with("D")
+            {
                 continue;
             }
             let default_route_judge = |line: &str| -> bool { line.contains("default") };
             if default_route_judge(&line) {
                 // default 192.168.72.2 UGS em0
                 // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-                let default_route_re =
-                    Regex::new(r"^default\s+(?P<via>[^\s]+)\s+\w+\s+(?P<dev>[^\s]+)([^\s]+)?")?;
-                match default_route_re.captures(&line) {
-                    Some(caps) => {
-                        let via_str = caps.name("via").map_or("", |m| m.as_str());
-                        let via_str = ipv6_addr_bsd_fix(via_str)?;
-                        let via: IpAddr = match via_str.parse() {
-                            Ok(v) => v,
-                            Err(e) => {
-                                warn!("parse route table 'via' error:  {e}");
-                                continue;
-                            }
-                        };
-                        let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
-
-                        let mut is_ipv4 = true;
-                        if via_str.contains(":") {
-                            is_ipv4 = false;
+                let line_split: Vec<&str> = line.split(" ").map(|x| x.trim()).collect();
+                if line_split.len() >= 2 {
+                    let via_str = line_split[1];
+                    let via_str = ipv6_addr_bsd_fix(via_str)?;
+                    let via: IpAddr = match via_str.parse() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            warn!("parse route table 'via' error:  {e}");
+                            continue;
                         }
+                    };
+                    let dev = line_split[line_split.len() - 1].to_string();
 
-                        let inner_default_route = InnerDefaultRoute { via, dev };
-
-                        if is_ipv4 {
-                            default_route = Some(inner_default_route);
-                        } else {
-                            default_route6 = Some(inner_default_route);
-                        }
+                    let mut is_ipv4 = true;
+                    if via_str.contains(":") {
+                        is_ipv4 = false;
                     }
-                    None => warn!("line: [{}] default_route_re no match", line),
+
+                    let inner_default_route = InnerDefaultRoute { via, dev };
+
+                    if is_ipv4 {
+                        default_route = Some(inner_default_route);
+                    } else {
+                        default_route6 = Some(inner_default_route);
+                    }
+                } else {
+                    warn!("line: [{}] default route no match", line);
                 }
             } else {
                 // 127.0.0.1          link#2             UH          lo0
-                let route_re =
-                    Regex::new(r"^(?P<dst>[^\s]+)\s+[^\s]+\s+[^\s]+\s+(?P<dev>[^\s]+)(.+)?")?;
-                match route_re.captures(&line) {
-                    Some(caps) => {
-                        let dst_str = caps.name("dst").map_or("", |m| m.as_str());
-                        let dst_str = ipv6_addr_bsd_fix(dst_str)?;
-                        let dst = if dst_str.contains("/") {
-                            let dst = match IpNetwork::from_str(&dst_str) {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    warn!("parse route table 'dst' error:  {e}");
-                                    continue;
-                                }
-                            };
-                            let dst = RouteAddr::IpNetwork(dst);
-                            dst
-                        } else {
-                            let dst: IpAddr = match dst_str.parse() {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    warn!("parse route table 'dst' error:  {e}");
-                                    continue;
-                                }
-                            };
-                            let dst = RouteAddr::IpAddr(dst);
-                            dst
+                let line_split: Vec<&str> = line.split(" ").map(|x| x.trim()).collect();
+                if line_split.len() >= 2 {
+                    let dst_str = line_split[0];
+                    let dst_str = ipv6_addr_bsd_fix(dst_str)?;
+                    let dst = if dst_str.contains("/") {
+                        let dst = match IpNetwork::from_str(&dst_str) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                warn!("parse route table 'dst' error:  {e}");
+                                continue;
+                            }
                         };
-                        let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
-                        routes.insert(dst, dev);
-                    }
-                    None => warn!("line: [{}] route_re no match", line),
+                        let dst = RouteAddr::IpNetwork(dst);
+                        dst
+                    } else {
+                        let dst: IpAddr = match dst_str.parse() {
+                            Ok(d) => d,
+                            Err(e) => {
+                                warn!("parse route table 'dst' error:  {e}");
+                                continue;
+                            }
+                        };
+                        let dst = RouteAddr::IpAddr(dst);
+                        dst
+                    };
+                    let dev = line_split[line_split.len() - 1].to_string();
+                    routes.insert(dst, dev);
+                } else {
+                    warn!("line: [{}] route no match", line);
                 }
             }
         }
@@ -397,7 +400,7 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
-            if line.starts_with("-") || line.starts_with("i") {
+            if line.len() == 0 || line.starts_with("-") || line.starts_with("i") {
                 continue;
             }
             let default_route_judge =
