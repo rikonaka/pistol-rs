@@ -39,6 +39,7 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 }
 
 #[cfg(any(
+    target_os = "linux",
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
@@ -170,6 +171,7 @@ struct InnerRouteInfo {
         target_os = "netbsd",
         target_os = "macos"
     ))]
+    #[cfg(target_os = "linux")]
     dev: String,
     /// windows interface ids
     #[cfg(target_os = "windows")]
@@ -514,10 +516,87 @@ impl InnerRouteTable {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Via {
+    // linux
+    IpAddr(IpAddr),
+    // windows and unix
+    IfIndex(u32),
+    // unix
+    MacAddr(MacAddr),
+}
+
+impl fmt::Display for Via {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = match self {
+            Via::IpAddr(ip_addr) => format!("via ip_addr {}", ip_addr),
+            Via::IfIndex(if_index) => format!("via if_index {}", if_index),
+            Via::MacAddr(mac_addr) => format!("via mac_addr {}", mac_addr),
+        };
+        write!(f, "{}", output)
+    }
+}
+
+impl Via {
+    pub fn parser(via_str: &str) -> Result<Option<Via>, PistolError> {
+        if via_str.contains("%") || via_str.contains(".") {
+            // ipv6 address and ipv4 address
+            let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
+            let via: IpAddr = match ipv6_addr.parse() {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(Via::IpAddr(via.into())))
+        } else if via_str.contains(":") {
+            // mac address
+            let mac: MacAddr = match via_str.parse() {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(Via::MacAddr(mac)))
+        } else if via_str.contains("#") {
+            // if_index
+            let via_str_split: Vec<&str> = via_str
+                .split("#")
+                .map(|x| x.trim())
+                .filter(|x| x.len() > 0)
+                .collect();
+            if via_str_split.len() > 1 {
+                let if_index = via_str_split[1];
+                let if_index: u32 = match if_index.parse() {
+                    Ok(i) => i,
+                    Err(e) => {
+                        warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(Via::IfIndex(if_index)))
+            } else {
+                Ok(None)
+            }
+        } else {
+            let if_index: u32 = match via_str.parse() {
+                Ok(i) => i,
+                Err(e) => {
+                    warn!("parse route table 'if_index' [{}] error: {}", via_str, e);
+                    return Ok(None);
+                }
+            };
+            Ok(Some(Via::IfIndex(if_index)))
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RouteInfo {
     pub dev: NetworkInterface,
-    pub via: IpAddr,
+    pub via: Via,
 }
 
 #[derive(Debug, Clone)]
@@ -694,13 +773,15 @@ impl RouteTable {
         for (r, inner_route_info) in inner_route_table.routes {
             let dev_str = inner_route_info.dev;
             let via_str = inner_route_info.via;
-            let via: IpAddr = match via_str.parse() {
-                Ok(d) => d,
-                Err(e) => {
-                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+
+            let via = match Via::parser(&via_str)? {
+                Some(v) => v,
+                None => {
+                    warn!("parse route table 'via' [{}]", via_str);
                     continue;
                 }
             };
+
             #[cfg(any(
                 target_os = "linux",
                 target_os = "freebsd",
@@ -715,9 +796,10 @@ impl RouteTable {
                 }
                 None => warn!(
                     "can not found interface by name [{}], via [{}]",
-                    dev_str, via
+                    dev_str, via_str
                 ),
             }
+
             #[cfg(target_os = "windows")]
             match find_interface_by_index(dev_str) {
                 Some(dev) => {

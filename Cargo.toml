@@ -21,13 +21,13 @@ crc32fast = "^1"
 hex = "^0"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
-dns-lookup = "^2"
+dns-lookup = "^3"
 fancy-regex = "^0"
 pnet = { version = "^0", features = ["serde"] }
 prettytable-rs = "^0"
 regex = "^1"
 thiserror = "^2"
-zip = "^0"
+zip = "^4"
 escape-bytes = "^0"
 pcapture = "^0"
 uuid = { version = "1", features = ["v4"] }

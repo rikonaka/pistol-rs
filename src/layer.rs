@@ -56,6 +56,7 @@ use crate::UNIFIED_RECV_MATCHS;
 use crate::error::PistolError;
 use crate::route::DefaultRoute;
 use crate::route::RouteInfo;
+use crate::route::Via;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 use crate::utils::arp_cache_update;
@@ -163,7 +164,8 @@ fn find_loopback_interface() -> Option<NetworkInterface> {
     None
 }
 
-fn get_default_route() -> Result<Option<DefaultRoute>, PistolError> {
+/// return ipv4 and ipv6 default route
+fn get_default_route() -> Result<(Option<DefaultRoute>, Option<DefaultRoute>), PistolError> {
     // release the lock when leaving the function
     let snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc.clone(),
@@ -174,7 +176,7 @@ fn get_default_route() -> Result<Option<DefaultRoute>, PistolError> {
             });
         }
     };
-    Ok(snc.default_route)
+    Ok((snc.default_route, snc.default_route6))
 }
 
 /// Check if the target IP address is in the local.
@@ -272,7 +274,6 @@ fn get_dst_cache(dst_addr: IpAddr) -> Result<Option<(MacAddr, NetworkInterface)>
     }
 }
 
-/// return the (dst_mac, src_interface)
 pub fn get_dst_mac_and_src_if(
     dst_addr: IpAddr,
     src_addr: IpAddr,
@@ -283,153 +284,178 @@ pub fn get_dst_mac_and_src_if(
         return Ok((dst_mac, src_interface));
     }
 
-    let (src_interface, via_addr) = if src_addr == dst_addr {
-        let dev = match find_loopback_interface() {
-            Some(i) => i,
-            None => return Err(PistolError::CanNotFoundInterface),
-        };
-        if dst_addr.is_ipv4() {
-            (dev, IpAddr::V4(Ipv4Addr::LOCALHOST))
-        } else {
-            (dev, IpAddr::V6(Ipv6Addr::LOCALHOST))
-        }
-    } else {
-        let route_info = match search_route_table(dst_addr)? {
-            Some(route_info) => route_info,
-            None => return Err(PistolError::CanNotFoundInterface),
-        };
-        debug!(
-            "search route table done, dev {} via {}",
-            route_info.dev.name, route_info.via
-        );
-        (route_info.dev, route_info.via)
-    };
-    debug!(
-        "src interface: {}, via addr: {}",
-        src_interface.name, via_addr
-    );
-
-    // we need to fix 0.0.0.0
-    let via_addr = if via_addr.is_unspecified() {
-        dst_addr
-    } else {
-        via_addr
-    };
-
-    let dst_mac = match search_mac(via_addr)? {
-        Some(m) => m,
-        None => {
-            if via_addr.is_loopback() || addr_is_myself_ip(via_addr) {
-                // target is your own machine, such as when using localhost or 127.0.0.1 as the target
-                let dst_mac = match src_interface.mac {
-                    Some(m) => m,
-                    None => return Err(PistolError::CanNotFoundMacAddress),
-                };
-                dst_mac
-            } else if addr_in_local_net(via_addr) {
-                let src_mac = match src_interface.mac {
-                    Some(m) => m,
-                    None => return Err(PistolError::CanNotFoundMacAddress),
-                };
-                match via_addr {
-                    IpAddr::V4(via_ipv4) => {
-                        if let IpAddr::V4(src_ipv4) = src_addr {
-                            let dst_mac = match send_arp_scan_packet(
-                                via_ipv4,
-                                MacAddr::broadcast(),
-                                src_ipv4,
-                                src_mac,
-                                src_interface.clone(),
-                                timeout,
-                            )? {
-                                (Some(m), _rtt) => m,
-                                (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
-                            };
-                            arp_cache_update(via_ipv4.into(), dst_mac)?;
-                            dst_mac
-                        } else {
-                            return Err(PistolError::CanNotFoundMacAddress);
-                        }
-                    }
-                    IpAddr::V6(via_ipv6) => {
-                        if let IpAddr::V6(src_ipv6) = src_addr {
-                            let dst_mac = match send_ndp_ns_scan_packet(
-                                via_ipv6,
-                                src_ipv6,
-                                src_mac,
-                                src_interface.clone(),
-                                timeout,
-                            )? {
-                                (Some(m), _rtt) => m,
-                                (None, _rtt) => return Err(PistolError::CanNotFoundMacAddress),
-                            };
-                            arp_cache_update(via_ipv6.into(), dst_mac)?;
-                            dst_mac
-                        } else {
-                            return Err(PistolError::CanNotFoundMacAddress);
-                        }
-                    }
-                }
+    let find_src_interface_and_via = || -> Result<(NetworkInterface, Via), PistolError> {
+        let (src_interface, via) = if src_addr == dst_addr {
+            let dev = match find_loopback_interface() {
+                Some(i) => i,
+                None => return Err(PistolError::CanNotFoundInterface),
+            };
+            if dst_addr.is_ipv4() {
+                let via = Via::IpAddr(IpAddr::V4(Ipv4Addr::LOCALHOST));
+                (dev, via)
             } else {
-                let default_route = match get_default_route()? {
-                    Some(r) => r,
-                    None => return Err(PistolError::CanNotFoundRouterAddress),
-                };
-                let dst_mac = match search_mac(default_route.via)? {
-                    Some(m) => m,
-                    None => {
-                        let dst_mac = MacAddr::broadcast();
+                let via = Via::IpAddr(IpAddr::V6(Ipv6Addr::LOCALHOST));
+                (dev, via)
+            }
+        } else {
+            let route_info = match search_route_table(dst_addr)? {
+                Some(route_info) => route_info,
+                None => return Err(PistolError::CanNotFoundInterface),
+            };
+            debug!(
+                "search route table done, dev {} via {}",
+                route_info.dev.name, route_info.via
+            );
+            (route_info.dev, route_info.via)
+        };
+        debug!("src interface: {}, via addr: {}", src_interface.name, via);
+        Ok((src_interface, via))
+    };
+
+    match via {
+        Via::IfIndex(if_index) => {
+            let src_interface = match find_interface_by_index(if_index) {
+                Some(i) => i,
+                None => return Err(PistolError::CanNotFoundInterface),
+            };
+        }
+        Via::MacAddr(dst_mac) => {
+            let (src_interface, via) = find_src_interface_and_via()?;
+            update_dst_cache(dst_addr, src_addr, dst_mac, src_interface.clone())?;
+            Ok((dst_mac, src_interface))
+        }
+        Via::IpAddr(via_addr) => {
+            let (src_interface, via) = find_src_interface_and_via()?;
+            // we need to fix 0.0.0.0
+            let via_addr = if via_addr.is_unspecified() {
+                dst_addr
+            } else {
+                via_addr
+            };
+            let dst_mac = match search_mac(via_addr)? {
+                Some(m) => m,
+                None => {
+                    if via_addr.is_loopback() || addr_is_myself_ip(via_addr) {
+                        // target is your own machine, such as when using localhost or 127.0.0.1 as the target
+                        let dst_mac = match src_interface.mac {
+                            Some(m) => m,
+                            None => return Err(PistolError::CanNotFoundMacAddress),
+                        };
+                        dst_mac
+                    } else if addr_in_local_net(via_addr) {
                         let src_mac = match src_interface.mac {
                             Some(m) => m,
                             None => return Err(PistolError::CanNotFoundMacAddress),
                         };
-                        match default_route.via {
-                            IpAddr::V4(default_route_ipv4) => {
+                        match via_addr {
+                            IpAddr::V4(via_ipv4) => {
                                 if let IpAddr::V4(src_ipv4) = src_addr {
-                                    match send_arp_scan_packet(
-                                        default_route_ipv4,
-                                        dst_mac,
+                                    let dst_mac = match send_arp_scan_packet(
+                                        via_ipv4,
+                                        MacAddr::broadcast(),
                                         src_ipv4,
                                         src_mac,
                                         src_interface.clone(),
                                         timeout,
                                     )? {
-                                        (Some(m), _rtt) => {
-                                            arp_cache_update(default_route_ipv4.into(), m)?;
-                                            m
-                                        }
+                                        (Some(m), _rtt) => m,
                                         (None, _rtt) => {
-                                            return Err(PistolError::CanNotFoundRouteMacAddress);
+                                            return Err(PistolError::CanNotFoundMacAddress);
                                         }
-                                    }
+                                    };
+                                    arp_cache_update(via_ipv4.into(), dst_mac)?;
+                                    dst_mac
                                 } else {
-                                    return Err(PistolError::CanNotFoundRouteMacAddress);
+                                    return Err(PistolError::CanNotFoundMacAddress);
                                 }
                             }
-                            IpAddr::V6(default_route_ipv6) => {
+                            IpAddr::V6(via_ipv6) => {
                                 if let IpAddr::V6(src_ipv6) = src_addr {
-                                    match ndp_rs(src_ipv6, timeout)? {
-                                        (Some(m), _rtt) => {
-                                            arp_cache_update(default_route_ipv6.into(), m)?;
-                                            m
-                                        }
+                                    let dst_mac = match send_ndp_ns_scan_packet(
+                                        via_ipv6,
+                                        src_ipv6,
+                                        src_mac,
+                                        src_interface.clone(),
+                                        timeout,
+                                    )? {
+                                        (Some(m), _rtt) => m,
                                         (None, _rtt) => {
-                                            return Err(PistolError::CanNotFoundRouteMacAddress);
+                                            return Err(PistolError::CanNotFoundMacAddress);
                                         }
-                                    }
+                                    };
+                                    arp_cache_update(via_ipv6.into(), dst_mac)?;
+                                    dst_mac
                                 } else {
-                                    return Err(PistolError::CanNotFoundRouteMacAddress);
+                                    return Err(PistolError::CanNotFoundMacAddress);
                                 }
                             }
                         }
+                    } else {
+                        let (default_route, default_route6) = match get_default_route()? {
+                            (r1, r2) => (r1, r2),
+                            (None, None) => return Err(PistolError::CanNotFoundRouterAddress),
+                        };
+                        let dst_mac = match search_mac(default_route.via)? {
+                            Some(m) => m,
+                            None => {
+                                let dst_mac = MacAddr::broadcast();
+                                let src_mac = match src_interface.mac {
+                                    Some(m) => m,
+                                    None => return Err(PistolError::CanNotFoundMacAddress),
+                                };
+                                match default_route.via {
+                                    IpAddr::V4(default_route_ipv4) => {
+                                        if let IpAddr::V4(src_ipv4) = src_addr {
+                                            match send_arp_scan_packet(
+                                                default_route_ipv4,
+                                                dst_mac,
+                                                src_ipv4,
+                                                src_mac,
+                                                src_interface.clone(),
+                                                timeout,
+                                            )? {
+                                                (Some(m), _rtt) => {
+                                                    arp_cache_update(default_route_ipv4.into(), m)?;
+                                                    m
+                                                }
+                                                (None, _rtt) => {
+                                                    return Err(
+                                                        PistolError::CanNotFoundRouteMacAddress,
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            return Err(PistolError::CanNotFoundRouteMacAddress);
+                                        }
+                                    }
+                                    IpAddr::V6(default_route_ipv6) => {
+                                        if let IpAddr::V6(src_ipv6) = src_addr {
+                                            match ndp_rs(src_ipv6, timeout)? {
+                                                (Some(m), _rtt) => {
+                                                    arp_cache_update(default_route_ipv6.into(), m)?;
+                                                    m
+                                                }
+                                                (None, _rtt) => {
+                                                    return Err(
+                                                        PistolError::CanNotFoundRouteMacAddress,
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            return Err(PistolError::CanNotFoundRouteMacAddress);
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        dst_mac
                     }
-                };
-                dst_mac
-            }
+                }
+            };
+            update_dst_cache(dst_addr, src_addr, dst_mac, src_interface.clone())?;
+            Ok((dst_mac, src_interface))
         }
-    };
-    update_dst_cache(dst_addr, src_addr, dst_mac, src_interface.clone())?;
-    Ok((dst_mac, src_interface))
+    }
 }
 
 /// When the target is a loopback address,
@@ -548,7 +574,19 @@ pub fn infer_addr(
                     }
                     // Finally, if we really can't find the source address,
                     // transform it to the address in the same network segment as the default route.
-                    if let Some(default_route) = get_default_route()? {
+                    let (default_route, default_route6) = get_default_route()?;
+                    if let Some(default_route) = default_route {
+                        for interface in interfaces() {
+                            for ipn in interface.ips {
+                                if ipn.contains(default_route.via) {
+                                    let src_addr = ipn.ip();
+                                    let ia = InferAddr { dst_addr, src_addr };
+                                    return Ok(Some(ia));
+                                }
+                            }
+                        }
+                    } else if let Some(default_route) = default_route6 {
+                        // ipv6
                         for interface in interfaces() {
                             for ipn in interface.ips {
                                 if ipn.contains(default_route.via) {

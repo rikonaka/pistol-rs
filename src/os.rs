@@ -4,13 +4,13 @@ use chrono::DateTime;
 #[cfg(feature = "os")]
 use chrono::Local;
 #[cfg(feature = "os")]
+use prettytable::row;
+#[cfg(feature = "os")]
 use prettytable::Cell;
 #[cfg(feature = "os")]
 use prettytable::Row;
 #[cfg(feature = "os")]
 use prettytable::Table;
-#[cfg(feature = "os")]
-use prettytable::row;
 #[cfg(feature = "os")]
 use serde::Deserialize;
 #[cfg(feature = "os")]
@@ -39,27 +39,27 @@ use tracing::warn;
 use zip::ZipArchive;
 
 #[cfg(feature = "os")]
-use crate::Target;
-#[cfg(feature = "os")]
 use crate::error::PistolError;
 #[cfg(feature = "os")]
 use crate::layer::infer_addr;
 #[cfg(feature = "os")]
 use crate::os::dbparser::NmapOSDB;
 #[cfg(feature = "os")]
-use crate::os::osscan::Fingerprint;
-#[cfg(feature = "os")]
 use crate::os::osscan::os_probe_thread;
 #[cfg(feature = "os")]
-use crate::os::osscan6::Fingerprint6;
+use crate::os::osscan::Fingerprint;
 #[cfg(feature = "os")]
 use crate::os::osscan6::os_probe_thread6;
+#[cfg(feature = "os")]
+use crate::os::osscan6::Fingerprint6;
 #[cfg(feature = "os")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "os")]
 use crate::utils::num_threads_check;
 #[cfg(feature = "os")]
 use crate::utils::time_sec_to_string;
+#[cfg(feature = "os")]
+use crate::Target;
 
 #[cfg(feature = "os")]
 pub mod dbparser;
@@ -168,9 +168,9 @@ impl PistolOsDetects {
 impl fmt::Display for PistolOsDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![
-            Cell::new("OS Detect Results").style_spec("c").with_hspan(7),
-        ]));
+        table.add_row(Row::new(vec![Cell::new("OS Detect Results")
+            .style_spec("c")
+            .with_hspan(7)]));
 
         table.add_row(
             row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "os", c -> "cpe", c -> "time cost"],
@@ -239,7 +239,10 @@ impl fmt::Display for PistolOsDetects {
                                 id += 1;
                             }
                         } else {
-                            table.add_row(Row::new(vec![Cell::new("no results, usually caused by a novelty value greater than 15.0").with_hspan(7)]));
+                            table.add_row(Row::new(vec![Cell::new(
+                                "no results, usually caused by a novelty value greater than 15.0",
+                            )
+                            .with_hspan(7)]));
                         }
                     } else {
                         let addr_str = match o.origin {
