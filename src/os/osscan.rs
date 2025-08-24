@@ -20,7 +20,6 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmp;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
-use crate::layer::get_dst_mac_and_src_if;
 use crate::layer::layer3_ipv4_send;
 use crate::os::OsInfo;
 use crate::os::dbparser::NmapOSDB;
@@ -61,6 +60,7 @@ use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
+use crate::route::Via;
 use crate::trace::icmp_trace;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
@@ -1851,7 +1851,7 @@ pub fn os_probe_thread(
 ) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {
     // exec this line first to return error for host which dead
     let (dst_mac, _interface) =
-        get_dst_mac_and_src_if(dst_ipv4.into(), src_ipv4.into(), timeout)?;
+        Via::get_dst_mac_and_src_if(dst_ipv4.into(), src_ipv4.into(), timeout)?;
 
     debug!("send all probes now");
     let ap = send_all_probes(

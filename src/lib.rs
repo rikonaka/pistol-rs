@@ -42,9 +42,9 @@ pub mod utils;
 pub mod vs;
 
 use crate::error::PistolError;
-use crate::layer::DstCache;
 use crate::layer::LayerMatch;
 use crate::layer::layer2_capture;
+use crate::route::DstCache;
 use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
