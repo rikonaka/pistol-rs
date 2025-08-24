@@ -16,7 +16,6 @@ use crate::layer::Layer3Match;
 use crate::layer::Layer4MatchIcmpv6;
 use crate::layer::Layer4MatchTcpUdp;
 use crate::layer::LayerMatch;
-use crate::layer::get_dst_mac_and_src_if;
 use crate::layer::layer3_ipv6_send;
 use crate::os::Linear;
 use crate::os::OsInfo6;
@@ -32,6 +31,7 @@ use crate::os::rr::SEQRR6;
 use crate::os::rr::TECNRR6;
 use crate::os::rr::TXRR6;
 use crate::os::rr::U1RR6;
+use crate::route::Via;
 use crate::trace::icmp_trace;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
@@ -1256,7 +1256,7 @@ pub fn os_probe_thread6(
     timeout: Option<Duration>,
 ) -> Result<(Fingerprint6, Vec<OsInfo6>), PistolError> {
     let (dst_mac, interface) =
-        get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+        Via::get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
 
     let src_mac = match interface.mac {
         Some(mac) => mac,
