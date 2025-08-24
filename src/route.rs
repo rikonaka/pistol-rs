@@ -683,35 +683,31 @@ impl Via {
             return Ok((dst_mac, src_interface));
         }
 
-        let find_src_interface_and_via = || -> Result<(NetworkInterface, Via), PistolError> {
-            let (src_interface, via) = if src_addr == dst_addr {
-                let dev = match find_loopback_interface() {
-                    Some(i) => i,
-                    None => return Err(PistolError::CanNotFoundInterface),
-                };
-                if dst_addr.is_ipv4() {
-                    let via = Via::IpAddr(IpAddr::V4(Ipv4Addr::LOCALHOST));
-                    (dev, via)
-                } else {
-                    let via = Via::IpAddr(IpAddr::V6(Ipv6Addr::LOCALHOST));
-                    (dev, via)
-                }
-            } else {
-                let route_info = match search_route_table(dst_addr)? {
-                    Some(route_info) => route_info,
-                    None => return Err(PistolError::CanNotFoundInterface),
-                };
-                debug!(
-                    "search route table done, dev {} via {}",
-                    route_info.dev.name, route_info.via
-                );
-                (route_info.dev, route_info.via)
+        let (src_interface, via) = if src_addr == dst_addr {
+            let dev = match find_loopback_interface() {
+                Some(i) => i,
+                None => return Err(PistolError::CanNotFoundInterface),
             };
-            debug!("src interface: {}, via addr: {}", src_interface.name, via);
-            Ok((src_interface, via))
+            if dst_addr.is_ipv4() {
+                let via = Via::IpAddr(IpAddr::V4(Ipv4Addr::LOCALHOST));
+                (dev, via)
+            } else {
+                let via = Via::IpAddr(IpAddr::V6(Ipv6Addr::LOCALHOST));
+                (dev, via)
+            }
+        } else {
+            let route_info = match search_route_table(dst_addr)? {
+                Some(route_info) => route_info,
+                None => return Err(PistolError::CanNotFoundInterface),
+            };
+            debug!(
+                "search route table done, dev {} via {}",
+                route_info.dev.name, route_info.via
+            );
+            (route_info.dev, route_info.via)
         };
+        debug!("src interface: {}, via addr: {}", src_interface.name, via);
 
-        let (src_interface, via) = find_src_interface_and_via()?;
         match via {
             Via::IfIndex(if_index) => {
                 let src_interface = match find_interface_by_index(if_index) {
