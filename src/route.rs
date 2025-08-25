@@ -247,12 +247,13 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
+            let line = line.trim();
             if line.len() == 0 {
                 continue;
             }
             // default via 192.168.72.2 dev ens33
             // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-            let default_route_judge = |line: &str| -> bool { line.contains("default") };
+            let default_route_judge = |line: &str| -> bool { line.starts_with("default") };
             if default_route_judge(&line) {
                 let default_route_re =
                     Regex::new(r"^default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
@@ -262,7 +263,10 @@ impl InnerRouteTable {
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
-                                warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                                warn!(
+                                    "parse route table 'via' [{}] into IpAddr error: {}",
+                                    via_str, e
+                                );
                                 continue;
                             }
                         };
@@ -359,8 +363,9 @@ impl InnerRouteTable {
             {
                 continue;
             }
-            let default_route_judge = |line: &str| -> bool { line.contains("default") };
+            let default_route_judge = |line: &str| -> bool { line.starts_with("default") };
             if default_route_judge(&line) {
+                let line = line.trim();
                 // default 192.168.72.2 UGS em0
                 // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
                 let line_split: Vec<&str> = line
@@ -374,7 +379,10 @@ impl InnerRouteTable {
                     let via: IpAddr = match via_str.parse() {
                         Ok(v) => v,
                         Err(e) => {
-                            warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                            warn!(
+                                "parse route table 'via' [{}] into IpAddr error: {}",
+                                via_str, e
+                            );
                             continue;
                         }
                     };
@@ -448,6 +456,7 @@ impl InnerRouteTable {
         let mut routes = HashMap::new();
 
         for line in system_route_lines {
+            let line = line.trim();
             if line.len() == 0 || line.starts_with("-") || line.starts_with("i") {
                 continue;
             }
@@ -472,7 +481,10 @@ impl InnerRouteTable {
                         let via: IpAddr = match via_str.parse() {
                             Ok(v) => v,
                             Err(e) => {
-                                warn!("parse route table 'via' [{}[ error: {}", via_str, e);
+                                warn!(
+                                    "parse route table 'via' [{}] into IpAddr error: {}",
+                                    via_str, e
+                                );
                                 continue;
                             }
                         };
@@ -1094,7 +1106,7 @@ impl RouteVia {
             let via: IpAddr = match ipv6_addr.parse() {
                 Ok(d) => d,
                 Err(e) => {
-                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                    warn!("parse 'via' [{}] into IpAddr error: {}", via_str, e);
                     return Ok(None);
                 }
             };
@@ -1104,7 +1116,7 @@ impl RouteVia {
             let via: IpAddr = match via_str.parse() {
                 Ok(d) => d,
                 Err(e) => {
-                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                    warn!("parse 'via' [{}] into IpAddr error: {}", via_str, e);
                     return Ok(None);
                 }
             };
@@ -1114,7 +1126,7 @@ impl RouteVia {
             let mac: MacAddr = match via_str.parse() {
                 Ok(m) => m,
                 Err(e) => {
-                    warn!("parse route table 'via' [{}] error: {}", via_str, e);
+                    warn!("parse 'via' [{}] into MacAddr error: {}", via_str, e);
                     return Ok(None);
                 }
             };
@@ -1373,7 +1385,7 @@ impl RouteTable {
                         routes.insert(r, route_info);
                     }
                     None => {
-                        warn!("parse route table 'via' [{}]", via_str);
+                        warn!("parse route table 'via' [{}] into RouteVia failed", via_str);
                         continue;
                     }
                 },
