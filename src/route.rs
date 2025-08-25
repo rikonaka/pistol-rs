@@ -1020,10 +1020,10 @@ impl RouteVia {
                     }
                 }
             };
-            debug!(
-                "search route table done, dev {} via {:?}",
-                route_info.dev.name, route_info.via
-            );
+            // debug!(
+            //     "search route table done, dev {} via {:?}",
+            //     route_info.dev.name, route_info.via
+            // );
             (route_info.dev, route_info.via)
         };
         debug!(
@@ -1121,16 +1121,13 @@ impl RouteVia {
         }
     }
     pub fn parser(via_str: &str) -> Result<Option<RouteVia>, PistolError> {
-        let ipv6_re = Regex::new(r"^[\w\d:]+(\/\d+)?")?;
-        let ipv4_re = Regex::new(r"^[\d\.]+(\/\d+)?")?;
-        let mac_re = Regex::new(
-            r"^[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}",
-        )?;
-        // link#12
-        let unix_index_re = Regex::new(r"^link#\d+")?;
-        let windows_index_re = Regex::new(r"^\d+")?;
-
         if !via_str.contains("link") {
+            let ipv6_re = Regex::new(r"^[\w\d:]+(\/\d+)?")?;
+            let ipv4_re = Regex::new(r"^[\d\.]+(\/\d+)?")?;
+            let mac_re = Regex::new(
+                r"^[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}",
+            )?;
+            let windows_index_re = Regex::new(r"^\d+")?;
             if ipv6_re.is_match(via_str) {
                 // ipv6 address
                 let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
@@ -1151,7 +1148,11 @@ impl RouteVia {
                         return Ok(None);
                     }
                 };
-                Ok(Some(RouteVia::IpAddr(via.into())))
+                if !via.is_unspecified() {
+                    Ok(Some(RouteVia::IpAddr(via.into())))
+                } else {
+                    Ok(None)
+                }
             } else if mac_re.is_match(via_str) {
                 // mac address
                 let mac: MacAddr = match via_str.parse() {
@@ -1176,6 +1177,8 @@ impl RouteVia {
                 Ok(None)
             }
         } else {
+            // link#12
+            let unix_index_re = Regex::new(r"^link#\d+")?;
             if unix_index_re.is_match(via_str) {
                 // if_index
                 let via_str_split: Vec<&str> = via_str
@@ -1489,7 +1492,9 @@ impl NeighborCache {
                             continue;
                         }
                     };
-                    ret.insert(addr, mac);
+                    if !mac.is_zero() {
+                        ret.insert(addr, mac);
+                    }
                 }
                 None => warn!("line: [{}] neighbor_re no match", line),
             }
@@ -1572,7 +1577,9 @@ impl NeighborCache {
                                 continue;
                             }
                         };
-                        ret.insert(addr, mac);
+                        if !mac.is_zero() {
+                            ret.insert(addr, mac);
+                        }
                     }
                     None => warn!(
                         "line: [{}] neighbor_re and neighbor_re6 both no match",
@@ -1628,7 +1635,10 @@ impl NeighborCache {
                                     continue;
                                 }
                             };
-                            ret.insert(addr, mac);
+                            if !mac.is_zero() {
+                                // do not insert 00-00-00-00-00-00
+                                ret.insert(addr, mac);
+                            }
                         }
                         None => (),
                     }
@@ -1711,12 +1721,18 @@ mod tests {
         }
     }
     #[test]
-    fn test_neighbor() {
+    fn test_details() {
         let n = NeighborCache::init().unwrap();
         println!("{:?}", n);
 
         let r = RouteTable::init().unwrap();
         println!("{:?}", r);
+    }
+    #[test]
+    fn test_mac() {
+        let mac = MacAddr::new(0, 0, 0, 0, 0, 0);
+        println!("{}", mac);
+        assert_eq!(mac.is_zero(), true)
     }
     #[test]
     fn test_windows_interface() {

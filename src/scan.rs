@@ -763,10 +763,10 @@ fn scan(
                             random_port()
                         }
                     };
-                    debug!(
-                        "sending scan packet to [{}] port [{}] and src port [{}]",
-                        dst_addr, dst_port, src_port
-                    );
+                    // debug!(
+                    //     "sending scan packet to [{}] port [{}] and src port [{}]",
+                    //     dst_addr, dst_port, src_port
+                    // );
                     let tx = tx.clone();
                     recv_size += 1;
                     let (dst_ipv4, src_ipv4) = match infer_addr(dst_ipv4.into(), src_addr)? {
@@ -1644,7 +1644,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         let ports = vec![22, 80, 5432, 8080];
         #[cfg(target_os = "windows")]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
         #[cfg(target_os = "windows")]
         let ports = vec![22, 80, 3389, 8080];
         #[cfg(target_os = "freebsd")]
