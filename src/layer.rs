@@ -245,25 +245,25 @@ pub fn infer_addr(
                     // Finally, if we really can't find the source address,
                     // transform it to the address in the same network segment as the default route.
                     let (default_route, default_route6) = get_default_route()?;
-                    if let Some(default_route) = default_route {
-                        for interface in interfaces() {
-                            for ipn in interface.ips {
-                                if ipn.contains(default_route.via) {
-                                    let src_addr = ipn.ip();
-                                    let ia = InferAddr { dst_addr, src_addr };
-                                    return Ok(Some(ia));
-                                }
-                            }
+                    let dr = if dst_addr.is_ipv4() {
+                        if let Some(dr_ipv4) = default_route {
+                            dr_ipv4
+                        } else {
+                            return Err(PistolError::CanNotFoundRouterAddress);
                         }
-                    } else if let Some(default_route) = default_route6 {
-                        // ipv6
-                        for interface in interfaces() {
-                            for ipn in interface.ips {
-                                if ipn.contains(default_route.via) {
-                                    let src_addr = ipn.ip();
-                                    let ia = InferAddr { dst_addr, src_addr };
-                                    return Ok(Some(ia));
-                                }
+                    } else {
+                        if let Some(dr_ipv6) = default_route6 {
+                            dr_ipv6
+                        } else {
+                            return Err(PistolError::CanNotFoundRouterAddress);
+                        }
+                    };
+                    for interface in interfaces() {
+                        for ipn in interface.ips {
+                            if ipn.contains(dr.via) {
+                                let src_addr = ipn.ip();
+                                let ia = InferAddr { dst_addr, src_addr };
+                                return Ok(Some(ia));
                             }
                         }
                     }

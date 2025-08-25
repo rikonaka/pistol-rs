@@ -902,12 +902,18 @@ impl RouteVia {
         } else {
             // finally, send it to the the default route address in layer2
             let (default_route, default_route6) = get_default_route()?;
-            let dr = if let Some(dr) = default_route {
-                dr
-            } else if let Some(dr6) = default_route6 {
-                dr6
+            let dr = if dst_addr.is_ipv4() {
+                if let Some(dr_ipv4) = default_route {
+                    dr_ipv4
+                } else {
+                    return Err(PistolError::CanNotFoundRouterAddress);
+                }
             } else {
-                return Err(PistolError::CanNotFoundRouterAddress);
+                if let Some(dr_ipv6) = default_route6 {
+                    dr_ipv6
+                } else {
+                    return Err(PistolError::CanNotFoundRouterAddress);
+                }
             };
 
             let dst_mac = match search_mac(dr.via)? {
@@ -977,7 +983,7 @@ impl RouteVia {
             return Ok((dst_mac, src_interface));
         }
 
-        let (src_interface, via) = if src_addr == dst_addr {
+        let (src_interface, route_via) = if src_addr == dst_addr {
             let dev = match find_loopback_interface() {
                 Some(i) => i,
                 None => return Err(PistolError::CanNotFoundInterface),
@@ -992,7 +998,27 @@ impl RouteVia {
         } else {
             let route_info = match search_route_table(dst_addr)? {
                 Some(route_info) => route_info,
-                None => return Err(PistolError::CanNotFoundInterface),
+                None => {
+                    // send it to the default route address
+                    let (default_route, default_route6) = get_default_route()?;
+                    let dr = if dst_addr.is_ipv4() {
+                        if let Some(dr_ipv4) = default_route {
+                            dr_ipv4
+                        } else {
+                            return Err(PistolError::CanNotFoundRouterAddress);
+                        }
+                    } else {
+                        if let Some(dr_ipv6) = default_route6 {
+                            dr_ipv6
+                        } else {
+                            return Err(PistolError::CanNotFoundRouterAddress);
+                        }
+                    };
+                    match search_route_table(dr.via)? {
+                        Some(route_info) => route_info,
+                        None => return Err(PistolError::CanNotFoundInterface),
+                    }
+                }
             };
             debug!(
                 "search route table done, dev {} via {:?}",
@@ -1000,11 +1026,14 @@ impl RouteVia {
             );
             (route_info.dev, route_info.via)
         };
-        debug!("src interface: {}, via addr: {:?}", src_interface.name, via);
+        debug!(
+            "src interface: {}, via addr: {:?}",
+            src_interface.name, route_via
+        );
 
-        match via {
-            Some(via) => {
-                match via {
+        match route_via {
+            Some(route_via) => {
+                match route_via {
                     RouteVia::IfIndex(if_index) => {
                         let src_interface = match find_interface_by_index(if_index) {
                             Some(i) => i,
@@ -1049,6 +1078,7 @@ impl RouteVia {
                 }
             }
             None => {
+                debug!("route_via is none");
                 let dst_mac =
                     Self::standard_process(dst_addr, src_addr, src_interface.clone(), timeout)?;
                 DstCache::update(dst_addr, src_addr, dst_mac, src_interface.clone())?;
