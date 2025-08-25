@@ -1646,7 +1646,7 @@ mod tests {
         #[cfg(target_os = "windows")]
         let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
         #[cfg(target_os = "windows")]
-        let ports = vec![80, 3389];
+        let ports = vec![22, 80, 3389, 8080];
         #[cfg(target_os = "freebsd")]
         let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
         #[cfg(target_os = "freebsd")]

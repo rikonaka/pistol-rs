@@ -64,13 +64,6 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     None
 }
 
-#[cfg(any(
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-    target_os = "macos"
-))]
 fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
     // Remove the %em0 .etc
     // fe80::%lo0/10 => fe80::/10
@@ -525,7 +518,7 @@ impl InnerRouteTable {
                             }
                         };
                         let dst = RouteAddr::IpNetwork(dst);
-                        let via = caps.name("via").map_or("", |m| m.as_str()).to_string();
+                        let via = caps.name("via").map_or(None, |m| Some(m.as_str().into()));
                         let inner_route_info = InnerRouteInfo { dev: if_index, via };
                         routes.insert(dst, inner_route_info);
                     }
@@ -1087,7 +1080,16 @@ impl RouteVia {
         }
     }
     pub fn parser(via_str: &str) -> Result<Option<RouteVia>, PistolError> {
-        if via_str.contains("%") {
+        let ipv6_re = Regex::new(r"^[\w\d:]+(\/\d+)?")?;
+        let ipv4_re = Regex::new(r"^[\d\.]+(\/\d+)?")?;
+        let mac_re = Regex::new(
+            r"^[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}",
+        )?;
+        // link#12
+        let unix_index_re = Regex::new(r"^link#\d+")?;
+        let windows_index_re = Regex::new(r"^\d+")?;
+
+        if ipv6_re.is_match(via_str) {
             // ipv6 address
             let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
             let via: IpAddr = match ipv6_addr.parse() {
@@ -1098,7 +1100,7 @@ impl RouteVia {
                 }
             };
             Ok(Some(RouteVia::IpAddr(via.into())))
-        } else if via_str.contains(".") {
+        } else if ipv4_re.is_match(via_str) {
             // ipv4 address
             let via: IpAddr = match via_str.parse() {
                 Ok(d) => d,
@@ -1108,7 +1110,7 @@ impl RouteVia {
                 }
             };
             Ok(Some(RouteVia::IpAddr(via.into())))
-        } else if via_str.contains(":") {
+        } else if mac_re.is_match(via_str) {
             // mac address
             let mac: MacAddr = match via_str.parse() {
                 Ok(m) => m,
@@ -1118,7 +1120,7 @@ impl RouteVia {
                 }
             };
             Ok(Some(RouteVia::MacAddr(mac)))
-        } else if via_str.contains("#") {
+        } else if unix_index_re.is_match(via_str) {
             // if_index
             let via_str_split: Vec<&str> = via_str
                 .split("#")
@@ -1138,7 +1140,7 @@ impl RouteVia {
             } else {
                 Ok(None)
             }
-        } else {
+        } else if windows_index_re.is_match(via_str) {
             let if_index: u32 = match via_str.parse() {
                 Ok(i) => i,
                 Err(e) => {
@@ -1147,6 +1149,9 @@ impl RouteVia {
                 }
             };
             Ok(Some(RouteVia::IfIndex(if_index)))
+        } else {
+            debug!("via string [{}] no match any regex rules", via_str);
+            Ok(None)
         }
     }
 }
@@ -1548,7 +1553,7 @@ impl NeighborCache {
 
         // regex
         let neighbor_re =
-            Regex::new(r"\d+\s+(?P<addr>[\w\d\.:]+)\s+(?P<mac>[\w\d-]+)\s+\w+\s+\w+")?;
+            Regex::new(r"^\d+\s+(?P<addr>[\w\d\.:]+)\s+((?P<mac>[\w\d-]+)\s+)?\w+\s+\w+")?;
 
         let mut ret = HashMap::new();
         for line in lines {
@@ -1562,17 +1567,23 @@ impl NeighborCache {
                             continue;
                         }
                     };
-                    let mac = caps.name("mac").map_or("", |m| m.as_str());
+                    let mac: Option<String> =
+                        caps.name("mac").map_or(None, |m| Some(m.as_str().into()));
                     // 33-33-00-01-00-02 => 33:33:00:01:00:02
-                    let mac = mac.replace("-", ":");
-                    let mac: MacAddr = match mac.parse() {
-                        Ok(m) => m,
-                        Err(e) => {
-                            warn!("parse neighbor 'mac' error:  {e}");
-                            continue;
+                    match mac {
+                        Some(mac) => {
+                            let mac = mac.replace("-", ":");
+                            let mac: MacAddr = match mac.parse() {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    warn!("parse neighbor 'mac' error:  {e}");
+                                    continue;
+                                }
+                            };
+                            ret.insert(addr, mac);
                         }
-                    };
-                    ret.insert(addr, mac);
+                        None => (),
+                    }
                 }
                 None => warn!("line: [{}] neighbor_re no match", line),
             }
