@@ -1100,28 +1100,28 @@ impl RouteVia {
         let unix_index_re = Regex::new(r"^link#\d+")?;
         let windows_index_re = Regex::new(r"^\d+")?;
 
-        if ipv6_re.is_match(via_str) {
+        if ipv6_re.is_match(via_str) && !via_str.contains("link") {
             // ipv6 address
             let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
             let via: IpAddr = match ipv6_addr.parse() {
                 Ok(d) => d,
                 Err(e) => {
-                    warn!("parse 'via' [{}] into IpAddr error: {}", via_str, e);
+                    warn!("parse 'via' [{}] into IpAddr(V6) error: {}", via_str, e);
                     return Ok(None);
                 }
             };
             Ok(Some(RouteVia::IpAddr(via.into())))
-        } else if ipv4_re.is_match(via_str) {
+        } else if ipv4_re.is_match(via_str) && !via_str.contains("link") {
             // ipv4 address
             let via: IpAddr = match via_str.parse() {
                 Ok(d) => d,
                 Err(e) => {
-                    warn!("parse 'via' [{}] into IpAddr error: {}", via_str, e);
+                    warn!("parse 'via' [{}] into IpAddr(V4) error: {}", via_str, e);
                     return Ok(None);
                 }
             };
             Ok(Some(RouteVia::IpAddr(via.into())))
-        } else if mac_re.is_match(via_str) {
+        } else if mac_re.is_match(via_str) && !via_str.contains("link") {
             // mac address
             let mac: MacAddr = match via_str.parse() {
                 Ok(m) => m,
@@ -1131,7 +1131,7 @@ impl RouteVia {
                 }
             };
             Ok(Some(RouteVia::MacAddr(mac)))
-        } else if unix_index_re.is_match(via_str) {
+        } else if unix_index_re.is_match(via_str) && via_str.contains("link") {
             // if_index
             let via_str_split: Vec<&str> = via_str
                 .split("#")
@@ -1151,7 +1151,7 @@ impl RouteVia {
             } else {
                 Ok(None)
             }
-        } else if windows_index_re.is_match(via_str) {
+        } else if windows_index_re.is_match(via_str) && !via_str.contains("link") {
             let if_index: u32 = match via_str.parse() {
                 Ok(i) => i,
                 Err(e) => {
