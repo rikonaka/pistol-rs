@@ -1,4 +1,3 @@
-// use chrono::Local;
 use pcapture::pcapng::EnhancedPacketBlock;
 use pcapture::pcapng::GeneralBlock;
 use pnet::datalink;
@@ -17,19 +16,12 @@ use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpType;
-use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Type;
-use pnet::packet::icmpv6::Icmpv6Types;
-use pnet::packet::icmpv6::MutableIcmpv6Packet;
-use pnet::packet::icmpv6::ndp::MutableRouterSolicitPacket;
-use pnet::packet::icmpv6::ndp::NdpOption;
-use pnet::packet::icmpv6::ndp::NdpOptionTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use std::net::IpAddr;
@@ -52,7 +44,7 @@ use crate::PISTOL_RUNNER_IS_RUNNING;
 use crate::PistolChannel;
 use crate::UNIFIED_RECV_MATCHS;
 use crate::error::PistolError;
-use crate::route::Via;
+use crate::route::RouteVia;
 use crate::route::get_default_route;
 use crate::route::search_route_table;
 
@@ -1304,7 +1296,7 @@ pub fn layer3_ipv4_send(
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
     let (dst_mac, interface) =
-        Via::get_dst_mac_and_src_if(dst_ipv4.into(), src_ipv4.into(), timeout)?;
+        RouteVia::get_dst_mac_and_src_if(dst_ipv4.into(), src_ipv4.into(), timeout)?;
     debug!(
         "dst addr: {}, dst mac: {}, src addr: {}, sending interface: {}, {:?}",
         dst_ipv4, dst_mac, src_ipv4, interface.name, interface.ips
@@ -1330,132 +1322,6 @@ pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])
 }
 
-fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
-    // return mac address from ndp
-    match EthernetPacket::new(buff) {
-        Some(ethernet_packet) => {
-            let mac = ethernet_packet.get_source();
-            Some(mac)
-        }
-        None => None,
-    }
-}
-
-pub fn send_ndp_rs_packet(
-    src_ipv6: Ipv6Addr,
-    timeout: Option<Duration>,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    // router solicitation
-    let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
-    // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
-    let interface = match find_interface_by_src(src_ipv6.into()) {
-        Some(i) => i,
-        None => return Err(PistolError::CanNotFoundInterface),
-    };
-    let src_mac = match interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
-    };
-
-    // ipv6
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
-    };
-    ipv6_header.set_version(6);
-    ipv6_header.set_traffic_class(0);
-    ipv6_header.set_flow_label(0);
-    ipv6_header.set_payload_length(ICMPV6_RS_HEADER_SIZE as u16);
-    ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
-    ipv6_header.set_hop_limit(255);
-    ipv6_header.set_source(src_ipv6);
-    ipv6_header.set_destination(route_addr_2);
-
-    // icmpv6
-    let mut icmpv6_header =
-        match MutableRouterSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-            Some(p) => p,
-            None => {
-                return Err(PistolError::BuildPacketError {
-                    location: format!("{}", Location::caller()),
-                });
-            }
-        };
-    // Neighbor Solicitation
-    icmpv6_header.set_icmpv6_type(Icmpv6Type(133));
-    icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
-    icmpv6_header.set_reserved(0);
-    let ndp_option = NdpOption {
-        option_type: NdpOptionTypes::SourceLLAddr,
-        length: 1,
-        data: src_mac.octets().to_vec(),
-    };
-    icmpv6_header.set_options(&vec![ndp_option]);
-
-    let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
-    };
-    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &route_addr_2);
-    icmpv6_header.set_checksum(checksum);
-
-    // let layer3 = Layer3Match {
-    //     layer2: None,
-    //     src_addr: None,
-    //     dst_addr: Some(route_addr_1.into()),
-    // };
-    let layer3 = Layer3Match {
-        name: "ndp_ns layer3",
-        layer2: None,
-        src_addr: None,
-        dst_addr: None,
-    };
-    // set the icmp payload matchs
-    let payload_ip = PayloadMatchIp {
-        src_addr: None,
-        dst_addr: None,
-    };
-    let payload_icmpv6 = PayloadMatchIcmpv6 {
-        layer3: Some(payload_ip),
-        icmpv6_type: Some(Icmpv6Types::RouterSolicit),
-        icmpv6_code: None,
-    };
-    let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
-        name: "ndp_ns icmpv6",
-        layer3: Some(layer3),
-        icmpv6_type: Some(Icmpv6Types::RouterAdvert), // Type: Router Advertisement (134)
-        icmpv6_code: None,
-        payload: Some(payload),
-    };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
-
-    let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
-    let ethernet_type = EtherTypes::Ipv6;
-    let (r, rtt) = layer2_work(
-        dst_mac,
-        interface.clone(),
-        &ipv6_buff,
-        IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE,
-        ethernet_type,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
-
-    let mac = get_mac_from_ndp_rs(&r);
-    Ok((mac, rtt))
-}
-
 fn layer2_payload(buff: &[u8]) -> Vec<u8> {
     match EthernetPacket::new(buff) {
         Some(ethernet_packet) => ethernet_packet.payload().to_vec(),
@@ -1477,7 +1343,7 @@ pub fn layer3_ipv6_send(
         dst_ipv6
     };
     let (dst_mac, interface) =
-        Via::get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+        RouteVia::get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
 
     let ethernet_type = EtherTypes::Ipv6;
     let payload_len = payload.len();
@@ -1500,6 +1366,7 @@ mod tests {
     use crate::PistolLogger;
     use crate::PistolRunner;
     use pnet::packet::icmp::IcmpTypes;
+    use pnet::packet::icmpv6::Icmpv6Types;
     use std::str::FromStr;
     #[test]
     fn test_infer_addr() {
@@ -1514,7 +1381,7 @@ mod tests {
         if let Some(ia) = ia {
             let timeout = Some(Duration::from_secs_f64(1.0));
             let (_mac, interface) =
-                Via::get_dst_mac_and_src_if(ia.dst_addr, ia.src_addr, timeout).unwrap();
+                RouteVia::get_dst_mac_and_src_if(ia.dst_addr, ia.src_addr, timeout).unwrap();
             println!("{}", interface.name);
         }
         println!("{:?}", ia);

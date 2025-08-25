@@ -34,7 +34,7 @@ pub fn num_threads_check(num_threads: usize) -> usize {
     num_threads
 }
 
-pub fn arp_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
+pub fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
     // release the lock when leaving the function
     let mut snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,

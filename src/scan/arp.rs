@@ -10,7 +10,7 @@ use pnet::packet::ethernet::EthernetPacket;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
-use tracing::debug;
+// use tracing::debug;
 
 use crate::error::PistolError;
 use crate::layer::ARP_HEADER_SIZE;
@@ -88,8 +88,8 @@ pub fn send_arp_scan_packet(
         timeout,
         true,
     )?;
-    debug!("{} get ret from internet", dst_ipv4);
+    // debug!("{} get ret from internet", dst_ipv4);
     let mac = get_mac_from_arp(&ret);
-    debug!("{}: {:?}", dst_ipv4, mac);
+    // debug!("{}: {:?}", dst_ipv4, mac);
     Ok((mac, rtt))
 }

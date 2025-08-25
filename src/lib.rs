@@ -49,6 +49,10 @@ use crate::route::SystemNetCache;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
 
+// in order to reduce multiple neighbor detection in a multi-threaded environment
+static NEIGHBOR_SCAN_STATUS: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
+
 static DST_CACHE: LazyLock<Arc<Mutex<HashMap<IpAddr, DstCache>>>> = LazyLock::new(|| {
     let hm = HashMap::new();
     Arc::new(Mutex::new(hm))

@@ -1515,7 +1515,7 @@ fn scan_raw(
 
 #[cfg(feature = "scan")]
 #[cfg(test)]
-mod max_attempts {
+mod tests {
     use super::*;
     use crate::PistolLogger;
     use crate::PistolRunner;
@@ -1637,8 +1637,10 @@ mod max_attempts {
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
         #[cfg(target_os = "linux")]
         let ports = vec![22, 80, 5432, 8080];
         #[cfg(target_os = "windows")]
