@@ -1100,69 +1100,76 @@ impl RouteVia {
         let unix_index_re = Regex::new(r"^link#\d+")?;
         let windows_index_re = Regex::new(r"^\d+")?;
 
-        if ipv6_re.is_match(via_str) && !via_str.contains("link") {
-            // ipv6 address
-            let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
-            let via: IpAddr = match ipv6_addr.parse() {
-                Ok(d) => d,
-                Err(e) => {
-                    warn!("parse 'via' [{}] into IpAddr(V6) error: {}", via_str, e);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(RouteVia::IpAddr(via.into())))
-        } else if ipv4_re.is_match(via_str) && !via_str.contains("link") {
-            // ipv4 address
-            let via: IpAddr = match via_str.parse() {
-                Ok(d) => d,
-                Err(e) => {
-                    warn!("parse 'via' [{}] into IpAddr(V4) error: {}", via_str, e);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(RouteVia::IpAddr(via.into())))
-        } else if mac_re.is_match(via_str) && !via_str.contains("link") {
-            // mac address
-            let mac: MacAddr = match via_str.parse() {
-                Ok(m) => m,
-                Err(e) => {
-                    warn!("parse 'via' [{}] into MacAddr error: {}", via_str, e);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(RouteVia::MacAddr(mac)))
-        } else if unix_index_re.is_match(via_str) && via_str.contains("link") {
-            // if_index
-            let via_str_split: Vec<&str> = via_str
-                .split("#")
-                .map(|x| x.trim())
-                .filter(|x| x.len() > 0)
-                .collect();
-            if via_str_split.len() > 1 {
-                let if_index = via_str_split[1];
-                let if_index: u32 = match if_index.parse() {
+        if !via_str.contains("link") {
+            if ipv6_re.is_match(via_str) {
+                // ipv6 address
+                let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
+                let via: IpAddr = match ipv6_addr.parse() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!("parse 'via' [{}] into IpAddr(V6) error: {}", via_str, e);
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(RouteVia::IpAddr(via.into())))
+            } else if ipv4_re.is_match(via_str) {
+                // ipv4 address
+                let via: IpAddr = match via_str.parse() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!("parse 'via' [{}] into IpAddr(V4) error: {}", via_str, e);
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(RouteVia::IpAddr(via.into())))
+            } else if mac_re.is_match(via_str) {
+                // mac address
+                let mac: MacAddr = match via_str.parse() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!("parse 'via' [{}] into MacAddr error: {}", via_str, e);
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(RouteVia::MacAddr(mac)))
+            } else if windows_index_re.is_match(via_str) {
+                let if_index: u32 = match via_str.parse() {
                     Ok(i) => i,
                     Err(e) => {
-                        warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
+                        warn!("parse route table 'if_index' [{}] error: {}", via_str, e);
                         return Ok(None);
                     }
                 };
                 Ok(Some(RouteVia::IfIndex(if_index)))
             } else {
+                debug!("via string [{}] no match any regex rules", via_str);
                 Ok(None)
             }
-        } else if windows_index_re.is_match(via_str) && !via_str.contains("link") {
-            let if_index: u32 = match via_str.parse() {
-                Ok(i) => i,
-                Err(e) => {
-                    warn!("parse route table 'if_index' [{}] error: {}", via_str, e);
-                    return Ok(None);
-                }
-            };
-            Ok(Some(RouteVia::IfIndex(if_index)))
         } else {
-            debug!("via string [{}] no match any regex rules", via_str);
-            Ok(None)
+            if unix_index_re.is_match(via_str) {
+                // if_index
+                let via_str_split: Vec<&str> = via_str
+                    .split("#")
+                    .map(|x| x.trim())
+                    .filter(|x| x.len() > 0)
+                    .collect();
+                if via_str_split.len() > 1 {
+                    let if_index = via_str_split[1];
+                    let if_index: u32 = match if_index.parse() {
+                        Ok(i) => i,
+                        Err(e) => {
+                            warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
+                            return Ok(None);
+                        }
+                    };
+                    Ok(Some(RouteVia::IfIndex(if_index)))
+                } else {
+                    Ok(None)
+                }
+            } else {
+                debug!("via string [{}] not match unix_index_re", via_str);
+                Ok(None)
+            }
         }
     }
 }
