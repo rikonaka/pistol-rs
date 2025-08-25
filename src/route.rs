@@ -190,7 +190,6 @@ struct InnerRouteInfo {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    #[cfg(target_os = "linux")]
     dev: String,
     /// windows interface ids
     #[cfg(target_os = "windows")]
@@ -428,7 +427,7 @@ impl InnerRouteTable {
                         dst
                     };
                     let dev = line_split[line_split.len() - 1].to_string();
-                    let via = line_split[1].to_string();
+                    let via = Some(line_split[1].to_string());
                     let inner_route_info = InnerRouteInfo { dev, via };
                     routes.insert(dst, inner_route_info);
                 } else {
