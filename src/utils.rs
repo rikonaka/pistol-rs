@@ -6,6 +6,7 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
 use threadpool::ThreadPool;
+use tracing::debug;
 use tracing::warn;
 
 use crate::DEFAULT_TIMEOUT;
@@ -45,7 +46,9 @@ pub fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError>
             });
         }
     };
-    Ok(snc.update_neighbor_cache(addr, mac))
+    let _ = snc.update_neighbor_cache(addr, mac);
+    debug!("update neighbor cache finish: {:?}", (*snc));
+    Ok(())
 }
 
 /// Returns the random port

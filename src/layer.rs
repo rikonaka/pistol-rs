@@ -1253,7 +1253,7 @@ pub fn layer2_work(
         let start = Instant::now();
         if need_return {
             // set the matchs
-            let (rx, pc) = layer2_set_matchs(layer_matchs)?;
+            let (rx, pc) = layer2_set_matchs(layer_matchs.clone())?;
             layer2_send(
                 dst_mac,
                 interface,
@@ -1265,6 +1265,13 @@ pub fn layer2_work(
             let data = layer2_recv(rx, timeout)?;
             let rtt = start.elapsed();
             // we done here and remove the matchs
+            for m in &layer_matchs {
+                if data.len() > 0 {
+                    debug!("found data, quit {} match now...", m.name());
+                } else {
+                    debug!("not found data, quit {} match now...", m.name());
+                }
+            }
             if !layer2_rm_matchs(&pc.uuid)? {
                 warn!("can not found and remove recv matchs");
             }
@@ -1279,7 +1286,6 @@ pub fn layer2_work(
                 timeout,
             )?;
             let rtt = start.elapsed();
-
             Ok((Vec::new(), rtt))
         }
     } else {

@@ -547,11 +547,23 @@ impl InnerRouteTable {
 }
 
 /// Destination mac address and interface cache
+#[derive(Debug, Clone)]
 pub struct DstCache {
     pub dst_addr: IpAddr,
     pub src_addr: IpAddr,
-    pub mac: MacAddr,
+    pub dst_mac: MacAddr,
     pub interface: NetworkInterface,
+}
+
+#[cfg(feature = "flood")]
+impl fmt::Display for DstCache {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = format!(
+            "dst_addr: {}, src_addr {}, dst_mac: {}, interface: {}",
+            self.dst_addr, self.src_addr, self.dst_mac, self.interface.name
+        );
+        write!(f, "{}", output.to_string())
+    }
 }
 
 impl DstCache {
@@ -559,7 +571,7 @@ impl DstCache {
     pub fn update(
         dst_addr: IpAddr,
         src_addr: IpAddr,
-        mac: MacAddr,
+        dst_mac: MacAddr,
         interface: NetworkInterface,
     ) -> Result<(), PistolError> {
         match DST_CACHE.lock() {
@@ -568,10 +580,11 @@ impl DstCache {
                     let dc = DstCache {
                         dst_addr,
                         src_addr,
-                        mac,
+                        dst_mac,
                         interface,
                     };
-                    let _ = dst_cache.insert(dst_addr, dc);
+                    let _ = (*dst_cache).insert(dst_addr, dc);
+                    debug!("DST_CACHE updated: {:?}", (*dst_cache));
                 }
                 Ok(())
             }
@@ -587,7 +600,7 @@ impl DstCache {
                 let ret = dst_cache.get(&dst_addr);
                 if let Some(dc) = ret {
                     debug!("dst {} found in DST_CACHE", dst_addr);
-                    Ok(Some((dc.mac, dc.interface.clone())))
+                    Ok(Some((dc.dst_mac, dc.interface.clone())))
                 } else {
                     debug!("dst {} not found in DST_CACHE", dst_addr);
                     Ok(None)
@@ -619,7 +632,7 @@ fn addr_is_my_ip(ip: IpAddr) -> bool {
             }
         }
     }
-    debug!("dst {} is not in host", ip);
+    debug!("dst {} not my ip", ip);
     false
 }
 
@@ -843,10 +856,11 @@ impl RouteVia {
         } else if addr_in_local_net(dst_addr) {
             match search_mac(dst_addr)? {
                 Some(dst_mac) => {
-                    debug!("found {} in arp cache", dst_addr);
+                    debug!("dst {} in arp cache", dst_addr);
                     Ok(dst_mac)
                 }
                 None => {
+                    debug!("dst {} not in arp cache", dst_addr);
                     // if addr is local address and in local net
                     // use the arp or ndp_ns to ask the mac address
                     let src_mac = match src_interface.mac {
@@ -1081,6 +1095,7 @@ impl RouteVia {
                 debug!("route_via is none");
                 let dst_mac =
                     Self::standard_process(dst_addr, src_addr, src_interface.clone(), timeout)?;
+                debug!("route_via is none and found dst_mac: {}", dst_mac);
                 DstCache::update(dst_addr, src_addr, dst_mac, src_interface.clone())?;
                 Ok((dst_mac, src_interface))
             }
@@ -1685,10 +1700,10 @@ impl SystemNetCache {
     pub fn search_route_table(&self, ip: IpAddr) -> Option<RouteInfo> {
         for (dst, route_info) in &self.routes {
             if !dst.is_unspecified() && dst.contains(ip) {
-                debug!(
-                    "route table {} contains target ip, route info dev: {}, via: {:?}",
-                    dst, route_info.dev.name, route_info.via
-                );
+                // debug!(
+                //     "route table {} contains target ip, route info dev: {}, via: {:?}",
+                //     dst, route_info.dev.name, route_info.via
+                // );
                 return Some(route_info.clone());
             }
         }

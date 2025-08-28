@@ -759,7 +759,7 @@ fn scan(
                     let src_port = match src_port {
                         Some(s) => s,
                         None => {
-                            warn!("can not found src port, use random port instead");
+                            // warn!("can not found src port, use random port instead");
                             random_port()
                         }
                     };
@@ -842,7 +842,7 @@ fn scan(
                     let src_port = match src_port {
                         Some(s) => s,
                         None => {
-                            warn!("can not found src port, use random port instead");
+                            // warn!("can not found src port, use random port instead");
                             random_port()
                         }
                     };
@@ -1653,6 +1653,35 @@ mod tests {
         let ports = vec![22, 80, 3389, 8080];
 
         let target1 = Target::new(addr1, Some(ports));
+        let max_attempts = 2;
+        let num_threads = None;
+        let ret = tcp_syn_scan(
+            &[target1],
+            num_threads,
+            src_ipv4,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+        .unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_tcp_syn_scan_performance() {
+        let _pr = PistolRunner::init(
+            PistolLogger::Debug,
+            Some(String::from("tcp_syn_scan.pcapng")),
+            None, // use default value
+        )
+        .unwrap();
+
+        let src_ipv4 = None;
+        let src_port = None;
+        let timeout = Some(Duration::new(1, 0));
+        let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
+        let ports: Vec<u16> = (1..65535).collect();
+
+        let target1 = Target::new(addr, Some(ports));
         let max_attempts = 2;
         let num_threads = None;
         let ret = tcp_syn_scan(
