@@ -1669,8 +1669,8 @@ mod tests {
     #[test]
     fn test_tcp_syn_scan_performance() {
         let _pr = PistolRunner::init(
-            PistolLogger::Debug,
-            Some(String::from("tcp_syn_scan.pcapng")),
+            PistolLogger::None,
+            Some(String::from("performance.pcapng")),
             None, // use default value
         )
         .unwrap();
@@ -1693,7 +1693,13 @@ mod tests {
             max_attempts,
         )
         .unwrap();
-        println!("{}", ret);
+        for r in ret.port_reports {
+            match r.status {
+                PortStatus::Open => println!("{}:{} -> open", r.addr, r.port),
+                _ => (),
+            }
+        }
+        // println!("{}", ret);
     }
     #[test]
     fn test_tcp_fin_scan() {
