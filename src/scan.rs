@@ -1677,7 +1677,7 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Some(Duration::new(5, 0));
         let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
         let ports: Vec<u16> = (1..65535).collect();
 

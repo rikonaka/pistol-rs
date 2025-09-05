@@ -13,7 +13,7 @@ use crate::DEFAULT_TIMEOUT;
 use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 
-const MAX_THREADS: usize = 1000;
+const MAX_THREADS: usize = 4096;
 
 pub fn time_sec_to_string(cost: Duration) -> String {
     if cost.as_secs_f64() > 1.0 {
@@ -32,6 +32,7 @@ pub fn num_threads_check(num_threads: usize) -> usize {
         );
         num_threads = MAX_THREADS;
     }
+    debug!("the number of create threads: {}", num_threads);
     num_threads
 }
 

@@ -26,42 +26,28 @@ fn vs_probe_data_to_string(input: &[u8]) -> String {
     let mut ret = String::new();
     for &i in input {
         match i {
-            // not convert the char below to string anymore
+            0 => {
+                ret += "\\0";
+            }
+            9 => {
+                ret += "\t";
+            }
             10 => {
                 ret += "\n";
             }
             13 => {
                 ret += "\r";
             }
-            9 => {
-                ret += "\t";
-            }
-            // others
-            0 => {
-                ret += r"\0";
-            }
-            8 => {
-                ret += r"\b";
-            }
-            11 => {
-                ret += r"\v";
-            }
-            12 => {
-                ret += r"\f";
-            }
             32..=126 => {
                 let s = (i as char).to_string();
                 ret += &s;
             }
             _ => {
-                if i > 126 {
-                    let s = format!(r"\x{:02x}", i);
-                    ret += &s;
-                }
+                let s = format!("\\x{:02x}", i);
+                ret += &s;
             }
         }
     }
-    // println!(">>> {}", ret);
     ret
 }
 
@@ -94,13 +80,10 @@ fn tcp_null_probe(
         };
     }
 
-    let mut recv_buff = total_recv_buff;
-    recv_buff.retain(|&x| x != 0);
-
     let mut ret = Vec::new();
-    debug!("null probe recv buff len: {}", recv_buff.len());
-    if recv_buff.len() > 0 {
-        let recv_str = vs_probe_data_to_string(&recv_buff);
+    debug!("null probe recv buff len: {}", total_recv_buff.len());
+    if total_recv_buff.len() > 0 {
+        let recv_str = vs_probe_data_to_string(&total_recv_buff);
         for sp in service_probes {
             if sp.probe.probename == "NULL" {
                 match sp.check(&recv_str) {
@@ -141,13 +124,13 @@ fn tcp_continue_probe(
                 }
             };
         }
-        let mut recv_buff = total_recv_buff;
-        recv_buff.retain(|&x| x != 0);
 
-        debug!("tcp continue probe recv buff len: {}", recv_buff.len());
-        if recv_buff.len() > 0 {
-            let recv_str = vs_probe_data_to_string(&recv_buff);
-            // debug!("{}", recv_str);
+        debug!(
+            "tcp continue probe recv buff len: {}",
+            total_recv_buff.len()
+        );
+        if total_recv_buff.len() > 0 {
+            let recv_str = vs_probe_data_to_string(&total_recv_buff);
             let mut ret = Vec::new();
             match sp.check(&recv_str) {
                 Some(mx) => ret.push(mx),
@@ -215,11 +198,8 @@ fn udp_probe(
             }
         }
 
-        let mut recv_buff = total_recv_buff;
-        recv_buff.retain(|&x| x != 0);
-
-        if recv_buff.len() > 0 {
-            let recv_str = vs_probe_data_to_string(&recv_buff);
+        if total_recv_buff.len() > 0 {
+            let recv_str = vs_probe_data_to_string(&total_recv_buff);
             match sp.check(&recv_str) {
                 Some(mx) => ret.push(mx),
                 None => (),
