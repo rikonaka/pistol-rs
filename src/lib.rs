@@ -1,12 +1,19 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
+#[cfg(feature = "libpnet")]
 use crate::datalink::Channel::Ethernet;
 use dns_lookup::lookup_host;
+#[cfg(feature = "libpcap")]
+use pcap::Capture;
+#[cfg(feature = "libpcap")]
+use pcap::Device;
 use pcapture::pcapng::PcapNg;
+#[cfg(feature = "libpnet")]
 use pnet::datalink;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
+#[cfg(feature = "libpnet")]
 use std::io::ErrorKind;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
@@ -95,6 +102,7 @@ impl PistolRunner {
             }),
         }
     }
+    #[cfg(feature = "libpnet")]
     fn init_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
         // This timeout can be set very small,
         // because even if no data packet is received before the timeout expires,
@@ -158,6 +166,75 @@ impl PistolRunner {
                         }
                         Err(e) => match e.kind() {
                             ErrorKind::TimedOut => (),
+                            _ => warn!("layer2 recv failed: {}", e), // many timeout error
+                        },
+                    }
+                }
+            });
+        }
+        // set PISTOL_RUNNER_IS_RUNNING = ture
+        match PISTOL_RUNNER_IS_RUNNING.lock() {
+            Ok(mut r) => *r = true,
+            Err(e) => {
+                return Err(PistolError::TryLockGlobalVarFailed {
+                    var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
+                    e: e.to_string(),
+                });
+            }
+        }
+        Ok(())
+    }
+    #[cfg(feature = "libpcap")]
+    fn init_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
+        // Use libpcap here
+        let timeout = match timeout {
+            Some(t) => t,
+            None => Duration::from_secs_f64(RUNNER_DEFAULT_TIMEOUT),
+        };
+        let timeout_int = timeout.as_secs() as i32;
+
+        let devices = Device::list()?;
+        // listen all device
+        for device in devices {
+            let cap = Capture::from_device(device)?;
+            let mut cap = cap.promisc(true).timeout(timeout_int).open()?;
+
+            thread::spawn(move || {
+                loop {
+                    // append this packet to global vec
+                    match cap.next_packet() {
+                        Ok(ethernet_packet) => {
+                            let ethernet_packet = ethernet_packet.data;
+                            // capture the recved packet and save it into file
+                            match layer2_capture(ethernet_packet) {
+                                Ok(_) => (),
+                                Err(e) => error!("capture recv packet failed: {}", e),
+                            }
+                            let pistol_channels = match Self::get_global_layer_matchs() {
+                                Ok(pcs) => pcs,
+                                Err(e) => {
+                                    error!("get global layer matchs failed: {}", e);
+                                    continue;
+                                }
+                            };
+                            for pc in pistol_channels {
+                                // if any matchs just return
+                                for lm in pc.layer_matchs {
+                                    if lm.do_match(ethernet_packet) {
+                                        debug!("{} has returned", lm.name());
+                                        // send the matched result to user thread
+                                        match pc.channel.send(ethernet_packet.to_vec()) {
+                                            Ok(_) => (),
+                                            Err(e) => {
+                                                error!("try return data to sender failed: {}", e)
+                                            }
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => match e {
+                            pcap::Error::TimeoutExpired => (),
                             _ => warn!("layer2 recv failed: {}", e), // many timeout error
                         },
                     }
