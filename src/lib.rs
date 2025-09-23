@@ -10,6 +10,14 @@ use pcap::Device;
 use pcapture::pcapng::PcapNg;
 #[cfg(feature = "libpnet")]
 use pnet::datalink;
+use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
+use pnet::packet::ethernet::EthernetPacket;
+use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::tcp::TcpPacket;
+use pnet::packet::udp::UdpPacket;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
@@ -87,6 +95,124 @@ struct PistolChannel {
 
 pub struct PistolRunner {
     pub capture: Option<PistolCapture>,
+}
+
+#[allow(dead_code)]
+fn debug_get_tcp_src_port(ethernet_packet: &[u8]) -> Option<u16> {
+    let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
+        Some(ethernet_packet) => ethernet_packet,
+        None => return None,
+    };
+    match ethernet_packet.get_ethertype() {
+        EtherTypes::Ipv4 => {
+            let ipv4_packet = match Ipv4Packet::new(ethernet_packet.payload()) {
+                Some(i) => i,
+                None => return None,
+            };
+            let ip_payload = ipv4_packet.payload();
+            match ipv4_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Tcp => {
+                    let tcp_packet = match TcpPacket::new(ip_payload) {
+                        Some(tcp_packet) => tcp_packet,
+                        None => return None,
+                    };
+                    Some(tcp_packet.get_source())
+                }
+                IpNextHeaderProtocols::Udp => {
+                    let udp_packet = match UdpPacket::new(ip_payload) {
+                        Some(udp_packet) => udp_packet,
+                        None => return None,
+                    };
+                    Some(udp_packet.get_source())
+                }
+                _ => None,
+            }
+        }
+        EtherTypes::Ipv6 => {
+            let ipv6_packet = match Ipv6Packet::new(ethernet_packet.payload()) {
+                Some(i) => i,
+                None => return None,
+            };
+            let ip_payload = ipv6_packet.payload();
+            match ipv6_packet.get_next_header() {
+                IpNextHeaderProtocols::Tcp => {
+                    let tcp_packet = match TcpPacket::new(ip_payload) {
+                        Some(tcp_packet) => tcp_packet,
+                        None => return None,
+                    };
+                    Some(tcp_packet.get_source())
+                }
+                IpNextHeaderProtocols::Udp => {
+                    let udp_packet = match UdpPacket::new(ip_payload) {
+                        Some(udp_packet) => udp_packet,
+                        None => return None,
+                    };
+                    Some(udp_packet.get_source())
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+#[allow(dead_code)]
+fn debug_get_tcp_dst_port(ethernet_packet: &[u8]) -> Option<u16> {
+    let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
+        Some(ethernet_packet) => ethernet_packet,
+        None => return None,
+    };
+    match ethernet_packet.get_ethertype() {
+        EtherTypes::Ipv4 => {
+            let ipv4_packet = match Ipv4Packet::new(ethernet_packet.payload()) {
+                Some(i) => i,
+                None => return None,
+            };
+            let ip_payload = ipv4_packet.payload();
+            match ipv4_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Tcp => {
+                    let tcp_packet = match TcpPacket::new(ip_payload) {
+                        Some(tcp_packet) => tcp_packet,
+                        None => return None,
+                    };
+                    Some(tcp_packet.get_destination())
+                }
+                IpNextHeaderProtocols::Udp => {
+                    let udp_packet = match UdpPacket::new(ip_payload) {
+                        Some(udp_packet) => udp_packet,
+                        None => return None,
+                    };
+                    Some(udp_packet.get_destination())
+                }
+                _ => None,
+            }
+        }
+        EtherTypes::Ipv6 => {
+            let ipv6_packet = match Ipv6Packet::new(ethernet_packet.payload()) {
+                Some(i) => i,
+                None => return None,
+            };
+            let ip_payload = ipv6_packet.payload();
+            match ipv6_packet.get_next_header() {
+                IpNextHeaderProtocols::Tcp => {
+                    let tcp_packet = match TcpPacket::new(ip_payload) {
+                        Some(tcp_packet) => tcp_packet,
+                        None => return None,
+                    };
+                    Some(tcp_packet.get_destination())
+                }
+                IpNextHeaderProtocols::Udp => {
+                    let udp_packet = match UdpPacket::new(ip_payload) {
+                        Some(udp_packet) => udp_packet,
+                        None => return None,
+                    };
+                    Some(udp_packet.get_destination())
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 // sec
@@ -191,7 +317,7 @@ impl PistolRunner {
             Some(t) => t,
             None => Duration::from_secs_f64(RUNNER_DEFAULT_TIMEOUT),
         };
-        let timeout_int = timeout.as_secs() as i32;
+        let ms_timeout = (timeout.as_secs() * 1000) as i32;
 
         let devices = Device::list()?;
 
@@ -205,8 +331,9 @@ impl PistolRunner {
             let cap = Capture::from_device(device)?;
             let mut cap = match cap
                 .buffer_size(4096)
-                .snaplen(4096)
-                .timeout(timeout_int)
+                .snaplen(65535)
+                .immediate_mode(true)
+                .timeout(ms_timeout)
                 .open()
             {
                 Ok(cap) => cap,
@@ -220,6 +347,15 @@ impl PistolRunner {
                         Ok(ethernet_packet) => {
                             let ethernet_packet = ethernet_packet.data;
                             // capture the recved packet and save it into file
+
+                            if let Some(dst_port) = debug_get_tcp_dst_port(ethernet_packet) {
+                                if dst_port == 80 {
+                                    println!("recv 80");
+                                } else if dst_port == 8080 {
+                                    println!("recv 8080");
+                                }
+                            }
+
                             match layer2_capture(ethernet_packet) {
                                 Ok(_) => (),
                                 Err(e) => error!("capture recv packet failed: {}", e),

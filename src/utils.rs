@@ -13,7 +13,7 @@ use crate::DEFAULT_TIMEOUT;
 use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 
-const MAX_THREADS: usize = 4096;
+const MAX_THREADS: usize = 40960;
 
 pub fn time_sec_to_string(cost: Duration) -> String {
     if cost.as_secs_f64() > 1.0 {
