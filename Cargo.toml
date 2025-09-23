@@ -42,7 +42,7 @@ pcap = { version = "^2", optional = true }
 # default = ["os"]
 # default = ["vs"]
 # default = ["trace"]
-default = ["scan", "ping", "flood", "os", "vs", "trace", "libpnet"]
+default = ["scan", "ping", "flood", "os", "vs", "trace", "libpcap"]
 scan = []
 ping = []
 flood = []

@@ -1669,7 +1669,7 @@ mod tests {
     #[test]
     fn test_tcp_syn_scan_performance() {
         let _pr = PistolRunner::init(
-            PistolLogger::Debug,
+            PistolLogger::None,
             Some(String::from("performance.pcapng")),
             None, // use default value
         )
@@ -1677,7 +1677,7 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
-        let timeout = Some(Duration::new(2, 0));
+        let timeout = Some(Duration::from_secs_f32(0.5));
         let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
         let ports: Vec<u16> = (1..65535).collect();
 
