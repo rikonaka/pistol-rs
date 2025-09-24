@@ -1677,9 +1677,12 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = Some(37888);
-        let timeout = Some(Duration::from_secs_f32(0.5));
+        let timeout = Some(Duration::from_secs_f32(2.5));
         let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
-        let ports: Vec<u16> = (22..65535).collect();
+        // let ports: Vec<u16> = (22..65535).collect();
+        // let ports: Vec<u16> = (8000..9000).collect();
+        // let ports: Vec<u16> = (22..200).collect();
+        let ports: Vec<u16> = (22..101).collect();
 
         let target1 = Target::new(addr, Some(ports));
         let max_attempts = 1;

@@ -330,9 +330,9 @@ impl PistolRunner {
 
             let cap = Capture::from_device(device)?;
             let mut cap = match cap
-                .buffer_size(4096)
-                .snaplen(65535)
-                .immediate_mode(true)
+                .buffer_size(163840) // 16MB
+                .snaplen(65535) // tshark default
+                // .immediate_mode(true) // If immediate_mode(true) is enabled here, the frequency of context switching may increase, resulting in packet loss.
                 .timeout(ms_timeout)
                 .open()
             {
@@ -347,7 +347,6 @@ impl PistolRunner {
                         Ok(ethernet_packet) => {
                             let ethernet_packet = ethernet_packet.data;
                             // capture the recved packet and save it into file
-
                             if let Some(dst_port) = debug_get_tcp_dst_port(ethernet_packet) {
                                 if dst_port == 80 {
                                     println!("recv 80");
