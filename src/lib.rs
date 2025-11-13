@@ -4,10 +4,10 @@
 use crate::datalink::Channel::Ethernet;
 use dns_lookup::lookup_host;
 #[cfg(feature = "libpcap")]
-use pcap::Capture;
+use pcapture::Capture;
 #[cfg(feature = "libpcap")]
-use pcap::Device;
-use pcapture::pcapng::PcapNg;
+use pcapture::Device;
+use pcapture::fs::pcapng::PcapNg;
 #[cfg(feature = "libpnet")]
 use pnet::datalink;
 use pnet::packet::Packet;
@@ -317,7 +317,7 @@ impl PistolRunner {
             Some(t) => t,
             None => Duration::from_secs_f64(RUNNER_DEFAULT_TIMEOUT),
         };
-        let ms_timeout = (timeout.as_secs() * 1000) as i32;
+        let timeout_ms = (timeout.as_secs() * 1000) as i32;
 
         let devices = Device::list()?;
 
@@ -328,56 +328,53 @@ impl PistolRunner {
                 continue;
             }
 
-            let cap = Capture::from_device(device)?;
-            let mut cap = match cap
-                .buffer_size(163840) // 16MB
-                .snaplen(65535) // tshark default
-                // .immediate_mode(true) // If immediate_mode(true) is enabled here, the frequency of context switching may increase, resulting in packet loss.
-                .timeout(ms_timeout)
-                .open()
-            {
-                Ok(cap) => cap,
-                Err(_) => continue,
-            };
+            let cap = Capture::new(&device.name)?;
+            cap.buffer_size(163840); // 16MB
+            cap.snaplen(65535); // tshark default
+            cap.timeout(timeout_ms);
 
             thread::spawn(move || {
                 loop {
                     // append this packet to global vec
-                    match cap.next_packet() {
-                        Ok(ethernet_packet) => {
-                            let ethernet_packet = ethernet_packet.data;
-                            // capture the recved packet and save it into file
-                            if let Some(dst_port) = debug_get_tcp_dst_port(ethernet_packet) {
-                                if dst_port == 80 {
-                                    println!("recv 80");
-                                } else if dst_port == 8080 {
-                                    println!("recv 8080");
+                    match cap.fetch_as_vec() {
+                        Ok(ethernet_packets) => {
+                            for ethernet_packet in ethernet_packets {
+                                // capture the recved packet and save it into file
+                                if let Some(dst_port) = debug_get_tcp_src_port(ethernet_packet) {
+                                    if dst_port == 80 {
+                                        println!("recv 80");
+                                    } else if dst_port == 8080 {
+                                        println!("recv 8080");
+                                    }
                                 }
-                            }
 
-                            match layer2_capture(ethernet_packet) {
-                                Ok(_) => (),
-                                Err(e) => error!("capture recv packet failed: {}", e),
-                            }
-                            let pistol_channels = match Self::get_global_layer_matchs() {
-                                Ok(pcs) => pcs,
-                                Err(e) => {
-                                    error!("get global layer matchs failed: {}", e);
-                                    continue;
+                                match layer2_capture(ethernet_packet) {
+                                    Ok(_) => (),
+                                    Err(e) => error!("capture recv packet failed: {}", e),
                                 }
-                            };
-                            for pc in pistol_channels {
-                                // if any matchs just return
-                                for lm in pc.layer_matchs {
-                                    if lm.do_match(ethernet_packet) {
-                                        debug!("{} has returned", lm.name());
-                                        // send the matched result to user thread
-                                        match pc.channel.send(ethernet_packet.to_vec()) {
-                                            Ok(_) => (),
-                                            Err(e) => {
-                                                error!("try return data to sender failed: {}", e)
-                                            }
-                                        };
+                                let pistol_channels = match Self::get_global_layer_matchs() {
+                                    Ok(pcs) => pcs,
+                                    Err(e) => {
+                                        error!("get global layer matchs failed: {}", e);
+                                        continue;
+                                    }
+                                };
+                                for pc in pistol_channels {
+                                    // if any matchs just return
+                                    for lm in pc.layer_matchs {
+                                        if lm.do_match(ethernet_packet) {
+                                            debug!("{} has returned", lm.name());
+                                            // send the matched result to user thread
+                                            match pc.channel.send(ethernet_packet.to_vec()) {
+                                                Ok(_) => (),
+                                                Err(e) => {
+                                                    error!(
+                                                        "try return data to sender failed: {}",
+                                                        e
+                                                    )
+                                                }
+                                            };
+                                        }
                                     }
                                 }
                             }
