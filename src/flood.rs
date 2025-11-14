@@ -388,16 +388,6 @@ pub fn flood_raw(
     }
 }
 
-/// An Internet Control Message Protocol (ICMP) flood DDoS attack, also known as a Ping flood attack,
-/// is a common Denial-of-Service (DoS) attack in
-/// which an attacker attempts to overwhelm a targeted device with ICMP echo-requests (pings).
-/// Normally, ICMP echo-request and echo-reply messages are used to ping a network device
-/// in order to diagnose the health and connectivity of the device and the connection
-/// between the sender and the device.
-/// By flooding the target with request packets,
-/// the network is forced to respond with an equal number of reply packets.
-/// This causes the target to become inaccessible to normal traffic.
-/// Total number of packets sent = retransmit_count x num_threads.
 #[cfg(feature = "flood")]
 pub fn icmp_flood(
     targets: &[Target],
@@ -420,10 +410,6 @@ pub fn icmp_flood_raw(dst_addr: IpAddr, retransmit_count: usize) -> Result<usize
     flood_raw(FloodMethods::Icmp, dst_addr, dst_port, retransmit_count)
 }
 
-/// In a TCP SYN Flood attack, the malicious entity sends a barrage of
-/// SYN requests to a target server but intentionally avoids sending the final ACK.
-/// This leaves the server waiting for a response that never comes,
-/// consuming resources for each of these half-open connections.
 #[cfg(feature = "flood")]
 pub fn tcp_syn_flood(
     targets: &[Target],
@@ -449,14 +435,6 @@ pub fn tcp_syn_flood_raw(
     flood_raw(FloodMethods::Syn, dst_addr, dst_port, retransmit_count)
 }
 
-/// TCP ACK flood, or 'ACK Flood' for short, is a network DDoS attack comprising TCP ACK packets.
-/// The packets will not contain a payload but may have the PSH flag enabled.
-/// In the normal TCP, the ACK packets indicate to the other party that the data have been received successfully.
-/// ACK packets are very common and can constitute 50% of the entire TCP packets.
-/// The attack will typically affect stateful devices that must process each packet and that can be overwhelmed.
-/// ACK flood is tricky to mitigate for several reasons. It can be spoofed;
-/// the attacker can easily generate a high rate of attacking traffic,
-/// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK, as they look the same.
 #[cfg(feature = "flood")]
 pub fn tcp_ack_flood(
     targets: &[Target],
@@ -482,7 +460,6 @@ pub fn tcp_ack_flood_raw(
     flood_raw(FloodMethods::Ack, dst_addr, dst_port, retransmit_count)
 }
 
-/// TCP ACK flood with PSH flag set.
 #[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood(
     targets: &[Target],
@@ -508,11 +485,6 @@ pub fn tcp_ack_psh_flood_raw(
     flood_raw(FloodMethods::AckPsh, dst_addr, dst_port, retransmit_count)
 }
 
-/// In a UDP Flood attack, the attacker sends a massive number of UDP packets to random ports on the target host.
-/// This barrage of packets forces the host to:
-/// Check for applications listening at each port.
-/// Realize that no application is listening at many of these ports.
-/// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
 #[cfg(feature = "flood")]
 pub fn udp_flood(
     targets: &[Target],
@@ -542,13 +514,9 @@ pub fn udp_flood_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolRunner;
     use crate::Target;
     #[test]
     fn test_flood() {
-        let _pr = PistolRunner::init(PistolLogger::None, None, None).unwrap();
-
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
         let ports = Some(vec![22]);
         let target1 = Target::new(dst_addr.into(), ports);

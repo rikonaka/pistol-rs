@@ -23,10 +23,10 @@ use subnetwork::Ipv6AddrExt;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmpv6;
-use crate::layer::LayerMatch;
-use crate::layer::layer2_work;
+use crate::layer::Layer2;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmpv6;
+use crate::layer::PacketFilter;
 use crate::layer::multicast_mac;
 
 fn get_mac_from_ndp_ns(ethernet_packet: &[u8]) -> Option<MacAddr> {
@@ -118,36 +118,27 @@ pub fn send_ndp_ns_scan_packet(
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_multicast);
     icmpv6_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "ndp_ns scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "ndp_ns scan icmpv6",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6.clone());
+    let filters = vec![PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6.clone())];
+    let ether_type = EtherTypes::Ipv6;
+    let dst_mac = multicast_mac(dst_ipv6);
 
-    let ethernet_type = EtherTypes::Ipv6;
-    let (ret, rtt) = layer2_work(
-        multicast_mac(dst_ipv6),
-        interface.clone(),
-        &ipv6_buff,
-        IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE,
-        ethernet_type,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
-    let mac = match layer4_icmpv6.do_match(&ret) {
-        true => get_mac_from_ndp_ns(&ret),
-        false => None,
-    };
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, filters, timeout, true);
+    let (ret, rtt) = layer2.send_recv(&ipv6_buff)?;
+
+    let mac = get_mac_from_ndp_ns(&ret);
     Ok((mac, rtt))
 }
 

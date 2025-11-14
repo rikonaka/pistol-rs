@@ -40,7 +40,6 @@ pub enum HopStatus {
     RecvReply(IpAddr),
 }
 
-/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 #[cfg(feature = "trace")]
 pub fn syn_trace(
     dst_addr: IpAddr,
@@ -133,7 +132,6 @@ pub fn syn_trace(
     }
 }
 
-/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 #[cfg(any(feature = "trace", feature = "os"))]
 pub fn icmp_trace(
     dst_addr: IpAddr,
@@ -208,7 +206,6 @@ pub fn icmp_trace(
     }
 }
 
-/// The recommended timeout value is 5 seconds, which is consistent with the default value of traceroute.
 #[cfg(feature = "trace")]
 pub fn udp_trace(
     dst_addr: IpAddr,
@@ -297,13 +294,13 @@ pub fn udp_trace(
 mod tests {
     use super::*;
     use crate::PistolLogger;
-    use crate::PistolRunner;
+    use crate::PistolListener;
     use std::net::Ipv4Addr;
     use std::net::Ipv6Addr;
     use std::str::FromStr;
     #[test]
     fn test_get_hops_syn() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             None,
             None, // use default value
@@ -320,7 +317,7 @@ mod tests {
     }
     #[test]
     fn test_get_hops_icmp() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             None,
             None, // use default value
@@ -337,7 +334,7 @@ mod tests {
     }
     #[test]
     fn test_get_hops_udp() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             None,
             None, // use default value
@@ -353,7 +350,7 @@ mod tests {
     }
     #[test]
     fn test_get_hops_udp6() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             None,
             None, // use default value

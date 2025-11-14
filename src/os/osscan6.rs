@@ -12,10 +12,10 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::error::PistolError;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmpv6;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmpv6;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::layer3_ipv6_send;
 use crate::os::Linear;
 use crate::os::OsInfo6;
@@ -537,7 +537,7 @@ fn send_seq_probes(
         let src_port = src_ports[i];
         let name_string = format!("os scan6 seq {} layer3", i + 1);
         let name = Box::leak(name_string.into_boxed_str());
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name,
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
@@ -545,13 +545,13 @@ fn send_seq_probes(
         };
         let name_string = format!("os scan6 seq {} tcp_udp", i + 1);
         let name = Box::leak(name_string.into_boxed_str());
-        let layer4_tcp_udp = Layer4MatchTcpUdp {
+        let layer4_tcp_udp = Layer4FilterTcpUdp {
             name,
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
         };
-        let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+        let layer_match = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
         pool.execute(move || {
@@ -658,45 +658,45 @@ fn send_ie_probes(
     let buff_1 = packet6::ie_packet_1_layer3(dst_ipv6, src_ipv6)?;
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
     let buffs = vec![buff_1, buff_2];
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan6 ie layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     // They do, however, respond with different ICMPv6 errors with icmpv6 types 1, 2, 3, 4.
-    let layer4_icmpv6_1 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6_1 = Layer4FilterIcmpv6 {
         name: "os scan6 ie icmpv6 type 1",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Type(1)),
         icmpv6_code: None,
         payload: None,
     };
-    let layer4_icmpv6_2 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6_2 = Layer4FilterIcmpv6 {
         name: "os scan6 ie icmpv6 type 2",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Type(2)),
         icmpv6_code: None,
         payload: None,
     };
-    let layer4_icmpv6_3 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6_3 = Layer4FilterIcmpv6 {
         name: "os scan6 ie icmpv6 type 3",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Type(3)),
         icmpv6_code: None,
         payload: None,
     };
-    let layer4_icmpv6_4 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6_4 = Layer4FilterIcmpv6 {
         name: "os scan6 ie icmpv6 type 4",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Type(4)),
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match_1 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_1);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_2);
-    let layer_match_3 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_3);
-    let layer_match_4 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6_4);
+    let layer_match_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_1);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_2);
+    let layer_match_3 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_3);
+    let layer_match_4 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_4);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -784,20 +784,20 @@ fn send_nx_probes(
     let buffs = vec![buff_1, buff_2];
     // let buffs = vec![buff_1];
     // let buffs = vec![buff_2];
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan6 nx layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "os scan6 nx icmpv6",
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -875,20 +875,20 @@ fn send_u1_probe(
 ) -> Result<U1RR6, PistolError> {
     let src_port = random_port();
     let buff = packet6::udp_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_port)?;
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan6 u1 layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "os scan6 u1 icmpv6",
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
@@ -934,19 +934,19 @@ fn send_tecn_probe(
 ) -> Result<TECNRR6, PistolError> {
     let src_port = random_port();
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan6 tecn layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "os scan6 tecn tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
     };
-    let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
     let buff = packet6::tecn_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_port)?;
     // For those that do not require time, process them in order.
@@ -983,55 +983,55 @@ fn send_tx_probes(
         src_ports.push(src_port_start * 10 + i);
     }
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan6 tx layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
 
-    let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
         name: "os scan6 tx tcp_udp 2",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
-    let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
         name: "os scan6 tx tcp_udp 3",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
-    let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
         name: "os scan6 tx tcp_udp 4",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
-    let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
         name: "os scan6 tx tcp_udp 5",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
-    let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
         name: "os scan6 tx tcp_udp 6",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
-    let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
         name: "os scan6 tx tcp_udp 7",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
-    let layer_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-    let layer_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-    let layer_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-    let layer_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-    let layer_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
-    let layer_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+    let layer_match_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2);
+    let layer_match_3 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3);
+    let layer_match_4 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4);
+    let layer_match_5 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5);
+    let layer_match_6 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6);
+    let layer_match_7 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_7);
     let ms = vec![
         layer_match_2,
         layer_match_3,
@@ -1531,55 +1531,55 @@ mod tests {
         }
         println!("src_ports: {:?}", src_ports);
 
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name: "test layer3",
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
 
-        let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
+        let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
             name: "test tcp_udp 2",
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[0]),
         };
-        let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
+        let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
             name: "test tcp_udp 3",
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[1]),
         };
-        let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
+        let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
             name: "test tcp_udp 4",
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[2]),
         };
-        let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
+        let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
             name: "test tcp_udp 5",
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[3]),
         };
-        let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
+        let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
             name: "test tcp_udp 6",
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[4]),
         };
-        let layer4_tcp_udp_7 = Layer4MatchTcpUdp {
+        let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
             name: "test tcp_udp 7",
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[5]),
         };
-        let layer_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-        let layer_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-        let layer_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-        let layer_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-        let layer_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
-        let layer_match_7 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_7);
+        let layer_match_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2);
+        let layer_match_3 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3);
+        let layer_match_4 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4);
+        let layer_match_5 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5);
+        let layer_match_6 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6);
+        let layer_match_7 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_7);
         let ms = vec![
             layer_match_2,
             layer_match_3,

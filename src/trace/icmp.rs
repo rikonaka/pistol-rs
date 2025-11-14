@@ -18,9 +18,9 @@ use std::time::Duration;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmp;
 use crate::layer::PayloadMatchIp;
@@ -87,7 +87,7 @@ pub fn send_icmp_trace_packet(
     icmp_header.set_checksum(checksum);
 
     // time exceeded packet
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "icmp trace time exceeded layer3",
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
@@ -103,30 +103,30 @@ pub fn send_icmp_trace_packet(
         icmp_code: None,
     };
     let payload = PayloadMatch::PayloadMatchIcmp(payload_icmp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "icmp trace time exceeded icmp",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // icmp reply
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "icmp trace reply layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "icmp trace reply icmp",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::EchoReply),
         icmp_code: None,
         payload: None,
     };
-    let layer_match_icmp_reply = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_reply = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,

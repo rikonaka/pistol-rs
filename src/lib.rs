@@ -3,13 +3,11 @@
 #[cfg(feature = "libpnet")]
 use crate::datalink::Channel::Ethernet;
 use dns_lookup::lookup_host;
-#[cfg(feature = "libpcap")]
-use pcapture::Capture;
-#[cfg(feature = "libpcap")]
-use pcapture::Device;
 use pcapture::fs::pcapng::PcapNg;
 #[cfg(feature = "libpnet")]
 use pnet::datalink;
+#[cfg(feature = "scan")]
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -33,34 +31,48 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use std::sync::mpsc::Sender;
-use std::thread;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
 use tracing::Level;
-use tracing::debug;
-use tracing::error;
 use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
-use uuid::Uuid;
 
-pub mod error;
-pub mod flood;
-pub mod layer;
-pub mod os;
-pub mod ping;
-pub mod route;
-pub mod scan;
-pub mod trace;
-pub mod utils;
-pub mod vs;
+mod error;
+mod flood;
+mod layer;
+mod os;
+mod ping;
+mod route;
+mod scan;
+mod trace;
+mod utils;
+mod vs;
 
 use crate::error::PistolError;
-use crate::layer::LayerMatch;
-use crate::layer::layer2_capture;
+#[cfg(feature = "flood")]
+use crate::flood::PistolFloods;
+use crate::layer::PacketFilter;
+#[cfg(feature = "os")]
+use crate::os::OsDetect;
+#[cfg(feature = "os")]
+use crate::os::PistolOsDetects;
+#[cfg(feature = "ping")]
+use crate::ping::PingStatus;
+#[cfg(feature = "ping")]
+use crate::ping::PistolPings;
 use crate::route::DstCache;
 use crate::route::SystemNetCache;
+#[cfg(feature = "scan")]
+use crate::scan::PistolMacScans;
+#[cfg(feature = "scan")]
+use crate::scan::PistolPortScans;
+#[cfg(feature = "scan")]
+use crate::scan::PortStatus;
+#[cfg(feature = "vs")]
+use crate::vs::PistolVsScans;
+#[cfg(feature = "vs")]
+use crate::vs::PortService;
 
 pub type Result<T, E = error::PistolError> = result::Result<T, E>;
 
@@ -78,25 +90,7 @@ static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(||
     Arc::new(Mutex::new(snc))
 });
 
-static UNIFIED_RECV_MATCHS: LazyLock<Arc<Mutex<Vec<PistolChannel>>>> = LazyLock::new(|| {
-    let v = Vec::new();
-    Arc::new(Mutex::new(v))
-});
-
-static PISTOL_RUNNER_IS_RUNNING: LazyLock<Arc<Mutex<bool>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(false)));
-
-#[derive(Debug, Clone)]
-struct PistolChannel {
-    uuid: Uuid, // identified this PC
-    channel: Sender<Vec<u8>>,
-    layer_matchs: Vec<LayerMatch>,
-}
-
-pub struct PistolRunner {
-    pub capture: Option<PistolCapture>,
-}
-
+/// debug code
 #[allow(dead_code)]
 fn debug_get_tcp_src_port(ethernet_packet: &[u8]) -> Option<u16> {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
@@ -156,6 +150,7 @@ fn debug_get_tcp_src_port(ethernet_packet: &[u8]) -> Option<u16> {
     }
 }
 
+/// debug code
 #[allow(dead_code)]
 fn debug_get_tcp_dst_port(ethernet_packet: &[u8]) -> Option<u16> {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
@@ -216,213 +211,7 @@ fn debug_get_tcp_dst_port(ethernet_packet: &[u8]) -> Option<u16> {
 }
 
 // sec
-const RUNNER_DEFAULT_TIMEOUT: f64 = 0.001;
-
-impl PistolRunner {
-    fn get_global_layer_matchs() -> Result<Vec<PistolChannel>, PistolError> {
-        match UNIFIED_RECV_MATCHS.lock() {
-            Ok(urm) => Ok(urm.clone()),
-            Err(e) => Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("UNIFIED_RECV_MATCHS"),
-                e: e.to_string(),
-            }),
-        }
-    }
-    #[cfg(feature = "libpnet")]
-    fn init_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
-        // This timeout can be set very small,
-        // because even if no data packet is received before the timeout expires,
-        // the next cycle of the loop will continue to receive data packets.
-        // That is, We can speed up the loop by setting a very small timeout.
-        let timeout = match timeout {
-            Some(t) => t,
-            None => Duration::from_secs_f64(RUNNER_DEFAULT_TIMEOUT),
-        };
-
-        let config = datalink::Config {
-            write_buffer_size: 4096,
-            read_buffer_size: 4096,
-            read_timeout: Some(timeout),
-            write_timeout: Some(timeout),
-            channel_type: datalink::ChannelType::Layer2,
-            bpf_fd_attempts: 1000,
-            linux_fanout: None,
-            promiscuous: false,
-            socket_fd: None,
-        };
-        // listen all interface
-        for interface in datalink::interfaces() {
-            let (_, mut receiver) = match datalink::channel(&interface, config) {
-                Ok(Ethernet(tx, rx)) => (tx, rx),
-                Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
-                Err(e) => return Err(e.into()),
-            };
-            thread::spawn(move || {
-                loop {
-                    // append this packet to global vec
-                    match receiver.next() {
-                        Ok(ethernet_packet) => {
-                            // capture the recved packet and save it into file
-                            match layer2_capture(ethernet_packet) {
-                                Ok(_) => (),
-                                Err(e) => error!("capture recv packet failed: {}", e),
-                            }
-                            let pistol_channels = match Self::get_global_layer_matchs() {
-                                Ok(pcs) => pcs,
-                                Err(e) => {
-                                    error!("get global layer matchs failed: {}", e);
-                                    continue;
-                                }
-                            };
-                            for pc in pistol_channels {
-                                // if any matchs just return
-                                for lm in pc.layer_matchs {
-                                    if lm.do_match(ethernet_packet) {
-                                        debug!("{} has returned", lm.name());
-                                        // send the matched result to user thread
-                                        match pc.channel.send(ethernet_packet.to_vec()) {
-                                            Ok(_) => (),
-                                            Err(e) => {
-                                                error!("try return data to sender failed: {}", e)
-                                            }
-                                        };
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => match e.kind() {
-                            ErrorKind::TimedOut => (),
-                            _ => warn!("layer2 recv failed: {}", e), // many timeout error
-                        },
-                    }
-                }
-            });
-        }
-        // set PISTOL_RUNNER_IS_RUNNING = ture
-        match PISTOL_RUNNER_IS_RUNNING.lock() {
-            Ok(mut r) => *r = true,
-            Err(e) => {
-                return Err(PistolError::TryLockGlobalVarFailed {
-                    var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
-                    e: e.to_string(),
-                });
-            }
-        }
-        Ok(())
-    }
-    #[cfg(feature = "libpcap")]
-    fn init_runner(timeout: Option<Duration>) -> Result<(), PistolError> {
-        // Use libpcap here
-        let timeout = match timeout {
-            Some(t) => t,
-            None => Duration::from_secs_f64(RUNNER_DEFAULT_TIMEOUT),
-        };
-        let timeout_ms = (timeout.as_secs() * 1000) as i32;
-
-        let devices = Device::list()?;
-
-        // listen all device
-        for device in devices {
-            // jump any device
-            if device.name == "any" {
-                continue;
-            }
-
-            let cap = Capture::new(&device.name)?;
-            cap.buffer_size(163840); // 16MB
-            cap.snaplen(65535); // tshark default
-            cap.timeout(timeout_ms);
-
-            thread::spawn(move || {
-                loop {
-                    // append this packet to global vec
-                    match cap.fetch_as_vec() {
-                        Ok(ethernet_packets) => {
-                            for ethernet_packet in ethernet_packets {
-                                // capture the recved packet and save it into file
-                                if let Some(dst_port) = debug_get_tcp_src_port(ethernet_packet) {
-                                    if dst_port == 80 {
-                                        println!("recv 80");
-                                    } else if dst_port == 8080 {
-                                        println!("recv 8080");
-                                    }
-                                }
-
-                                match layer2_capture(ethernet_packet) {
-                                    Ok(_) => (),
-                                    Err(e) => error!("capture recv packet failed: {}", e),
-                                }
-                                let pistol_channels = match Self::get_global_layer_matchs() {
-                                    Ok(pcs) => pcs,
-                                    Err(e) => {
-                                        error!("get global layer matchs failed: {}", e);
-                                        continue;
-                                    }
-                                };
-                                for pc in pistol_channels {
-                                    // if any matchs just return
-                                    for lm in pc.layer_matchs {
-                                        if lm.do_match(ethernet_packet) {
-                                            debug!("{} has returned", lm.name());
-                                            // send the matched result to user thread
-                                            match pc.channel.send(ethernet_packet.to_vec()) {
-                                                Ok(_) => (),
-                                                Err(e) => {
-                                                    error!(
-                                                        "try return data to sender failed: {}",
-                                                        e
-                                                    )
-                                                }
-                                            };
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => match e {
-                            pcap::Error::TimeoutExpired => (),
-                            _ => warn!("layer2 recv failed: {}", e), // many timeout error
-                        },
-                    }
-                }
-            });
-        }
-        // set PISTOL_RUNNER_IS_RUNNING = ture
-        match PISTOL_RUNNER_IS_RUNNING.lock() {
-            Ok(mut r) => *r = true,
-            Err(e) => {
-                return Err(PistolError::TryLockGlobalVarFailed {
-                    var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
-                    e: e.to_string(),
-                });
-            }
-        }
-        Ok(())
-    }
-    pub fn init(
-        logger: PistolLogger,
-        capture: Option<String>,
-        timeout: Option<Duration>,
-    ) -> Result<PistolRunner, PistolError> {
-        match logger {
-            PistolLogger::Debug => PistolLogger::set_level(Level::DEBUG)?,
-            PistolLogger::Warn => PistolLogger::set_level(Level::WARN)?,
-            PistolLogger::Info => PistolLogger::set_level(Level::INFO)?,
-            PistolLogger::None => (),
-        }
-
-        let capture = match capture {
-            Some(filename) => Some(PistolCapture::init(&filename)?),
-            None => None,
-        };
-
-        let _ = Self::init_runner(timeout)?;
-        Ok(PistolRunner { capture })
-    }
-}
-
-// sec
-const DEFAULT_TIMEOUT: f64 = 1.0;
+const DEFAULT_TIMEOUT: f32 = 1.0;
 
 pub const TOP_100_PORTS: [u16; 100] = [
     7, 9, 13, 21, 22, 23, 25, 26, 37, 53, 79, 80, 81, 88, 106, 110, 111, 113, 119, 135, 139, 143,
@@ -652,44 +441,1216 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
-static PISTOL_PCAPNG: LazyLock<Arc<Mutex<PcapNg>>> = LazyLock::new(|| {
+#[derive(Debug, Clone)]
+pub struct Pistol {
+    if_name: Option<String>,
+    capture: Option<PistolCapture>,
+    timeout: Duration,
+}
+
+impl Pistol {
+    /// if_name: the interface name for sending and receiving data.
+    /// log_level: the level (debug, warn, info, none) of log information.
+    /// capture: whether to capture traffic for debugging.
+    /// timeout: the timeout value (in seconds) for receiving and sending packets.
+    pub fn new(
+        if_name: Option<&str>,
+        log_level: &str,
+        capture: Option<&str>,
+        timeout: f32,
+    ) -> Result<Pistol, PistolError> {
+        fn set_logger(level: Level) -> Result<(), PistolError> {
+            let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+            let _ = tracing::subscriber::set_global_default(subscriber)?;
+            Ok(())
+        }
+
+        let log_level = log_level.to_lowercase();
+        match log_level.as_str() {
+            "debug" => set_logger(Level::DEBUG)?,
+            "warn" => set_logger(Level::WARN)?,
+            "info" => set_logger(Level::INFO)?,
+            "none" => (),
+            _ => eprintln!("unknown log_level: {}, set it to 'none' now", log_level),
+        }
+
+        let capture = match capture {
+            Some(filename) => Some(PistolCapture::init(filename)?),
+            None => None,
+        };
+
+        let timeout = if timeout > 0.0 {
+            Duration::from_secs_f32(timeout)
+        } else {
+            Duration::from_secs_f32(DEFAULT_TIMEOUT)
+        };
+
+        let if_name = match if_name {
+            Some(n) => Some(n.to_string()),
+            None => None,
+        };
+
+        Ok(Pistol {
+            if_name,
+            capture,
+            timeout,
+        })
+    }
+    /* Scan */
+    /// The raw version of arp_scan function.
+    /// It sends an ARP request to the target IPv4 address and waits for a reply.
+    /// If a reply is received within the specified timeout, it returns the MAC address of the target and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn arp_scan_raw(
+        &self,
+        dst_ipv4: Ipv4Addr,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+    ) -> Result<(Option<MacAddr>, Duration), PistolError> {
+        scan::arp_scan_raw(dst_ipv4, src_addr, self.if_name.clone(), timeout)
+    }
+    /// ARP Scan (IPv4) or NDP NS Scan (IPv6).
+    /// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
+    /// It is similar to the `arp-scan` tool.
+    /// ```rust
+    /// use pistol::PistolRunner;
+    /// use pistol::PistolLogger;
+    /// use pistol::Target;
+    /// use std::time::Duration;
+    ///
+    /// fn main() {
+    ///     // you cannot use `_` here because it will be automatically optimized and ignored by the compiler
+    ///     let _pr = PistolRunner::init(
+    ///         PistolLogger::None,
+    ///         Some(String::from("arp_scan.pcapng")),
+    ///         Some(Duration::from_secs_f64(0.001)),
+    ///     )
+    ///     .unwrap();
+    ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+    ///     // set the timeout same as `arp-scan`
+    ///     let timeout = Some(Duration::from_secs_f64(0.5));
+    ///     let src_ipv4 = None;
+    ///     let num_threads = Some(512);
+    ///     let max_attempts = 2;
+    ///     let ret = mac_scan(&targets, num_threads, src_ipv4, timeout, max_attempts).unwrap();
+    ///     println!("{}", ret);
+    /// }
+    /// ```
+    /// Compare the speed with arp-scan.
+    /// pistol:
+    /// ```
+    /// +--------+---------------+-------------------+--------+---------+
+    /// |                Mac Scan Results (max_attempts:2)                 |
+    /// +--------+---------------+-------------------+--------+---------+
+    /// |  seq   |     addr      |        mac        |  oui   |   rtt   |
+    /// +--------+---------------+-------------------+--------+---------+
+    /// |   1    |  192.168.5.2  | 00:50:56:ff:a6:97 | VMware | 0.84ms  |
+    /// +--------+---------------+-------------------+--------+---------+
+    /// |   2    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 19.50ms |
+    /// +--------+---------------+-------------------+--------+---------+
+    /// |   3    | 192.168.5.254 | 00:50:56:f8:c4:8f | VMware | 9.89ms  |
+    /// +--------+---------------+-------------------+--------+---------+
+    /// | total cost: 1.13s                                             |
+    /// | avg cost: 0.376s                                              |
+    /// | alive hosts: 3                                                |
+    /// +--------+---------------+-------------------+--------+---------+
+    /// ```
+    /// arp-scan:
+    /// ```
+    /// ➜  pistol-rs git:(main) ✗ sudo arp-scan 192.168.5.0/24
+    /// Interface: ens33, type: EN10MB, MAC: 00:0c:29:5b:bd:5c, IPv4: 192.168.5.3
+    /// Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
+    /// 192.168.5.1     00:50:56:c0:00:08       VMware, Inc.
+    /// 192.168.5.2     00:50:56:ff:a6:97       VMware, Inc.
+    /// 192.168.5.254   00:50:56:f8:c4:8f       VMware, Inc.
+    ///
+    /// 3 packets received by filter, 0 packets dropped by kernel
+    /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.001 seconds (127.94 hosts/sec). 3 responded
+    /// ```
+    #[cfg(feature = "scan")]
+    pub fn mac_scan(
+        &self,
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolMacScans, PistolError> {
+        scan::mac_scan(
+            targets,
+            num_threads,
+            src_addr,
+            self.if_name.clone(),
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of ndp_ns_scan function.
+    /// It sends an NDP Neighbor Solicitation to the target IPv6 address and waits for a reply.
+    /// If a reply is received within the specified timeout,
+    /// it returns the MAC address of the target and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn ndp_ns_scan_raw(
+        dst_ipv6: Ipv6Addr,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+    ) -> Result<(Option<MacAddr>, Duration), PistolError> {
+        scan::ndp_ns_scan_raw(dst_ipv6, src_addr, timeout)
+    }
+    /// TCP ACK Scan.
+    /// This scan is different than the others discussed so far in
+    /// that it never determines open (or even open|filtered) ports.
+    /// It is used to map out firewall rulesets,
+    /// determining whether they are stateful or not and which ports are filtered.
+    /// When scanning unfiltered systems, open and closed ports will both return a RST packet.
+    /// We then labels them as unfiltered, meaning that they are reachable by the ACK packet,
+    /// but whether they are open or closed is undetermined.
+    /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
+    #[cfg(feature = "scan")]
+    pub fn tcp_ack_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_ack_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_ack_scan function.
+    /// It sends a TCP ACK packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered, Unfiltered)
+    /// and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_ack_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_ack_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP Connect() Scan.
+    /// This is the most basic form of TCP scanning.
+    /// The connect() system call provided by your operating system
+    /// is used to open a connection to every interesting port on the machine.
+    /// If the port is listening, connect() will succeed, otherwise the port isn't reachable.
+    /// One strong advantage to this technique is that you don't need any special privileges.
+    /// Any user on most UNIX boxes is free to use this call.
+    /// Another advantage is speed.
+    /// While making a separate connect() call for every targeted port
+    /// in a linear fashion would take ages over a slow connection,
+    /// you can hasten the scan by using many sockets in parallel.
+    /// Using non-blocking I/O allows you to set a low time-out period and watch all the sockets at once.
+    /// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
+    /// The big downside is that this sort of scan is easily detectable and filterable.
+    /// The target hosts logs will show a bunch of connection and error messages
+    /// for the services which take the connection and then have it immediately shutdown.
+    #[cfg(feature = "scan")]
+    pub fn tcp_connect_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_connect_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_connect_scan function.
+    /// It attempts to establish a TCP connection to the specified destination address and port.
+    /// If the connection is successful, it indicates that the port is open.
+    /// If the connection is refused, it indicates that the port is closed.
+    /// If there is no response within the specified timeout, it indicates that the port is filtered
+    #[cfg(feature = "scan")]
+    pub fn tcp_connect_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_connect_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP FIN Scan.
+    /// There are times when even SYN scanning isn't clandestine enough.
+    /// Some firewalls and packet filters watch for SYNs to an unallowed port,
+    /// and programs like synlogger and Courtney are available to detect these scans.
+    /// FIN packets, on the other hand, may be able to pass through unmolested.
+    /// This scanning technique was featured in detail by Uriel Maimon in Phrack 49, article 15.
+    /// The idea is that closed ports tend to reply to your FIN packet with the proper RST.
+    /// Open ports, on the other hand, tend to ignore the packet in question.
+    /// This is a bug in TCP implementations and so it isn't 100% reliable
+    /// (some systems, notably Micro$oft boxes, seem to be immune).
+    /// When scanning systems compliant with this RFC text,
+    /// any packet not containing SYN, RST,
+    /// or ACK bits will result in a returned RST
+    /// if the port is closed and no response at all if the port is open.
+    /// As long as none of those three bits are included,
+    /// any combination of the other three (FIN, PSH, and URG) are OK.
+    #[cfg(feature = "scan")]
+    pub fn tcp_fin_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_fin_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_fin_scan function.
+    /// It sends a TCP FIN packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_fin_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_fin_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP Idle Scan.
+    /// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book)
+    /// posted to the Bugtraq mailing list an ingenious new port scanning technique.
+    /// Idle scan, as it has become known, allows for completely blind port scanning.
+    /// Attackers can actually scan a target
+    /// without sending a single packet to the target from their own IP address!
+    /// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
+    /// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
+    /// Besides being extraordinarily stealthy,
+    /// this scan type permits discovery of IP-based trust relationships between machines.
+    #[cfg(feature = "scan")]
+    pub fn tcp_idle_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        zombie_ipv4: Option<Ipv4Addr>,
+        zombie_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_idle_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            zombie_ipv4,
+            zombie_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_idle_scan function.
+    /// It performs a TCP idle scan on the specified destination address and port using a zombie host.
+    /// The function sends packets to the zombie host to determine the port status of the target host
+    /// without directly interacting with the target host.
+    #[cfg(feature = "scan")]
+    pub fn tcp_idle_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        zombie_ipv4: Option<Ipv4Addr>,
+        zombie_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_idle_scan_raw(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            zombie_ipv4,
+            zombie_port,
+            timeout,
+        )
+    }
+    /// TCP Maimon Scan.
+    /// The Maimon scan is named after its discoverer, Uriel Maimon.
+    /// He described the technique in Phrack Magazine issue #49 (November 1996).
+    /// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
+    /// According to RFC 793 (TCP),
+    /// a RST packet should be generated in response to such a probe whether the port is open or closed.
+    /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
+    #[cfg(feature = "scan")]
+    pub fn tcp_maimon_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_maimon_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_maimon_scan function.
+    /// It sends a TCP Maimon packet (FIN/ACK) to the target IP address and port,
+    /// and waits for a response. Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_maimon_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_maimon_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP Null Scan.
+    /// Does not set any bits (TCP flag header is 0).
+    /// When scanning systems compliant with this RFC text,
+    /// any packet not containing SYN, RST,
+    /// or ACK bits will result in a returned RST if the port is closed
+    /// and no response at all if the port is open.
+    /// As long as none of those three bits are included,
+    /// any combination of the other three (FIN, PSH, and URG) are OK.
+    #[cfg(feature = "scan")]
+    pub fn tcp_null_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_null_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_null_scan function.
+    /// It sends a TCP Null packet (no flags set) to the target IP address and port,
+    /// and waits for a response. Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_null_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_null_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP SYN Scan.
+    /// This technique is often referred to as "half-open" scanning,
+    /// because you don't open a full TCP connection.
+    /// You send a SYN packet, as if you are going to open a real connection and wait for a response.
+    /// A SYN|ACK indicates the port is listening.
+    /// A RST is indicative of a non-listener.
+    /// If a SYN|ACK is received,
+    /// you immediately send a RST to tear down the connection (actually the kernel does this for us).
+    /// The primary advantage to this scanning technique is that fewer sites will log it.
+    /// Unfortunately you need root privileges to build these custom SYN packets.
+    /// SYN scan is the default and most popular scan option for good reason.
+    /// It can be performed quickly,
+    /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
+    /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
+    #[cfg(feature = "scan")]
+    pub fn tcp_syn_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_syn_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_syn_scan function.
+    /// It sends a TCP SYN packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_syn_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_syn_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP Window Scan.
+    /// Window scan is exactly the same as ACK scan except
+    /// that it exploits an implementation detail of certain systems
+    /// to differentiate open ports from closed ones,
+    /// rather than always printing unfiltered when a RST is returned.
+    /// It does this by examining the TCP Window value of the RST packets returned.
+    /// On some systems, open ports use a positive window size (even for RST packets)
+    /// while closed ones have a zero window.
+    /// Window scan sends the same bare ACK probe as ACK scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_window_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_window_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_window_scan function.
+    /// It sends a TCP Window packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_window_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_window_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP Xmas Scan.
+    /// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
+    /// When scanning systems compliant with this RFC text,
+    /// any packet not containing SYN, RST, or ACK bits will result in a returned RST
+    /// if the port is closed and no response at all if the port is open.
+    /// As long as none of those three bits are included,
+    /// any combination of the other three (FIN, PSH, and URG) are OK.
+    #[cfg(feature = "scan")]
+    pub fn tcp_xmas_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::tcp_xmas_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_xmas_scan function.
+    /// It sends a TCP Xmas packet (FIN, PSH, URG flags set) to the target IP address and port,
+    /// and waits for a response. Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn tcp_xmas_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::tcp_xmas_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// UDP Scan.
+    /// While most popular services on the Internet run over the TCP protocol,
+    /// UDP services are widely deployed.
+    /// DNS, SNMP, and DHCP (registered ports 53, 161/162, and 67/68) are three of the most common.
+    /// Because UDP scanning is generally slower and more difficult than TCP,
+    /// some security auditors ignore these ports.
+    /// This is a mistake, as exploitable UDP services are quite common
+    /// and attackers certainly don't ignore the whole protocol.
+    /// UDP scan works by sending a UDP packet to every targeted port.
+    /// For most ports, this packet will be empty (no payload),
+    /// but for a few of the more common ports a protocol-specific payload will be sent.
+    /// Based on the response, or lack thereof, the port is assigned to one of four states.
+    #[cfg(feature = "scan")]
+    pub fn udp_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPortScans, PistolError> {
+        scan::udp_scan(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of udp_scan function.
+    /// It sends a UDP packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the port status (Open, Closed, Filtered, Unfiltered)
+    /// and the duration taken for the scan.
+    #[cfg(feature = "scan")]
+    pub fn udp_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PortStatus, Duration), PistolError> {
+        scan::udp_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /* Ping */
+    /// ICMP Ping (Address Mask Request).
+    /// (Note: in my local test, this request did not return any reply).
+    /// While echo request is the standard ICMP ping query, Nmap does not stop there.
+    /// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
+    /// information request, and address mask request packets as codes 13, 15, and 17,
+    /// respectively. While the ostensible purpose for these queries is to learn information such
+    /// as address masks and current times, they can easily be used for host discovery.
+    /// A system that replies is up and available.
+    /// Nmap does not currently implement information request packets,
+    /// as they are not widely supported. RFC 1122 insists that "a host SHOULD NOT implement these messages".
+    /// Timestamp and address mask queries can be sent with the -PP and -PM options, respectively.
+    /// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses
+    /// that the host is available.
+    /// These two queries can be valuable when administrators specifically block echo request packets
+    /// while forgetting that other ICMP queries can be used for the same purpose.
+    #[cfg(feature = "ping")]
+    pub fn icmp_address_mask_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::icmp_address_mask_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of icmp_address_mask_ping function.
+    /// It sends an ICMP Address Mask Request to the target IP address
+    /// and waits for a reply. If a reply is received within the specified timeout,
+    /// it returns the PingStatus indicating whether the host is reachable.
+    #[cfg(feature = "ping")]
+    pub fn icmp_address_mask_ping_raw(
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+    ) -> Result<PingStatus, PistolError> {
+        ping::icmp_address_mask_ping_raw(dst_addr, src_addr, timeout)
+    }
+    /// ICMP Ping (Standard Echo Request).
+    /// In addition to the unusual TCP and UDP host discovery types discussed previously,
+    /// we can send the standard packets sent by the ubiquitous ping program.
+    /// We sends an ICMP type 8 (echo request) packet to the target IP addresses,
+    /// expecting a type 0 (echo reply) in return from available hosts.
+    /// As noted at the beginning of this chapter, many hosts and firewalls now block these packets,
+    /// rather than responding as required by RFC 1122.
+    /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
+    /// But for system administrators monitoring an internal network,
+    /// this can be a practical and efficient approach.
+    #[cfg(feature = "ping")]
+    pub fn icmp_echo_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::icmp_echo_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of icmp_echo_ping function.
+    /// It sends an ICMP Echo Request to the target IP address
+    /// and waits for a reply. If a reply is received within the specified timeout,
+    /// it returns the PingStatus indicating whether the host is reachable.
+    #[cfg(feature = "ping")]
+    pub fn icmp_echo_ping_raw(
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+    ) -> Result<PingStatus, PistolError> {
+        ping::icmp_echo_ping_raw(dst_addr, src_addr, timeout)
+    }
+    /// ICMP Ping (Timestamp Request).
+    /// While echo request is the standard ICMP ping query, Nmap does not stop there.
+    /// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
+    /// information request, and address mask request packets as codes 13, 15, and 17,
+    /// respectively. While the ostensible purpose for these queries is to learn information such
+    /// as address masks and current times, they can easily be used for host discovery.
+    /// A system that replies is up and available.
+    /// Nmap does not currently implement information request packets,
+    /// as they are not widely supported. RFC 1122 insists that "a host SHOULD NOT implement these messages".
+    /// Timestamp and address mask queries can be sent with the -PP and -PM options, respectively.
+    /// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses that the host is available.
+    /// These two queries can be valuable when administrators specifically block echo request packets
+    /// while forgetting that other ICMP queries can be used for the same purpose.
+    #[cfg(feature = "ping")]
+    pub fn icmp_timestamp_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::icmp_timestamp_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of icmp_timestamp_ping function.
+    /// It sends an ICMP Timestamp Request to the target IP address
+    /// and waits for a reply. If a reply is received within the specified timeout,
+    /// it returns the PingStatus indicating whether the host is reachable.
+    #[cfg(feature = "ping")]
+    pub fn icmp_timestamp_ping_raw(
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+    ) -> Result<PingStatus, PistolError> {
+        ping::icmp_timestamp_ping_raw(dst_addr, src_addr, timeout)
+    }
+    /// The raw version of icmp ping.
+    /// It sends an ICMP Echo Request to the target IP address
+    /// and waits for a reply. If a reply is received within the specified timeout,
+    /// it returns the PingStatus indicating whether the host is reachable,
+    /// along with the duration taken for the ping.
+    #[cfg(feature = "ping")]
+    pub fn icmp_ping_raw(
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+        timeout: Option<Duration>,
+    ) -> Result<(PingStatus, Duration), PistolError> {
+        ping::icmp_ping_raw(dst_addr, src_addr, timeout)
+    }
+    /// ICMPv6 Ping (Standard Echo Request).
+    /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
+    /// In addition to the unusual TCP and UDP host discovery types discussed previously,
+    /// we can send the standard packets sent by the ubiquitous ping program.
+    /// We sends an ICMPv6 type 128 (echo request) packet to the target IP addresses,
+    /// expecting a type 129 (echo reply) in return from available hosts.
+    /// As noted at the beginning of this chapter, many hosts and firewalls now block these packets,
+    /// rather than responding as required by RFC 4443.
+    /// For this reason, ICMPv6-only scans are rarely reliable enough against unknown targets over the Internet.
+    /// But for system administrators monitoring an internal network,
+    /// this can be a practical and efficient approach.
+    #[cfg(feature = "ping")]
+    pub fn icmpv6_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::icmpv6_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// TCP ACK Ping.
+    /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
+    /// we chose to have the user manually provide a port number
+    /// that is open on the target machine instead of traversing all ports.
+    #[cfg(feature = "ping")]
+    pub fn tcp_ack_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::tcp_ack_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_ack_ping function.
+    /// It sends a TCP ACK packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the ping status (Success, Timeout, Unreachable)
+    /// and the duration taken for the ping.
+    #[cfg(feature = "ping")]
+    pub fn tcp_ack_ping_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PingStatus, Duration), PistolError> {
+        ping::tcp_ack_ping_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// TCP SYN Ping.
+    /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
+    /// we chose to have the user manually provide a port number
+    /// that is open on the target machine instead of traversing all ports.
+    #[cfg(feature = "ping")]
+    pub fn tcp_syn_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::tcp_syn_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of tcp_syn_ping function.
+    /// It sends a TCP SYN packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the ping status (Success, Timeout, Unreachable)
+    /// and the duration taken for the ping.
+    #[cfg(feature = "ping")]
+    pub fn tcp_syn_ping_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PingStatus, Duration), PistolError> {
+        ping::tcp_syn_ping_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /// UDP Ping.
+    /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
+    /// we chose to have the user manually provide a port number
+    /// that is open on the target machine instead of traversing all ports.
+    #[cfg(feature = "ping")]
+    pub fn udp_ping(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+        max_attempts: usize,
+    ) -> Result<PistolPings, PistolError> {
+        ping::udp_ping(
+            targets,
+            num_threads,
+            src_addr,
+            src_port,
+            timeout,
+            max_attempts,
+        )
+    }
+    /// The raw version of udp_ping function.
+    /// It sends a UDP packet to the target IP address and port, and waits for a response.
+    /// Based on the response received (or lack thereof),
+    /// it determines the ping status (Success, Timeout, Unreachable)
+    /// and the duration taken for the ping.
+    #[cfg(feature = "ping")]
+    pub fn udp_ping_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        timeout: Option<Duration>,
+    ) -> Result<(PingStatus, Duration), PistolError> {
+        ping::udp_ping_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+    }
+    /* Trace */
+    /// ICMP Trace.
+    /// Sends ICMP Echo Request packets with incrementally increasing TTL values
+    /// to discover the path to the destination.
+    /// The recommended timeout value is 5 seconds,
+    /// which is consistent with the default value of traceroute.
+    #[cfg(feature = "trace")]
+    pub fn icmp_trace(
+        dst_addr: IpAddr,
+        src_addr: IpAddr,
+        timeout: Option<Duration>,
+    ) -> Result<u8, PistolError> {
+        trace::icmp_trace(dst_addr, src_addr, timeout)
+    }
+    /// TCP SYN Trace.
+    /// Sends TCP SYN packets with incrementally increasing TTL values
+    /// to discover the path to the destination.
+    /// The recommended timeout value is 5 seconds,
+    /// which is consistent with the default value of traceroute.
+    #[cfg(feature = "trace")]
+    pub fn syn_trace(
+        dst_addr: IpAddr,
+        dst_port: Option<u16>, // default is 80
+        src_addr: IpAddr,
+        timeout: Option<Duration>,
+    ) -> Result<u8, PistolError> {
+        trace::syn_trace(dst_addr, dst_port, src_addr, timeout)
+    }
+    /// UDP Trace.
+    /// Sends UDP packets with incrementally increasing TTL values
+    /// to discover the path to the destination.
+    /// The recommended timeout value is 5 seconds,
+    /// which is consistent with the default value of traceroute.
+    #[cfg(feature = "trace")]
+    pub fn udp_trace(
+        dst_addr: IpAddr,
+        src_addr: IpAddr,
+        timeout: Option<Duration>,
+    ) -> Result<u8, PistolError> {
+        trace::udp_trace(dst_addr, src_addr, timeout)
+    }
+    /* Flood */
+    /// Perform an ICMP flood DDoS attack on the specified targets.
+    /// An Internet Control Message Protocol (ICMP) flood DDoS attack,
+    /// also known as a Ping flood attack,
+    /// is a common Denial-of-Service (DoS) attack in
+    /// which an attacker attempts to overwhelm a targeted device with ICMP echo-requests (pings).
+    /// Normally, ICMP echo-request and echo-reply messages are used to ping a network device
+    /// in order to diagnose the health and connectivity of the device and the connection
+    /// between the sender and the device.
+    /// By flooding the target with request packets,
+    /// the network is forced to respond with an equal number of reply packets.
+    /// This causes the target to become inaccessible to normal traffic.
+    /// Total number of packets sent = retransmit_count x num_threads.
+    #[cfg(feature = "flood")]
+    pub fn icmp_flood(
+        targets: &[Target],
+        num_threads: usize,
+        retransmit_count: usize,
+        repeat_count: usize,
+    ) -> Result<PistolFloods, PistolError> {
+        flood::icmp_flood(targets, num_threads, retransmit_count, repeat_count)
+    }
+    /// The raw version of icmp_flood function.
+    /// It performs an ICMP flood attack on the specified destination address.
+    #[cfg(feature = "flood")]
+    pub fn icmp_flood_raw(dst_addr: IpAddr, retransmit_count: usize) -> Result<usize, PistolError> {
+        flood::icmp_flood_raw(dst_addr, retransmit_count)
+    }
+    /// TCP ACK flood, or 'ACK Flood' for short, is a network DDoS attack comprising TCP ACK packets.
+    /// The packets will not contain a payload but may have the PSH flag enabled.
+    /// In the normal TCP, the ACK packets indicate to the other party
+    /// that the data have been received successfully.
+    /// ACK packets are very common and can constitute 50% of the entire TCP packets.
+    /// The attack will typically affect stateful devices
+    /// that must process each packet and that can be overwhelmed.
+    /// ACK flood is tricky to mitigate for several reasons.
+    /// It can be spoofed the attacker can easily generate a high rate of attacking traffic,
+    /// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK,
+    /// as they look the same.
+    /// Total number of packets sent = retransmit_count x num_threads.
+    #[cfg(feature = "flood")]
+    pub fn tcp_ack_flood(
+        targets: &[Target],
+        num_threads: usize,
+        retransmit_count: usize,
+        repeat_count: usize,
+    ) -> Result<PistolFloods, PistolError> {
+        flood::tcp_ack_flood(targets, num_threads, retransmit_count, repeat_count)
+    }
+    /// The raw version of tcp_ack_flood function.
+    /// It performs a TCP ACK flood attack on the specified destination address and port.
+    #[cfg(feature = "flood")]
+    pub fn tcp_ack_flood_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        retransmit_count: usize,
+    ) -> Result<usize, PistolError> {
+        flood::tcp_ack_flood_raw(dst_addr, dst_port, retransmit_count)
+    }
+    /// TCP ACK flood with PSH flag set.
+    /// Perform a TCP ACK flood with PSH flag set DDoS attack on the specified targets.
+    /// An Internet Control Message Protocol (ICMP) flood DDoS attack,
+    /// also known as a Ping flood attack,
+    /// is a common Denial-of-Service (DoS) attack in
+    /// which an attacker attempts to overwhelm a targeted device with ICMP echo-requests (pings).
+    /// Normally, ICMP echo-request and echo-reply messages are used to ping a network device
+    /// in order to diagnose the health and connectivity of the device and the connection
+    /// between the sender and the device.
+    /// By flooding the target with request packets,
+    /// the network is forced to respond with an equal number of reply packets.
+    /// This causes the target to become inaccessible to normal traffic.
+    /// Total number of packets sent = retransmit_count x num_threads.
+    #[cfg(feature = "flood")]
+    pub fn tcp_ack_psh_flood(
+        targets: &[Target],
+        num_threads: usize,
+        retransmit_count: usize,
+        repeat_count: usize,
+    ) -> Result<PistolFloods, PistolError> {
+        flood::tcp_ack_psh_flood(targets, num_threads, retransmit_count, repeat_count)
+    }
+    /// The raw version of tcp_ack_psh_flood function.
+    /// It performs a TCP ACK flood with PSH flag set attack
+    /// on the specified destination address and port.
+    #[cfg(feature = "flood")]
+    pub fn tcp_ack_psh_flood_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        retransmit_count: usize,
+    ) -> Result<usize, PistolError> {
+        flood::tcp_ack_psh_flood_raw(dst_addr, dst_port, retransmit_count)
+    }
+    /// In a TCP SYN Flood attack, the malicious entity sends a barrage of
+    /// SYN requests to a target server but intentionally avoids sending the final ACK.
+    /// This leaves the server waiting for a response that never comes,
+    /// consuming resources for each of these half-open connections.
+    /// Total number of packets sent = retransmit_count x num_threads.
+    #[cfg(feature = "flood")]
+    pub fn tcp_syn_flood(
+        targets: &[Target],
+        num_threads: usize,
+        retransmit_count: usize,
+        repeat_count: usize,
+    ) -> Result<PistolFloods, PistolError> {
+        flood::tcp_syn_flood(targets, num_threads, retransmit_count, repeat_count)
+    }
+    /// The raw version of tcp_syn_flood function.
+    /// It performs a TCP SYN flood attack on the specified destination address and port.
+    #[cfg(feature = "flood")]
+    pub fn tcp_syn_flood_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        retransmit_count: usize,
+    ) -> Result<usize, PistolError> {
+        flood::tcp_syn_flood_raw(dst_addr, dst_port, retransmit_count)
+    }
+    /// In a UDP Flood attack,
+    /// the attacker sends a massive number of UDP packets to random ports on the target host.
+    /// This barrage of packets forces the host to:
+    /// Check for applications listening at each port.
+    /// Realize that no application is listening at many of these ports.
+    /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
+    #[cfg(feature = "flood")]
+    pub fn udp_flood(
+        targets: &[Target],
+        num_threads: usize,
+        retransmit_count: usize,
+        repeat_count: usize,
+    ) -> Result<PistolFloods, PistolError> {
+        flood::udp_flood(targets, num_threads, retransmit_count, repeat_count)
+    }
+    /// The raw version of udp_flood function.
+    /// It performs a UDP flood attack on the specified destination address and port.
+    #[cfg(feature = "flood")]
+    pub fn udp_flood_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        retransmit_count: usize,
+    ) -> Result<usize, PistolError> {
+        flood::udp_flood_raw(dst_addr, dst_port, retransmit_count)
+    }
+    /* OS Detect */
+    /// Detect target machine OS on IPv4 and IPv6.
+    /// This function uses a combination of TCP, UDP, and ICMP probes
+    /// to gather information about the target system's network stack behavior.
+    /// By analyzing the responses to these probes,
+    /// it attempts to identify the operating system running on the target machine.
+    #[cfg(feature = "os")]
+    pub fn os_detect(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        src_addr: Option<IpAddr>,
+        top_k: usize,
+        timeout: Option<Duration>,
+    ) -> Result<PistolOsDetects, PistolError> {
+        os::os_detect(targets, num_threads, src_addr, top_k, timeout)
+    }
+    /// The raw version of os_detect function.
+    /// It sends a series of TCP, UDP, and ICMP probes to the target IP address
+    /// using the specified open and closed ports.
+    /// By analyzing the responses to these probes,
+    /// it attempts to identify the operating system running on the target machine.
+    #[cfg(feature = "os")]
+    pub fn os_detect_raw(
+        dst_addr: IpAddr,
+        dst_open_tcp_port: u16,
+        dst_closed_tcp_port: u16,
+        dst_closed_udp_port: u16,
+        src_addr: Option<IpAddr>,
+        top_k: usize,
+        timeout: Option<Duration>,
+    ) -> Result<OsDetect, PistolError> {
+        os::os_detect_raw(
+            dst_addr,
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
+            src_addr,
+            top_k,
+            timeout,
+        )
+    }
+    /* Service Detect */
+    /// Detect target port service.
+    /// This function sends various probes to the target ports
+    /// to identify the services running on them.
+    /// By analyzing the responses to these probes,
+    /// it attempts to determine the service type and version.
+    #[cfg(feature = "vs")]
+    pub fn vs_scan(
+        targets: &[Target],
+        num_threads: Option<usize>,
+        only_null_probe: bool,
+        only_tcp_recommended: bool,
+        only_udp_recommended: bool,
+        intensity: usize,
+        timeout: Option<Duration>,
+    ) -> Result<PistolVsScans, PistolError> {
+        vs::vs_scan(
+            targets,
+            num_threads,
+            only_null_probe,
+            only_tcp_recommended,
+            only_udp_recommended,
+            intensity,
+            timeout,
+        )
+    }
+    /// The raw version of vs_scan function.
+    /// It sends various probes to the target IP address and port
+    /// to identify the service running on that port.
+    /// By analyzing the responses to these probes,
+    /// it attempts to determine the service type and version.
+    #[cfg(feature = "vs")]
+    pub fn vs_scan_raw(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        only_null_probe: bool,
+        only_tcp_recommended: bool,
+        only_udp_recommended: bool,
+        intensity: usize,
+        timeout: Option<Duration>,
+    ) -> Result<PortService, PistolError> {
+        vs::vs_scan_raw(
+            dst_addr,
+            dst_port,
+            only_null_probe,
+            only_tcp_recommended,
+            only_udp_recommended,
+            intensity,
+            timeout,
+        )
+    }
+}
+
+/// Queries the IP address of a domain name and returns.
+/// If multiple IP addresses are found, all are returned.
+pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
+    let ips = lookup_host(hostname)?;
+    let mut ret = Vec::new();
+    for ip in ips {
+        ret.push(ip);
+    }
+    Ok(ret)
+}
+
+static CAPTURED_PACKETS: LazyLock<Arc<Mutex<PcapNg>>> = LazyLock::new(|| {
     let if_name = "pistol";
     let if_description = "All traffic generated by pistol";
     let ips = [];
-    let mac = None;
-    let pcapng = PcapNg::new_raw(if_name, if_description, &ips, mac);
+    let pcapng = PcapNg::new_raw(if_name, if_description, &ips);
     Arc::new(Mutex::new(pcapng))
 });
 
-static PISTOL_PCAPNG_FLAG: LazyLock<Arc<Mutex<bool>>> =
+static CAPTURED_PACKETS_FLAG: LazyLock<Arc<Mutex<bool>>> =
     LazyLock::new(|| Arc::new(Mutex::new(false)));
 
 /// Save the sent traffic locally in pcapng format.
 /// Note that this method does not read the traffic from the network card,
 /// but to save the traffic before the it is sent.
+#[derive(Debug, Clone)]
 pub struct PistolCapture {
-    fs: File,
+    filename: String,
 }
 
 impl PistolCapture {
     fn init(filename: &str) -> Result<PistolCapture, PistolError> {
-        match PISTOL_PCAPNG_FLAG.lock() {
+        match CAPTURED_PACKETS_FLAG.lock() {
             Ok(mut ppf) => {
                 *ppf = true;
-                let fs = File::create(filename)?;
-                Ok(PistolCapture { fs })
             }
-            Err(e) => Err(PistolError::InitCaptureError { e: e.to_string() }),
+            Err(e) => return Err(PistolError::InitCaptureError { e: e.to_string() }),
         }
+        Ok(PistolCapture {
+            filename: filename.to_string(),
+        })
     }
     /// The program will automatically call this module when the function ends, without manual setting.
-    fn save_to_file(&mut self) -> Result<(), PistolError> {
-        match PISTOL_PCAPNG_FLAG.lock() {
+    fn save_to_file(&self) -> Result<(), PistolError> {
+        let mut fs = File::create(&self.filename)?;
+        match CAPTURED_PACKETS_FLAG.lock() {
             Ok(ppf) => {
                 if *ppf {
-                    match PISTOL_PCAPNG.lock() {
+                    match CAPTURED_PACKETS.lock() {
                         Ok(pp) => {
-                            (*pp).write(&mut self.fs)?;
+                            (*pp).write(&mut fs)?;
                             Ok(())
                         }
                         Err(e) => Err(PistolError::SaveCaptureError { e: e.to_string() }),
@@ -706,22 +1667,8 @@ impl PistolCapture {
 
 impl Drop for PistolCapture {
     fn drop(&mut self) {
-        self.save_to_file().expect("auto save to file failed");
-    }
-}
-
-pub enum PistolLogger {
-    Debug,
-    Warn,
-    Info,
-    None,
-}
-
-impl PistolLogger {
-    fn set_level(level: Level) -> Result<(), PistolError> {
-        let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
-        let _ = tracing::subscriber::set_global_default(subscriber)?;
-        Ok(())
+        self.save_to_file()
+            .expect("auto save traffic to file failed");
     }
 }
 
@@ -1016,140 +1963,6 @@ impl fmt::Display for Target {
     }
 }
 
-/* Scan */
-#[cfg(feature = "scan")]
-pub use scan::arp_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::mac_scan;
-#[cfg(feature = "scan")]
-pub use scan::ndp_ns_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_ack_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_ack_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_connect_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_connect_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_fin_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_fin_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_idle_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_idle_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_maimon_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_maimon_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_null_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_null_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_syn_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_syn_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_window_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_window_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::tcp_xmas_scan;
-#[cfg(feature = "scan")]
-pub use scan::tcp_xmas_scan_raw;
-#[cfg(feature = "scan")]
-pub use scan::udp_scan;
-#[cfg(feature = "scan")]
-pub use scan::udp_scan_raw;
-
-/* Ping */
-
-#[cfg(feature = "ping")]
-pub use ping::icmp_address_mask_ping;
-#[cfg(feature = "ping")]
-pub use ping::icmp_address_mask_ping_raw;
-#[cfg(feature = "ping")]
-pub use ping::icmp_echo_ping;
-#[cfg(feature = "ping")]
-pub use ping::icmp_echo_ping_raw;
-#[cfg(feature = "ping")]
-pub use ping::icmp_ping_raw;
-#[cfg(feature = "ping")]
-pub use ping::icmp_timestamp_ping;
-#[cfg(feature = "ping")]
-pub use ping::icmp_timestamp_ping_raw;
-#[cfg(feature = "ping")]
-pub use ping::tcp_ack_ping;
-#[cfg(feature = "ping")]
-pub use ping::tcp_ack_ping_raw;
-#[cfg(feature = "ping")]
-pub use ping::tcp_syn_ping;
-#[cfg(feature = "ping")]
-pub use ping::tcp_syn_ping_raw;
-#[cfg(feature = "ping")]
-pub use ping::udp_ping;
-#[cfg(feature = "ping")]
-pub use ping::udp_ping_raw;
-
-/* Trace */
-#[cfg(feature = "trace")]
-pub use trace::icmp_trace;
-#[cfg(feature = "trace")]
-pub use trace::syn_trace;
-#[cfg(feature = "trace")]
-pub use trace::udp_trace;
-
-/* Flood */
-
-#[cfg(feature = "flood")]
-pub use flood::flood_raw;
-#[cfg(feature = "flood")]
-pub use flood::icmp_flood;
-#[cfg(feature = "flood")]
-pub use flood::icmp_flood_raw;
-#[cfg(feature = "flood")]
-pub use flood::tcp_ack_flood;
-#[cfg(feature = "flood")]
-pub use flood::tcp_ack_flood_raw;
-#[cfg(feature = "flood")]
-pub use flood::tcp_ack_psh_flood;
-#[cfg(feature = "flood")]
-pub use flood::tcp_ack_psh_flood_raw;
-#[cfg(feature = "flood")]
-pub use flood::tcp_syn_flood;
-#[cfg(feature = "flood")]
-pub use flood::tcp_syn_flood_raw;
-#[cfg(feature = "flood")]
-pub use flood::udp_flood;
-#[cfg(feature = "flood")]
-pub use flood::udp_flood_raw;
-
-/* OS Detect */
-
-#[cfg(feature = "os")]
-pub use os::os_detect;
-#[cfg(feature = "os")]
-pub use os::os_detect_raw;
-
-/* Service Detect */
-
-#[cfg(feature = "vs")]
-pub use vs::vs_scan;
-#[cfg(feature = "vs")]
-pub use vs::vs_scan_raw;
-
-/// Queries the IP address of a domain name and returns.
-pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
-    let ips = lookup_host(hostname)?;
-    let mut ret = Vec::new();
-    for ip in ips {
-        ret.push(ip);
-    }
-    Ok(ret)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1163,6 +1976,7 @@ mod tests {
         let ret = dns_query(hostname).unwrap();
         println!("{:?}", ret);
     }
+    /// for parsing nmap --top-ports output
     fn simple_top_ports_parser(ports_str: &str) -> Result<Vec<u16>, PistolError> {
         let mut ret = Vec::new();
         let ports_str_split: Vec<&str> = ports_str.split(",").collect();
@@ -1248,14 +2062,7 @@ mod tests {
     #[test]
     #[cfg(feature = "scan")]
     fn example_tcp_syn_scan() {
-        // Initialize and run the Runner thread.
-        // This step is required for all other functions except service detection.
-        let _pr = PistolRunner::init(
-            PistolLogger::None,                        // logger level settings
-            Some(String::from("tcp_syn_scan.pcapng")), // capture pistol traffic for debugging
-            None, // timeout settings, unless there is a clear reason, use the default here
-        )
-        .unwrap();
+        let pistol = Pistol::new(interface, log_level, capture, timeout).unwrap();
 
         // When using scanning, please use a real local address to get the return packet.
         // And for flood attacks, please consider using a fake address.
@@ -1295,7 +2102,7 @@ mod tests {
     fn example_os_detect() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,                     // logger level settings
             Some(String::from("os_detect.pcapng")), // capture pistol traffic for debugging
             None, // timeout settings, unless there is a clear reason, use the default here
@@ -1333,7 +2140,7 @@ mod tests {
     fn example_os_detect_ipv6() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,                          // logger level settings
             Some(String::from("os_detect_ipv6.pcapng")), // capture pistol traffic for debugging
             None, // timeout settings, unless there is a clear reason, use the default here
@@ -1365,7 +2172,7 @@ mod tests {
     fn example_vs_scan() {
         // Initialize and run the Runner thread.
         // This step is required for all other functions except service detection.
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None, // logger level settings
             None,               // this capture will not work for vs scan, so just set it to None
             None, // timeout settings, unless there is a clear reason, use the default here

@@ -1,12 +1,14 @@
-use pcapture::pcapng::EnhancedPacketBlock;
-use pcapture::pcapng::GeneralBlock;
+use pcapture::Capture;
+use pcapture::fs::pcapng::EnhancedPacketBlock;
+use pcapture::fs::pcapng::GeneralBlock;
 use pnet::datalink;
-use pnet::datalink::interfaces;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::ChannelType;
 use pnet::datalink::Config;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+use pnet::datalink::interfaces;
+use pnet::packet::Packet;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ethernet::EtherTypes;
@@ -23,30 +25,22 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
-use pnet::packet::Packet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
 use tracing::error;
-use tracing::warn;
-use uuid::Uuid;
 
+use crate::CAPTURED_PACKETS;
+use crate::CAPTURED_PACKETS_FLAG;
+use crate::DEFAULT_TIMEOUT;
 use crate::error::PistolError;
+use crate::route::RouteVia;
 use crate::route::get_default_route;
 use crate::route::search_route_table;
-use crate::route::RouteVia;
-use crate::PistolChannel;
-use crate::DEFAULT_TIMEOUT;
-use crate::PISTOL_PCAPNG;
-use crate::PISTOL_PCAPNG_FLAG;
-use crate::PISTOL_RUNNER_IS_RUNNING;
-use crate::UNIFIED_RECV_MATCHS;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const ARP_HEADER_SIZE: usize = 28;
@@ -123,6 +117,15 @@ pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
             if src_addr == i {
                 return Some(interface);
             }
+        }
+    }
+    None
+}
+
+pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        if name == interface.name {
+            return Some(interface);
         }
     }
     None
@@ -275,15 +278,15 @@ pub fn infer_addr(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer2Match {
+pub struct Layer2Filter {
     pub name: &'static str,
-    pub src_mac: Option<MacAddr>,         // response packet src mac
-    pub dst_mac: Option<MacAddr>,         // response packet dst mac
-    pub ethernet_type: Option<EtherType>, // reponse packet ethernet type
+    pub src_mac: Option<MacAddr>,      // response packet src mac
+    pub dst_mac: Option<MacAddr>,      // response packet dst mac
+    pub ether_type: Option<EtherType>, // reponse packet ethernet type
 }
 
-impl Layer2Match {
-    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+impl Layer2Filter {
+    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
         let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
             Some(ethernet_packet) => ethernet_packet,
             None => return false,
@@ -305,9 +308,9 @@ impl Layer2Match {
             }
             None => (),
         };
-        match self.ethernet_type {
-            Some(ethernet_type) => {
-                if ethernet_type != ethernet_packet.get_ethertype() {
+        match self.ether_type {
+            Some(ether_type) => {
+                if ether_type != ethernet_packet.get_ethertype() {
                     return false;
                 }
             }
@@ -318,17 +321,17 @@ impl Layer2Match {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer3Match {
+pub struct Layer3Filter {
     pub name: &'static str,
-    pub layer2: Option<Layer2Match>,
+    pub layer2: Option<Layer2Filter>,
     pub src_addr: Option<IpAddr>, // response packet
     pub dst_addr: Option<IpAddr>, // response packet
 }
 
-impl Layer3Match {
-    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+impl Layer3Filter {
+    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer2 {
-            Some(layers) => layers.do_match(ethernet_packet),
+            Some(layers) => layers.check(ethernet_packet),
             None => true,
         };
         if !m1 {
@@ -434,9 +437,9 @@ impl Layer3Match {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer4MatchTcpUdp {
+pub struct Layer4FilterTcpUdp {
     pub name: &'static str,
-    pub layer3: Option<Layer3Match>,
+    pub layer3: Option<Layer3Filter>,
     pub src_port: Option<u16>, // response tcp or udp packet src port
     pub dst_port: Option<u16>, // response tcp or udp packet dst port
 }
@@ -474,8 +477,8 @@ fn get_ip(ethernet_packet: &[u8]) -> Option<(IpAddr, IpAddr)> {
     }
 }
 
-impl Layer4MatchTcpUdp {
-    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+impl Layer4FilterTcpUdp {
+    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
         // let mut is_debug = false;
         // if let Some((src_ip, dst_ip)) = get_ip(ethernet_packet) {
         //     let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
@@ -486,7 +489,7 @@ impl Layer4MatchTcpUdp {
         // }
 
         let m1 = match &self.layer3 {
-            Some(layer3) => layer3.do_match(ethernet_packet),
+            Some(layer3) => layer3.check(ethernet_packet),
             None => true,
         };
         // if is_debug {
@@ -887,18 +890,18 @@ impl PayloadMatch {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer4MatchIcmp {
+pub struct Layer4FilterIcmp {
     pub name: &'static str,
-    pub layer3: Option<Layer3Match>,
+    pub layer3: Option<Layer3Filter>,
     pub icmp_type: Option<IcmpType>,   // response icmp packet types
     pub icmp_code: Option<IcmpCode>,   // response icmp packet codes
     pub payload: Option<PayloadMatch>, // used to confirm which port the data packet is from
 }
 
-impl Layer4MatchIcmp {
-    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+impl Layer4FilterIcmp {
+    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer3 {
-            Some(layer3) => layer3.do_match(ethernet_packet),
+            Some(layer3) => layer3.check(ethernet_packet),
             None => true,
         };
         if !m1 {
@@ -953,18 +956,18 @@ impl Layer4MatchIcmp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer4MatchIcmpv6 {
+pub struct Layer4FilterIcmpv6 {
     pub name: &'static str,
-    pub layer3: Option<Layer3Match>,
+    pub layer3: Option<Layer3Filter>,
     pub icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
     pub icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
     pub payload: Option<PayloadMatch>,
 }
 
-impl Layer4MatchIcmpv6 {
-    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+impl Layer4FilterIcmpv6 {
+    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer3 {
-            Some(layer3) => layer3.do_match(ethernet_packet),
+            Some(layer3) => layer3.check(ethernet_packet),
             None => true,
         };
         if !m1 {
@@ -1024,23 +1027,23 @@ impl Layer4MatchIcmpv6 {
 /// or rules
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-pub enum LayerMatch {
-    Layer2Match(Layer2Match),
-    Layer3Match(Layer3Match),
-    Layer4MatchTcpUdp(Layer4MatchTcpUdp),
-    Layer4MatchIcmp(Layer4MatchIcmp),
-    Layer4MatchIcmpv6(Layer4MatchIcmpv6),
+pub enum PacketFilter {
+    Layer2Filter(Layer2Filter),
+    Layer3Filter(Layer3Filter),
+    Layer4FilterTcpUdp(Layer4FilterTcpUdp),
+    Layer4FilterIcmp(Layer4FilterIcmp),
+    Layer4FilterIcmpv6(Layer4FilterIcmpv6),
 }
 
-impl LayerMatch {
-    pub fn do_match(&self, ethernet_packet: &[u8]) -> bool {
+impl PacketFilter {
+    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
         if ethernet_packet.len() > 0 {
             match self {
-                LayerMatch::Layer2Match(l2) => l2.do_match(ethernet_packet),
-                LayerMatch::Layer3Match(l3) => l3.do_match(ethernet_packet),
-                LayerMatch::Layer4MatchTcpUdp(tcp_udp) => tcp_udp.do_match(ethernet_packet),
-                LayerMatch::Layer4MatchIcmp(icmp) => icmp.do_match(ethernet_packet),
-                LayerMatch::Layer4MatchIcmpv6(icmpv6) => icmpv6.do_match(ethernet_packet),
+                PacketFilter::Layer2Filter(l2) => l2.check(ethernet_packet),
+                PacketFilter::Layer3Filter(l3) => l3.check(ethernet_packet),
+                PacketFilter::Layer4FilterTcpUdp(tcp_udp) => tcp_udp.check(ethernet_packet),
+                PacketFilter::Layer4FilterIcmp(icmp) => icmp.check(ethernet_packet),
+                PacketFilter::Layer4FilterIcmpv6(icmpv6) => icmpv6.check(ethernet_packet),
             }
         } else {
             false
@@ -1048,18 +1051,18 @@ impl LayerMatch {
     }
     pub fn name(&self) -> &'static str {
         match self {
-            LayerMatch::Layer2Match(l2) => l2.name,
-            LayerMatch::Layer3Match(l3) => l3.name,
-            LayerMatch::Layer4MatchTcpUdp(tcp_udp) => tcp_udp.name,
-            LayerMatch::Layer4MatchIcmp(icmp) => icmp.name,
-            LayerMatch::Layer4MatchIcmpv6(icmpv6) => icmpv6.name,
+            PacketFilter::Layer2Filter(l2) => l2.name,
+            PacketFilter::Layer3Filter(l3) => l3.name,
+            PacketFilter::Layer4FilterTcpUdp(tcp_udp) => tcp_udp.name,
+            PacketFilter::Layer4FilterIcmp(icmp) => icmp.name,
+            PacketFilter::Layer4FilterIcmpv6(icmpv6) => icmpv6.name,
         }
     }
 }
 
 /// Capture the traffic and save into file.
-pub fn layer2_capture(packet: &[u8]) -> Result<(), PistolError> {
-    let ppf = match PISTOL_PCAPNG_FLAG.lock() {
+pub fn layer2_save_to_file(packet: &[u8]) -> Result<(), PistolError> {
+    let ppf = match CAPTURED_PACKETS_FLAG.lock() {
         Ok(ppf) => *ppf,
         Err(e) => {
             return Err(PistolError::TryLockGlobalVarFailed {
@@ -1070,13 +1073,13 @@ pub fn layer2_capture(packet: &[u8]) -> Result<(), PistolError> {
     };
 
     if ppf {
-        match PISTOL_PCAPNG.lock() {
+        match CAPTURED_PACKETS.lock() {
             Ok(mut pp) => {
                 // interface_id = 0 means we use the first interface we builed in fake pcapng headers
                 const INTERFACE_ID: u32 = 0;
                 // this is the default value of pcapture
                 const SNAPLEN: usize = 65535;
-                match EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN) {
+                match EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN, 0, 0) {
                     Ok(block) => {
                         let gb = GeneralBlock::EnhancedPacketBlock(block);
                         pp.append(gb);
@@ -1097,207 +1100,147 @@ pub fn layer2_capture(packet: &[u8]) -> Result<(), PistolError> {
     Ok(())
 }
 
-/// This function only recvs data.
-fn layer2_set_matchs(
-    layer_matchs: Vec<LayerMatch>,
-) -> Result<(Receiver<Vec<u8>>, PistolChannel), PistolError> {
-    // let (tx: Sender<Vec<u8>>, rx: Receiver<Vec<PistolChannel>>) = channel();
-    let (tx, rx) = channel();
-    let pc = PistolChannel {
-        uuid: Uuid::new_v4(),
-        channel: tx,
-        layer_matchs,
-    };
-
-    match UNIFIED_RECV_MATCHS.lock() {
-        Ok(mut urm) => urm.push(pc.clone()),
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("UNIFIED_RECV_MATCHS"),
-                e: e.to_string(),
-            });
-        }
-    }
-    Ok((rx, pc))
-}
-
-fn layer2_rm_matchs(uuid: &Uuid) -> Result<bool, PistolError> {
-    match UNIFIED_RECV_MATCHS.lock() {
-        Ok(mut urm) => {
-            let mut urm_clone = urm.clone();
-            if let Some(index) = urm_clone.iter().position(|pc| pc.uuid == *uuid) {
-                urm_clone.remove(index);
-                *urm = urm_clone;
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        }
-        Err(e) => Err(PistolError::TryLockGlobalVarFailed {
-            var_name: String::from("UNIFIED_RECV_MATCHS"),
-            e: e.to_string(),
-        }),
-    }
-}
-
-fn layer2_recv(rx: Receiver<Vec<u8>>, timeout: Option<Duration>) -> Result<Vec<u8>, PistolError> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => Duration::from_secs_f64(DEFAULT_TIMEOUT),
-    };
-
-    // only 1 packet will be recv from match threads
-    let iter = rx.recv_timeout(timeout).into_iter().take(1);
-    for ethernet_packet in iter {
-        return Ok(ethernet_packet);
-    }
-    Ok(Vec::new())
-}
-
-/// This function only sends data.
-fn layer2_send(
+#[derive(Debug, Clone)]
+pub struct Layer2 {
     dst_mac: MacAddr,
     interface: NetworkInterface,
-    payload: &[u8],
-    payload_len: usize,
-    ethernet_type: EtherType,
-    timeout: Option<Duration>,
-) -> Result<(), PistolError> {
-    let config = Config {
-        write_buffer_size: ETHERNET_BUFF_SIZE,
-        read_buffer_size: ETHERNET_BUFF_SIZE,
-        read_timeout: timeout,
-        write_timeout: timeout,
-        channel_type: ChannelType::Layer2,
-        bpf_fd_attempts: 1000,
-        linux_fanout: None,
-        promiscuous: false,
-        socket_fd: None,
-    };
-
-    let (mut sender, _) = match datalink::channel(&interface, config) {
-        Ok(Ethernet(tx, rx)) => (tx, rx),
-        Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
-        Err(e) => return Err(e.into()),
-    };
-
-    let src_mac = if dst_mac == MacAddr::zero() {
-        MacAddr::zero()
-    } else {
-        match interface.mac {
-            Some(m) => m,
-            None => return Err(PistolError::CanNotFoundMacAddress),
-        }
-    };
-
-    let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
-    // According to the document, the minimum length of an Ethernet data packet is 64 bytes
-    // (14 bytes of header and at least 46 bytes of data and 4 bytes of FCS),
-    // but I found through packet capture that nmap did not follow this convention,
-    // so this padding is also cancelled here.
-    // let ethernet_buff_len = if ethernet_buff_len < 60 {
-    //     // padding before FCS
-    //     60
-    // } else {
-    //     ethernet_buff_len
-    // };
-    let mut buff = vec![0u8; ethernet_buff_len];
-    let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
-    };
-    ethernet_packet.set_destination(dst_mac);
-    ethernet_packet.set_source(src_mac);
-    ethernet_packet.set_ethertype(ethernet_type);
-    ethernet_packet.set_payload(payload);
-    layer2_capture(&buff)?;
-
-    match sender.send_to(&buff, Some(interface)) {
-        Some(r) => match r {
-            Err(e) => return Err(e.into()),
-            _ => Ok(()),
-        },
-        None => Ok(()),
-    }
-}
-
-/// In order to prevent other threads from reading and discarding data packets
-/// that do not belong to them during the multi-threaded multi-packet sending process,
-/// and to improve the stability of the scan, I decided to put the reception of
-/// all data packets into one thread.
-pub fn layer2_work(
-    dst_mac: MacAddr,
-    interface: NetworkInterface,
-    payload: &[u8],
-    payload_len: usize,
-    ethernet_type: EtherType,
-    layer_matchs: Vec<LayerMatch>,
+    ether_type: EtherType,
+    filters: Vec<PacketFilter>,
     timeout: Option<Duration>,
     need_return: bool,
-) -> Result<(Vec<u8>, Duration), PistolError> {
-    let running = match PISTOL_RUNNER_IS_RUNNING.lock() {
-        Ok(r) => *r,
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("PISTOL_RUNNER_IS_RUNNING"),
-                e: e.to_string(),
-            });
-        }
-    };
+}
 
-    if running {
-        let start = Instant::now();
-        if need_return {
-            // set the matchs
-            let (rx, pc) = layer2_set_matchs(layer_matchs.clone())?;
-            layer2_send(
-                dst_mac,
-                interface,
-                payload,
-                payload_len,
-                ethernet_type,
-                timeout,
-            )?;
-            let data = layer2_recv(rx, timeout)?;
-            let rtt = start.elapsed();
-            // we done here and remove the matchs
-            for m in &layer_matchs {
-                if data.len() > 0 {
-                    debug!("found data, quit {} match now...", m.name());
-                } else {
-                    debug!("not found data, quit {} match now...", m.name());
+impl Layer2 {
+    pub fn new(
+        dst_mac: MacAddr,
+        interface: NetworkInterface,
+        ether_type: EtherType,
+        filters: Vec<PacketFilter>,
+        timeout: Option<Duration>,
+        need_return: bool,
+    ) -> Layer2 {
+        Layer2 {
+            dst_mac,
+            interface,
+            ether_type,
+            filters,
+            timeout,
+            need_return,
+        }
+    }
+    /// This function only recv data.
+    fn recv(&self) -> Result<Vec<u8>, PistolError> {
+        // set a max retry to avoid infinite loop
+        const MAX_RETRY: usize = 5;
+
+        let mut cap = Capture::new(&self.interface.name)?;
+        if let Some(timeout) = self.timeout {
+            let sec = timeout.as_secs_f32();
+            cap.timeout((sec * 1000.0) as i32);
+        } else {
+            cap.timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
+        }
+
+        for _ in 0..MAX_RETRY {
+            let packets = cap.fetch_as_vec()?;
+            for packet in packets {
+                for filter in &self.filters {
+                    if filter.check(&packet) {
+                        debug!("layer2 recv matched filter: {}", filter.name());
+                        // only 1 packet will be recv from match threads
+                        return Ok(packet.to_vec());
+                    }
                 }
             }
-            if !layer2_rm_matchs(&pc.uuid)? {
-                warn!("can not found and remove recv matchs");
+        }
+        // not found matched packet
+        Ok(Vec::new())
+    }
+    /// This function only send data.
+    fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
+        let config = Config {
+            write_buffer_size: ETHERNET_BUFF_SIZE,
+            read_buffer_size: ETHERNET_BUFF_SIZE,
+            read_timeout: self.timeout,
+            write_timeout: self.timeout,
+            channel_type: ChannelType::Layer2,
+            bpf_fd_attempts: 1000,
+            linux_fanout: None,
+            promiscuous: false,
+            socket_fd: None,
+        };
+
+        let (mut sender, _) = match datalink::channel(&self.interface, config) {
+            Ok(Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
+            Err(e) => return Err(e.into()),
+        };
+
+        let src_mac = if self.dst_mac == MacAddr::zero() {
+            MacAddr::zero()
+        } else {
+            match self.interface.mac {
+                Some(m) => m,
+                None => return Err(PistolError::CanNotFoundMacAddress),
             }
+        };
+
+        let payload_len = payload.len();
+        let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
+        // According to the document, the minimum length of an Ethernet data packet is 64 bytes
+        // (14 bytes of header and at least 46 bytes of data and 4 bytes of FCS),
+        // but I found through packet capture that nmap did not follow this convention,
+        // so this padding is also cancelled here.
+        // let ethernet_buff_len = if ethernet_buff_len < 60 {
+        //     // padding before FCS
+        //     60
+        // } else {
+        //     ethernet_buff_len
+        // };
+        let mut buff = vec![0u8; ethernet_buff_len];
+        let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    location: format!("{}", Location::caller()),
+                });
+            }
+        };
+        ethernet_packet.set_destination(self.dst_mac);
+        ethernet_packet.set_source(src_mac);
+        ethernet_packet.set_ethertype(self.ether_type);
+        ethernet_packet.set_payload(payload);
+        layer2_save_to_file(&buff)?;
+
+        match sender.send_to(&buff, Some(self.interface.clone())) {
+            Some(r) => match r {
+                Err(e) => return Err(e.into()),
+                _ => Ok(()),
+            },
+            None => Ok(()),
+        }
+    }
+    /// Send and recv data.
+    pub fn send_recv(&self, payload: &[u8]) -> Result<(Vec<u8>, Duration), PistolError> {
+        let start = Instant::now();
+        if self.need_return {
+            self.send(payload)?;
+            let data = self.recv()?;
+            let rtt = start.elapsed();
             Ok((data, rtt))
         } else {
-            layer2_send(
-                dst_mac,
-                interface,
-                payload,
-                payload_len,
-                ethernet_type,
-                timeout,
-            )?;
+            self.send(payload)?;
             let rtt = start.elapsed();
             Ok((Vec::new(), rtt))
         }
-    } else {
-        Err(PistolError::PistolRunnerIsNotRunning)
     }
 }
 
 pub fn layer3_ipv4_send(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
-    ethernet_payload: &[u8],
-    layer_matchs: Vec<LayerMatch>,
+    payload: &[u8], // ethernet payload
+    filters: Vec<PacketFilter>,
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
@@ -1307,18 +1250,17 @@ pub fn layer3_ipv4_send(
         "dst addr: {}, dst mac: {}, src addr: {}, sending interface: {}, {:?}",
         dst_ipv4, dst_mac, src_ipv4, interface.name, interface.ips
     );
-    let ethernet_type = EtherTypes::Ipv4;
-    let payload_len = ethernet_payload.len();
-    let (layer2_buff, rtt) = layer2_work(
+
+    let ether_type = EtherTypes::Ipv4;
+    let layer2 = Layer2::new(
         dst_mac,
         interface,
-        ethernet_payload,
-        payload_len,
-        ethernet_type,
-        layer_matchs,
+        ether_type,
+        filters,
         timeout,
         need_return,
-    )?;
+    );
+    let (layer2_buff, rtt) = layer2.send_recv(payload)?;
     Ok((layer2_payload(&layer2_buff), rtt))
 }
 
@@ -1339,7 +1281,7 @@ pub fn layer3_ipv6_send(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     payload: &[u8],
-    layer_matchs: Vec<LayerMatch>,
+    filters: Vec<PacketFilter>,
     timeout: Option<Duration>,
     need_return: bool,
 ) -> Result<(Vec<u8>, Duration), PistolError> {
@@ -1351,37 +1293,28 @@ pub fn layer3_ipv6_send(
     let (dst_mac, interface) =
         RouteVia::get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
 
-    let ethernet_type = EtherTypes::Ipv6;
-    let payload_len = payload.len();
-    let (layer2_buff, rtt) = layer2_work(
+    let ether_type = EtherTypes::Ipv6;
+    let layer2 = Layer2::new(
         dst_mac,
         interface,
-        payload,
-        payload_len,
-        ethernet_type,
-        layer_matchs,
+        ether_type,
+        filters,
         timeout,
         need_return,
-    )?;
+    );
+
+    let (layer2_buff, rtt) = layer2.send_recv(payload)?;
     Ok((layer2_payload(&layer2_buff), rtt))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolRunner;
     use pnet::packet::icmp::IcmpTypes;
     use pnet::packet::icmpv6::Icmpv6Types;
     use std::str::FromStr;
     #[test]
     fn test_infer_addr() {
-        let _pr = PistolRunner::init(
-            PistolLogger::Debug,
-            None,
-            None, // use default value
-        )
-        .unwrap();
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 129);
         let ia = infer_addr(dst_ipv4.into(), None).unwrap();
         if let Some(ia) = ia {
@@ -1405,7 +1338,7 @@ mod tests {
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
         let dst_port = 8080;
         let src_port = 29450;
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name: "test layer3",
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
@@ -1421,15 +1354,15 @@ mod tests {
             dst_port: Some(dst_port),
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-        let layer4_icmp = Layer4MatchIcmp {
+        let layer4_icmp = Layer4FilterIcmp {
             name: "test icmp",
             layer3: Some(layer3),
             icmp_type: None,
             icmp_code: None,
             payload: Some(payload),
         };
-        let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
-        let x = layer_match.do_match(&data);
+        let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+        let x = layer_match.check(&data);
         println!("match ret: {}", x);
     }
     #[test]
@@ -1444,21 +1377,21 @@ mod tests {
         ];
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name: "test layer3",
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
-        let layer4_icmpv6 = Layer4MatchIcmpv6 {
+        let layer4_icmpv6 = Layer4FilterIcmpv6 {
             name: "test icmpv6",
             layer3: Some(layer3),
             icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
             icmpv6_code: None,
             payload: None,
         };
-        let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
-        let x = layer_match.do_match(&data);
+        let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+        let x = layer_match.check(&data);
         println!("match ret: {}", x);
     }
     #[test]
@@ -1467,7 +1400,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let src_port = 45982;
         let dst_port = 33434;
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name: "test layer3",
             layer2: None,
             src_addr: None,
@@ -1484,14 +1417,14 @@ mod tests {
             dst_port: Some(dst_port),
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-        let layer4_icmp = Layer4MatchIcmp {
+        let layer4_icmp = Layer4FilterIcmp {
             name: "test icmp",
             layer3: Some(layer3),
             icmp_type: Some(IcmpTypes::TimeExceeded),
             icmp_code: None,
             payload: Some(payload),
         };
-        let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+        let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
         let data = vec![
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
@@ -1503,7 +1436,7 @@ mod tests {
             0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
         ];
 
-        let ret = layer_match_icmp_time_exceeded.do_match(&data);
+        let ret = layer_match_icmp_time_exceeded.check(&data);
         println!("{}", ret);
     }
     #[test]
@@ -1513,7 +1446,7 @@ mod tests {
         let src_port = 59470;
         let dst_port = 80;
 
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name: "test layer3",
             layer2: None,
             src_addr: None, // usually this is the address of the router, not the address of the target machine.
@@ -1529,14 +1462,14 @@ mod tests {
             dst_port: Some(dst_port),
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-        let layer4_icmp = Layer4MatchIcmp {
+        let layer4_icmp = Layer4FilterIcmp {
             name: "test icmp",
             layer3: Some(layer3),
             icmp_type: Some(IcmpTypes::TimeExceeded),
             icmp_code: None,
             payload: Some(payload),
         };
-        let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+        let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
         let data = vec![
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
@@ -1548,7 +1481,7 @@ mod tests {
             0x56, 0x0, 0x0, 0x0, 0x0, 0x1, 0x3, 0x3, 0x2,
         ];
 
-        let ret = layer_match_icmp_time_exceeded.do_match(&data);
+        let ret = layer_match_icmp_time_exceeded.check(&data);
         println!("{}", ret);
     }
     #[test]
@@ -1558,19 +1491,19 @@ mod tests {
         let src_port = 26845;
         let dst_port = 80;
 
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name: "test layer3",
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
-        let layer4_tcp_udp = Layer4MatchTcpUdp {
+        let layer4_tcp_udp = Layer4FilterTcpUdp {
             name: "test tcp_udp",
             layer3: Some(layer3),
             src_port: Some(dst_port),
             dst_port: Some(src_port),
         };
-        let layer_match_tcp = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+        let layer_match_tcp = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
         let data = [
             0x0, 0xc, 0x29, 0x5b, 0xbd, 0x5c, 0x0, 0x50, 0x56, 0xff, 0xa6, 0x97, 0x8, 0x0, 0x45,
@@ -1579,7 +1512,7 @@ mod tests {
             0x50, 0x14, 0xfa, 0xf0, 0xef, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
 
-        let ret = layer_match_tcp.do_match(&data);
+        let ret = layer_match_tcp.check(&data);
         println!("{}", ret);
     }
     #[test]

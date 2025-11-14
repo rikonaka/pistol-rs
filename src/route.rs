@@ -30,14 +30,14 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::DST_CACHE;
-use crate::LayerMatch;
+use crate::PacketFilter;
 use crate::NEIGHBOR_SCAN_STATUS;
 use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_RS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmpv6;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
@@ -776,7 +776,7 @@ fn send_ndp_rs_packet(
     //     src_addr: None,
     //     dst_addr: Some(route_addr_1.into()),
     // };
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "ndp_ns layer3",
         layer2: None,
         src_addr: None,
@@ -793,23 +793,23 @@ fn send_ndp_rs_packet(
         icmpv6_code: None,
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "ndp_ns icmpv6",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::RouterAdvert), // Type: Router Advertisement (134)
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
-    let ethernet_type = EtherTypes::Ipv6;
+    let ether_type = EtherTypes::Ipv6;
     let (r, rtt) = layer2_work(
         dst_mac,
         interface.clone(),
         &ipv6_buff,
         IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE,
-        ethernet_type,
+        ether_type,
         vec![layer_match],
         timeout,
         true,
@@ -1715,12 +1715,12 @@ impl SystemNetCache {
 mod tests {
     use super::*;
     use crate::PistolLogger;
-    use crate::PistolRunner;
+    use crate::PistolListener;
     use pnet::datalink::interfaces;
     use std::fs::read_to_string;
     #[test]
     fn test_network_cache() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             None,
             None, // use default value
@@ -1779,7 +1779,7 @@ mod tests {
     }
     #[test]
     fn test_all() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             None,
             None, // use default value

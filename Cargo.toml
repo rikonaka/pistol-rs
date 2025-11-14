@@ -29,10 +29,9 @@ regex = "^1"
 thiserror = "^2"
 zip = "^4"
 escape-bytes = "^0"
-uuid = { version = "1", features = ["v4"] }
 tracing = "^0"
 tracing-subscriber = "^0"
-pcapture = { version = "^0", features = ["pcapng", "libpcap"], optional = true }
+pcapture = { version = "^0", features = ["pcapng", "libpcap"] }
 
 [features]
 # default = ["scan"]
@@ -41,12 +40,10 @@ pcapture = { version = "^0", features = ["pcapng", "libpcap"], optional = true }
 # default = ["os"]
 # default = ["vs"]
 # default = ["trace"]
-default = ["scan", "ping", "flood", "os", "vs", "trace", "libpcap"]
+default = ["scan", "ping", "flood", "os", "vs", "trace"]
 scan = []
 ping = []
 flood = []
 os = []
 vs = []
 trace = []
-libpnet = []
-libpcap = ["pcapture"]

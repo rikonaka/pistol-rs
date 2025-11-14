@@ -17,10 +17,10 @@ use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
@@ -101,7 +101,7 @@ pub fn send_syn_trace_packet(
     tcp_header.set_checksum(checksum);
 
     // time exceeded packet
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp trace time exceeded layer3",
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
@@ -117,29 +117,29 @@ pub fn send_syn_trace_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp trace time exceeded icmp",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // tcp syn, ack or rst packet
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp trace reply layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp trace reply tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
-    let layer_match_tcp = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match_tcp = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,

@@ -15,10 +15,10 @@ use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
@@ -77,7 +77,7 @@ pub fn send_udp_trace_packet(
     udp_header.set_checksum(checksum);
 
     // generally speaking, the target random UDP port will not return any data.
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp trace reply layer3 1",
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
@@ -94,45 +94,45 @@ pub fn send_udp_trace_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "udp trace icmp 1",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // finally, the UDP packet arrives at the target machine.
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp trace layer3 2",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "udp trace icmp 2",
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::DestinationUnreachable),
         icmp_code: Some(IcmpCode(3)),
         payload: None,
     };
-    let layer_match_icmp_port_unreachable = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_icmp_port_unreachable = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // there is a small chance that the target's UDP port will be open.
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp trace layer3 3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4 = Layer4MatchTcpUdp {
+    let layer4 = Layer4FilterTcpUdp {
         name: "udp trace tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
-    let layer_match_udp = LayerMatch::Layer4MatchTcpUdp(layer4);
+    let layer_match_udp = PacketFilter::Layer4FilterTcpUdp(layer4);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,

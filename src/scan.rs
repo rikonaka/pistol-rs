@@ -52,6 +52,8 @@ use crate::Target;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use crate::layer::find_interface_by_name;
+#[cfg(any(feature = "scan", feature = "ping"))]
 #[cfg(feature = "scan")]
 use crate::layer::find_interface_by_src;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -203,6 +205,7 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
+    if_name: Option<String>,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let dst_mac = MacAddr::broadcast();
@@ -210,10 +213,17 @@ pub fn arp_scan_raw(
         Some(ia) => ia.ipv4_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
-    let interface = match find_interface_by_src(src_ipv4.into()) {
-        Some(i) => i,
-        None => return Err(PistolError::CanNotFoundInterface),
+    let interface = match if_name {
+        Some(name) => match find_interface_by_name(&name) {
+            Some(i) => i,
+            None => return Err(PistolError::CanNotFoundInterface),
+        },
+        None => match find_interface_by_src(src_ipv4.into()) {
+            Some(i) => i,
+            None => return Err(PistolError::CanNotFoundInterface),
+        },
     };
+
     let src_mac = match interface.mac {
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
@@ -228,6 +238,7 @@ pub fn arp_scan_raw(
 pub fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     src_addr: Option<IpAddr>,
+    if_name: Option<String>,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
@@ -235,10 +246,17 @@ pub fn ndp_ns_scan_raw(
         Some(ia) => ia.ipv6_addr()?,
         None => return Err(PistolError::CanNotFoundSourceAddress),
     };
-    let interface = match find_interface_by_src(src_ipv6.into()) {
-        Some(i) => i,
-        None => return Err(PistolError::CanNotFoundInterface),
+    let interface = match if_name {
+        Some(name) => match find_interface_by_name(&name) {
+            Some(i) => i,
+            None => return Err(PistolError::CanNotFoundInterface),
+        },
+        None => match find_interface_by_src(src_ipv6.into()) {
+            Some(i) => i,
+            None => return Err(PistolError::CanNotFoundInterface),
+        },
     };
+
     let src_mac = match interface.mac {
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
@@ -249,68 +267,12 @@ pub fn ndp_ns_scan_raw(
     }
 }
 
-/// ARP Scan (IPv4) or NDP NS Scan (IPv6).
-/// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
-/// ```rust
-/// use pistol::PistolRunner;
-/// use pistol::PistolLogger;
-/// use pistol::Target;
-/// use std::time::Duration;
-///
-/// fn main() {
-///     // you cannot use `_` here because it will be automatically optimized and ignored by the compiler
-///     let _pr = PistolRunner::init(
-///         PistolLogger::None,
-///         Some(String::from("arp_scan.pcapng")),
-///         Some(Duration::from_secs_f64(0.001)),
-///     )
-///     .unwrap();
-///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
-///     // set the timeout same as `arp-scan`
-///     let timeout = Some(Duration::from_secs_f64(0.5));
-///     let src_ipv4 = None;
-///     let num_threads = Some(512);
-///     let max_attempts = 2;
-///     let ret = mac_scan(&targets, num_threads, src_ipv4, timeout, max_attempts).unwrap();
-///     println!("{}", ret);
-/// }
-/// ```
-/// Compare the speed with arp-scan.
-/// pistol:
-/// ```
-/// +--------+---------------+-------------------+--------+---------+
-/// |                Mac Scan Results (max_attempts:2)                 |
-/// +--------+---------------+-------------------+--------+---------+
-/// |  seq   |     addr      |        mac        |  oui   |   rtt   |
-/// +--------+---------------+-------------------+--------+---------+
-/// |   1    |  192.168.5.2  | 00:50:56:ff:a6:97 | VMware | 0.84ms  |
-/// +--------+---------------+-------------------+--------+---------+
-/// |   2    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 19.50ms |
-/// +--------+---------------+-------------------+--------+---------+
-/// |   3    | 192.168.5.254 | 00:50:56:f8:c4:8f | VMware | 9.89ms  |
-/// +--------+---------------+-------------------+--------+---------+
-/// | total cost: 1.13s                                             |
-/// | avg cost: 0.376s                                              |
-/// | alive hosts: 3                                                |
-/// +--------+---------------+-------------------+--------+---------+
-/// ```
-/// arp-scan:
-/// ```
-/// ➜  pistol-rs git:(main) ✗ sudo arp-scan 192.168.5.0/24
-/// Interface: ens33, type: EN10MB, MAC: 00:0c:29:5b:bd:5c, IPv4: 192.168.5.3
-/// Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
-/// 192.168.5.1     00:50:56:c0:00:08       VMware, Inc.
-/// 192.168.5.2     00:50:56:ff:a6:97       VMware, Inc.
-/// 192.168.5.254   00:50:56:f8:c4:8f       VMware, Inc.
-///
-/// 3 packets received by filter, 0 packets dropped by kernel
-/// Ending arp-scan 1.10.0: 256 hosts scanned in 2.001 seconds (127.94 hosts/sec). 3 responded
-/// ```
 #[cfg(feature = "scan")]
 pub fn mac_scan(
     targets: &[Target],
     num_threads: Option<usize>,
     src_addr: Option<IpAddr>,
+    if_name: Option<String>,
     timeout: Option<Duration>,
     max_attempts: usize,
 ) -> Result<PistolMacScans, PistolError> {
@@ -335,10 +297,11 @@ pub fn mac_scan(
             IpAddr::V4(dst_ipv4) => {
                 let tx = tx.clone();
                 recv_size += 1;
+                let if_name = if_name.clone();
                 pool.execute(move || {
                     for i in 0..max_attempts {
                         debug!("arp scan packets: #{}/{}", i + 1, max_attempts);
-                        let scan_ret = arp_scan_raw(dst_ipv4, src_addr, timeout);
+                        let scan_ret = arp_scan_raw(dst_ipv4, src_addr, if_name, timeout);
                         if i == max_attempts - 1 {
                             let _ = tx.send((dst_addr, scan_ret));
                         } else {
@@ -362,6 +325,7 @@ pub fn mac_scan(
             IpAddr::V6(dst_ipv6) => {
                 let tx = tx.clone();
                 recv_size += 1;
+                let if_name = if_name.clone();
                 pool.execute(move || {
                     for i in 0..max_attempts {
                         debug!("ndp_ns scan packets: #{}/{}", i + 1, max_attempts);
@@ -949,19 +913,6 @@ fn scan(
     Ok(pistol_port_scans)
 }
 
-/// TCP Connect() Scan.
-/// This is the most basic form of TCP scanning.
-/// The connect() system call provided by your operating system is used to open a connection to every interesting port on the machine.
-/// If the port is listening, connect() will succeed, otherwise the port isn't reachable.
-/// One strong advantage to this technique is that you don't need any special privileges.
-/// Any user on most UNIX boxes is free to use this call.
-/// Another advantage is speed.
-/// While making a separate connect() call for every targeted port in a linear fashion would take ages over a slow connection,
-/// you can hasten the scan by using many sockets in parallel.
-/// Using non-blocking I/O allows you to set a low time-out period and watch all the sockets at once.
-/// This is the fastest scanning method supported by nmap, and is available with the -t (TCP) option.
-/// The big downside is that this sort of scan is easily detectable and filterable.
-/// The target hosts logs will show a bunch of connection and error messages for the services which take the connection and then have it immediately shutdown.
 #[cfg(feature = "scan")]
 pub fn tcp_connect_scan(
     targets: &[Target],
@@ -1005,18 +956,6 @@ pub fn tcp_connect_scan_raw(
     )
 }
 
-/// TCP SYN Scan.
-/// This technique is often referred to as "half-open" scanning, because you don't open a full TCP connection.
-/// You send a SYN packet, as if you are going to open a real connection and wait for a response.
-/// A SYN|ACK indicates the port is listening.
-/// A RST is indicative of a non-listener.
-/// If a SYN|ACK is received, you immediately send a RST to tear down the connection (actually the kernel does this for us).
-/// The primary advantage to this scanning technique is that fewer sites will log it.
-/// Unfortunately you need root privileges to build these custom SYN packets.
-/// SYN scan is the default and most popular scan option for good reason.
-/// It can be performed quickly,
-/// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
-/// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub fn tcp_syn_scan(
     targets: &[Target],
@@ -1060,19 +999,6 @@ pub fn tcp_syn_scan_raw(
     )
 }
 
-/// TCP FIN Scan.
-/// There are times when even SYN scanning isn't clandestine enough.
-/// Some firewalls and packet filters watch for SYNs to an unallowed port,
-/// and programs like synlogger and Courtney are available to detect these scans.
-/// FIN packets, on the other hand, may be able to pass through unmolested.
-/// This scanning technique was featured in detail by Uriel Maimon in Phrack 49, article 15.
-/// The idea is that closed ports tend to reply to your FIN packet with the proper RST.
-/// Open ports, on the other hand, tend to ignore the packet in question.
-/// This is a bug in TCP implementations and so it isn't 100% reliable
-/// (some systems, notably Micro$oft boxes, seem to be immune).
-/// When scanning systems compliant with this RFC text,
-/// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
-/// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
 #[cfg(feature = "scan")]
 pub fn tcp_fin_scan(
     targets: &[Target],
@@ -1116,12 +1042,6 @@ pub fn tcp_fin_scan_raw(
     )
 }
 
-/// TCP ACK Scan.
-/// This scan is different than the others discussed so far in that it never determines open (or even open|filtered) ports.
-/// It is used to map out firewall rulesets, determining whether they are stateful or not and which ports are filtered.
-/// When scanning unfiltered systems, open and closed ports will both return a RST packet.
-/// We then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined.
-/// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
 #[cfg(feature = "scan")]
 pub fn tcp_ack_scan(
     targets: &[Target],
@@ -1165,11 +1085,6 @@ pub fn tcp_ack_scan_raw(
     )
 }
 
-/// TCP Null Scan.
-/// Does not set any bits (TCP flag header is 0).
-/// When scanning systems compliant with this RFC text,
-/// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
-/// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
 #[cfg(feature = "scan")]
 pub fn tcp_null_scan(
     targets: &[Target],
@@ -1213,11 +1128,6 @@ pub fn tcp_null_scan_raw(
     )
 }
 
-/// TCP Xmas Scan.
-/// Sets the FIN, PSH, and URG flags, lighting the packet up like a Christmas tree.
-/// When scanning systems compliant with this RFC text,
-/// any packet not containing SYN, RST, or ACK bits will result in a returned RST if the port is closed and no response at all if the port is open.
-/// As long as none of those three bits are included, any combination of the other three (FIN, PSH, and URG) are OK.
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan(
     targets: &[Target],
@@ -1261,12 +1171,6 @@ pub fn tcp_xmas_scan_raw(
     )
 }
 
-/// TCP Window Scan.
-/// Window scan is exactly the same as ACK scan except that it exploits an implementation detail of certain systems to differentiate open ports from closed ones,
-/// rather than always printing unfiltered when a RST is returned.
-/// It does this by examining the TCP Window value of the RST packets returned.
-/// On some systems, open ports use a positive window size (even for RST packets) while closed ones have a zero window.
-/// Window scan sends the same bare ACK probe as ACK scan.
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan(
     targets: &[Target],
@@ -1310,12 +1214,6 @@ pub fn tcp_window_scan_raw(
     )
 }
 
-/// TCP Maimon Scan.
-/// The Maimon scan is named after its discoverer, Uriel Maimon.
-/// He described the technique in Phrack Magazine issue #49 (November 1996).
-/// This technique is exactly the same as NULL, FIN, and Xmas scan, except that the probe is FIN/ACK.
-/// According to RFC 793 (TCP), a RST packet should be generated in response to such a probe whether the port is open or closed.
-/// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
 #[cfg(feature = "scan")]
 pub fn tcp_maimon_scan(
     targets: &[Target],
@@ -1359,14 +1257,6 @@ pub fn tcp_maimon_scan_raw(
     )
 }
 
-/// TCP Idle Scan.
-/// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book)
-/// posted to the Bugtraq mailing list an ingenious new port scanning technique.
-/// Idle scan, as it has become known, allows for completely blind port scanning.
-/// Attackers can actually scan a target without sending a single packet to the target from their own IP address!
-/// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
-/// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
-/// Besides being extraordinarily stealthy, this scan type permits discovery of IP-based trust relationships between machines.
 #[cfg(feature = "scan")]
 pub fn tcp_idle_scan(
     targets: &[Target],
@@ -1414,14 +1304,6 @@ pub fn tcp_idle_scan_raw(
     )
 }
 
-/// UDP Scan.
-/// While most popular services on the Internet run over the TCP protocol, UDP services are widely deployed.
-/// DNS, SNMP, and DHCP (registered ports 53, 161/162, and 67/68) are three of the most common.
-/// Because UDP scanning is generally slower and more difficult than TCP, some security auditors ignore these ports.
-/// This is a mistake, as exploitable UDP services are quite common and attackers certainly don't ignore the whole protocol.
-/// UDP scan works by sending a UDP packet to every targeted port.
-/// For most ports, this packet will be empty (no payload), but for a few of the more common ports a protocol-specific payload will be sent.
-/// Based on the response, or lack thereof, the port is assigned to one of four states.
 #[cfg(feature = "scan")]
 pub fn udp_scan(
     targets: &[Target],
@@ -1517,13 +1399,11 @@ fn scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolRunner;
     use crate::Target;
     use std::str::FromStr;
     #[test]
     fn test_arp_scan_subnet() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("arp_scan.pcapng")),
             None, // use default value
@@ -1545,7 +1425,7 @@ mod tests {
     }
     #[test]
     fn test_ndp_ns_scan_subnet() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("ndp_ns_scan.pcapng")),
             None, // use default value
@@ -1561,7 +1441,7 @@ mod tests {
     }
     #[test]
     fn test_ndp_ns_scan_single() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("ndp_ns_scan_single.pcapng")),
             None, // use default value
@@ -1578,7 +1458,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_connect_scan() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_connnect_scan.pcapng")),
             None,
@@ -1627,7 +1507,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             Some(String::from("tcp_syn_scan.pcapng")),
             None, // use default value
@@ -1668,7 +1548,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan_performance() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("scan.pcapng")),
             Some(Duration::from_secs_f32(0.1)), // use default value
@@ -1706,7 +1586,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_fin_scan.pcapng")),
             None, // use default value
@@ -1733,7 +1613,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_ack_scan.pcapng")),
             None, // use default value
@@ -1760,7 +1640,7 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_null_scan.pcapng")),
             None, // use default value
@@ -1787,7 +1667,7 @@ mod tests {
     }
     #[test]
     fn test_udp_scan() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_udp_scan.pcapng")),
             None, // use default value

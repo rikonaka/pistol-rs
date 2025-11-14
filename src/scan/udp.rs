@@ -16,10 +16,10 @@ use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
@@ -78,13 +78,13 @@ pub fn send_udp_scan_packet(
     let checksum = ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "udp scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -101,15 +101,15 @@ pub fn send_udp_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "udp scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes_1 = vec![
         destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3

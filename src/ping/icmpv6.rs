@@ -17,9 +17,9 @@ use std::time::Duration;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmpv6;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmpv6;
+use crate::layer::PacketFilter;
 use crate::layer::layer3_ipv6_send;
 use crate::ping::PingStatus;
 use crate::scan::DataRecvStatus;
@@ -88,21 +88,21 @@ pub fn send_icmpv6_ping_packet(
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "ping6 layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     // match all icmpv6 reply
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "ping6 icmpv6",
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,

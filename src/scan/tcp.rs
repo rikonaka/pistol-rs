@@ -26,10 +26,10 @@ use std::time::Instant;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
@@ -104,13 +104,13 @@ pub fn send_syn_scan_packet(
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp syn scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp syn scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -127,15 +127,15 @@ pub fn send_syn_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp syn scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -248,13 +248,13 @@ pub fn send_fin_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp fin scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp fin scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -271,15 +271,15 @@ pub fn send_fin_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp fin scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -393,13 +393,13 @@ pub fn send_ack_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp ack scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp ack scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -416,15 +416,15 @@ pub fn send_ack_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp ack scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -534,13 +534,13 @@ pub fn send_null_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp null scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp null scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -557,15 +557,15 @@ pub fn send_null_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp null scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -676,13 +676,13 @@ pub fn send_xmas_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp xmas scan icmp",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp xmas scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -699,15 +699,15 @@ pub fn send_xmas_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp xmas scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -817,13 +817,13 @@ pub fn send_window_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp window scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp window scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -840,15 +840,15 @@ pub fn send_window_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp window scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -963,13 +963,13 @@ pub fn send_maimon_scan_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp maimon scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp maimon scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -986,15 +986,15 @@ pub fn send_maimon_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp maimon scan icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -1116,13 +1116,13 @@ pub fn send_idle_scan_packet(
     }
 
     // 1. probe the zombie's ip id
-    let layer3_zombie = Layer3Match {
+    let layer3_zombie = Layer3Filter {
         name: "tcp zombie scan layer3 1",
         layer2: None,
         src_addr: Some(zombie_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp_zombie = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_zombie = Layer4FilterTcpUdp {
         name: "tcp zombie scan tcp_udp 1",
         layer3: Some(layer3_zombie.clone()),
         src_port: Some(zombie_port),
@@ -1139,7 +1139,7 @@ pub fn send_idle_scan_packet(
         dst_port: Some(zombie_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp_zombie = Layer4MatchIcmp {
+    let layer4_icmp_zombie = Layer4FilterIcmp {
         name: "tcp zombie scan icmp 1",
         layer3: Some(layer3_zombie.clone()),
         icmp_type: None,
@@ -1147,8 +1147,8 @@ pub fn send_idle_scan_packet(
         payload: Some(payload),
     };
 
-    let layer_match_zombie_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_zombie);
-    let layer_match_zombie_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp_zombie);
+    let layer_match_zombie_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_zombie);
+    let layer_match_zombie_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp_zombie);
 
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -1220,13 +1220,13 @@ pub fn send_idle_scan_packet(
 
     // 4. probe the zombie's ip id again
     let ip_buff_3 = _forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "tcp zombie scan layer 2",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "tcp zombie scan tcp_udp 2",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -1243,15 +1243,15 @@ pub fn send_idle_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "tcp zombie scan icmp 2",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let (ret, rtt_2) = layer3_ipv4_send(
         dst_ipv4,

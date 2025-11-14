@@ -13,10 +13,10 @@ use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmpv6;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmpv6;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
@@ -73,7 +73,7 @@ pub fn send_udp_trace_packet(
     udp_header.set_checksum(checksum);
 
     // generally speaking, the target random UDP port will not return any data.
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp6 trace layer3 1",
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
@@ -89,45 +89,45 @@ pub fn send_udp_trace_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "udp6 trace icmpv6 1",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::TimeExceeded),
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     // finally, the UDP packet arrives at the target machine.
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp6 trace layer3 2",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "udp6 trace icmpv6",
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::DestinationUnreachable),
         icmpv6_code: Some(Icmpv6Code(4)), // port unreachable
         payload: None,
     };
-    let layer_match_icmp_port_unreachable = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_icmp_port_unreachable = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     // there is a small chance that the target's UDP port will be open.
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp6 trace layer3 3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4 = Layer4MatchTcpUdp {
+    let layer4 = Layer4FilterTcpUdp {
         name: "udp6 trace tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
-    let layer_match_udp = LayerMatch::Layer4MatchTcpUdp(layer4);
+    let layer_match_udp = PacketFilter::Layer4FilterTcpUdp(layer4);
 
     let (ret, rtt) = layer3_ipv6_send(
         dst_ipv6,

@@ -14,12 +14,12 @@ use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::ARP_HEADER_SIZE;
-use crate::layer::Layer2Match;
-use crate::layer::Layer3Match;
-use crate::layer::LayerMatch;
-use crate::layer::layer2_work;
+use crate::layer::Layer2;
+use crate::layer::Layer2Filter;
+use crate::layer::Layer3Filter;
+use crate::layer::PacketFilter;
 
-fn get_mac_from_arp(ethernet_packet: &[u8]) -> Option<MacAddr> {
+fn get_mac_from_arp_response(ethernet_packet: &[u8]) -> Option<MacAddr> {
     if ethernet_packet.len() > 0 {
         match EthernetPacket::new(ethernet_packet) {
             Some(re) => match re.get_ethertype() {
@@ -63,33 +63,25 @@ pub fn send_arp_scan_packet(
     arp_packet.set_target_hw_addr(MacAddr::zero());
     arp_packet.set_target_proto_addr(dst_ipv4);
 
-    let ethernet_type = EtherTypes::Arp;
-    let layer2 = Layer2Match {
+    let ether_type = EtherTypes::Arp;
+    let layer2 = Layer2Filter {
         name: "arp scan layer2",
         src_mac: None,
         dst_mac: Some(src_mac),
-        ethernet_type: Some(ethernet_type),
+        ether_type: Some(ether_type),
     };
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "arp scan layer3",
         layer2: Some(layer2),
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer_match = LayerMatch::Layer3Match(layer3);
+    let filters = vec![PacketFilter::Layer3Filter(layer3)];
 
-    let (ret, rtt) = layer2_work(
-        dst_mac,
-        interface,
-        &arp_buffer,
-        ARP_HEADER_SIZE,
-        ethernet_type,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, filters, timeout, true);
+    let (ret, rtt) = layer2.send_recv(&arp_buffer)?;
     // debug!("{} get ret from internet", dst_ipv4);
-    let mac = get_mac_from_arp(&ret);
+    let mac = get_mac_from_arp_response(&ret);
     // debug!("{}: {:?}", dst_ipv4, mac);
     Ok((mac, rtt))
 }

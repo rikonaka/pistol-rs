@@ -83,11 +83,6 @@ pub enum PistolError {
     CanNotFoundRouterAddress,
     #[error("build packet error occurret at [{location}]")]
     BuildPacketError { location: String },
-    #[error("the `PistolRunner` monitoring threads is not running, please run it first")]
-    PistolRunnerIsNotRunning,
-    #[cfg(feature = "libpcap")]
-    #[error("pcap error")]
-    PcapError(#[from] pcap::Error),
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]

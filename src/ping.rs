@@ -541,9 +541,6 @@ fn ping(
     Ok(pistol_pings)
 }
 
-/// TCP SYN Ping.
-/// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
-/// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
     targets: &[Target],
@@ -605,9 +602,6 @@ pub fn tcp_syn_ping_raw(
     }
 }
 
-/// TCP ACK Ping.
-/// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
-/// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
     targets: &[Target],
@@ -669,9 +663,6 @@ pub fn tcp_ack_ping_raw(
     }
 }
 
-/// UDP Ping.
-/// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
-/// we chose to have the user manually provide a port number that is open on the target machine instead of traversing all ports.
 #[cfg(feature = "ping")]
 pub fn udp_ping(
     targets: &[Target],
@@ -735,13 +726,6 @@ pub fn udp_ping_raw(
     }
 }
 
-/// ICMP Ping (Standard Echo Request).
-/// In addition to the unusual TCP and UDP host discovery types discussed previously,
-/// we can send the standard packets sent by the ubiquitous ping program.
-/// We sends an ICMP type 8 (echo request) packet to the target IP addresses, expecting a type 0 (echo reply) in return from available hosts.
-/// As noted at the beginning of this chapter, many hosts and firewalls now block these packets, rather than responding as required by RFC 1122.
-/// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
-/// But for system administrators monitoring an internal network, this can be a practical and efficient approach.
 #[cfg(feature = "ping")]
 pub fn icmp_echo_ping(
     targets: &[Target],
@@ -788,18 +772,6 @@ pub fn icmp_echo_ping_raw(
     }
 }
 
-/// ICMP Ping (Timestamp Request).
-/// While echo request is the standard ICMP ping query, Nmap does not stop there.
-/// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
-/// information request, and address mask request packets as codes 13, 15, and 17,
-/// respectively. While the ostensible purpose for these queries is to learn information such
-/// as address masks and current times, they can easily be used for host discovery.
-/// A system that replies is up and available. Nmap does not currently implement information request packets,
-/// as they are not widely supported. RFC 1122 insists that "a host SHOULD NOT implement these messages".
-/// Timestamp and address mask queries can be sent with the -PP and -PM options, respectively.
-/// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses that the host is available.
-/// These two queries can be valuable when administrators specifically block echo request packets
-/// while forgetting that other ICMP queries can be used for the same purpose.
 #[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping(
     targets: &[Target],
@@ -847,19 +819,6 @@ pub fn icmp_timestamp_ping_raw(
     }
 }
 
-/// ICMP Ping (Address Mask Request).
-/// (Note: in my local test, this request did not return any reply).
-/// While echo request is the standard ICMP ping query, Nmap does not stop there.
-/// The ICMP standards (RFC 792 and RFC 950 ) also specify timestamp request,
-/// information request, and address mask request packets as codes 13, 15, and 17,
-/// respectively. While the ostensible purpose for these queries is to learn information such
-/// as address masks and current times, they can easily be used for host discovery.
-/// A system that replies is up and available. Nmap does not currently implement information request packets,
-/// as they are not widely supported. RFC 1122 insists that "a host SHOULD NOT implement these messages".
-/// Timestamp and address mask queries can be sent with the -PP and -PM options, respectively.
-/// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses that the host is available.
-/// These two queries can be valuable when administrators specifically block echo request packets
-/// while forgetting that other ICMP queries can be used for the same purpose.
 #[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping(
     targets: &[Target],
@@ -907,7 +866,6 @@ pub fn icmp_address_mask_ping_raw(
     }
 }
 
-/// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
 #[cfg(feature = "ping")]
 pub fn icmpv6_ping(
     targets: &[Target],
@@ -928,7 +886,6 @@ pub fn icmpv6_ping(
     )
 }
 
-/// ICMP ping, raw version.
 #[cfg(feature = "ping")]
 pub fn icmp_ping_raw(
     dst_addr: IpAddr,
@@ -959,13 +916,13 @@ pub fn icmp_ping_raw(
 #[cfg(test)]
 mod max_attempts {
     use super::*;
+    use crate::PistolListener;
     use crate::PistolLogger;
-    use crate::PistolRunner;
     use crate::Target;
     use std::str::FromStr;
     #[test]
     fn test_tcp_syn_ping() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_syn_ping.pcapng")),
             None, // use default value
@@ -996,7 +953,7 @@ mod max_attempts {
     }
     #[test]
     fn test_tcp_syn_ping_raw() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_syn_ping_raw.pcapng")),
             None, // use default value
@@ -1012,7 +969,7 @@ mod max_attempts {
     }
     #[test]
     fn test_tcp_syn_ping6() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("tcp_syn_ping6.pcapng")),
             None, // use default value
@@ -1042,7 +999,7 @@ mod max_attempts {
     }
     #[test]
     fn test_icmp_echo_ping() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             None,
             None, // use default value
@@ -1076,7 +1033,7 @@ mod max_attempts {
     }
     #[test]
     fn test_icmp_timestamp_ping() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             None,
             None, // use default value
@@ -1109,7 +1066,7 @@ mod max_attempts {
     }
     #[test]
     fn test_icmp_ping_debug() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             None,
             None, // use default value
@@ -1136,7 +1093,7 @@ mod max_attempts {
     }
     #[test]
     fn test_icmpv6_ping() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             Some(String::from("icmpv6_ping.pcapng")),
             None, // use default value

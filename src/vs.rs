@@ -177,7 +177,6 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
     }
 }
 
-/// Detect target port service.
 #[cfg(feature = "vs")]
 pub fn vs_scan(
     targets: &[Target],
@@ -311,13 +310,13 @@ pub fn vs_scan_raw(
 mod tests {
     use super::*;
     use crate::PistolLogger;
-    use crate::PistolRunner;
+    use crate::PistolListener;
     use crate::Target;
     use fancy_regex::Regex as FancyRegex;
     use std::net::Ipv4Addr;
     #[test]
     fn test_vs_detect() {
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::None,
             None,
             None, // use default value

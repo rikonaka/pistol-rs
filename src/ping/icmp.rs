@@ -21,9 +21,9 @@ use std::time::Duration;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::PacketFilter;
 use crate::layer::layer3_ipv4_send;
 use crate::ping::PingStatus;
 use crate::scan::DataRecvStatus;
@@ -101,21 +101,21 @@ pub fn send_icmp_echo_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "ping echo layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     // match all icmp reply
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "ping echo icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
@@ -206,21 +206,21 @@ pub fn send_icmp_timestamp_packet(
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "ping timestamp layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     // match all icmp reply
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "ping timestamp icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,
@@ -317,21 +317,21 @@ pub fn send_icmp_address_mask_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "ping address mask layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     // match all icmp reply
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "ping address mask icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let (ret, rtt) = layer3_ipv4_send(
         dst_ipv4,

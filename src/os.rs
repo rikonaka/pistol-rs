@@ -369,7 +369,6 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
     }
 }
 
-/// Detect target machine OS on IPv4 and IPv6.
 #[cfg(feature = "os")]
 pub fn os_detect(
     targets: &[Target],
@@ -641,7 +640,7 @@ pub fn os_detect_raw(
 mod tests {
     use super::*;
     use crate::PistolLogger;
-    use crate::PistolRunner;
+    use crate::PistolListener;
     use crate::Target;
     use std::net::Ipv4Addr;
     use std::net::Ipv6Addr;
@@ -679,7 +678,7 @@ mod tests {
         IE(R=N)
         */
 
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             Some(String::from("os_detect.pcapng")),
             None, // use default value
@@ -756,7 +755,7 @@ mod tests {
         IE(R=Y%DFI=N%T=40%CD=S)
         */
 
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             Some(String::from("os_detect.pcapng")),
             None, // use default value
@@ -829,7 +828,7 @@ mod tests {
         T4(P=600{2}014640fe800{3}0XX{22}%ST=3.558762%RT=3.578006)
         */
 
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             Some(String::from("os_detect6.pcapng")),
             None, // use default value
@@ -886,7 +885,7 @@ mod tests {
         EXTRA(FL=12345)
         */
 
-        let _pr = PistolRunner::init(
+        let _pr = PistolListener::init(
             PistolLogger::Debug,
             Some(String::from("os_detect6.pcapng")),
             None, // use default value

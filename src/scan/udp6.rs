@@ -13,10 +13,10 @@ use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmpv6;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmpv6;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
@@ -71,13 +71,13 @@ pub fn send_udp_scan_packet(
     let checksum = ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "udp6 scan layer3",
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "udp6 scan tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_port),
@@ -94,15 +94,15 @@ pub fn send_udp_scan_packet(
         dst_port: Some(dst_port),
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
-    let layer4_icmpv6 = Layer4MatchIcmpv6 {
+    let layer4_icmpv6 = Layer4FilterIcmpv6 {
         name: "udp6 scan icmpv6",
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = LayerMatch::Layer4MatchIcmpv6(layer4_icmpv6);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let layer_match_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     let codes_1 = vec![
         Icmpv6Code(4), // port unreachable

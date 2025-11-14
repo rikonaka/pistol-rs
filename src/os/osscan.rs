@@ -16,10 +16,10 @@ use tracing::warn;
 
 use crate::IpCheckMethods;
 use crate::error::PistolError;
-use crate::layer::Layer3Match;
-use crate::layer::Layer4MatchIcmp;
-use crate::layer::Layer4MatchTcpUdp;
-use crate::layer::LayerMatch;
+use crate::layer::Layer3Filter;
+use crate::layer::Layer4FilterIcmp;
+use crate::layer::Layer4FilterTcpUdp;
+use crate::layer::PacketFilter;
 use crate::layer::layer3_ipv4_send;
 use crate::os::OsInfo;
 use crate::os::dbparser::NmapOSDB;
@@ -289,7 +289,7 @@ fn send_seq_probes(
         let src_port = src_ports[i];
         let name_string = format!("os scan seq {} layer3", i + 1);
         let name = Box::leak(name_string.into_boxed_str());
-        let layer3 = Layer3Match {
+        let layer3 = Layer3Filter {
             name,
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
@@ -297,13 +297,13 @@ fn send_seq_probes(
         };
         let name_string = format!("os scan seq {} tcp_udp", i + 1);
         let name = Box::leak(name_string.into_boxed_str());
-        let layer4_tcp_udp = Layer4MatchTcpUdp {
+        let layer4_tcp_udp = Layer4FilterTcpUdp {
             name,
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
         };
-        let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+        let layer_match = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
         pool.execute(move || {
@@ -396,20 +396,20 @@ fn send_ie_probes(
     let buff_2 = packet::ie_packet_2_layer3(dst_ipv4, src_ipv4, id_2)?;
     let buffs = vec![buff_1, buff_2];
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan ie layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "os scan ie icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -466,19 +466,19 @@ fn send_ecn_probe(
     timeout: Option<Duration>,
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan ecn layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp = Layer4MatchTcpUdp {
+    let layer4_tcp_udp = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
     };
-    let layer_match = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp);
+    let layer_match = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
@@ -530,54 +530,54 @@ fn send_tx_probes(
         src_ports.push(src_port_start * 10 + i);
     }
 
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan tx layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp_1 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_1 = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp 1",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
-    let layer4_tcp_udp_2 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp 2",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
-    let layer4_tcp_udp_3 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp 3",
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
-    let layer4_tcp_udp_4 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp 4",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
-    let layer4_tcp_udp_5 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp 5",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
-    let layer4_tcp_udp_6 = Layer4MatchTcpUdp {
+    let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
         name: "os scan ecn tcp_udp 6",
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
     };
-    let layer_match_1 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_1);
-    let layer_match_2 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_2);
-    let layer_match_3 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_3);
-    let layer_match_4 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_4);
-    let layer_match_5 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_5);
-    let layer_match_6 = LayerMatch::Layer4MatchTcpUdp(layer4_tcp_udp_6);
+    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_1);
+    let layer_match_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2);
+    let layer_match_3 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3);
+    let layer_match_4 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4);
+    let layer_match_5 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5);
+    let layer_match_6 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6);
     let ms = vec![
         layer_match_1,
         layer_match_2,
@@ -674,20 +674,20 @@ fn send_u1_probe(
     timeout: Option<Duration>,
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
-    let layer3 = Layer3Match {
+    let layer3 = Layer3Filter {
         name: "os scan u1 layer3",
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_icmp = Layer4MatchIcmp {
+    let layer4_icmp = Layer4FilterIcmp {
         name: "os scan u1 icmp",
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
         payload: None,
     };
-    let layer_match = LayerMatch::Layer4MatchIcmp(layer4_icmp);
+    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let buff = packet::udp_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
@@ -1943,22 +1943,12 @@ pub fn os_probe_thread(
 
 #[cfg(test)]
 mod tests {
-    use pnet::packet::ipv4::Ipv4Packet;
-
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolRunner;
+    use pnet::packet::ipv4::Ipv4Packet;
     use tracing::error;
     use tracing::info;
     #[test]
     fn test_send_probes() {
-        let _pr = PistolRunner::init(
-            PistolLogger::Debug,
-            Some(String::from("debug2.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let build_ipv4_packet = |buff: &[u8], debug_info: &str| {
             if let Some(_ipv4_packet) = Ipv4Packet::new(buff) {
                 info!("{} build ipv4 success", debug_info);
