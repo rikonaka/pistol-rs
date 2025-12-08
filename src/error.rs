@@ -101,14 +101,10 @@ pub enum PistolError {
     SubnetworkError(#[from] subnetwork::SubnetworkError),
     #[error("hex error")]
     FromHexError(#[from] hex::FromHexError),
-    #[error("init the capture function error: {e}")]
-    InitCaptureError { e: String },
-    #[error("save the traffic error: {e}")]
-    SaveCaptureError { e: String },
     #[error("pcapture error")]
     PcaptureError(#[from] pcapture::error::PcaptureError),
     #[error("try lock {var_name} failed: {e}")]
-    TryLockGlobalVarFailed { var_name: String, e: String },
+    LockVarFailed { var_name: String, e: String },
     #[error("tracing error")]
     SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
     #[error("input {v} is too loog to convert to u32")]

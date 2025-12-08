@@ -1668,9 +1668,6 @@ static CAPTURED_PACKETS: LazyLock<Arc<Mutex<PcapNg>>> = LazyLock::new(|| {
     Arc::new(Mutex::new(pcapng))
 });
 
-static CAPTURED_PACKETS_FLAG: LazyLock<Arc<Mutex<bool>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(false)));
-
 /// Save the sent traffic locally in pcapng format.
 /// Note that this method does not read the traffic from the network card,
 /// but to save the traffic before the it is sent.
@@ -1681,12 +1678,6 @@ pub struct PistolCapture {
 
 impl PistolCapture {
     fn init(filename: &str) -> Result<PistolCapture, PistolError> {
-        match CAPTURED_PACKETS_FLAG.lock() {
-            Ok(mut ppf) => {
-                *ppf = true;
-            }
-            Err(e) => return Err(PistolError::InitCaptureError { e: e.to_string() }),
-        }
         Ok(PistolCapture {
             filename: filename.to_string(),
         })
@@ -1694,30 +1685,22 @@ impl PistolCapture {
     /// The program will automatically call this module when the function ends, without manual setting.
     fn save_to_file(&self) -> Result<(), PistolError> {
         let mut fs = File::create(&self.filename)?;
-        match CAPTURED_PACKETS_FLAG.lock() {
-            Ok(ppf) => {
-                if *ppf {
-                    match CAPTURED_PACKETS.lock() {
-                        Ok(pp) => {
-                            (*pp).write(&mut fs)?;
-                            Ok(())
-                        }
-                        Err(e) => Err(PistolError::SaveCaptureError { e: e.to_string() }),
-                    }
-                } else {
-                    warn!("the capture function is disabled");
-                    Ok(())
-                }
-            }
-            Err(e) => Err(PistolError::SaveCaptureError { e: e.to_string() }),
-        }
+
+        let pp = CAPTURED_PACKETS
+            .lock()
+            .map_err(|e| PistolError::LockVarFailed {
+                var_name: String::from("CAPTURED_PACKETS"),
+                e: e.to_string(),
+            })?;
+        (*pp).write(&mut fs)?;
+        Ok(())
     }
 }
 
 impl Drop for PistolCapture {
     fn drop(&mut self) {
         self.save_to_file()
-            .expect("auto save traffic to file failed");
+            .expect(&format!("save traffic to file {} failed", self.filename));
     }
 }
 

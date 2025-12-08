@@ -41,7 +41,7 @@ pub fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError>
     let mut snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,
         Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
+            return Err(PistolError::LockVarFailed {
                 var_name: String::from("SYSTEM_NET_CACHE"),
                 e: e.to_string(),
             });

@@ -588,7 +588,7 @@ impl DstCache {
                 }
                 Ok(())
             }
-            Err(e) => Err(PistolError::TryLockGlobalVarFailed {
+            Err(e) => Err(PistolError::LockVarFailed {
                 var_name: String::from("DST_CACHE"),
                 e: e.to_string(),
             }),
@@ -606,7 +606,7 @@ impl DstCache {
                     Ok(None)
                 }
             }
-            Err(e) => Err(PistolError::TryLockGlobalVarFailed {
+            Err(e) => Err(PistolError::LockVarFailed {
                 var_name: String::from("DST_CACHE"),
                 e: e.to_string(),
             }),
@@ -656,7 +656,7 @@ pub fn get_default_route() -> Result<(Option<DefaultRoute>, Option<DefaultRoute>
     let snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc.clone(),
         Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
+            return Err(PistolError::LockVarFailed {
                 var_name: String::from("SYSTEM_NET_CACHE"),
                 e: e.to_string(),
             });
@@ -670,7 +670,7 @@ pub fn search_route_table(dst_addr: IpAddr) -> Result<Option<RouteInfo>, PistolE
     let snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,
         Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
+            return Err(PistolError::LockVarFailed {
                 var_name: String::from("SYSTEM_NET_CACHE"),
                 e: e.to_string(),
             });
@@ -684,7 +684,7 @@ pub fn search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
     let snc = match SYSTEM_NET_CACHE.lock() {
         Ok(snc) => snc,
         Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
+            return Err(PistolError::LockVarFailed {
                 var_name: String::from("SYSTEM_NET_CACHE"),
                 e: e.to_string(),
             });
@@ -1101,7 +1101,7 @@ impl RouteVia {
         let mut neighbor_scan_status = match NEIGHBOR_SCAN_STATUS.lock() {
             Ok(n) => n,
             Err(e) => {
-                return Err(PistolError::TryLockGlobalVarFailed {
+                return Err(PistolError::LockVarFailed {
                     var_name: String::from("NEIGHBOR_SCAN_STATUS"),
                     e: e.to_string(),
                 });
@@ -1120,7 +1120,7 @@ impl RouteVia {
             // lock and send arp scan or ndp_ns scan packet only once
             Ok(_) => Self::get_dst_mac_and_src_if_with_lock(dst_addr, src_addr, timeout),
             Err(e) => {
-                return Err(PistolError::TryLockGlobalVarFailed {
+                return Err(PistolError::LockVarFailed {
                     var_name: format!("{}", dst_addr),
                     e: e.to_string(),
                 });

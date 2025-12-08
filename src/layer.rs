@@ -32,10 +32,8 @@ use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
-use tracing::error;
 
 use crate::CAPTURED_PACKETS;
-use crate::CAPTURED_PACKETS_FLAG;
 use crate::DEFAULT_TIMEOUT;
 use crate::error::PistolError;
 use crate::route::RouteVia;
@@ -882,7 +880,7 @@ impl PayloadMatch {
     pub fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
         match self {
             PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv6(icmpv6_payload),
-            PayloadMatch::PayloadMatchTcpUdp(tcp_udp) => tcp_udp.do_match_ipv4(icmpv6_payload),
+            PayloadMatch::PayloadMatchTcpUdp(tcp_udp) => tcp_udp.do_match_ipv6(icmpv6_payload),
             PayloadMatch::PayloadMatchIcmpv6(icmpv6) => icmpv6.do_match(icmpv6_payload),
             PayloadMatch::PayloadMatchIcmp(_) => false,
         }
@@ -1060,46 +1058,6 @@ impl PacketFilter {
     }
 }
 
-/// Capture the traffic and save into file.
-pub fn layer2_save_to_file(packet: &[u8]) -> Result<(), PistolError> {
-    let ppf = match CAPTURED_PACKETS_FLAG.lock() {
-        Ok(ppf) => *ppf,
-        Err(e) => {
-            return Err(PistolError::TryLockGlobalVarFailed {
-                var_name: String::from("PISTOL_PCAPNG_FLAG"),
-                e: e.to_string(),
-            });
-        }
-    };
-
-    if ppf {
-        match CAPTURED_PACKETS.lock() {
-            Ok(mut pp) => {
-                // interface_id = 0 means we use the first interface we builed in fake pcapng headers
-                const INTERFACE_ID: u32 = 0;
-                // this is the default value of pcapture
-                const SNAPLEN: usize = 65535;
-                match EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN, 0, 0) {
-                    Ok(block) => {
-                        let gb = GeneralBlock::EnhancedPacketBlock(block);
-                        pp.append(gb);
-                    }
-                    Err(e) => {
-                        error!("build EnhancedPacketBlock in layer2_send() failed: {}", e)
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(PistolError::TryLockGlobalVarFailed {
-                    var_name: String::from("PISTOL_PCAPNG"),
-                    e: e.to_string(),
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone)]
 pub struct Layer2 {
     dst_mac: MacAddr,
@@ -1128,6 +1086,24 @@ impl Layer2 {
             need_return,
         }
     }
+    /// Capture the traffic and save into file.
+    fn save(packet: &[u8]) -> Result<(), PistolError> {
+        let mut pp = CAPTURED_PACKETS
+            .lock()
+            .map_err(|e| PistolError::LockVarFailed {
+                var_name: String::from("CAPTURED_PACKETS"),
+                e: e.to_string(),
+            })?;
+
+        // interface_id = 0 means we use the first interface we builed in fake pcapng headers
+        const INTERFACE_ID: u32 = 0;
+        // this is the default value of pcapture
+        const SNAPLEN: usize = 65535;
+        let block = EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN, 0, 0)?;
+        let gb = GeneralBlock::EnhancedPacketBlock(block);
+        pp.append(gb);
+        Ok(())
+    }
     /// This function only recv data.
     fn recv(&self) -> Result<Vec<u8>, PistolError> {
         // set a max retry to avoid infinite loop
@@ -1141,9 +1117,11 @@ impl Layer2 {
             cap.timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
         }
 
+        // we recv all packets once so there are high possiblity to get the matched packet in 5 tries
         for _ in 0..MAX_RETRY {
             let packets = cap.fetch_as_vec()?;
             for packet in packets {
+                Self::save(&packet)?;
                 for filter in &self.filters {
                     if filter.check(&packet) {
                         debug!("layer2 recv matched filter: {}", filter.name());
@@ -1210,7 +1188,7 @@ impl Layer2 {
         ethernet_packet.set_source(src_mac);
         ethernet_packet.set_ethertype(self.ether_type);
         ethernet_packet.set_payload(payload);
-        layer2_save_to_file(&buff)?;
+        Self::save(&buff)?;
 
         match sender.send_to(&buff, Some(self.interface.clone())) {
             Some(r) => match r {
