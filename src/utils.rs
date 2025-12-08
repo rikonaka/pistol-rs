@@ -104,7 +104,7 @@ pub fn get_threads_pool(num_threads: usize) -> ThreadPool {
 }
 
 pub fn get_default_timeout() -> Duration {
-    Duration::from_secs_f64(DEFAULT_TIMEOUT)
+    Duration::from_secs_f32(DEFAULT_TIMEOUT)
 }
 
 pub struct PistolHex {

@@ -309,20 +309,11 @@ pub fn vs_scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolListener;
     use crate::Target;
     use fancy_regex::Regex as FancyRegex;
     use std::net::Ipv4Addr;
     #[test]
     fn test_vs_detect() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 8080]));
         let timeout = Some(Duration::from_secs_f64(0.5));

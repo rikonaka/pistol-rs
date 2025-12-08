@@ -37,7 +37,6 @@ use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::layer3_ipv4_send;
 use crate::scan::DataRecvStatus;
 use crate::scan::PortStatus;
-use crate::scan::TcpIdleScans;
 use crate::utils;
 
 const TCP_DATA_SIZE: usize = 0;
@@ -1060,7 +1059,7 @@ pub fn send_idle_scan_packet(
     zombie_ipv4: Ipv4Addr,
     zombie_port: u16,
     timeout: Option<Duration>,
-) -> Result<(PortStatus, DataRecvStatus, Option<TcpIdleScans>, Duration), PistolError> {
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     fn _forge_syn_packet(
         src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
@@ -1198,7 +1197,6 @@ pub fn send_idle_scan_packet(
                                     return Ok((
                                         PortStatus::Unreachable,
                                         DataRecvStatus::Yes,
-                                        None,
                                         rtt_1,
                                     ));
                                 }
@@ -1289,12 +1287,7 @@ pub fn send_idle_scan_packet(
                                 if codes.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     // dst is unreachable ignore this port
-                                    return Ok((
-                                        PortStatus::Unreachable,
-                                        DataRecvStatus::Yes,
-                                        None,
-                                        rtt,
-                                    ));
+                                    return Ok((PortStatus::Unreachable, DataRecvStatus::Yes, rtt));
                                 }
                             }
                         }
@@ -1312,25 +1305,9 @@ pub fn send_idle_scan_packet(
             zombie_port,
         });
     } else if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
-        Ok((
-            PortStatus::Open,
-            DataRecvStatus::Yes,
-            Some(TcpIdleScans {
-                zombie_ip_id_1,
-                zombie_ip_id_2,
-            }),
-            rtt,
-        ))
+        Ok((PortStatus::Open, DataRecvStatus::Yes, rtt))
     } else {
-        Ok((
-            PortStatus::ClosedOrFiltered,
-            DataRecvStatus::No,
-            Some(TcpIdleScans {
-                zombie_ip_id_1,
-                zombie_ip_id_2,
-            }),
-            rtt,
-        ))
+        Ok((PortStatus::ClosedOrFiltered, DataRecvStatus::No, rtt))
     }
 }
 

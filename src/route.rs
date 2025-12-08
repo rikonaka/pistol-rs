@@ -30,12 +30,13 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::DST_CACHE;
-use crate::PacketFilter;
 use crate::NEIGHBOR_SCAN_STATUS;
+use crate::PacketFilter;
 use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_RS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PayloadMatch;
@@ -43,7 +44,6 @@ use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src;
-use crate::layer::layer2_work;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 use crate::utils::neigh_cache_update;
@@ -800,20 +800,12 @@ fn send_ndp_rs_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ether_type = EtherTypes::Ipv6;
-    let (r, rtt) = layer2_work(
-        dst_mac,
-        interface.clone(),
-        &ipv6_buff,
-        IPV6_HEADER_SIZE + ICMPV6_RS_HEADER_SIZE,
-        ether_type,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, vec![filter], timeout, true);
+    let (r, rtt) = layer2.send_recv(&ipv6_buff)?;
 
     let mac = get_mac_from_ndp_rs(&r);
     Ok((mac, rtt))
@@ -1714,19 +1706,10 @@ impl SystemNetCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolListener;
     use pnet::datalink::interfaces;
     use std::fs::read_to_string;
     #[test]
     fn test_network_cache() {
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         let snc = SystemNetCache::init().unwrap();
         for (route_addr, route_info) in snc.routes {
             println!(
@@ -1779,13 +1762,6 @@ mod tests {
     }
     #[test]
     fn test_all() {
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         #[cfg(target_os = "linux")]
         let routetable_str = read_to_string("./tests/linux_routetable.txt").unwrap();
 

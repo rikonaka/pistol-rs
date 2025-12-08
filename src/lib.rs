@@ -1,11 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-#[cfg(feature = "libpnet")]
-use crate::datalink::Channel::Ethernet;
 use dns_lookup::lookup_host;
 use pcapture::fs::pcapng::PcapNg;
-#[cfg(feature = "libpnet")]
-use pnet::datalink;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
@@ -19,8 +15,6 @@ use pnet::packet::udp::UdpPacket;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-#[cfg(feature = "libpnet")]
-use std::io::ErrorKind;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
 use std::net::Ipv4Addr;
@@ -591,11 +585,12 @@ impl Pistol {
     /// it returns the MAC address of the target and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn ndp_ns_scan_raw(
+        &self,
         dst_ipv6: Ipv6Addr,
         src_addr: Option<IpAddr>,
         timeout: Option<Duration>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        scan::ndp_ns_scan_raw(dst_ipv6, src_addr, timeout)
+        scan::ndp_ns_scan_raw(dst_ipv6, src_addr, self.if_name.clone(), timeout)
     }
     /// TCP ACK Scan.
     /// This scan is different than the others discussed so far in
@@ -608,6 +603,7 @@ impl Pistol {
     /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
     #[cfg(feature = "scan")]
     pub fn tcp_ack_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -631,6 +627,7 @@ impl Pistol {
     /// and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_ack_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -657,6 +654,7 @@ impl Pistol {
     /// for the services which take the connection and then have it immediately shutdown.
     #[cfg(feature = "scan")]
     pub fn tcp_connect_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -680,6 +678,7 @@ impl Pistol {
     /// If there is no response within the specified timeout, it indicates that the port is filtered
     #[cfg(feature = "scan")]
     pub fn tcp_connect_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -706,6 +705,7 @@ impl Pistol {
     /// any combination of the other three (FIN, PSH, and URG) are OK.
     #[cfg(feature = "scan")]
     pub fn tcp_fin_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -728,6 +728,7 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_fin_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -748,6 +749,7 @@ impl Pistol {
     /// this scan type permits discovery of IP-based trust relationships between machines.
     #[cfg(feature = "scan")]
     pub fn tcp_idle_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -774,6 +776,7 @@ impl Pistol {
     /// without directly interacting with the target host.
     #[cfg(feature = "scan")]
     pub fn tcp_idle_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -801,6 +804,7 @@ impl Pistol {
     /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
     #[cfg(feature = "scan")]
     pub fn tcp_maimon_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -823,6 +827,7 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_maimon_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -841,6 +846,7 @@ impl Pistol {
     /// any combination of the other three (FIN, PSH, and URG) are OK.
     #[cfg(feature = "scan")]
     pub fn tcp_null_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -863,6 +869,7 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_null_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -887,6 +894,7 @@ impl Pistol {
     /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
     #[cfg(feature = "scan")]
     pub fn tcp_syn_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -909,6 +917,7 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_syn_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -928,6 +937,7 @@ impl Pistol {
     /// Window scan sends the same bare ACK probe as ACK scan.
     #[cfg(feature = "scan")]
     pub fn tcp_window_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -950,6 +960,7 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_window_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -967,6 +978,7 @@ impl Pistol {
     /// any combination of the other three (FIN, PSH, and URG) are OK.
     #[cfg(feature = "scan")]
     pub fn tcp_xmas_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -989,6 +1001,7 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_xmas_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -1011,6 +1024,7 @@ impl Pistol {
     /// Based on the response, or lack thereof, the port is assigned to one of four states.
     #[cfg(feature = "scan")]
     pub fn udp_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1034,6 +1048,7 @@ impl Pistol {
     /// and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn udp_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -1060,6 +1075,7 @@ impl Pistol {
     /// while forgetting that other ICMP queries can be used for the same purpose.
     #[cfg(feature = "ping")]
     pub fn icmp_address_mask_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1082,6 +1098,7 @@ impl Pistol {
     /// it returns the PingStatus indicating whether the host is reachable.
     #[cfg(feature = "ping")]
     pub fn icmp_address_mask_ping_raw(
+        &self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
         timeout: Option<Duration>,
@@ -1100,6 +1117,7 @@ impl Pistol {
     /// this can be a practical and efficient approach.
     #[cfg(feature = "ping")]
     pub fn icmp_echo_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1122,6 +1140,7 @@ impl Pistol {
     /// it returns the PingStatus indicating whether the host is reachable.
     #[cfg(feature = "ping")]
     pub fn icmp_echo_ping_raw(
+        &self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
         timeout: Option<Duration>,
@@ -1143,6 +1162,7 @@ impl Pistol {
     /// while forgetting that other ICMP queries can be used for the same purpose.
     #[cfg(feature = "ping")]
     pub fn icmp_timestamp_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1165,6 +1185,7 @@ impl Pistol {
     /// it returns the PingStatus indicating whether the host is reachable.
     #[cfg(feature = "ping")]
     pub fn icmp_timestamp_ping_raw(
+        &self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
         timeout: Option<Duration>,
@@ -1178,6 +1199,7 @@ impl Pistol {
     /// along with the duration taken for the ping.
     #[cfg(feature = "ping")]
     pub fn icmp_ping_raw(
+        &self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
         timeout: Option<Duration>,
@@ -1197,6 +1219,7 @@ impl Pistol {
     /// this can be a practical and efficient approach.
     #[cfg(feature = "ping")]
     pub fn icmpv6_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1219,6 +1242,7 @@ impl Pistol {
     /// that is open on the target machine instead of traversing all ports.
     #[cfg(feature = "ping")]
     pub fn tcp_ack_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1242,6 +1266,7 @@ impl Pistol {
     /// and the duration taken for the ping.
     #[cfg(feature = "ping")]
     pub fn tcp_ack_ping_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -1256,6 +1281,7 @@ impl Pistol {
     /// that is open on the target machine instead of traversing all ports.
     #[cfg(feature = "ping")]
     pub fn tcp_syn_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1279,6 +1305,7 @@ impl Pistol {
     /// and the duration taken for the ping.
     #[cfg(feature = "ping")]
     pub fn tcp_syn_ping_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -1293,6 +1320,7 @@ impl Pistol {
     /// that is open on the target machine instead of traversing all ports.
     #[cfg(feature = "ping")]
     pub fn udp_ping(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1316,6 +1344,7 @@ impl Pistol {
     /// and the duration taken for the ping.
     #[cfg(feature = "ping")]
     pub fn udp_ping_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
@@ -1332,6 +1361,7 @@ impl Pistol {
     /// which is consistent with the default value of traceroute.
     #[cfg(feature = "trace")]
     pub fn icmp_trace(
+        &self,
         dst_addr: IpAddr,
         src_addr: IpAddr,
         timeout: Option<Duration>,
@@ -1345,6 +1375,7 @@ impl Pistol {
     /// which is consistent with the default value of traceroute.
     #[cfg(feature = "trace")]
     pub fn syn_trace(
+        &self,
         dst_addr: IpAddr,
         dst_port: Option<u16>, // default is 80
         src_addr: IpAddr,
@@ -1359,6 +1390,7 @@ impl Pistol {
     /// which is consistent with the default value of traceroute.
     #[cfg(feature = "trace")]
     pub fn udp_trace(
+        &self,
         dst_addr: IpAddr,
         src_addr: IpAddr,
         timeout: Option<Duration>,
@@ -1380,6 +1412,7 @@ impl Pistol {
     /// Total number of packets sent = retransmit_count x num_threads.
     #[cfg(feature = "flood")]
     pub fn icmp_flood(
+        &self,
         targets: &[Target],
         num_threads: usize,
         retransmit_count: usize,
@@ -1390,7 +1423,11 @@ impl Pistol {
     /// The raw version of icmp_flood function.
     /// It performs an ICMP flood attack on the specified destination address.
     #[cfg(feature = "flood")]
-    pub fn icmp_flood_raw(dst_addr: IpAddr, retransmit_count: usize) -> Result<usize, PistolError> {
+    pub fn icmp_flood_raw(
+        &self,
+        dst_addr: IpAddr,
+        retransmit_count: usize,
+    ) -> Result<usize, PistolError> {
         flood::icmp_flood_raw(dst_addr, retransmit_count)
     }
     /// TCP ACK flood, or 'ACK Flood' for short, is a network DDoS attack comprising TCP ACK packets.
@@ -1407,6 +1444,7 @@ impl Pistol {
     /// Total number of packets sent = retransmit_count x num_threads.
     #[cfg(feature = "flood")]
     pub fn tcp_ack_flood(
+        &self,
         targets: &[Target],
         num_threads: usize,
         retransmit_count: usize,
@@ -1418,6 +1456,7 @@ impl Pistol {
     /// It performs a TCP ACK flood attack on the specified destination address and port.
     #[cfg(feature = "flood")]
     pub fn tcp_ack_flood_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         retransmit_count: usize,
@@ -1439,6 +1478,7 @@ impl Pistol {
     /// Total number of packets sent = retransmit_count x num_threads.
     #[cfg(feature = "flood")]
     pub fn tcp_ack_psh_flood(
+        &self,
         targets: &[Target],
         num_threads: usize,
         retransmit_count: usize,
@@ -1451,6 +1491,7 @@ impl Pistol {
     /// on the specified destination address and port.
     #[cfg(feature = "flood")]
     pub fn tcp_ack_psh_flood_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         retransmit_count: usize,
@@ -1464,6 +1505,7 @@ impl Pistol {
     /// Total number of packets sent = retransmit_count x num_threads.
     #[cfg(feature = "flood")]
     pub fn tcp_syn_flood(
+        &self,
         targets: &[Target],
         num_threads: usize,
         retransmit_count: usize,
@@ -1475,6 +1517,7 @@ impl Pistol {
     /// It performs a TCP SYN flood attack on the specified destination address and port.
     #[cfg(feature = "flood")]
     pub fn tcp_syn_flood_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         retransmit_count: usize,
@@ -1489,6 +1532,7 @@ impl Pistol {
     /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
     #[cfg(feature = "flood")]
     pub fn udp_flood(
+        &self,
         targets: &[Target],
         num_threads: usize,
         retransmit_count: usize,
@@ -1500,6 +1544,7 @@ impl Pistol {
     /// It performs a UDP flood attack on the specified destination address and port.
     #[cfg(feature = "flood")]
     pub fn udp_flood_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         retransmit_count: usize,
@@ -1514,6 +1559,7 @@ impl Pistol {
     /// it attempts to identify the operating system running on the target machine.
     #[cfg(feature = "os")]
     pub fn os_detect(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -1529,6 +1575,7 @@ impl Pistol {
     /// it attempts to identify the operating system running on the target machine.
     #[cfg(feature = "os")]
     pub fn os_detect_raw(
+        &self,
         dst_addr: IpAddr,
         dst_open_tcp_port: u16,
         dst_closed_tcp_port: u16,
@@ -1555,6 +1602,7 @@ impl Pistol {
     /// it attempts to determine the service type and version.
     #[cfg(feature = "vs")]
     pub fn vs_scan(
+        &self,
         targets: &[Target],
         num_threads: Option<usize>,
         only_null_probe: bool,
@@ -1580,6 +1628,7 @@ impl Pistol {
     /// it attempts to determine the service type and version.
     #[cfg(feature = "vs")]
     pub fn vs_scan_raw(
+        &self,
         dst_addr: IpAddr,
         dst_port: u16,
         only_null_probe: bool,
@@ -2062,7 +2111,7 @@ mod tests {
     #[test]
     #[cfg(feature = "scan")]
     fn example_tcp_syn_scan() {
-        let pistol = Pistol::new(interface, log_level, capture, timeout).unwrap();
+        let pistol = Pistol::new(Some("ens33"), "debug", Some("syn_scan.pcapng"), 1.0).unwrap();
 
         // When using scanning, please use a real local address to get the return packet.
         // And for flood attacks, please consider using a fake address.
@@ -2086,28 +2135,22 @@ mod tests {
         // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
         let max_attempts = 2;
         let num_threads = Some(8);
-        let ret = tcp_syn_scan(
-            &targets,
-            num_threads,
-            src_ipv4,
-            src_port,
-            timeout,
-            max_attempts,
-        )
-        .unwrap();
+        let ret = pistol
+            .tcp_syn_scan(
+                &targets,
+                num_threads,
+                src_ipv4,
+                src_port,
+                timeout,
+                max_attempts,
+            )
+            .unwrap();
         println!("{}", ret);
     }
     #[test]
     #[cfg(feature = "os")]
     fn example_os_detect() {
-        // Initialize and run the Runner thread.
-        // This step is required for all other functions except service detection.
-        let _pr = PistolListener::init(
-            PistolLogger::None,                     // logger level settings
-            Some(String::from("os_detect.pcapng")), // capture pistol traffic for debugging
-            None, // timeout settings, unless there is a clear reason, use the default here
-        )
-        .unwrap();
+        let pistol = Pistol::new(Some("ens33"), "debug", Some("os_detect.pcapng"), 1.0).unwrap();
 
         // If the value of `src_ipv4` is `None`, the program will find it auto.
         let src_ipv4 = None;
@@ -2132,20 +2175,15 @@ mod tests {
 
         // The `fingerprint` is the obtained fingerprint of the target OS.
         // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
-        let ret = os_detect(&[target], num_threads, src_ipv4, top_k, timeout).unwrap();
+        let ret = pistol
+            .os_detect(&[target], num_threads, src_ipv4, top_k, timeout)
+            .unwrap();
         println!("{}", ret);
     }
     #[test]
     #[cfg(feature = "os")]
     fn example_os_detect_ipv6() {
-        // Initialize and run the Runner thread.
-        // This step is required for all other functions except service detection.
-        let _pr = PistolListener::init(
-            PistolLogger::None,                          // logger level settings
-            Some(String::from("os_detect_ipv6.pcapng")), // capture pistol traffic for debugging
-            None, // timeout settings, unless there is a clear reason, use the default here
-        )
-        .unwrap();
+        let pistol = Pistol::new(Some("ens33"), "debug", Some("os_detect6.pcapng"), 1.0).unwrap();
 
         let src_ipv6 = None;
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
@@ -2164,20 +2202,15 @@ mod tests {
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
         let num_threads = Some(8);
-        let ret = os_detect(&[target], num_threads, src_ipv6, top_k, timeout).unwrap();
+        let ret = pistol
+            .os_detect(&[target], num_threads, src_ipv6, top_k, timeout)
+            .unwrap();
         println!("{}", ret);
     }
     #[test]
     #[cfg(feature = "vs")]
     fn example_vs_scan() {
-        // Initialize and run the Runner thread.
-        // This step is required for all other functions except service detection.
-        let _pr = PistolListener::init(
-            PistolLogger::None, // logger level settings
-            None,               // this capture will not work for vs scan, so just set it to None
-            None, // timeout settings, unless there is a clear reason, use the default here
-        )
-        .unwrap();
+        let pistol = Pistol::new(Some("ens33"), "debug", Some("vs_scan.pcapng"), 1.0).unwrap();
 
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
         let target = Target::new(dst_addr.into(), Some(vec![22, 80, 8080]));
@@ -2188,16 +2221,17 @@ mod tests {
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
         let num_threads = Some(8);
-        let ret = vs_scan(
-            &[target],
-            num_threads,
-            only_null_probe,
-            only_tcp_recommended,
-            only_udp_recommended,
-            intensity,
-            timeout,
-        )
-        .unwrap();
+        let ret = pistol
+            .vs_scan(
+                &[target],
+                num_threads,
+                only_null_probe,
+                only_tcp_recommended,
+                only_udp_recommended,
+                intensity,
+                timeout,
+            )
+            .unwrap();
         println!("{}", ret);
     }
 }

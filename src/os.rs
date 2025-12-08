@@ -4,13 +4,13 @@ use chrono::DateTime;
 #[cfg(feature = "os")]
 use chrono::Local;
 #[cfg(feature = "os")]
-use prettytable::row;
-#[cfg(feature = "os")]
 use prettytable::Cell;
 #[cfg(feature = "os")]
 use prettytable::Row;
 #[cfg(feature = "os")]
 use prettytable::Table;
+#[cfg(feature = "os")]
+use prettytable::row;
 #[cfg(feature = "os")]
 use serde::Deserialize;
 #[cfg(feature = "os")]
@@ -39,27 +39,27 @@ use tracing::warn;
 use zip::ZipArchive;
 
 #[cfg(feature = "os")]
+use crate::Target;
+#[cfg(feature = "os")]
 use crate::error::PistolError;
 #[cfg(feature = "os")]
 use crate::layer::infer_addr;
 #[cfg(feature = "os")]
 use crate::os::dbparser::NmapOSDB;
 #[cfg(feature = "os")]
-use crate::os::osscan::os_probe_thread;
-#[cfg(feature = "os")]
 use crate::os::osscan::Fingerprint;
 #[cfg(feature = "os")]
-use crate::os::osscan6::os_probe_thread6;
+use crate::os::osscan::os_probe_thread;
 #[cfg(feature = "os")]
 use crate::os::osscan6::Fingerprint6;
+#[cfg(feature = "os")]
+use crate::os::osscan6::os_probe_thread6;
 #[cfg(feature = "os")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "os")]
 use crate::utils::num_threads_check;
 #[cfg(feature = "os")]
 use crate::utils::time_sec_to_string;
-#[cfg(feature = "os")]
-use crate::Target;
 
 #[cfg(feature = "os")]
 pub mod dbparser;
@@ -168,9 +168,9 @@ impl PistolOsDetects {
 impl fmt::Display for PistolOsDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
-        table.add_row(Row::new(vec![Cell::new("OS Detect Results")
-            .style_spec("c")
-            .with_hspan(7)]));
+        table.add_row(Row::new(vec![
+            Cell::new("OS Detect Results").style_spec("c").with_hspan(7),
+        ]));
 
         table.add_row(
             row![c -> "id", c -> "addr", c -> "rank", c -> "score", c -> "os", c -> "cpe", c -> "time cost"],
@@ -639,8 +639,6 @@ pub fn os_detect_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolListener;
     use crate::Target;
     use std::net::Ipv4Addr;
     use std::net::Ipv6Addr;
@@ -677,13 +675,6 @@ mod tests {
         U1(R=N%UN=0)
         IE(R=N)
         */
-
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            Some(String::from("os_detect.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
 
         let src_addr = None;
         let dst_closed_tcp_port = 8765;
@@ -755,13 +746,6 @@ mod tests {
         IE(R=Y%DFI=N%T=40%CD=S)
         */
 
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            Some(String::from("os_detect.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_addr = None;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -828,13 +812,6 @@ mod tests {
         T4(P=600{2}014640fe800{3}0XX{22}%ST=3.558762%RT=3.578006)
         */
 
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            Some(String::from("os_detect6.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
@@ -884,13 +861,6 @@ mod tests {
         TECN(P=602447e6020680fe800{3}0XX{28}%ST=11.138252%RT=11.166179)
         EXTRA(FL=12345)
         */
-
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            Some(String::from("os_detect6.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
 
         let src_addr = None;
         let dst_open_tcp_port = 3389;

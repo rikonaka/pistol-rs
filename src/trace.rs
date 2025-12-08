@@ -293,20 +293,11 @@ pub fn udp_trace(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PistolLogger;
-    use crate::PistolListener;
     use std::net::Ipv4Addr;
     use std::net::Ipv6Addr;
     use std::str::FromStr;
     #[test]
     fn test_get_hops_syn() {
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let dst_ipv4 = Ipv4Addr::new(182, 61, 244, 181);
@@ -317,13 +308,6 @@ mod tests {
     }
     #[test]
     fn test_get_hops_icmp() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let dst_ipv4 = Ipv4Addr::new(182, 61, 244, 181);
@@ -334,13 +318,6 @@ mod tests {
     }
     #[test]
     fn test_get_hops_udp() {
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
         let dst_ipv4 = Ipv4Addr::new(182, 61, 244, 181);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
@@ -350,13 +327,6 @@ mod tests {
     }
     #[test]
     fn test_get_hops_udp6() {
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            None,
-            None, // use default value
-        )
-        .unwrap();
-
         let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let timeout = Some(Duration::from_secs_f64(5.0));

@@ -916,18 +916,10 @@ pub fn icmp_ping_raw(
 #[cfg(test)]
 mod max_attempts {
     use super::*;
-    use crate::PistolListener;
-    use crate::PistolLogger;
     use crate::Target;
     use std::str::FromStr;
     #[test]
     fn test_tcp_syn_ping() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_syn_ping.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -953,12 +945,6 @@ mod max_attempts {
     }
     #[test]
     fn test_tcp_syn_ping_raw() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_syn_ping_raw.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(3, 0));
@@ -969,12 +955,6 @@ mod max_attempts {
     }
     #[test]
     fn test_tcp_syn_ping6() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_syn_ping6.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -999,12 +979,6 @@ mod max_attempts {
     }
     #[test]
     fn test_icmp_echo_ping() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            None,
-            None, // use default value
-        )
-        .unwrap();
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1033,12 +1007,6 @@ mod max_attempts {
     }
     #[test]
     fn test_icmp_timestamp_ping() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            None,
-            None, // use default value
-        )
-        .unwrap();
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1066,12 +1034,6 @@ mod max_attempts {
     }
     #[test]
     fn test_icmp_ping_debug() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            None,
-            None, // use default value
-        )
-        .unwrap();
         let src_ipv4 = None;
         let src_port: Option<u16> = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1093,12 +1055,6 @@ mod max_attempts {
     }
     #[test]
     fn test_icmpv6_ping() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("icmpv6_ping.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let src_port: Option<u16> = None;
         let src_addr = None;
         let addr1 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();

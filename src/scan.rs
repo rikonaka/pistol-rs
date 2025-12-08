@@ -296,12 +296,12 @@ pub fn mac_scan(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let tx = tx.clone();
-                recv_size += 1;
                 let if_name = if_name.clone();
+                recv_size += 1;
                 pool.execute(move || {
                     for i in 0..max_attempts {
                         debug!("arp scan packets: #{}/{}", i + 1, max_attempts);
-                        let scan_ret = arp_scan_raw(dst_ipv4, src_addr, if_name, timeout);
+                        let scan_ret = arp_scan_raw(dst_ipv4, src_addr, if_name.clone(), timeout);
                         if i == max_attempts - 1 {
                             let _ = tx.send((dst_addr, scan_ret));
                         } else {
@@ -329,7 +329,8 @@ pub fn mac_scan(
                 pool.execute(move || {
                     for i in 0..max_attempts {
                         debug!("ndp_ns scan packets: #{}/{}", i + 1, max_attempts);
-                        let scan_ret = ndp_ns_scan_raw(dst_ipv6, src_addr, timeout);
+                        let scan_ret =
+                            ndp_ns_scan_raw(dst_ipv6, src_addr, if_name.clone(), timeout);
                         if i == max_attempts - 1 {
                             let _ = tx.send((dst_addr, scan_ret));
                         } else {
@@ -573,13 +574,6 @@ impl fmt::Display for PistolPortScans {
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-#[derive(Debug, Clone, Copy)]
-pub struct TcpIdleScans {
-    pub zombie_ip_id_1: u16,
-    pub zombie_ip_id_2: u16,
-}
-
-#[cfg(any(feature = "scan", feature = "ping"))]
 fn scan_thread(
     method: ScanMethod,
     dst_ipv4: Ipv4Addr,
@@ -614,10 +608,10 @@ fn scan_thread(
             tcp::send_maimon_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
         }
         ScanMethod::Idle => {
-            // here is always has value, so just use unwrap is fine
+            // this two parameters must be Some
             let zombie_ipv4 = zombie_ipv4.unwrap();
             let zombie_port = zombie_port.unwrap();
-            match tcp::send_idle_scan_packet(
+            tcp::send_idle_scan_packet(
                 dst_ipv4,
                 dst_port,
                 src_ipv4,
@@ -625,10 +619,7 @@ fn scan_thread(
                 zombie_ipv4,
                 zombie_port,
                 timeout,
-            ) {
-                Ok((port_status, data_return, _idel_rets, rtt)) => (port_status, data_return, rtt),
-                Err(e) => return Err(e.into()),
-            }
+            )?
         }
         ScanMethod::Udp => {
             udp::send_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
@@ -1403,12 +1394,6 @@ mod tests {
     use std::str::FromStr;
     #[test]
     fn test_arp_scan_subnet() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("arp_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         // println!("{}", targets.len());
         // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 1)), None);
@@ -1420,51 +1405,40 @@ mod tests {
         let src_ipv4 = None;
         let num_threads = Some(512);
         let max_attempts = 2;
-        let ret = mac_scan(&targets, num_threads, src_ipv4, timeout, max_attempts).unwrap();
+        let ret = mac_scan(&targets, num_threads, src_ipv4, None, timeout, max_attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_ndp_ns_scan_subnet() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("ndp_ns_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
         let timeout = Some(Duration::from_secs_f64(0.5));
         let src_ipv6 = None;
         let num_threads = Some(512);
         let max_attempts = 2;
-        let ret = mac_scan(&targets, num_threads, src_ipv6, timeout, max_attempts).unwrap();
+        let ret = mac_scan(&targets, num_threads, src_ipv6, None, timeout, max_attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_ndp_ns_scan_single() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("ndp_ns_scan_single.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
         let ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let target = Target::new(ipv6.into(), None);
         let timeout = Some(Duration::from_secs_f64(0.5));
         let src_ipv6 = None;
         let num_threads = Some(512);
         let max_attempts = 2;
-        let ret = mac_scan(&[target], num_threads, src_ipv6, timeout, max_attempts).unwrap();
+        let ret = mac_scan(
+            &[target],
+            num_threads,
+            src_ipv6,
+            None,
+            timeout,
+            max_attempts,
+        )
+        .unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_connect_scan() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_connnect_scan.pcapng")),
-            None,
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1507,13 +1481,6 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan() {
-        let _pr = PistolListener::init(
-            PistolLogger::Debug,
-            Some(String::from("tcp_syn_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1548,13 +1515,6 @@ mod tests {
     }
     #[test]
     fn test_tcp_syn_scan_performance() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("scan.pcapng")),
-            Some(Duration::from_secs_f32(0.1)), // use default value
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = Some(37888);
         let timeout = Some(Duration::from_secs_f32(2.5));
@@ -1586,13 +1546,6 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_fin_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1613,13 +1566,6 @@ mod tests {
     }
     #[test]
     fn test_tcp_ack_scan() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_ack_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1640,13 +1586,6 @@ mod tests {
     }
     #[test]
     fn test_tcp_null_scan() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_null_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
@@ -1667,13 +1606,6 @@ mod tests {
     }
     #[test]
     fn test_udp_scan() {
-        let _pr = PistolListener::init(
-            PistolLogger::None,
-            Some(String::from("tcp_udp_scan.pcapng")),
-            None, // use default value
-        )
-        .unwrap();
-
         let src_ipv4 = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
