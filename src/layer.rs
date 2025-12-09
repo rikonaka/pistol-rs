@@ -1076,8 +1076,8 @@ impl Layer2 {
         filters: Vec<PacketFilter>,
         timeout: Option<Duration>,
         need_return: bool,
-    ) -> Layer2 {
-        Layer2 {
+    ) -> Self {
+        Self {
             dst_mac,
             interface,
             ether_type,
@@ -1112,9 +1112,9 @@ impl Layer2 {
         let mut cap = Capture::new(&self.interface.name)?;
         if let Some(timeout) = self.timeout {
             let sec = timeout.as_secs_f32();
-            cap.timeout((sec * 1000.0) as i32);
+            cap.set_timeout((sec * 1000.0) as i32);
         } else {
-            cap.timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
+            cap.set_timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
         }
 
         // we recv all packets once so there are high possiblity to get the matched packet in 5 tries

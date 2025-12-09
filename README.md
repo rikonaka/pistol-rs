@@ -282,15 +282,15 @@ fn main() {
         targets.push(host);
     }
     // Number of max attempts, it can also be understood as the maximum number of unsuccessful retries.
-    let max_attempts = 2;
-    let num_threads = Some(8);
+    let attempts = 2;
+    let threads = Some(8);
     let ret = tcp_syn_scan(
         &targets,
-        num_threads,
+        threads,
         src_ipv4,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
     .unwrap();
     println!("{}", ret);
@@ -303,7 +303,7 @@ The local machine address I used for testing is `192.168.5.3`. This address's re
 
 ```
 +------------+--------------+------------+------------+------------+
-|                Port Scan Results (max_attempts:2)                |
+|                Port Scan Results (attempts:2)                |
 +------------+--------------+------------+------------+------------+
 |     id     |     addr     |    port    |   status   | time cost  |
 +------------+--------------+------------+------------+------------+
@@ -400,11 +400,11 @@ fn main() {
     );
     let timeout = Some(Duration::from_secs_f64(0.5));
     let top_k = 3;
-    let num_threads = Some(8);
+    let threads = Some(8);
 
     // The `fingerprint` is the obtained fingerprint of the target OS.
     // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
-    let ret = os_detect(&[target], num_threads, src_ipv4, top_k, timeout).unwrap();
+    let ret = os_detect(&[target], threads, src_ipv4, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
@@ -467,8 +467,8 @@ fn main() {
 
     let timeout = Some(Duration::from_secs_f64(0.5));
     let top_k = 3;
-    let num_threads = Some(8);
-    let ret = os_detect(&[target], num_threads, src_ipv6, top_k, timeout).unwrap();
+    let threads = Some(8);
+    let ret = os_detect(&[target], threads, src_ipv6, top_k, timeout).unwrap();
     println!("{}", ret);
 }
 ```
@@ -524,10 +524,10 @@ fn main() {
     // only_udp_recommended = true: only try the udp probe recommended port
     let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
     let intensity = 7; // nmap default
-    let num_threads = Some(8);
+    let threads = Some(8);
     let ret = vs_scan(
         &[target],
-        num_threads,
+        threads,
         only_null_probe,
         only_tcp_recommended,
         only_udp_recommended,
@@ -581,19 +581,19 @@ fn main() {
     let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
     let ports = Some(vec![22]);
     let target1 = Target::new(dst_addr.into(), ports);
-    let num_threads = 30; // It can be simply understood as the number of attack threads.
+    let threads = 30; // It can be simply understood as the number of attack threads.
     let retransmit_count = 10; // The number of times to retransmit the same attack packet.
     let repeat_count = 3; // The number of times each thread repeats the attack.
-    let ret = tcp_syn_flood(&[target1], num_threads, retransmit_count, repeat_count).unwrap();
+    let ret = tcp_syn_flood(&[target1], threads, retransmit_count, repeat_count).unwrap();
     println!("{}", ret);
 }
 ```
 
-For the above three parameters `num_threads`, `retransmit_count`, `repeat_count`, there is a vivid explanation. We generate a TCP SYN packet, including a fake source address and source port, and then we send this packet `3` times (`retransmit_count`) to the specific port of the target machine (the above example is port 22).
+For the above three parameters `threads`, `retransmit_count`, `repeat_count`, there is a vivid explanation. We generate a TCP SYN packet, including a fake source address and source port, and then we send this packet `3` times (`retransmit_count`) to the specific port of the target machine (the above example is port 22).
 
 After that, we regenerate a new fake source address and fake source port and form a new TCP SYN packet. We repeat this operation `10` times (`repeat_count`).
 
-Finally, we generate `30` threads (`num_threads`) to execute the above process.
+Finally, we generate `30` threads (`threads`) to execute the above process.
 
 ### Output
 
@@ -609,13 +609,13 @@ We no longer use `threadpool` to limit the number of threads here, so please do 
 +--------+-------------+-----------------------------------------------------------+
 ```
 
-If you increase the `num_threads`, `retransmit_count` and `repeat_count` above, the speed of attacks traffic will increase (if possible, increase `retransmit_count` is more efficient than improving `repeat_count` because it does not require rebuilding the package).
+If you increase the `threads`, `retransmit_count` and `repeat_count` above, the speed of attacks traffic will increase (if possible, increase `retransmit_count` is more efficient than improving `repeat_count` because it does not require rebuilding the package).
 
-The `num_threads` parameter here is to control the total number of threads, and the value of `retransmit_count` should be much greater than the value of `repeat_count`.
+The `threads` parameter here is to control the total number of threads, and the value of `retransmit_count` should be much greater than the value of `repeat_count`.
 
 The relationship between the three variables in my local test environment.
 
-| num_threads | retransmit_count | repeat_count | sending speed |
+| threads | retransmit_count | repeat_count | sending speed |
 | :---------- | :--------------- | :----------- | :------------ |
 | 10          | 1                | 10           | 1.923MB/s     |
 | 10          | 10               | 1            | 13.609MB/s    |

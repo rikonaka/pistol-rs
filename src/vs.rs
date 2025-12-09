@@ -180,7 +180,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 #[cfg(feature = "vs")]
 pub fn vs_scan(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     only_null_probe: bool,
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
@@ -188,12 +188,12 @@ pub fn vs_scan(
     timeout: Option<Duration>,
 ) -> Result<PistolVsScans, PistolError> {
     let mut ret = PistolVsScans::new();
-    let num_threads = match num_threads {
+    let threads = match threads {
         Some(t) => t,
         None => {
-            let num_threads = targets.len();
-            let num_threads = num_threads_check(num_threads);
-            num_threads
+            let threads = targets.len();
+            let threads = num_threads_check(threads);
+            threads
         }
     };
 
@@ -202,7 +202,7 @@ pub fn vs_scan(
         None => get_default_timeout(),
     };
 
-    let pool = get_threads_pool(num_threads);
+    let pool = get_threads_pool(threads);
     let (tx, rx) = channel();
 
     let service_probes = get_nmap_service_probes()?;
@@ -319,10 +319,10 @@ mod tests {
         let timeout = Some(Duration::from_secs_f64(0.5));
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
-        let num_threads = Some(8);
+        let threads = Some(8);
         let ret = vs_scan(
             &[target],
-            num_threads,
+            threads,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,

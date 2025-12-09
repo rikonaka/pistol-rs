@@ -372,22 +372,22 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
 #[cfg(feature = "os")]
 pub fn os_detect(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<PistolOsDetects, PistolError> {
-    let num_threads = match num_threads {
+    let threads = match threads {
         Some(t) => t,
         None => {
-            let num_threads = targets.len();
-            let num_threads = num_threads_check(num_threads);
-            num_threads
+            let threads = targets.len();
+            let threads = num_threads_check(threads);
+            threads
         }
     };
 
     let (tx, rx) = channel();
-    let pool = get_threads_pool(num_threads);
+    let pool = get_threads_pool(threads);
     let mut recv_size = 0;
     let mut ret = PistolOsDetects::new();
     for target in targets {
@@ -697,8 +697,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(1.0));
         let top_k = 3;
-        let num_threads = Some(8);
-        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
+        let threads = Some(8);
+        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let detects = ret.value();
@@ -763,8 +763,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(1.0));
         let top_k = 3;
-        let num_threads = Some(8);
-        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
+        let threads = Some(8);
+        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
 
         let detects = ret.value();
@@ -828,8 +828,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
-        let num_threads = Some(8);
-        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
+        let threads = Some(8);
+        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
         // let fingerprint = ret.
     }
@@ -878,8 +878,8 @@ mod tests {
 
         let timeout = Some(Duration::from_secs_f64(0.5));
         let top_k = 3;
-        let num_threads = Some(8);
-        let ret = os_detect(&[target1], num_threads, src_addr, top_k, timeout).unwrap();
+        let threads = Some(8);
+        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
         println!("{}", ret);
         // let fingerprint = ret.
     }

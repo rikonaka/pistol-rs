@@ -105,17 +105,17 @@ pub struct PistolPings {
     pub ping_reports: Vec<PingReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
-    max_attempts: usize,
+    attempts: usize,
 }
 
 #[cfg(feature = "ping")]
 impl PistolPings {
-    pub fn new(max_attempts: usize) -> PistolPings {
+    pub fn new(attempts: usize) -> PistolPings {
         PistolPings {
             ping_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
-            max_attempts,
+            attempts,
         }
     }
     pub fn value(&self) -> Vec<PingReport> {
@@ -135,8 +135,8 @@ impl fmt::Display for PistolPings {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
             Cell::new(&format!(
-                "Ping Results (max_attempts:{})",
-                self.max_attempts
+                "Ping Results (attempts:{})",
+                self.attempts
             ))
             .style_spec("c")
             .with_hspan(4),
@@ -337,25 +337,25 @@ fn ping_thread6(
 #[cfg(feature = "ping")]
 fn ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     method: PingMethods,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
-    let mut pistol_pings = PistolPings::new(max_attempts);
+    let mut pistol_pings = PistolPings::new(attempts);
 
-    let num_threads = match num_threads {
+    let threads = match threads {
         Some(t) => t,
         None => {
-            let num_threads = targets.len();
-            let num_threads = num_threads_check(num_threads);
-            num_threads
+            let threads = targets.len();
+            let threads = num_threads_check(threads);
+            threads
         }
     };
 
-    let pool = get_threads_pool(num_threads);
+    let pool = get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
@@ -393,11 +393,11 @@ fn ping(
                 };
                 recv_size += 1;
                 pool.execute(move || {
-                    for ind in 0..max_attempts {
+                    for ind in 0..attempts {
                         let start_time = Instant::now();
                         let ping_ret =
                             ping_thread(method, dst_ipv4, dst_port, src_ipv4, src_port, timeout);
-                        if ind == max_attempts - 1 {
+                        if ind == attempts - 1 {
                             // last attempt
                             let _ =
                                 tx.send((dst_addr, origin.clone(), ping_ret, start_time.elapsed()));
@@ -457,11 +457,11 @@ fn ping(
                     };
                 recv_size += 1;
                 pool.execute(move || {
-                    for ind in 0..max_attempts {
+                    for ind in 0..attempts {
                         let start_time = Instant::now();
                         let ping_ret =
                             ping_thread6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
-                        if ind == max_attempts - 1 {
+                        if ind == attempts - 1 {
                             // last attempt
                             let _ =
                                 tx.send((dst_addr, origin.clone(), ping_ret, start_time.elapsed()));
@@ -544,20 +544,20 @@ fn ping(
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::Syn,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -605,20 +605,20 @@ pub fn tcp_syn_ping_raw(
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::Ack,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -666,20 +666,20 @@ pub fn tcp_ack_ping_raw(
 #[cfg(feature = "ping")]
 pub fn udp_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::Udp,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -729,20 +729,20 @@ pub fn udp_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmp_echo_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::IcmpEcho,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -775,20 +775,20 @@ pub fn icmp_echo_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::IcmpTimeStamp,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -822,20 +822,20 @@ pub fn icmp_timestamp_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::IcmpAddressMask,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -869,20 +869,20 @@ pub fn icmp_address_mask_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmpv6_ping(
     targets: &[Target],
-    num_threads: Option<usize>,
+    threads: Option<usize>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
     timeout: Option<Duration>,
-    max_attempts: usize,
+    attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
         targets,
-        num_threads,
+        threads,
         PingMethods::Icmpv6Echo,
         src_addr,
         src_port,
         timeout,
-        max_attempts,
+        attempts,
     )
 }
 
@@ -914,7 +914,7 @@ pub fn icmp_ping_raw(
 
 #[cfg(feature = "ping")]
 #[cfg(test)]
-mod max_attempts {
+mod attempts {
     use super::*;
     use crate::Target;
     use std::str::FromStr;
@@ -929,16 +929,16 @@ mod max_attempts {
         let target1 = Target::new(addr1, Some(vec![80]));
         let target2 = Target::new(addr2, Some(vec![80]));
         let target3 = Target::new(addr3, Some(vec![80]));
-        let max_attempts = 2;
-        let num_threads = Some(8);
+        let attempts = 2;
+        let threads = Some(8);
         let ret = tcp_syn_ping(
             &[target1, target2, target3],
             // &[target1, target2, target3],
-            num_threads,
+            threads,
             src_ipv4,
             src_port,
             timeout,
-            max_attempts,
+            attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -964,15 +964,15 @@ mod max_attempts {
         let target1 = Target::new(addr1.into(), Some(vec![80]));
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
-        let max_attempts = 4;
-        let num_threads = Some(8);
+        let attempts = 4;
+        let threads = Some(8);
         let ret = tcp_syn_ping(
             &[target1, target2, target3],
-            num_threads,
+            threads,
             src_ipv4,
             src_port,
             timeout,
-            max_attempts,
+            attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -990,16 +990,16 @@ mod max_attempts {
         // let target2 = Target::new(addr2.into(), Some(vec![]));
         // let target3 = Target::new(addr3.into(), Some(vec![]));
         // let target4 = Target::new(addr4.into(), Some(vec![]));
-        let max_attempts = 4;
-        let num_threads = Some(8);
+        let attempts = 4;
+        let threads = Some(8);
         let ret = icmp_echo_ping(
             // &[target1, target2, target3, target4],
             &[target1],
-            num_threads,
+            threads,
             src_ipv4,
             src_port,
             timeout,
-            max_attempts,
+            attempts,
         )
         .unwrap();
 
@@ -1018,16 +1018,16 @@ mod max_attempts {
         // let target2 = Target::new(addr2.into(), Some(vec![]));
         // let target3 = Target::new(addr3.into(), Some(vec![]));
         // let target4 = Target::new(addr4.into(), Some(vec![]));
-        let max_attempts = 4;
-        let num_threads = Some(8);
+        let attempts = 4;
+        let threads = Some(8);
         let ret = icmp_timestamp_ping(
             // &[target1, target2, target3, target4],
             &[target1],
-            num_threads,
+            threads,
             src_ipv4,
             src_port,
             timeout,
-            max_attempts,
+            attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -1039,15 +1039,15 @@ mod max_attempts {
         let timeout = Some(Duration::new(1, 0));
         let targets = Target::from_domain("scanme.nmap.org", None).unwrap();
 
-        let max_attempts = 4;
-        let num_threads = Some(8);
+        let attempts = 4;
+        let threads = Some(8);
         let ret = icmp_echo_ping(
             &targets,
-            num_threads,
+            threads,
             src_ipv4,
             src_port,
             timeout,
-            max_attempts,
+            attempts,
         )
         .unwrap();
         println!("{}", ret.ping_reports.len());
@@ -1063,16 +1063,16 @@ mod max_attempts {
         let target1 = Target::new(addr1.into(), Some(vec![80]));
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
-        let max_attempts = 4;
-        let num_threads = Some(8);
+        let attempts = 4;
+        let threads = Some(8);
         let timeout = Some(Duration::new(1, 0));
         let ret = icmpv6_ping(
             &[target1, target2, target3],
-            num_threads,
+            threads,
             src_addr,
             src_port,
             timeout,
-            max_attempts,
+            attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -1082,7 +1082,7 @@ mod max_attempts {
     fn test_github_issues_14() {
         use std::process::Command;
         let pid = std::process::id();
-        let num_threads = Some(8);
+        let threads = Some(8);
 
         for i in 0..10_000 {
             let c2 = Command::new("bash")
@@ -1099,7 +1099,7 @@ mod max_attempts {
             let target = Target::new(addr1, None);
             let _ret = icmp_echo_ping(
                 &[target],
-                num_threads,
+                threads,
                 None,
                 None,
                 Some(Duration::new(1, 0)),

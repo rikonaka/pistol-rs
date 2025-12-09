@@ -23,17 +23,17 @@ pub fn time_sec_to_string(cost: Duration) -> String {
     }
 }
 
-pub fn num_threads_check(num_threads: usize) -> usize {
-    let mut num_threads = num_threads;
-    if num_threads > MAX_THREADS {
+pub fn num_threads_check(threads: usize) -> usize {
+    let mut threads = threads;
+    if threads > MAX_THREADS {
         warn!(
             "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
-            num_threads, MAX_THREADS
+            threads, MAX_THREADS
         );
-        num_threads = MAX_THREADS;
+        threads = MAX_THREADS;
     }
-    debug!("the number of create threads: {}", num_threads);
-    num_threads
+    debug!("the number of create threads: {}", threads);
+    threads
 }
 
 pub fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
@@ -93,9 +93,9 @@ pub fn get_cpu_num() -> usize {
     num_cpus::get()
 }
 
-pub fn get_threads_pool(num_threads: usize) -> ThreadPool {
-    let pool = if num_threads > 0 {
-        ThreadPool::new(num_threads)
+pub fn get_threads_pool(threads: usize) -> ThreadPool {
+    let pool = if threads > 0 {
+        ThreadPool::new(threads)
     } else {
         let cpus = get_cpu_num();
         ThreadPool::new(cpus)

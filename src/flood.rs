@@ -158,7 +158,7 @@ fn ipv4_flood_thread(
     method: FloodMethods,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<(usize, usize), PistolError> {
@@ -178,7 +178,7 @@ fn ipv4_flood_thread(
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
-    for _ in 0..num_threads {
+    for _ in 0..threads {
         recv_size += repeat_count;
         let tx = tx.clone();
         thread::spawn(move || {
@@ -204,7 +204,7 @@ fn ipv4_flood_thread(
     for send_buff_size in iter {
         total_send_buff_size += send_buff_size;
     }
-    Ok((num_threads * retransmit_count, total_send_buff_size))
+    Ok((threads * retransmit_count, total_send_buff_size))
 }
 
 #[cfg(feature = "flood")]
@@ -212,7 +212,7 @@ fn ipv6_flood_thread(
     method: FloodMethods,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<(usize, usize), PistolError> {
@@ -232,7 +232,7 @@ fn ipv6_flood_thread(
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
-    for _ in 0..num_threads {
+    for _ in 0..threads {
         recv_size += repeat_count;
         let tx = tx.clone();
         thread::spawn(move || {
@@ -257,13 +257,13 @@ fn ipv6_flood_thread(
     for send_buff_size in iter {
         total_send_buff_size += send_buff_size;
     }
-    Ok((num_threads * retransmit_count, total_send_buff_size))
+    Ok((threads * retransmit_count, total_send_buff_size))
 }
 
 #[cfg(feature = "flood")]
 fn flood(
     targets: &[Target],
-    num_threads: usize,
+    threads: usize,
     method: FloodMethods,
     retransmit_count: usize,
     repeat_count: usize,
@@ -289,7 +289,7 @@ fn flood(
                             dst_port,
                             retransmit_count,
                             repeat_count,
-                            num_threads,
+                            threads,
                         );
                         let _ = tx.send((dst_addr, origin, ret, start_time));
                     });
@@ -309,7 +309,7 @@ fn flood(
                             dst_port,
                             retransmit_count,
                             repeat_count,
-                            num_threads,
+                            threads,
                         );
                         let _ = tx.send((dst_addr, origin, ret, start_time));
                     });
@@ -391,13 +391,13 @@ pub fn flood_raw(
 #[cfg(feature = "flood")]
 pub fn icmp_flood(
     targets: &[Target],
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<PistolFloods, PistolError> {
     flood(
         targets,
-        num_threads,
+        threads,
         FloodMethods::Icmp,
         retransmit_count,
         repeat_count,
@@ -413,13 +413,13 @@ pub fn icmp_flood_raw(dst_addr: IpAddr, retransmit_count: usize) -> Result<usize
 #[cfg(feature = "flood")]
 pub fn tcp_syn_flood(
     targets: &[Target],
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<PistolFloods, PistolError> {
     flood(
         targets,
-        num_threads,
+        threads,
         FloodMethods::Syn,
         retransmit_count,
         repeat_count,
@@ -438,13 +438,13 @@ pub fn tcp_syn_flood_raw(
 #[cfg(feature = "flood")]
 pub fn tcp_ack_flood(
     targets: &[Target],
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<PistolFloods, PistolError> {
     flood(
         targets,
-        num_threads,
+        threads,
         FloodMethods::Ack,
         retransmit_count,
         repeat_count,
@@ -463,13 +463,13 @@ pub fn tcp_ack_flood_raw(
 #[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood(
     targets: &[Target],
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<PistolFloods, PistolError> {
     flood(
         targets,
-        num_threads,
+        threads,
         FloodMethods::AckPsh,
         retransmit_count,
         repeat_count,
@@ -488,13 +488,13 @@ pub fn tcp_ack_psh_flood_raw(
 #[cfg(feature = "flood")]
 pub fn udp_flood(
     targets: &[Target],
-    num_threads: usize,
+    threads: usize,
     retransmit_count: usize,
     repeat_count: usize,
 ) -> Result<PistolFloods, PistolError> {
     flood(
         targets,
-        num_threads,
+        threads,
         FloodMethods::Udp,
         retransmit_count,
         repeat_count,
@@ -520,10 +520,10 @@ mod tests {
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
         let ports = Some(vec![22]);
         let target1 = Target::new(dst_addr.into(), ports);
-        let num_threads = 240; // It can be simply understood as the number of attack threads.
+        let threads = 240; // It can be simply understood as the number of attack threads.
         let retransmit_count = 480; // The number of times to repeat sending the same attack packet.
         let repeat_count = 4; // The number of times each thread repeats the attack.
-        let ret = tcp_syn_flood(&[target1], num_threads, retransmit_count, repeat_count).unwrap();
+        let ret = tcp_syn_flood(&[target1], threads, retransmit_count, repeat_count).unwrap();
         println!("{}", ret);
     }
 }
