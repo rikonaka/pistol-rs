@@ -1,9 +1,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
 use dns_lookup::lookup_host;
+use pcapture::Capture;
+use pcapture::fs::pcapng::EnhancedPacketBlock;
+use pcapture::fs::pcapng::GeneralBlock;
 use pcapture::fs::pcapng::PcapNg;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -20,15 +24,21 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 #[cfg(feature = "os")]
 use std::net::Ipv6Addr;
-use std::result;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::Sender;
+use std::sync::mpsc::channel;
+use std::thread;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
 use tracing::Level;
+use tracing::debug;
+use tracing::error;
 use tracing_subscriber::FmtSubscriber;
 
 mod error;
@@ -45,11 +55,20 @@ mod vs;
 use crate::error::PistolError;
 #[cfg(feature = "flood")]
 use crate::flood::PistolFloods;
+use crate::layer::InferAddr;
+use crate::layer::Layer2;
+use crate::layer::Layer3;
 use crate::layer::PacketFilter;
+use crate::layer::PayloadMatch;
+use crate::layer::find_interface_by_name;
+use crate::layer::find_interface_by_src;
+use crate::layer::infer_addr;
 #[cfg(feature = "os")]
 use crate::os::OsDetect;
 #[cfg(feature = "os")]
 use crate::os::PistolOsDetects;
+#[cfg(feature = "os")]
+use crate::os::dbparser::NmapOsDb;
 #[cfg(feature = "ping")]
 use crate::ping::PingStatus;
 #[cfg(feature = "ping")]
@@ -67,7 +86,7 @@ use crate::vs::PistolVsScans;
 #[cfg(feature = "vs")]
 use crate::vs::PortService;
 
-pub type Result<T, E = error::PistolError> = result::Result<T, E>;
+pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
 // in order to reduce multiple neighbor detection in a multi-threaded environment
 static NEIGHBOR_SCAN_STATUS: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
@@ -434,6 +453,69 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
+/// Capture the traffic and save into file.
+pub fn save_packet(packet: &[u8]) -> Result<(), PistolError> {
+    let mut pp = CAPTURED_PACKETS
+        .lock()
+        .map_err(|e| PistolError::LockVarFailed {
+            var_name: String::from("CAPTURED_PACKETS"),
+            e: e.to_string(),
+        })?;
+
+    // interface_id = 0 means we use the first interface we builed in fake pcapng headers
+    const INTERFACE_ID: u32 = 0;
+    // this is the default value of pcapture
+    const SNAPLEN: usize = 65535;
+    let block = EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN, 0, 0)?;
+    let gb = GeneralBlock::EnhancedPacketBlock(block);
+    pp.append(gb);
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct ConmunicationChannel {
+    pub filter_sender: Sender<Vec<PacketFilter>>, // send matched filters
+    pub packet_receiver: Receiver<Vec<u8>>,       // recv matched packets
+}
+
+impl ConmunicationChannel {
+    pub fn send_filters(&self, filters: Vec<PacketFilter>) -> Result<(), PistolError> {
+        match self.filter_sender.send(filters) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PistolError::ChannelSendFailed {
+                channel_name: String::from("filter_sender"),
+                e: e.to_string(),
+            }),
+        }
+    }
+    pub fn recv_packets(&self, timeout: Option<Duration>) -> Result<Vec<u8>, PistolError> {
+        let timeout = match timeout {
+            Some(t) => t,
+            None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
+        };
+        match self.packet_receiver.recv_timeout(timeout) {
+            Ok(packets) => Ok(packets),
+            Err(e) => {
+                if e == RecvTimeoutError::Timeout {
+                    // timeout, return empty vec
+                    Ok(Vec::new())
+                } else {
+                    Err(PistolError::ChannelRecvFailed {
+                        channel_name: String::from("packet_receiver"),
+                        e: e.to_string(),
+                    })
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NetInfo {
+    addr: InferAddr,
+    interface: NetworkInterface,
+}
+
 #[derive(Debug, Clone)]
 pub struct Pistol {
     if_name: Option<String>,
@@ -525,6 +607,77 @@ impl Pistol {
     pub fn get_attempts(&self) -> usize {
         self.attempts
     }
+    fn runner(
+        if_name: String,
+        timeout: Option<Duration>,
+        need_capture: bool,
+        filter_receiver: Receiver<Vec<PacketFilter>>, // recv matched filters
+        packet_sender: Sender<Vec<u8>>,               // send matched packets
+    ) -> Result<(), PistolError> {
+        let mut cap = Capture::new(&if_name)?;
+        if let Some(timeout) = timeout {
+            let sec = timeout.as_secs_f32();
+            cap.set_timeout((sec * 1000.0) as i32);
+        } else {
+            cap.set_timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
+        }
+
+        let mut filters = Vec::new();
+        let loop_timeout = Duration::from_secs_f32(0.001);
+        loop {
+            match filter_receiver.recv_timeout(loop_timeout) {
+                Ok(new_filters) => {
+                    filters.extend_from_slice(&new_filters);
+                }
+                Err(e) => {
+                    if e == RecvTimeoutError::Timeout {
+                        debug!("layer2 runner recv filter channel timeout, skipping...");
+                    } else {
+                        error!("layer2 runner recv filter channel error: {}", e);
+                        break;
+                    }
+                }
+            }
+
+            let packets = cap.fetch_as_vec()?;
+            for packet in packets {
+                if need_capture {
+                    save_packet(&packet)?;
+                }
+                for (i, filter) in filters.iter().enumerate() {
+                    if filter.check(&packet) {
+                        debug!("layer2 recv matched filter: {}", filter.name());
+                        match packet_sender.send(packet.to_vec()) {
+                            Ok(_) => (),
+                            Err(e) => error!("layer2 runner send packet channel error: {}", e),
+                        };
+                        let _droped_filter = filters.swap_remove(i);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    fn start_runner(
+        &self,
+        if_name: &str,
+        filter_receiver: Receiver<Vec<PacketFilter>>,
+        packet_sender: Sender<Vec<u8>>,
+    ) {
+        let need_capture = self.capture.is_some();
+        let timeout = self.timeout.clone();
+        let if_name = if_name.to_string();
+        let _ = thread::spawn(move || {
+            Self::runner(
+                if_name,
+                timeout,
+                need_capture,
+                filter_receiver,
+                packet_sender,
+            )
+        });
+    }
     /// Initialize the Pistol instance with the given parameters.
     pub fn init(&mut self) -> Result<(), PistolError> {
         fn set_logger(level: Level) -> Result<(), PistolError> {
@@ -546,17 +699,65 @@ impl Pistol {
 
         Ok(())
     }
+    fn init_runner(
+        &mut self,
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+    ) -> Result<(NetInfo, ConmunicationChannel), PistolError> {
+        let infer_addr = match infer_addr(dst_addr, src_addr)? {
+            Some(ia) => ia,
+            None => return Err(PistolError::CanNotFoundSourceAddress),
+        };
+
+        let (if_name, interface) = match &self.if_name {
+            Some(name) => match find_interface_by_name(&name) {
+                Some(i) => (name.clone(), i),
+                None => return Err(PistolError::CanNotFoundInterface),
+            },
+            None => match find_interface_by_src(infer_addr.src_addr) {
+                Some(i) => {
+                    self.if_name = Some(i.name.clone());
+                    (i.name.clone(), i)
+                }
+                None => return Err(PistolError::CanNotFoundInterface),
+            },
+        };
+
+        let net_info = NetInfo {
+            addr: infer_addr,
+            interface,
+        };
+
+        self.if_name = Some(if_name.clone());
+        let (filter_sender, filter_receiver) = channel();
+        let (packet_sender, packet_receiver) = channel();
+        self.start_runner(&if_name, filter_receiver, packet_sender);
+
+        let cc = ConmunicationChannel {
+            filter_sender,
+            packet_receiver,
+        };
+        Ok((net_info, cc))
+    }
+    fn is_need_capture(&self) -> bool {
+        match &self.capture {
+            Some(_) => true,
+            None => false,
+        }
+    }
     /* Scan */
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
     /// If a reply is received within the specified timeout, it returns the MAC address of the target and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn arp_scan_raw(
-        &self,
+        &mut self,
         dst_ipv4: Ipv4Addr,
         src_addr: Option<IpAddr>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        scan::arp_scan_raw(dst_ipv4, src_addr, self.if_name.clone(), self.timeout)
+        let need_capture = self.is_need_capture();
+        let (net_info, cc) = self.init_runner(dst_ipv4.into(), src_addr)?;
+        scan::arp_scan_raw(dst_ipv4, src_addr, net_info, cc, self.timeout, need_capture)
     }
     /// ARP Scan (IPv4) or NDP NS Scan (IPv6).
     /// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
@@ -618,13 +819,17 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
     ) -> Result<PistolMacScans, PistolError> {
+        let need_capture = self.is_need_capture();
+        let (interface, cc) = self.init_runner(dst_ipv4.into(), src_addr)?;
         scan::mac_scan(
             targets,
             src_addr,
-            self.if_name.clone(),
+            interface,
+            cc,
             self.timeout,
             self.threads,
             self.attempts,
+            need_capture,
         )
     }
     /// The raw version of ndp_ns_scan function.
@@ -1488,6 +1693,15 @@ impl Pistol {
         flood::udp_flood_raw(dst_addr, dst_port, retransmit_count)
     }
     /* OS Detect */
+    /// Parse Nmap OS database file lines.
+    /// This function takes lines from an Nmap OS database file
+    /// and parses them into a structured format.
+    /// Each entry in the database is represented as an NmapOsDb struct,
+    /// which contains information about a specific operating system fingerprint.
+    #[cfg(feature = "os")]
+    pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolError> {
+        os::dbparser::nmap_os_db_parser(lines)
+    }
     /// Detect target machine OS on IPv4 and IPv6.
     /// This function uses a combination of TCP, UDP, and ICMP probes
     /// to gather information about the target system's network stack behavior.

@@ -63,10 +63,6 @@ pub struct AllPacketRR {
     pub u1: U1RR,
 }
 
-impl AllPacketRR {
-    pub fn build(&mut self) {}
-}
-
 #[derive(Debug, Clone)]
 pub struct NXRR6 {
     pub ni: RequestResponse,

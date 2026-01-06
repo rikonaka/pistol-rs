@@ -84,6 +84,14 @@ pub enum PistolError {
     #[error("build packet error occurret at [{location}]")]
     BuildPacketError { location: String },
 
+    /* LIB */
+    #[error("the destination address and source address Ip versions do not match")]
+    IpVersionNotMatch,
+    #[error("channel {channel_name} send failed: {e}")]
+    ChannelSendFailed { channel_name: String, e: String },
+    #[error("channel {channel_name} recv failed: {e}")]
+    ChannelRecvFailed { channel_name: String, e: String },
+
     /* ROUTE ERROR */
     #[error("subnetwork error")]
     RegexError(#[from] regex::Error),

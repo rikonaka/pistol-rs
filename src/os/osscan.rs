@@ -22,7 +22,7 @@ use crate::layer::Layer4FilterTcpUdp;
 use crate::layer::PacketFilter;
 use crate::layer::layer3_ipv4_send;
 use crate::os::OsInfo;
-use crate::os::dbparser::NmapOSDB;
+use crate::os::dbparser::NmapOsDb;
 use crate::os::operator::icmp_cd;
 use crate::os::operator::icmp_dfi;
 use crate::os::operator::tcp_a;
@@ -1845,7 +1845,7 @@ pub fn os_probe_thread(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     src_ipv4: Ipv4Addr,
-    nmap_os_db: Vec<NmapOSDB>,
+    nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {

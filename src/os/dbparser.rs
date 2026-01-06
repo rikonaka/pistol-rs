@@ -615,7 +615,7 @@ impl IEDB {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NmapOSDB {
+pub struct NmapOsDb {
     pub name: String,
     pub class: Vec<String>,
     pub cpe: Vec<String>,
@@ -634,7 +634,7 @@ pub struct NmapOSDB {
     pub ie: Option<IEDB>,
 }
 
-impl NmapOSDB {
+impl NmapOsDb {
     pub fn check(&self, probe_ret: &Fingerprint) -> (usize, usize) {
         let (seq_score, seq_total) = self.seq.check(&probe_ret.seqx);
         // println!("SEQ: {}", seq_check);
@@ -701,7 +701,7 @@ impl NmapOSDB {
 /// Process standard `nmap-os-db files` and return a structure that can be processed by the program.
 /// Each item in the input vec `lines` represents a line of nmap-os-db file content.
 /// So just read the nmap file line by line and store it in vec for input.
-pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolError> {
+pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolError> {
     let name_reg = Regex::new(r"Fingerprint (?P<name>.+)")?;
     let class_reg = Regex::new(
         r"Class (?P<class1>[^|]+) \|(?P<class2>[^|]+)\|(\|)? (?P<class3>[^|]+)( \|(\|)? (?P<class4>[^|]+))?",
@@ -1169,7 +1169,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOSDB>, PistolErro
                                     };
                                     let ie = ie_parser(line)?;
 
-                                    let nmap_os_db = NmapOSDB {
+                                    let nmap_os_db = NmapOsDb {
                                         name: name.clone(),
                                         class: class.clone(),
                                         cpe: cpe.clone(),

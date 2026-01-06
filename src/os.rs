@@ -45,7 +45,7 @@ use crate::error::PistolError;
 #[cfg(feature = "os")]
 use crate::layer::infer_addr;
 #[cfg(feature = "os")]
-use crate::os::dbparser::NmapOSDB;
+use crate::os::dbparser::NmapOsDb;
 #[cfg(feature = "os")]
 use crate::os::osscan::Fingerprint;
 #[cfg(feature = "os")]
@@ -86,7 +86,7 @@ pub struct OsInfo {
     pub cpe: Vec<String>,
     pub score: usize,
     pub total: usize,
-    pub db: NmapOSDB,
+    pub db: NmapOsDb,
 }
 
 #[cfg(feature = "os")]
@@ -353,7 +353,7 @@ fn gen_linear() -> Result<Linear, PistolError> {
 }
 
 #[cfg(feature = "os")]
-fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
+fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
     let data = include_bytes!("./db/nmap-os-db.zip");
     let reader = Cursor::new(data);
     let mut archive = ZipArchive::new(reader)?;
@@ -362,7 +362,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOSDB>, PistolError> {
         let mut file = archive.by_index(0)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        let ret: Vec<NmapOSDB> = serde_json::from_str(&contents)?;
+        let ret: Vec<NmapOsDb> = serde_json::from_str(&contents)?;
         Ok(ret)
     } else {
         Err(PistolError::ZipEmptyError)

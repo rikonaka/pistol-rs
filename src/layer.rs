@@ -1,6 +1,3 @@
-use pcapture::Capture;
-use pcapture::fs::pcapng::EnhancedPacketBlock;
-use pcapture::fs::pcapng::GeneralBlock;
 use pnet::datalink;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::ChannelType;
@@ -30,15 +27,13 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
-use std::time::Instant;
 use tracing::debug;
 
-use crate::CAPTURED_PACKETS;
-use crate::DEFAULT_TIMEOUT;
 use crate::error::PistolError;
 use crate::route::RouteVia;
 use crate::route::get_default_route;
 use crate::route::search_route_table;
+use crate::save_packet;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const ARP_HEADER_SIZE: usize = 28;
@@ -858,7 +853,7 @@ impl PayloadMatchIcmpv6 {
 
 #[derive(Debug, Clone, Copy)]
 pub enum PayloadMatch {
-    PayloadMatchIp(PayloadMatchIp),
+    // PayloadMatchIp(PayloadMatchIp),
     PayloadMatchTcpUdp(PayloadMatchTcpUdp),
     PayloadMatchIcmp(PayloadMatchIcmp),
     PayloadMatchIcmpv6(PayloadMatchIcmpv6),
@@ -871,7 +866,7 @@ pub enum PayloadMatch {
 impl PayloadMatch {
     pub fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
         match self {
-            PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv4(icmp_payload),
+            // PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv4(icmp_payload),
             PayloadMatch::PayloadMatchTcpUdp(tcp_udp) => tcp_udp.do_match_ipv4(icmp_payload),
             PayloadMatch::PayloadMatchIcmp(icmp) => icmp.do_match(icmp_payload),
             PayloadMatch::PayloadMatchIcmpv6(_) => false,
@@ -879,7 +874,7 @@ impl PayloadMatch {
     }
     pub fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
         match self {
-            PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv6(icmpv6_payload),
+            // PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv6(icmpv6_payload),
             PayloadMatch::PayloadMatchTcpUdp(tcp_udp) => tcp_udp.do_match_ipv6(icmpv6_payload),
             PayloadMatch::PayloadMatchIcmpv6(icmpv6) => icmpv6.do_match(icmpv6_payload),
             PayloadMatch::PayloadMatchIcmp(_) => false,
@@ -1063,9 +1058,9 @@ pub struct Layer2 {
     dst_mac: MacAddr,
     interface: NetworkInterface,
     ether_type: EtherType,
-    filters: Vec<PacketFilter>,
     timeout: Option<Duration>,
     need_return: bool,
+    need_capture: bool,
 }
 
 impl Layer2 {
@@ -1073,69 +1068,21 @@ impl Layer2 {
         dst_mac: MacAddr,
         interface: NetworkInterface,
         ether_type: EtherType,
-        filters: Vec<PacketFilter>,
         timeout: Option<Duration>,
         need_return: bool,
+        need_capture: bool,
     ) -> Self {
         Self {
             dst_mac,
             interface,
             ether_type,
-            filters,
             timeout,
             need_return,
+            need_capture,
         }
-    }
-    /// Capture the traffic and save into file.
-    fn save(packet: &[u8]) -> Result<(), PistolError> {
-        let mut pp = CAPTURED_PACKETS
-            .lock()
-            .map_err(|e| PistolError::LockVarFailed {
-                var_name: String::from("CAPTURED_PACKETS"),
-                e: e.to_string(),
-            })?;
-
-        // interface_id = 0 means we use the first interface we builed in fake pcapng headers
-        const INTERFACE_ID: u32 = 0;
-        // this is the default value of pcapture
-        const SNAPLEN: usize = 65535;
-        let block = EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN, 0, 0)?;
-        let gb = GeneralBlock::EnhancedPacketBlock(block);
-        pp.append(gb);
-        Ok(())
-    }
-    /// This function only recv data.
-    fn recv(&self) -> Result<Vec<u8>, PistolError> {
-        // set a max retry to avoid infinite loop
-        const MAX_RETRY: usize = 5;
-
-        let mut cap = Capture::new(&self.interface.name)?;
-        if let Some(timeout) = self.timeout {
-            let sec = timeout.as_secs_f32();
-            cap.set_timeout((sec * 1000.0) as i32);
-        } else {
-            cap.set_timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
-        }
-
-        // we recv all packets once so there are high possiblity to get the matched packet in 5 tries
-        for _ in 0..MAX_RETRY {
-            let packets = cap.fetch_as_vec()?;
-            for packet in packets {
-                Self::save(&packet)?;
-                for filter in &self.filters {
-                    if filter.check(&packet) {
-                        debug!("layer2 recv matched filter: {}", filter.name());
-                        // only 1 packet will be recv from match threads
-                        return Ok(packet.to_vec());
-                    }
-                }
-            }
-        }
-        // not found matched packet
-        Ok(Vec::new())
     }
     /// This function only send data.
-    fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
+    pub fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
         let config = Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
@@ -1188,7 +1135,10 @@ impl Layer2 {
         ethernet_packet.set_source(src_mac);
         ethernet_packet.set_ethertype(self.ether_type);
         ethernet_packet.set_payload(payload);
-        Self::save(&buff)?;
+
+        if self.need_capture {
+            save_packet(&buff)?;
+        }
 
         match sender.send_to(&buff, Some(self.interface.clone())) {
             Some(r) => match r {
@@ -1198,48 +1148,6 @@ impl Layer2 {
             None => Ok(()),
         }
     }
-    /// Send and recv data.
-    pub fn send_recv(&self, payload: &[u8]) -> Result<(Vec<u8>, Duration), PistolError> {
-        let start = Instant::now();
-        if self.need_return {
-            self.send(payload)?;
-            let data = self.recv()?;
-            let rtt = start.elapsed();
-            Ok((data, rtt))
-        } else {
-            self.send(payload)?;
-            let rtt = start.elapsed();
-            Ok((Vec::new(), rtt))
-        }
-    }
-}
-
-pub fn layer3_ipv4_send(
-    dst_ipv4: Ipv4Addr,
-    src_ipv4: Ipv4Addr,
-    payload: &[u8], // ethernet payload
-    filters: Vec<PacketFilter>,
-    timeout: Option<Duration>,
-    need_return: bool,
-) -> Result<(Vec<u8>, Duration), PistolError> {
-    let (dst_mac, interface) =
-        RouteVia::get_dst_mac_and_src_if(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-    debug!(
-        "dst addr: {}, dst mac: {}, src addr: {}, sending interface: {}, {:?}",
-        dst_ipv4, dst_mac, src_ipv4, interface.name, interface.ips
-    );
-
-    let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(
-        dst_mac,
-        interface,
-        ether_type,
-        filters,
-        timeout,
-        need_return,
-    );
-    let (layer2_buff, rtt) = layer2.send_recv(payload)?;
-    Ok((layer2_payload(&layer2_buff), rtt))
 }
 
 pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
@@ -1248,41 +1156,60 @@ pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])
 }
 
-fn layer2_payload(buff: &[u8]) -> Vec<u8> {
+fn get_layer2_payload(buff: &[u8]) -> Vec<u8> {
     match EthernetPacket::new(buff) {
         Some(ethernet_packet) => ethernet_packet.payload().to_vec(),
         None => Vec::new(),
     }
 }
 
-pub fn layer3_ipv6_send(
-    dst_ipv6: Ipv6Addr,
-    src_ipv6: Ipv6Addr,
-    payload: &[u8],
-    filters: Vec<PacketFilter>,
+pub struct Layer3 {
+    dst: IpAddr,
+    src: IpAddr,
     timeout: Option<Duration>,
     need_return: bool,
-) -> Result<(Vec<u8>, Duration), PistolError> {
-    let dst_ipv6 = if dst_ipv6.is_loopback() {
-        src_ipv6
-    } else {
-        dst_ipv6
-    };
-    let (dst_mac, interface) =
-        RouteVia::get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    need_capture: bool,
+}
 
-    let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(
-        dst_mac,
-        interface,
-        ether_type,
-        filters,
-        timeout,
-        need_return,
-    );
-
-    let (layer2_buff, rtt) = layer2.send_recv(payload)?;
-    Ok((layer2_payload(&layer2_buff), rtt))
+impl Layer3 {
+    pub fn new(
+        dst: IpAddr,
+        src: IpAddr,
+        timeout: Option<Duration>,
+        need_return: bool,
+        need_capture: bool,
+    ) -> Self {
+        Self {
+            dst,
+            src,
+            timeout,
+            need_return,
+            need_capture,
+        }
+    }
+    pub fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
+        let (dst_mac, interface) =
+            RouteVia::get_dst_mac_and_src_if(self.dst, self.src, self.timeout)?;
+        debug!(
+            "dst addr: {}, dst mac: {}, src addr: {}, sending interface: {}, {:?}",
+            self.dst, dst_mac, self.src, interface.name, interface.ips
+        );
+        let ether_type = if self.dst.is_ipv4() {
+            EtherTypes::Ipv4
+        } else {
+            EtherTypes::Ipv6
+        };
+        let layer2 = Layer2::new(
+            dst_mac,
+            interface,
+            ether_type,
+            self.timeout,
+            self.need_return,
+            self.need_capture,
+        );
+        layer2.send(payload)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

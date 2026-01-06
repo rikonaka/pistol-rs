@@ -136,7 +136,7 @@ pub fn send_ndp_ns_scan_packet(
     let dst_mac = multicast_mac(dst_ipv6);
 
     let layer2 = Layer2::new(dst_mac, interface, ether_type, filters, timeout, true);
-    let (ret, rtt) = layer2.send_recv(&ipv6_buff)?;
+    let (ret, rtt) = layer2.send_and_recv(&ipv6_buff)?;
 
     let mac = get_mac_from_ndp_ns(&ret);
     Ok((mac, rtt))

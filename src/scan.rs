@@ -5,6 +5,8 @@ use chrono::DateTime;
 use chrono::Local;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
+#[cfg(feature = "scan")]
+use pnet::datalink::NetworkInterface;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::Cell;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -47,6 +49,10 @@ pub mod udp;
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub mod udp6;
 
+#[cfg(feature = "scan")]
+use crate::ConmunicationChannel;
+#[cfg(feature = "scan")]
+use crate::NetInfo;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::Target;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -60,6 +66,8 @@ use crate::layer::find_interface_by_src;
 use crate::layer::infer_addr;
 #[cfg(feature = "scan")]
 use crate::scan::arp::send_arp_scan_packet;
+#[cfg(feature = "scan")]
+use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils::get_threads_pool;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -200,32 +208,27 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
 
 #[cfg(feature = "scan")]
 pub fn arp_scan_raw(
-    dst_ipv4: Ipv4Addr,
-    src_addr: Option<IpAddr>,
-    if_name: Option<String>,
+    net_info: NetInfo,
+    cc: ConmunicationChannel,
     timeout: Option<Duration>,
+    need_capture: bool,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let dst_mac = MacAddr::broadcast();
-    let (dst_ipv4, src_ipv4) = match infer_addr(dst_ipv4.into(), src_addr)? {
-        Some(ia) => ia.ipv4_addr()?,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
-    };
-    let interface = match if_name {
-        Some(name) => match find_interface_by_name(&name) {
-            Some(i) => i,
-            None => return Err(PistolError::CanNotFoundInterface),
-        },
-        None => match find_interface_by_src(src_ipv4.into()) {
-            Some(i) => i,
-            None => return Err(PistolError::CanNotFoundInterface),
-        },
-    };
-
-    let src_mac = match interface.mac {
+    let src_mac = match net_info.interface.mac {
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
-    match send_arp_scan_packet(dst_ipv4, dst_mac, src_ipv4, src_mac, interface, timeout) {
+    let (dst_ipv4, src_ipv4) = net_info.addr.ipv4_addr()?;
+    match send_arp_scan_packet(
+        dst_ipv4,
+        dst_mac,
+        src_ipv4,
+        src_mac,
+        net_info.interface.clone(),
+        cc,
+        timeout,
+        need_capture,
+    ) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
@@ -235,25 +238,10 @@ pub fn arp_scan_raw(
 pub fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     src_addr: Option<IpAddr>,
-    if_name: Option<String>,
+    interface: NetworkInterface,
+    cc: ConmunicationChannel,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
-    let (dst_ipv6, src_ipv6) = match infer_addr(dst_ipv6.into(), src_addr)? {
-        Some(ia) => ia.ipv6_addr()?,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
-    };
-    let interface = match if_name {
-        Some(name) => match find_interface_by_name(&name) {
-            Some(i) => i,
-            None => return Err(PistolError::CanNotFoundInterface),
-        },
-        None => match find_interface_by_src(src_ipv6.into()) {
-            Some(i) => i,
-            None => return Err(PistolError::CanNotFoundInterface),
-        },
-    };
-
     let src_mac = match interface.mac {
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
@@ -268,10 +256,12 @@ pub fn ndp_ns_scan_raw(
 pub fn mac_scan(
     targets: &[Target],
     src_addr: Option<IpAddr>,
-    if_name: Option<String>,
+    interface: NetworkInterface,
+    cc: ConmunicationChannel,
     timeout: Option<Duration>,
     threads: usize,
     attempts: usize,
+    need_capture: bool,
 ) -> Result<PistolMacScans, PistolError> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut ret = PistolMacScans::new(attempts);
@@ -285,12 +275,18 @@ pub fn mac_scan(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let tx = tx.clone();
-                let if_name = if_name.clone();
                 recv_size += 1;
                 pool.execute(move || {
                     for i in 0..attempts {
                         debug!("arp scan packets: #{}/{}", i + 1, attempts);
-                        let scan_ret = arp_scan_raw(dst_ipv4, src_addr, if_name.clone(), timeout);
+                        let scan_ret = arp_scan_raw(
+                            dst_ipv4,
+                            src_addr,
+                            interface.clone(),
+                            cc,
+                            timeout,
+                            need_capture,
+                        );
                         if i == attempts - 1 {
                             let _ = tx.send((dst_addr, scan_ret));
                         } else {
@@ -314,7 +310,6 @@ pub fn mac_scan(
             IpAddr::V6(dst_ipv6) => {
                 let tx = tx.clone();
                 recv_size += 1;
-                let if_name = if_name.clone();
                 pool.execute(move || {
                     for i in 0..attempts {
                         debug!("ndp_ns scan packets: #{}/{}", i + 1, attempts);

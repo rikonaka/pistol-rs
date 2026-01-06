@@ -10,8 +10,10 @@ use pnet::packet::ethernet::EthernetPacket;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
 // use tracing::debug;
 
+use crate::ConmunicationChannel;
 use crate::error::PistolError;
 use crate::layer::ARP_HEADER_SIZE;
 use crate::layer::Layer2;
@@ -41,7 +43,9 @@ pub fn send_arp_scan_packet(
     src_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     interface: NetworkInterface,
+    cc: ConmunicationChannel,
     timeout: Option<Duration>,
+    need_capture: bool,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let mut arp_buffer = [0u8; ARP_HEADER_SIZE];
     let mut arp_packet = match MutableArpPacket::new(&mut arp_buffer) {
@@ -77,11 +81,17 @@ pub fn send_arp_scan_packet(
         dst_addr: Some(src_ipv4.into()),
     };
     let filters = vec![PacketFilter::Layer3Filter(layer3)];
+    // send the filters to runner
+    cc.send_filters(filters)?;
 
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, filters, timeout, true);
-    let (ret, rtt) = layer2.send_recv(&arp_buffer)?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, true, need_capture);
+    let start = Instant::now();
+    layer2.send(&arp_buffer)?;
+    let ethernet_buff = cc.recv_packets(timeout)?;
+    let rtt = start.elapsed();
+
     // debug!("{} get ret from internet", dst_ipv4);
-    let mac = get_mac_from_arp_response(&ret);
+    let mac = get_mac_from_arp_response(&ethernet_buff);
     // debug!("{}: {:?}", dst_ipv4, mac);
     Ok((mac, rtt))
 }
