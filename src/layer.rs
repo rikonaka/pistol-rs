@@ -135,22 +135,36 @@ pub struct InferAddr {
 
 impl InferAddr {
     /// Returns: (dst_addr, src_addr)
-    pub fn ipv4_addr(&self) -> Result<(Ipv4Addr, Ipv4Addr), PistolError> {
+    pub fn get_ipv4_addr(&self) -> Result<(Ipv4Addr, Ipv4Addr), PistolError> {
         if let IpAddr::V4(dst_ipv4) = self.dst_addr {
             if let IpAddr::V4(src_ipv4) = self.src_addr {
-                return Ok((dst_ipv4, src_ipv4));
+                Ok((dst_ipv4, src_ipv4))
+            } else {
+                Err(PistolError::CanNotFoundSrcAddress)
             }
+        } else {
+            Err(PistolError::CanNotFoundDstAddress)
         }
-        Err(PistolError::CanNotFoundSourceAddress)
     }
     /// Returns: (dst_addr, src_addr)
-    pub fn ipv6_addr(&self) -> Result<(Ipv6Addr, Ipv6Addr), PistolError> {
+    pub fn get_ipv6_addr(&self) -> Result<(Ipv6Addr, Ipv6Addr), PistolError> {
         if let IpAddr::V6(dst_ipv6) = self.dst_addr {
             if let IpAddr::V6(src_ipv6) = self.src_addr {
-                return Ok((dst_ipv6, src_ipv6));
+                Ok((dst_ipv6, src_ipv6))
+            } else {
+                Err(PistolError::CanNotFoundSrcAddress)
             }
+        } else {
+            Err(PistolError::CanNotFoundDstAddress)
         }
-        Err(PistolError::CanNotFoundSourceAddress)
+    }
+    /// Judges whether the dst and src addresses are both IPv4
+    pub fn is_ipv4(&self) -> bool {
+        matches!(self.dst_addr, IpAddr::V4(_)) && matches!(self.src_addr, IpAddr::V4(_))
+    }
+    /// Judges whether the dst and src addresses are both IPv6
+    pub fn is_ipv6(&self) -> bool {
+        matches!(self.dst_addr, IpAddr::V6(_)) && matches!(self.src_addr, IpAddr::V6(_))
     }
 }
 

@@ -510,10 +510,11 @@ impl ConmunicationChannel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct NetInfo {
     addr: InferAddr,
     interface: NetworkInterface,
+    cc: ConmunicationChannel,
 }
 
 #[derive(Debug, Clone)]
@@ -607,6 +608,27 @@ impl Pistol {
     pub fn get_attempts(&self) -> usize {
         self.attempts
     }
+    /// Initialize the Pistol instance with the given parameters.
+    pub fn init(&mut self) -> Result<(), PistolError> {
+        fn set_logger(level: Level) -> Result<(), PistolError> {
+            let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+            let _ = tracing::subscriber::set_global_default(subscriber)?;
+            Ok(())
+        }
+
+        if let Some(log_level) = &self.log_level {
+            let log_level = log_level.to_lowercase();
+            match log_level.as_str() {
+                "debug" => set_logger(Level::DEBUG)?,
+                "warn" => set_logger(Level::WARN)?,
+                "info" => set_logger(Level::INFO)?,
+                "none" => (),
+                _ => eprintln!("unknown log_level: {}, set it to 'none' now", log_level),
+            }
+        }
+
+        Ok(())
+    }
     fn runner(
         if_name: String,
         timeout: Option<Duration>,
@@ -678,35 +700,63 @@ impl Pistol {
             )
         });
     }
-    /// Initialize the Pistol instance with the given parameters.
-    pub fn init(&mut self) -> Result<(), PistolError> {
-        fn set_logger(level: Level) -> Result<(), PistolError> {
-            let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
-            let _ = tracing::subscriber::set_global_default(subscriber)?;
-            Ok(())
+    fn init_runner_multi(
+        &mut self,
+        targets: &[Target],
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<NetInfo>, PistolError> {
+        let mut net_infos = Vec::new();
+
+        for t in targets {
+            let dst_addr = t.addr;
+            let infer_addr = match infer_addr(dst_addr, src_addr)? {
+                Some(ia) => ia,
+                None => return Err(PistolError::CanNotFoundSrcAddress),
+            };
+
+            let (if_name, interface) = match &self.if_name {
+                Some(name) => match find_interface_by_name(&name) {
+                    Some(i) => (name.clone(), i),
+                    None => return Err(PistolError::CanNotFoundInterface),
+                },
+                None => match find_interface_by_src(infer_addr.src_addr) {
+                    Some(i) => {
+                        self.if_name = Some(i.name.clone());
+                        (i.name.clone(), i)
+                    }
+                    None => return Err(PistolError::CanNotFoundInterface),
+                },
+            };
+
+            self.if_name = Some(if_name.clone());
+            let (filter_sender, filter_receiver) = channel();
+            let (packet_sender, packet_receiver) = channel();
+            self.start_runner(&if_name, filter_receiver, packet_sender);
+
+            let cc = ConmunicationChannel {
+                filter_sender,
+                packet_receiver,
+            };
+
+            let net_info = NetInfo {
+                addr: infer_addr,
+                interface,
+                cc,
+            };
+
+            net_infos.push(net_info);
         }
 
-        if let Some(log_level) = &self.log_level {
-            let log_level = log_level.to_lowercase();
-            match log_level.as_str() {
-                "debug" => set_logger(Level::DEBUG)?,
-                "warn" => set_logger(Level::WARN)?,
-                "info" => set_logger(Level::INFO)?,
-                "none" => (),
-                _ => eprintln!("unknown log_level: {}, set it to 'none' now", log_level),
-            }
-        }
-
-        Ok(())
+        Ok(net_infos)
     }
-    fn init_runner(
+    fn init_runner_single(
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
-    ) -> Result<(NetInfo, ConmunicationChannel), PistolError> {
+    ) -> Result<NetInfo, PistolError> {
         let infer_addr = match infer_addr(dst_addr, src_addr)? {
             Some(ia) => ia,
-            None => return Err(PistolError::CanNotFoundSourceAddress),
+            None => return Err(PistolError::CanNotFoundSrcAddress),
         };
 
         let (if_name, interface) = match &self.if_name {
@@ -723,11 +773,6 @@ impl Pistol {
             },
         };
 
-        let net_info = NetInfo {
-            addr: infer_addr,
-            interface,
-        };
-
         self.if_name = Some(if_name.clone());
         let (filter_sender, filter_receiver) = channel();
         let (packet_sender, packet_receiver) = channel();
@@ -737,7 +782,13 @@ impl Pistol {
             filter_sender,
             packet_receiver,
         };
-        Ok((net_info, cc))
+
+        let net_info = NetInfo {
+            addr: infer_addr,
+            interface,
+            cc,
+        };
+        Ok(net_info)
     }
     fn is_need_capture(&self) -> bool {
         match &self.capture {
@@ -756,8 +807,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
         let need_capture = self.is_need_capture();
-        let (net_info, cc) = self.init_runner(dst_ipv4.into(), src_addr)?;
-        scan::arp_scan_raw(dst_ipv4, src_addr, net_info, cc, self.timeout, need_capture)
+        let net_info = self.init_runner_single(dst_ipv4.into(), src_addr)?;
+        scan::arp_scan_raw(&net_info, self.timeout, need_capture)
     }
     /// ARP Scan (IPv4) or NDP NS Scan (IPv6).
     /// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
@@ -778,7 +829,13 @@ impl Pistol {
     ///     let src_ipv4 = None;
     ///     let threads = Some(512);
     ///     let attempts = 2;
-    ///     let ret = mac_scan(&targets, src_ipv4).unwrap();
+    ///
+    ///     let mut p = Pistol::new();
+    ///     p.set_timeout(timeout);
+    ///     p.set_threads(threads);
+    ///     p.set_attempts(attempts);
+    ///
+    ///     let ret = p.mac_scan(&targets, src_ipv4).unwrap();
     ///     println!("{}", ret);
     /// }
     /// ```
@@ -815,17 +872,14 @@ impl Pistol {
     /// ```
     #[cfg(feature = "scan")]
     pub fn mac_scan(
-        &self,
+        &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
     ) -> Result<PistolMacScans, PistolError> {
         let need_capture = self.is_need_capture();
-        let (interface, cc) = self.init_runner(dst_ipv4.into(), src_addr)?;
+        let net_infos = self.init_runner_multi(targets, src_addr)?;
         scan::mac_scan(
-            targets,
-            src_addr,
-            interface,
-            cc,
+            net_infos,
             self.timeout,
             self.threads,
             self.attempts,
@@ -838,12 +892,13 @@ impl Pistol {
     /// it returns the MAC address of the target and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn ndp_ns_scan_raw(
-        &self,
+        &mut self,
         dst_ipv6: Ipv6Addr,
         src_addr: Option<IpAddr>,
-        timeout: Option<Duration>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        scan::ndp_ns_scan_raw(dst_ipv6, src_addr, self.if_name.clone(), timeout)
+        let need_capture = self.is_need_capture();
+        let net_info = self.init_runner_single(dst_ipv6.into(), src_addr)?;
+        scan::ndp_ns_scan_raw(&net_info, self.timeout, need_capture)
     }
     /// TCP ACK Scan.
     /// This scan is different than the others discussed so far in

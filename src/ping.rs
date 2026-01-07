@@ -370,8 +370,8 @@ fn ping(
                 };
                 let tx = tx.clone();
                 let (dst_ipv4, src_ipv4) = match infer_addr(dst_addr, src_addr)? {
-                    Some(ia) => ia.ipv4_addr()?,
-                    None => return Err(PistolError::CanNotFoundSourceAddress),
+                    Some(ia) => ia.get_ipv4_addr()?,
+                    None => return Err(PistolError::CanNotFoundSrcAddress),
                 };
                 // println!("{} - {}", src_ipv4, dst_ipv4);
                 let dst_port = if target.ports.len() > 0 {
@@ -441,8 +441,8 @@ fn ping(
                 };
                 let tx = tx.clone();
                 let (dst_ipv6, src_ipv6) = match infer_addr(dst_addr, src_addr)? {
-                    Some(ia) => ia.ipv6_addr()?,
-                    None => return Err(PistolError::CanNotFoundSourceAddress),
+                    Some(ia) => ia.get_ipv6_addr()?,
+                    None => return Err(PistolError::CanNotFoundSrcAddress),
                 };
                 let dst_port = if target.ports.len() > 0 {
                     Some(target.ports[0])
@@ -576,11 +576,11 @@ pub fn tcp_syn_ping_raw(
     };
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, rtt) =
                 tcp::send_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?;
             let (s, rtt) = match ret {
@@ -590,7 +590,7 @@ pub fn tcp_syn_ping_raw(
             Ok((s, rtt))
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, rtt) =
                 tcp6::send_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             let (s, rtt) = match ret {
@@ -637,11 +637,11 @@ pub fn tcp_ack_ping_raw(
     };
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, rtt) =
                 tcp::send_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?;
             let (s, rtt) = match ret {
@@ -651,7 +651,7 @@ pub fn tcp_ack_ping_raw(
             Ok((s, rtt))
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, rtt) =
                 tcp6::send_ack_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             let (s, rtt) = match ret {
@@ -698,11 +698,11 @@ pub fn udp_ping_raw(
     };
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, rtt) =
                 udp::send_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?;
             let (s, rtt) = match ret {
@@ -713,7 +713,7 @@ pub fn udp_ping_raw(
             Ok((s, rtt))
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, rtt) =
                 udp6::send_udp_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
             let (s, rtt) = match ret {
@@ -754,17 +754,17 @@ pub fn icmp_echo_ping_raw(
 ) -> Result<PingStatus, PistolError> {
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, _rtt) =
                 icmp::send_icmp_echo_packet(dst_ipv4, src_ipv4, timeout)?;
             Ok(ret)
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, _rtt) =
                 icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
             Ok(ret)
@@ -800,18 +800,18 @@ pub fn icmp_timestamp_ping_raw(
 ) -> Result<PingStatus, PistolError> {
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, _rtt) =
                 icmp::send_icmp_timestamp_packet(dst_ipv4, src_ipv4, timeout)?;
             Ok(ret)
         }
         IpAddr::V6(_) => {
             warn!("ipv6 address not supported the icmp timestamp ping");
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, _rtt) =
                 icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
             Ok(ret)
@@ -847,18 +847,18 @@ pub fn icmp_address_mask_ping_raw(
 ) -> Result<PingStatus, PistolError> {
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, _rtt) =
                 icmp::send_icmp_address_mask_packet(dst_ipv4, src_ipv4, timeout)?;
             Ok(ret)
         }
         IpAddr::V6(_) => {
             warn!("ipv6 address not supported the icmp address mask ping");
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, _rtt) =
                 icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
             Ok(ret)
@@ -894,17 +894,17 @@ pub fn icmp_ping_raw(
 ) -> Result<(PingStatus, Duration), PistolError> {
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let (ret, _data_return, rtt) =
                 icmp::send_icmp_echo_packet(dst_ipv4, src_ipv4, timeout)?;
             Ok((ret, rtt))
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let (ret, _data_return, rtt) =
                 icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6, timeout)?;
             Ok((ret, rtt))

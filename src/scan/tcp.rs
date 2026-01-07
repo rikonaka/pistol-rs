@@ -26,6 +26,7 @@ use std::time::Instant;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -34,7 +35,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::layer::layer3_ipv4_send;
 use crate::scan::DataRecvStatus;
 use crate::scan::PortStatus;
 use crate::utils;

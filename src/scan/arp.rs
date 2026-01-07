@@ -42,8 +42,8 @@ pub fn send_arp_scan_packet(
     dst_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_mac: MacAddr,
-    interface: NetworkInterface,
-    cc: ConmunicationChannel,
+    interface: &NetworkInterface,
+    cc: &ConmunicationChannel,
     timeout: Option<Duration>,
     need_capture: bool,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
@@ -84,7 +84,14 @@ pub fn send_arp_scan_packet(
     // send the filters to runner
     cc.send_filters(filters)?;
 
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, true, need_capture);
+    let layer2 = Layer2::new(
+        dst_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+        need_capture,
+    );
     let start = Instant::now();
     layer2.send(&arp_buffer)?;
     let ethernet_buff = cc.recv_packets(timeout)?;

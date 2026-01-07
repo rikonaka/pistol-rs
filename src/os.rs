@@ -396,12 +396,12 @@ pub fn os_detect(
         recv_size += 1;
         let ia = match infer_addr(dst_addr, src_addr)? {
             Some(ia) => ia,
-            None => return Err(PistolError::CanNotFoundSourceAddress),
+            None => return Err(PistolError::CanNotFoundSrcAddress),
         };
         match dst_addr {
             IpAddr::V4(_) => {
                 let dst_ports = target.ports.clone();
-                let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+                let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");
                 let origin = target.origin.clone();
@@ -445,7 +445,7 @@ pub fn os_detect(
             }
             IpAddr::V6(_) => {
                 let dst_ports = target.ports.clone();
-                let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+                let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
                 let linear = gen_linear()?;
                 debug!("ipv6 gen linear parse finish");
                 let origin = target.origin.clone();
@@ -546,11 +546,11 @@ pub fn os_detect_raw(
     let start_time = Instant::now();
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSourceAddress),
+        None => return Err(PistolError::CanNotFoundSrcAddress),
     };
     match dst_addr {
         IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.ipv4_addr()?;
+            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
             let nmap_os_db = get_nmap_os_db()?;
             debug!("ipv4 nmap os db parse finish");
             let nmap_os_db = nmap_os_db.to_vec();
@@ -592,7 +592,7 @@ pub fn os_detect_raw(
             }
         }
         IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.ipv6_addr()?;
+            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
             let linear = gen_linear()?;
             debug!("ipv6 gen linear parse finish");
             match os_probe_thread6(
