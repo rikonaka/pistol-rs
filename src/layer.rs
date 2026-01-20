@@ -33,7 +33,6 @@ use crate::error::PistolError;
 use crate::route::RouteVia;
 use crate::route::get_default_route;
 use crate::route::search_route_table;
-use crate::save_packet;
 
 pub const ETHERNET_HEADER_SIZE: usize = 14;
 pub const ARP_HEADER_SIZE: usize = 28;
@@ -131,6 +130,8 @@ pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 pub struct InferAddr {
     pub dst_addr: IpAddr,
     pub src_addr: IpAddr,
+    // save the original dst addr
+    pub ori_dst_addr: IpAddr,
 }
 
 impl InferAddr {
@@ -187,6 +188,7 @@ pub fn infer_addr(
                                 let ia = InferAddr {
                                     dst_addr: src_ipv4.into(),
                                     src_addr: src_ipv4.into(),
+                                    ori_dst_addr: dst_addr,
                                 };
                                 return Ok(Some(ia));
                             }
@@ -198,6 +200,7 @@ pub fn infer_addr(
                                 let ia = InferAddr {
                                     dst_addr: src_ipv6.into(),
                                     src_addr: src_ipv6.into(),
+                                    ori_dst_addr: dst_addr,
                                 };
                                 return Ok(Some(ia));
                             }
@@ -209,7 +212,11 @@ pub fn infer_addr(
     } else {
         match src_addr {
             Some(src_addr) => {
-                let ia = InferAddr { dst_addr, src_addr };
+                let ia = InferAddr {
+                    dst_addr,
+                    src_addr,
+                    ori_dst_addr: dst_addr,
+                };
                 return Ok(Some(ia));
             }
             None => match search_route_table(dst_addr)? {
@@ -223,6 +230,7 @@ pub fn infer_addr(
                                     let ia = InferAddr {
                                         dst_addr,
                                         src_addr: src_ipv4.into(),
+                                        ori_dst_addr: dst_addr,
                                     };
                                     return Ok(Some(ia));
                                 }
@@ -232,6 +240,7 @@ pub fn infer_addr(
                                     let ia = InferAddr {
                                         dst_addr,
                                         src_addr: src_ipv6.into(),
+                                        ori_dst_addr: dst_addr,
                                     };
                                     return Ok(Some(ia));
                                 }
@@ -247,7 +256,11 @@ pub fn infer_addr(
                         for ipn in interface.ips {
                             if ipn.contains(dst_addr) {
                                 let src_addr = ipn.ip();
-                                let ia = InferAddr { dst_addr, src_addr };
+                                let ia = InferAddr {
+                                    dst_addr,
+                                    src_addr,
+                                    ori_dst_addr: dst_addr,
+                                };
                                 return Ok(Some(ia));
                             }
                         }
@@ -272,7 +285,11 @@ pub fn infer_addr(
                         for ipn in interface.ips {
                             if ipn.contains(dr.via) {
                                 let src_addr = ipn.ip();
-                                let ia = InferAddr { dst_addr, src_addr };
+                                let ia = InferAddr {
+                                    dst_addr,
+                                    src_addr,
+                                    ori_dst_addr: dst_addr,
+                                };
                                 return Ok(Some(ia));
                             }
                         }
@@ -1074,7 +1091,6 @@ pub struct Layer2 {
     ether_type: EtherType,
     timeout: Option<Duration>,
     need_return: bool,
-    need_capture: bool,
 }
 
 impl Layer2 {
@@ -1084,7 +1100,6 @@ impl Layer2 {
         ether_type: EtherType,
         timeout: Option<Duration>,
         need_return: bool,
-        need_capture: bool,
     ) -> Self {
         Self {
             dst_mac,
@@ -1092,7 +1107,6 @@ impl Layer2 {
             ether_type,
             timeout,
             need_return,
-            need_capture,
         }
     }
     /// This function only send data.
@@ -1150,10 +1164,6 @@ impl Layer2 {
         ethernet_packet.set_ethertype(self.ether_type);
         ethernet_packet.set_payload(payload);
 
-        if self.need_capture {
-            save_packet(&buff)?;
-        }
-
         match sender.send_to(&buff, Some(self.interface.clone())) {
             Some(r) => match r {
                 Err(e) => return Err(e.into()),
@@ -1182,7 +1192,6 @@ pub struct Layer3 {
     src: IpAddr,
     timeout: Option<Duration>,
     need_return: bool,
-    need_capture: bool,
 }
 
 impl Layer3 {
@@ -1191,14 +1200,12 @@ impl Layer3 {
         src: IpAddr,
         timeout: Option<Duration>,
         need_return: bool,
-        need_capture: bool,
     ) -> Self {
         Self {
             dst,
             src,
             timeout,
             need_return,
-            need_capture,
         }
     }
     pub fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
@@ -1219,7 +1226,6 @@ impl Layer3 {
             ether_type,
             self.timeout,
             self.need_return,
-            self.need_capture,
         );
         layer2.send(payload)?;
         Ok(())

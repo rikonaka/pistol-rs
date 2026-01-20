@@ -65,7 +65,6 @@ pub fn send_ndp_ns_scan_packet(
     interface: &NetworkInterface,
     cc: &ConmunicationChannel,
     timeout: Option<Duration>,
-    need_capture: bool,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     // same as arp in ipv4
     // ipv6
@@ -146,7 +145,6 @@ pub fn send_ndp_ns_scan_packet(
         ether_type,
         timeout,
         true,
-        need_capture,
     );
 
     let start = Instant::now();

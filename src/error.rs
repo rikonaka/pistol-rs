@@ -57,6 +57,8 @@ pub enum PistolError {
     },
     #[error("serde json error")]
     SerdeJsonError(#[from] serde_json::Error),
+    #[error("no destination port specified")]
+    NoDstPortSpecified,
 
     /* SERVICE DETECT ERROR */
     #[error("parse int error")]

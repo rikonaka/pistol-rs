@@ -45,7 +45,6 @@ pub fn send_arp_scan_packet(
     interface: &NetworkInterface,
     cc: &ConmunicationChannel,
     timeout: Option<Duration>,
-    need_capture: bool,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let mut arp_buffer = [0u8; ARP_HEADER_SIZE];
     let mut arp_packet = match MutableArpPacket::new(&mut arp_buffer) {
@@ -90,7 +89,6 @@ pub fn send_arp_scan_packet(
         ether_type,
         timeout,
         true,
-        need_capture,
     );
     let start = Instant::now();
     layer2.send(&arp_buffer)?;

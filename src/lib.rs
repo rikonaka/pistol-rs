@@ -2,9 +2,6 @@
 #![doc = include_str!("lib.md")]
 use dns_lookup::lookup_host;
 use pcapture::Capture;
-use pcapture::fs::pcapng::EnhancedPacketBlock;
-use pcapture::fs::pcapng::GeneralBlock;
-use pcapture::fs::pcapng::PcapNg;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
@@ -56,10 +53,7 @@ use crate::error::PistolError;
 #[cfg(feature = "flood")]
 use crate::flood::PistolFloods;
 use crate::layer::InferAddr;
-use crate::layer::Layer2;
-use crate::layer::Layer3;
 use crate::layer::PacketFilter;
-use crate::layer::PayloadMatch;
 use crate::layer::find_interface_by_name;
 use crate::layer::find_interface_by_src;
 use crate::layer::infer_addr;
@@ -453,25 +447,6 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
-/// Capture the traffic and save into file.
-pub fn save_packet(packet: &[u8]) -> Result<(), PistolError> {
-    let mut pp = CAPTURED_PACKETS
-        .lock()
-        .map_err(|e| PistolError::LockVarFailed {
-            var_name: String::from("CAPTURED_PACKETS"),
-            e: e.to_string(),
-        })?;
-
-    // interface_id = 0 means we use the first interface we builed in fake pcapng headers
-    const INTERFACE_ID: u32 = 0;
-    // this is the default value of pcapture
-    const SNAPLEN: usize = 65535;
-    let block = EnhancedPacketBlock::new(INTERFACE_ID, packet, SNAPLEN, 0, 0)?;
-    let gb = GeneralBlock::EnhancedPacketBlock(block);
-    pp.append(gb);
-    Ok(())
-}
-
 #[derive(Debug)]
 pub struct ConmunicationChannel {
     pub filter_sender: Sender<Vec<PacketFilter>>, // send matched filters
@@ -513,6 +488,8 @@ impl ConmunicationChannel {
 #[derive(Debug)]
 pub struct NetInfo {
     addr: InferAddr,
+    src_port: Option<u16>,
+    dst_ports: Vec<u16>,
     interface: NetworkInterface,
     cc: ConmunicationChannel,
 }
@@ -521,7 +498,6 @@ pub struct NetInfo {
 pub struct Pistol {
     if_name: Option<String>,
     log_level: Option<String>,
-    capture: Option<PistolCapture>,
     timeout: Option<Duration>,
     threads: usize,
     attempts: usize,
@@ -532,19 +508,9 @@ impl Default for Pistol {
         Pistol {
             if_name: None,
             log_level: None,
-            capture: None,
             timeout: None,
             threads: 8,  // default 8 threads
             attempts: 2, // default 2 attempts
-        }
-    }
-}
-
-impl Drop for Pistol {
-    fn drop(&mut self) {
-        if let Some(c) = &mut self.capture {
-            c.save_to_file()
-                .expect(&format!("save traffic to file {} failed", c.filename));
         }
     }
 }
@@ -570,19 +536,6 @@ impl Pistol {
     /// Get log level for tracing.      
     pub fn get_log_level(&self) -> Option<String> {
         self.log_level.clone()
-    }
-    /// Set the capture file name for saving packets.
-    pub fn set_capture(&mut self, filename: &str) -> Result<(), PistolError> {
-        let c = PistolCapture::init(filename)?;
-        self.capture = Some(c);
-        Ok(())
-    }
-    /// Get the capture file name for saving packets.
-    pub fn get_capture(&self) -> Option<String> {
-        match &self.capture {
-            Some(c) => Some(c.filename.clone()),
-            None => None,
-        }
     }
     /// Set the timeout (sec) value for receiving and sending packets.
     pub fn set_timeout(&mut self, timeout: f32) {
@@ -632,7 +585,6 @@ impl Pistol {
     fn runner(
         if_name: String,
         timeout: Option<Duration>,
-        need_capture: bool,
         filter_receiver: Receiver<Vec<PacketFilter>>, // recv matched filters
         packet_sender: Sender<Vec<u8>>,               // send matched packets
     ) -> Result<(), PistolError> {
@@ -663,9 +615,6 @@ impl Pistol {
 
             let packets = cap.fetch_as_vec()?;
             for packet in packets {
-                if need_capture {
-                    save_packet(&packet)?;
-                }
                 for (i, filter) in filters.iter().enumerate() {
                     if filter.check(&packet) {
                         debug!("layer2 recv matched filter: {}", filter.name());
@@ -687,23 +636,16 @@ impl Pistol {
         filter_receiver: Receiver<Vec<PacketFilter>>,
         packet_sender: Sender<Vec<u8>>,
     ) {
-        let need_capture = self.capture.is_some();
         let timeout = self.timeout.clone();
         let if_name = if_name.to_string();
-        let _ = thread::spawn(move || {
-            Self::runner(
-                if_name,
-                timeout,
-                need_capture,
-                filter_receiver,
-                packet_sender,
-            )
-        });
+        let _ =
+            thread::spawn(move || Self::runner(if_name, timeout, filter_receiver, packet_sender));
     }
     fn init_runner_multi(
         &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
     ) -> Result<Vec<NetInfo>, PistolError> {
         let mut net_infos = Vec::new();
 
@@ -740,6 +682,8 @@ impl Pistol {
 
             let net_info = NetInfo {
                 addr: infer_addr,
+                src_port,
+                dst_ports: t.ports.clone(),
                 interface,
                 cc,
             };
@@ -752,7 +696,9 @@ impl Pistol {
     fn init_runner_single(
         &mut self,
         dst_addr: IpAddr,
+        dst_port: Vec<u16>,
         src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
     ) -> Result<NetInfo, PistolError> {
         let infer_addr = match infer_addr(dst_addr, src_addr)? {
             Some(ia) => ia,
@@ -785,16 +731,12 @@ impl Pistol {
 
         let net_info = NetInfo {
             addr: infer_addr,
+            src_port,
+            dst_ports: dst_port,
             interface,
             cc,
         };
         Ok(net_info)
-    }
-    fn is_need_capture(&self) -> bool {
-        match &self.capture {
-            Some(_) => true,
-            None => false,
-        }
     }
     /* Scan */
     /// The raw version of arp_scan function.
@@ -806,9 +748,8 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
         src_addr: Option<IpAddr>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        let need_capture = self.is_need_capture();
-        let net_info = self.init_runner_single(dst_ipv4.into(), src_addr)?;
-        scan::arp_scan_raw(&net_info, self.timeout, need_capture)
+        let net_info = self.init_runner_single(dst_ipv4.into(), Vec::new(), src_addr, None)?;
+        scan::arp_scan_raw(&net_info, self.timeout)
     }
     /// ARP Scan (IPv4) or NDP NS Scan (IPv6).
     /// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
@@ -876,15 +817,8 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
     ) -> Result<PistolMacScans, PistolError> {
-        let need_capture = self.is_need_capture();
-        let net_infos = self.init_runner_multi(targets, src_addr)?;
-        scan::mac_scan(
-            net_infos,
-            self.timeout,
-            self.threads,
-            self.attempts,
-            need_capture,
-        )
+        let net_infos = self.init_runner_multi(targets, src_addr, None)?;
+        scan::mac_scan(net_infos, self.timeout, self.threads, self.attempts)
     }
     /// The raw version of ndp_ns_scan function.
     /// It sends an NDP Neighbor Solicitation to the target IPv6 address and waits for a reply.
@@ -896,9 +830,8 @@ impl Pistol {
         dst_ipv6: Ipv6Addr,
         src_addr: Option<IpAddr>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        let need_capture = self.is_need_capture();
-        let net_info = self.init_runner_single(dst_ipv6.into(), src_addr)?;
-        scan::ndp_ns_scan_raw(&net_info, self.timeout, need_capture)
+        let net_info = self.init_runner_single(dst_ipv6.into(), Vec::new(), src_addr, None)?;
+        scan::ndp_ns_scan_raw(&net_info, self.timeout)
     }
     /// TCP ACK Scan.
     /// This scan is different than the others discussed so far in
@@ -911,7 +844,7 @@ impl Pistol {
     /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
     #[cfg(feature = "scan")]
     pub fn tcp_ack_scan(
-        &self,
+        &mut self,
         targets: &[Target],
         threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -919,7 +852,8 @@ impl Pistol {
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
-        scan::tcp_ack_scan(targets, threads, src_addr, src_port, timeout, attempts)
+        let net_infos = self.init_runner_multi(targets, src_addr, src_port)?;
+        scan::tcp_ack_scan(&net_infos, threads, timeout, attempts)
     }
     /// The raw version of tcp_ack_scan function.
     /// It sends a TCP ACK packet to the target IP address and port, and waits for a response.
@@ -928,14 +862,15 @@ impl Pistol {
     /// and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_ack_scan_raw(
-        &self,
+        &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
         timeout: Option<Duration>,
     ) -> Result<(PortStatus, Duration), PistolError> {
-        scan::tcp_ack_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+        let net_info = self.init_runner_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        scan::tcp_ack_scan_raw(&net_info, timeout)
     }
     /// TCP Connect() Scan.
     /// This is the most basic form of TCP scanning.
@@ -955,7 +890,7 @@ impl Pistol {
     /// for the services which take the connection and then have it immediately shutdown.
     #[cfg(feature = "scan")]
     pub fn tcp_connect_scan(
-        &self,
+        &mut self,
         targets: &[Target],
         threads: Option<usize>,
         src_addr: Option<IpAddr>,
@@ -963,7 +898,8 @@ impl Pistol {
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
-        scan::tcp_connect_scan(targets, threads, src_addr, src_port, timeout, attempts)
+        let net_infos = self.init_runner_multi(targets, src_addr, src_port)?;
+        scan::tcp_connect_scan(&net_infos, threads, timeout, attempts)
     }
     /// The raw version of tcp_connect_scan function.
     /// It attempts to establish a TCP connection to the specified destination address and port.
@@ -972,14 +908,15 @@ impl Pistol {
     /// If there is no response within the specified timeout, it indicates that the port is filtered
     #[cfg(feature = "scan")]
     pub fn tcp_connect_scan_raw(
-        &self,
+        &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
         timeout: Option<Duration>,
     ) -> Result<(PortStatus, Duration), PistolError> {
-        scan::tcp_connect_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+        let net_info = self.init_runner_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        scan::tcp_connect_scan_raw(&net_info, timeout)
     }
     /// TCP FIN Scan.
     /// There are times when even SYN scanning isn't clandestine enough.
@@ -1007,7 +944,8 @@ impl Pistol {
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
-        scan::tcp_fin_scan(targets, threads, src_addr, src_port, timeout, attempts)
+        let net_infos = self.init_runner_multi(targets, src_addr, src_port)?;
+        scan::tcp_fin_scan(&net_infos, threads, timeout, attempts)
     }
     /// The raw version of tcp_fin_scan function.
     /// It sends a TCP FIN packet to the target IP address and port, and waits for a response.
@@ -1864,14 +1802,6 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
     }
     Ok(ret)
 }
-
-static CAPTURED_PACKETS: LazyLock<Arc<Mutex<PcapNg>>> = LazyLock::new(|| {
-    let if_name = "pistol";
-    let if_description = "All traffic generated by pistol";
-    let ips = [];
-    let pcapng = PcapNg::new_raw(if_name, if_description, &ips);
-    Arc::new(Mutex::new(pcapng))
-});
 
 /// Save the sent traffic locally in pcapng format.
 /// Note that this method does not read the traffic from the network card,
