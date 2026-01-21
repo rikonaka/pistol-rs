@@ -641,7 +641,7 @@ impl Pistol {
         let _ =
             thread::spawn(move || Self::runner(if_name, timeout, filter_receiver, packet_sender));
     }
-    fn init_runner_multi(
+    fn init_runners(
         &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
@@ -693,7 +693,7 @@ impl Pistol {
 
         Ok(net_infos)
     }
-    fn init_runner_single(
+    fn init_runner(
         &mut self,
         dst_addr: IpAddr,
         dst_port: Vec<u16>,
@@ -748,7 +748,7 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
         src_addr: Option<IpAddr>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        let net_info = self.init_runner_single(dst_ipv4.into(), Vec::new(), src_addr, None)?;
+        let net_info = self.init_runner(dst_ipv4.into(), Vec::new(), src_addr, None)?;
         scan::arp_scan_raw(&net_info, self.timeout)
     }
     /// ARP Scan (IPv4) or NDP NS Scan (IPv6).
@@ -817,7 +817,7 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
     ) -> Result<PistolMacScans, PistolError> {
-        let net_infos = self.init_runner_multi(targets, src_addr, None)?;
+        let net_infos = self.init_runners(targets, src_addr, None)?;
         scan::mac_scan(net_infos, self.timeout, self.threads, self.attempts)
     }
     /// The raw version of ndp_ns_scan function.
@@ -830,7 +830,7 @@ impl Pistol {
         dst_ipv6: Ipv6Addr,
         src_addr: Option<IpAddr>,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        let net_info = self.init_runner_single(dst_ipv6.into(), Vec::new(), src_addr, None)?;
+        let net_info = self.init_runner(dst_ipv6.into(), Vec::new(), src_addr, None)?;
         scan::ndp_ns_scan_raw(&net_info, self.timeout)
     }
     /// TCP ACK Scan.
@@ -852,7 +852,7 @@ impl Pistol {
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
-        let net_infos = self.init_runner_multi(targets, src_addr, src_port)?;
+        let net_infos = self.init_runners(targets, src_addr, src_port)?;
         scan::tcp_ack_scan(&net_infos, threads, timeout, attempts)
     }
     /// The raw version of tcp_ack_scan function.
@@ -869,7 +869,7 @@ impl Pistol {
         src_port: Option<u16>,
         timeout: Option<Duration>,
     ) -> Result<(PortStatus, Duration), PistolError> {
-        let net_info = self.init_runner_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let net_info = self.init_runner(dst_addr, vec![dst_port], src_addr, src_port)?;
         scan::tcp_ack_scan_raw(&net_info, timeout)
     }
     /// TCP Connect() Scan.
@@ -898,7 +898,7 @@ impl Pistol {
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
-        let net_infos = self.init_runner_multi(targets, src_addr, src_port)?;
+        let net_infos = self.init_runners(targets, src_addr, src_port)?;
         scan::tcp_connect_scan(&net_infos, threads, timeout, attempts)
     }
     /// The raw version of tcp_connect_scan function.
@@ -915,7 +915,7 @@ impl Pistol {
         src_port: Option<u16>,
         timeout: Option<Duration>,
     ) -> Result<(PortStatus, Duration), PistolError> {
-        let net_info = self.init_runner_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let net_info = self.init_runner(dst_addr, vec![dst_port], src_addr, src_port)?;
         scan::tcp_connect_scan_raw(&net_info, timeout)
     }
     /// TCP FIN Scan.
@@ -936,15 +936,15 @@ impl Pistol {
     /// any combination of the other three (FIN, PSH, and URG) are OK.
     #[cfg(feature = "scan")]
     pub fn tcp_fin_scan(
-        &self,
+        &mut self,
         targets: &[Target],
-        threads: Option<usize>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
+        threads: Option<usize>,
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
-        let net_infos = self.init_runner_multi(targets, src_addr, src_port)?;
+        let net_infos = self.init_runners(targets, src_addr, src_port)?;
         scan::tcp_fin_scan(&net_infos, threads, timeout, attempts)
     }
     /// The raw version of tcp_fin_scan function.
@@ -953,14 +953,15 @@ impl Pistol {
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
     #[cfg(feature = "scan")]
     pub fn tcp_fin_scan_raw(
-        &self,
+        &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
         timeout: Option<Duration>,
     ) -> Result<(PortStatus, Duration), PistolError> {
-        scan::tcp_fin_scan_raw(dst_addr, dst_port, src_addr, src_port, timeout)
+        let net_info = self.init_runner(dst_addr, vec![dst_port], src_addr, src_port)?;
+        scan::tcp_fin_scan_raw(&net_info, timeout)
     }
     /// TCP Idle Scan.
     /// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book)
@@ -974,21 +975,20 @@ impl Pistol {
     /// this scan type permits discovery of IP-based trust relationships between machines.
     #[cfg(feature = "scan")]
     pub fn tcp_idle_scan(
-        &self,
+        &mut self,
         targets: &[Target],
-        threads: Option<usize>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
         zombie_ipv4: Option<Ipv4Addr>,
         zombie_port: Option<u16>,
+        threads: Option<usize>,
         timeout: Option<Duration>,
         attempts: usize,
     ) -> Result<PistolPortScans, PistolError> {
+        let net_infos = self.init_runners(targets, src_addr, src_port)?;
         scan::tcp_idle_scan(
-            targets,
+            &net_infos,
             threads,
-            src_addr,
-            src_port,
             zombie_ipv4,
             zombie_port,
             timeout,
