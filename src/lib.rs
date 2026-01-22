@@ -447,6 +447,17 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
+pub(crate) static RUNNER_SEND_CHANNEL: LazyLock<Mutex<Arc<ConmunicationChannel>>> =
+    LazyLock::new(|| {
+        let (filter_sender, filter_receiver) = channel();
+        let (packet_sender, packet_receiver) = channel();
+        let cc = ConmunicationChannel {
+            filter_sender,
+            packet_receiver,
+        };
+        Mutex::new(Arc::new(cc))
+    });
+
 #[derive(Debug)]
 pub struct ConmunicationChannel {
     pub filter_sender: Sender<Vec<PacketFilter>>, // send matched filters

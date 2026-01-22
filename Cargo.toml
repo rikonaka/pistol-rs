@@ -32,6 +32,7 @@ escape-bytes = "^0"
 tracing = "^0"
 tracing-subscriber = "^0"
 pcapture = { version = "^0", features = ["pcapng", "libpcap"] }
+crossbeam-channel = "0.5.15"
 
 [features]
 # default = ["scan"]

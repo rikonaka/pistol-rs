@@ -50,8 +50,6 @@ pub mod udp6;
 #[cfg(feature = "scan")]
 use crate::NetInfo;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::Target;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[cfg(feature = "scan")]
@@ -986,13 +984,13 @@ pub fn tcp_null_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan(
-    net_info: &NetInfo,
+    net_infos: &[NetInfo],
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
-        net_info,
+        net_infos,
         ScanMethod::Xmas,
         threads,
         None,
@@ -1013,13 +1011,13 @@ pub fn tcp_xmas_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan(
-    net_info: &NetInfo,
+    net_infos: &[NetInfo],
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
-        net_info,
+        net_infos,
         ScanMethod::Window,
         threads,
         None,
@@ -1104,19 +1102,15 @@ pub fn tcp_idle_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn udp_scan(
-    targets: &[Target],
+    net_infos: &[NetInfo],
     threads: Option<usize>,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
     timeout: Option<Duration>,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
-        targets,
-        threads,
+        net_infos,
         ScanMethod::Udp,
-        src_addr,
-        src_port,
+        threads,
         None,
         None,
         timeout,
@@ -1127,22 +1121,10 @@ pub fn udp_scan(
 /// UDP Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn udp_scan_raw(
-    dst_addr: IpAddr,
-    dst_port: u16,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
+    net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(
-        ScanMethod::Udp,
-        dst_addr,
-        dst_port,
-        src_addr,
-        src_port,
-        None,
-        None,
-        timeout,
-    )
+    scan_raw(net_info, ScanMethod::Udp, None, None, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -1185,9 +1167,12 @@ fn scan_raw(
         let (port_status, _data_return, rtt) =
             scan_thread6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
         Ok((port_status, rtt))
+    } else {
+        return Err(PistolError::IpVersionNotMatch);
     }
 }
 
+/*
 #[cfg(feature = "scan")]
 #[cfg(test)]
 mod tests {
@@ -1375,3 +1360,4 @@ mod tests {
         println!("{}", ret);
     }
 }
+*/

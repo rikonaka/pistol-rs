@@ -804,7 +804,9 @@ fn send_ndp_rs_packet(
 
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, vec![filter], timeout, true);
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, true);
+    layer2.set_filter(filter);
+
     let (r, rtt) = layer2.send_and_recv(&ipv6_buff)?;
 
     let mac = get_mac_from_ndp_rs(&r);
