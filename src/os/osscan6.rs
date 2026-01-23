@@ -35,7 +35,7 @@ use crate::os::rr::SEQRR6;
 use crate::os::rr::TECNRR6;
 use crate::os::rr::TXRR6;
 use crate::os::rr::U1RR6;
-use crate::route::RouteVia;
+use crate::route::get_dst_mac_and_src_if;
 use crate::trace::icmp_trace;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
@@ -1398,8 +1398,7 @@ pub fn os_probe_thread6(
     linear: Linear,
     timeout: Duration,
 ) -> Result<(Fingerprint6, Vec<OsInfo6>), PistolError> {
-    let (dst_mac, interface) =
-        RouteVia::get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
 
     let src_mac = match interface.mac {
         Some(mac) => mac,
@@ -1740,11 +1739,11 @@ mod tests {
         let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
 
         let i = 0;
-        let m = filters[i].clone();
+        let filter = filters[i].clone();
         let buff = buffs[i].clone();
         let timeout = Duration::new(3, 0);
 
-        let receiver = ask_runner(filters).unwrap();
+        let receiver = ask_runner(vec![filter]).unwrap();
         let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
         let start = Instant::now();
         layer3.send(&buff).unwrap();

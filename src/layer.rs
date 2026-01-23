@@ -30,25 +30,25 @@ use std::time::Duration;
 use tracing::debug;
 
 use crate::error::PistolError;
-use crate::route::RouteVia;
 use crate::route::get_default_route;
+use crate::route::get_dst_mac_and_src_if;
 use crate::route::search_route_table;
 
-pub const ETHERNET_HEADER_SIZE: usize = 14;
-pub const ARP_HEADER_SIZE: usize = 28;
-pub const IPV4_HEADER_SIZE: usize = 20;
-pub const IPV6_HEADER_SIZE: usize = 40;
-pub const TCP_HEADER_SIZE: usize = 20;
-pub const UDP_HEADER_SIZE: usize = 8;
-pub const ICMP_HEADER_SIZE: usize = 8;
+pub(crate) const ETHERNET_HEADER_SIZE: usize = 14;
+pub(crate) const ARP_HEADER_SIZE: usize = 28;
+pub(crate) const IPV4_HEADER_SIZE: usize = 20;
+pub(crate) const IPV6_HEADER_SIZE: usize = 40;
+pub(crate) const TCP_HEADER_SIZE: usize = 20;
+pub(crate) const UDP_HEADER_SIZE: usize = 8;
+pub(crate) const ICMP_HEADER_SIZE: usize = 8;
 // big enough to store all data
-pub const ETHERNET_BUFF_SIZE: usize = 4096;
+pub(crate) const ETHERNET_BUFF_SIZE: usize = 4096;
 
-pub const ICMPV6_NS_HEADER_SIZE: usize = 32;
-pub const ICMPV6_RS_HEADER_SIZE: usize = 16;
-// pub const ICMPV6_NA_HEADER_SIZE: usize = 32;
-pub const ICMPV6_ER_HEADER_SIZE: usize = 8;
-pub const ICMPV6_NI_HEADER_SIZE: usize = 32;
+pub(crate) const ICMPV6_NS_HEADER_SIZE: usize = 32;
+pub(crate) const ICMPV6_RS_HEADER_SIZE: usize = 16;
+// pub(crate) const ICMPV6_NA_HEADER_SIZE: usize = 32;
+pub(crate) const ICMPV6_ER_HEADER_SIZE: usize = 8;
+pub(crate) const ICMPV6_NI_HEADER_SIZE: usize = 32;
 
 /// If the ICMP message is a Destination Unreachable,
 /// Time Exceeded, Parameter Problem, or Source Quench,
@@ -92,7 +92,7 @@ fn get_icmpv6_payload(icmpv6_packet: &Icmpv6Packet) -> Vec<u8> {
     }
 }
 
-pub fn find_interface_by_index(if_index: u32) -> Option<NetworkInterface> {
+pub(crate) fn find_interface_by_index(if_index: u32) -> Option<NetworkInterface> {
     for interface in interfaces() {
         if if_index == interface.index {
             return Some(interface);
@@ -102,7 +102,7 @@ pub fn find_interface_by_index(if_index: u32) -> Option<NetworkInterface> {
 }
 
 /// Use source IP address to find local interface
-pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
+pub(crate) fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
             let i = ip.ip();
@@ -114,7 +114,7 @@ pub fn find_interface_by_src(src_addr: IpAddr) -> Option<NetworkInterface> {
     None
 }
 
-pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
+pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
         if name == interface.name {
             return Some(interface);
@@ -127,16 +127,16 @@ pub fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 /// we need to update not only the value of src addr,
 /// but also the value of dst addr.
 #[derive(Debug, Clone, Copy)]
-pub struct InferAddr {
-    pub dst_addr: IpAddr,
-    pub src_addr: IpAddr,
+pub(crate) struct InferAddr {
+    pub(crate) dst_addr: IpAddr,
+    pub(crate) src_addr: IpAddr,
     // save the original dst addr
-    pub ori_dst_addr: IpAddr,
+    pub(crate) ori_dst_addr: IpAddr,
 }
 
 impl InferAddr {
     /// Returns: (dst_addr, src_addr)
-    pub fn get_ipv4_addr(&self) -> Result<(Ipv4Addr, Ipv4Addr), PistolError> {
+    pub(crate) fn get_ipv4_addr(&self) -> Result<(Ipv4Addr, Ipv4Addr), PistolError> {
         if let IpAddr::V4(dst_ipv4) = self.dst_addr {
             if let IpAddr::V4(src_ipv4) = self.src_addr {
                 Ok((dst_ipv4, src_ipv4))
@@ -148,7 +148,7 @@ impl InferAddr {
         }
     }
     /// Returns: (dst_addr, src_addr)
-    pub fn get_ipv6_addr(&self) -> Result<(Ipv6Addr, Ipv6Addr), PistolError> {
+    pub(crate) fn get_ipv6_addr(&self) -> Result<(Ipv6Addr, Ipv6Addr), PistolError> {
         if let IpAddr::V6(dst_ipv6) = self.dst_addr {
             if let IpAddr::V6(src_ipv6) = self.src_addr {
                 Ok((dst_ipv6, src_ipv6))
@@ -160,157 +160,27 @@ impl InferAddr {
         }
     }
     /// Judges whether the dst and src addresses are both IPv4
-    pub fn is_ipv4(&self) -> bool {
+    pub(crate) fn is_ipv4(&self) -> bool {
         matches!(self.dst_addr, IpAddr::V4(_)) && matches!(self.src_addr, IpAddr::V4(_))
     }
     /// Judges whether the dst and src addresses are both IPv6
-    pub fn is_ipv6(&self) -> bool {
+    pub(crate) fn is_ipv6(&self) -> bool {
         matches!(self.dst_addr, IpAddr::V6(_)) && matches!(self.src_addr, IpAddr::V6(_))
     }
 }
 
-/// The source address is inferred from the target address.
-/// When the target address is a loopback address,
-/// it is mapped to an internal private address
-/// because the loopback address only works at the transport layer
-/// and cannot send data frames.
-pub fn infer_addr(
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-) -> Result<Option<InferAddr>, PistolError> {
-    if dst_addr.is_loopback() {
-        for interface in interfaces() {
-            if !interface.is_loopback() {
-                for ipn in interface.ips {
-                    match ipn.ip() {
-                        IpAddr::V4(src_ipv4) => {
-                            if dst_addr.is_ipv4() && src_ipv4.is_private() {
-                                let ia = InferAddr {
-                                    dst_addr: src_ipv4.into(),
-                                    src_addr: src_ipv4.into(),
-                                    ori_dst_addr: dst_addr,
-                                };
-                                return Ok(Some(ia));
-                            }
-                        }
-                        IpAddr::V6(src_ipv6) => {
-                            if dst_addr.is_ipv6()
-                                && (src_ipv6.is_unicast_link_local() || src_ipv6.is_unique_local())
-                            {
-                                let ia = InferAddr {
-                                    dst_addr: src_ipv6.into(),
-                                    src_addr: src_ipv6.into(),
-                                    ori_dst_addr: dst_addr,
-                                };
-                                return Ok(Some(ia));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        match src_addr {
-            Some(src_addr) => {
-                let ia = InferAddr {
-                    dst_addr,
-                    src_addr,
-                    ori_dst_addr: dst_addr,
-                };
-                return Ok(Some(ia));
-            }
-            None => match search_route_table(dst_addr)? {
-                // Try to get the interface for sending through the system routing table,
-                // and then get the IP on it through the interface.
-                Some(route_info) => {
-                    for ipn in route_info.dev.ips {
-                        match ipn.ip() {
-                            IpAddr::V4(src_ipv4) => {
-                                if dst_addr.is_ipv4() && !src_ipv4.is_loopback() {
-                                    let ia = InferAddr {
-                                        dst_addr,
-                                        src_addr: src_ipv4.into(),
-                                        ori_dst_addr: dst_addr,
-                                    };
-                                    return Ok(Some(ia));
-                                }
-                            }
-                            IpAddr::V6(src_ipv6) => {
-                                if dst_addr.is_ipv6() && !src_ipv6.is_loopback() {
-                                    let ia = InferAddr {
-                                        dst_addr,
-                                        src_addr: src_ipv6.into(),
-                                        ori_dst_addr: dst_addr,
-                                    };
-                                    return Ok(Some(ia));
-                                }
-                            }
-                        }
-                    }
-                }
-                None => {
-                    // When the above methods do not work,
-                    // try to find an IP address in the same subnet as the target address
-                    // in the local interface as the source address.
-                    for interface in interfaces() {
-                        for ipn in interface.ips {
-                            if ipn.contains(dst_addr) {
-                                let src_addr = ipn.ip();
-                                let ia = InferAddr {
-                                    dst_addr,
-                                    src_addr,
-                                    ori_dst_addr: dst_addr,
-                                };
-                                return Ok(Some(ia));
-                            }
-                        }
-                    }
-                    // Finally, if we really can't find the source address,
-                    // transform it to the address in the same network segment as the default route.
-                    let (default_route, default_route6) = get_default_route()?;
-                    let dr = if dst_addr.is_ipv4() {
-                        if let Some(dr_ipv4) = default_route {
-                            dr_ipv4
-                        } else {
-                            return Err(PistolError::CanNotFoundRouterAddress);
-                        }
-                    } else {
-                        if let Some(dr_ipv6) = default_route6 {
-                            dr_ipv6
-                        } else {
-                            return Err(PistolError::CanNotFoundRouterAddress);
-                        }
-                    };
-                    for interface in interfaces() {
-                        for ipn in interface.ips {
-                            if ipn.contains(dr.via) {
-                                let src_addr = ipn.ip();
-                                let ia = InferAddr {
-                                    dst_addr,
-                                    src_addr,
-                                    ori_dst_addr: dst_addr,
-                                };
-                                return Ok(Some(ia));
-                            }
-                        }
-                    }
-                }
-            },
-        }
-    }
-    Ok(None)
-}
+
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer2Filter {
-    pub name: &'static str,
-    pub src_mac: Option<MacAddr>,      // response packet src mac
-    pub dst_mac: Option<MacAddr>,      // response packet dst mac
-    pub ether_type: Option<EtherType>, // reponse packet ethernet type
+pub(crate) struct Layer2Filter {
+    pub(crate) name: &'static str,
+    pub(crate) src_mac: Option<MacAddr>,      // response packet src mac
+    pub(crate) dst_mac: Option<MacAddr>,      // response packet dst mac
+    pub(crate) ether_type: Option<EtherType>, // reponse packet ethernet type
 }
 
 impl Layer2Filter {
-    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
+    pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
             Some(ethernet_packet) => ethernet_packet,
             None => return false,
@@ -345,15 +215,15 @@ impl Layer2Filter {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer3Filter {
-    pub name: &'static str,
-    pub layer2: Option<Layer2Filter>,
-    pub src_addr: Option<IpAddr>, // response packet
-    pub dst_addr: Option<IpAddr>, // response packet
+pub(crate) struct Layer3Filter {
+    pub(crate) name: &'static str,
+    pub(crate) layer2: Option<Layer2Filter>,
+    pub(crate) src_addr: Option<IpAddr>, // response packet
+    pub(crate) dst_addr: Option<IpAddr>, // response packet
 }
 
 impl Layer3Filter {
-    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
+    pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer2 {
             Some(layers) => layers.check(ethernet_packet),
             None => true,
@@ -461,11 +331,11 @@ impl Layer3Filter {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer4FilterTcpUdp {
-    pub name: &'static str,
-    pub layer3: Option<Layer3Filter>,
-    pub src_port: Option<u16>, // response tcp or udp packet src port
-    pub dst_port: Option<u16>, // response tcp or udp packet dst port
+pub(crate) struct Layer4FilterTcpUdp {
+    pub(crate) name: &'static str,
+    pub(crate) layer3: Option<Layer3Filter>,
+    pub(crate) src_port: Option<u16>, // response tcp or udp packet src port
+    pub(crate) dst_port: Option<u16>, // response tcp or udp packet dst port
 }
 
 /// for debug use, return (src_ip, dst_ip)
@@ -502,7 +372,7 @@ fn get_ip(ethernet_packet: &[u8]) -> Option<(IpAddr, IpAddr)> {
 }
 
 impl Layer4FilterTcpUdp {
-    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
+    pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         // let mut is_debug = false;
         // if let Some((src_ip, dst_ip)) = get_ip(ethernet_packet) {
         //     let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
@@ -611,14 +481,14 @@ impl Layer4FilterTcpUdp {
 
 /// Matches network layer data in icmp payload
 #[derive(Debug, Clone, Copy)]
-pub struct PayloadMatchIp {
-    pub src_addr: Option<IpAddr>, // response packet
-    pub dst_addr: Option<IpAddr>, // response packet
+pub(crate) struct PayloadMatchIp {
+    pub(crate) src_addr: Option<IpAddr>, // response packet
+    pub(crate) dst_addr: Option<IpAddr>, // response packet
 }
 
 impl PayloadMatchIp {
     /// When the icmp payload contains ipv4 data
-    pub fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
+    pub(crate) fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
         let ipv4_packet = match Ipv4Packet::new(icmp_payload) {
             Some(i) => i,
             None => return false,
@@ -648,7 +518,7 @@ impl PayloadMatchIp {
         true
     }
     /// When the icmp payload contains ipv6 data, and generally, icmpv6 is used at this time
-    pub fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
+    pub(crate) fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
         let ipv6_packet = match Ipv6Packet::new(icmpv6_payload) {
             Some(i) => i,
             None => return false,
@@ -681,14 +551,14 @@ impl PayloadMatchIp {
 
 /// Matches the transport layer data in icmp payload
 #[derive(Debug, Clone, Copy)]
-pub struct PayloadMatchTcpUdp {
-    pub layer3: Option<PayloadMatchIp>,
-    pub src_port: Option<u16>, // response tcp or udp packet src port
-    pub dst_port: Option<u16>, // response tcp or udp packet dst port
+pub(crate) struct PayloadMatchTcpUdp {
+    pub(crate) layer3: Option<PayloadMatchIp>,
+    pub(crate) src_port: Option<u16>, // response tcp or udp packet src port
+    pub(crate) dst_port: Option<u16>, // response tcp or udp packet dst port
 }
 
 impl PayloadMatchTcpUdp {
-    pub fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
+    pub(crate) fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
         let m1 = match self.layer3 {
             Some(layer3) => layer3.do_match_ipv4(icmp_payload),
             None => true,
@@ -736,7 +606,7 @@ impl PayloadMatchTcpUdp {
         }
         true
     }
-    pub fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
+    pub(crate) fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
         let m1 = match self.layer3 {
             Some(layer3) => layer3.do_match_ipv6(icmpv6_payload),
             None => true,
@@ -787,14 +657,14 @@ impl PayloadMatchTcpUdp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PayloadMatchIcmp {
-    pub layer3: Option<PayloadMatchIp>,
-    pub icmp_type: Option<IcmpType>, // response icmp packet types
-    pub icmp_code: Option<IcmpCode>, // response icmp packet codes
+pub(crate) struct PayloadMatchIcmp {
+    pub(crate) layer3: Option<PayloadMatchIp>,
+    pub(crate) icmp_type: Option<IcmpType>, // response icmp packet types
+    pub(crate) icmp_code: Option<IcmpCode>, // response icmp packet codes
 }
 
 impl PayloadMatchIcmp {
-    pub fn do_match(&self, icmp_payload: &[u8]) -> bool {
+    pub(crate) fn do_match(&self, icmp_payload: &[u8]) -> bool {
         let m1 = match self.layer3 {
             Some(layer3) => layer3.do_match_ipv4(icmp_payload),
             None => true,
@@ -835,14 +705,14 @@ impl PayloadMatchIcmp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PayloadMatchIcmpv6 {
-    pub layer3: Option<PayloadMatchIp>,
-    pub icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
-    pub icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
+pub(crate) struct PayloadMatchIcmpv6 {
+    pub(crate) layer3: Option<PayloadMatchIp>,
+    pub(crate) icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
+    pub(crate) icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
 }
 
 impl PayloadMatchIcmpv6 {
-    pub fn do_match(&self, icmpv6_payload: &[u8]) -> bool {
+    pub(crate) fn do_match(&self, icmpv6_payload: &[u8]) -> bool {
         let m1 = match self.layer3 {
             Some(layer3) => layer3.do_match_ipv6(icmpv6_payload),
             None => true,
@@ -883,7 +753,7 @@ impl PayloadMatchIcmpv6 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum PayloadMatch {
+pub(crate) enum PayloadMatch {
     // PayloadMatchIp(PayloadMatchIp),
     PayloadMatchTcpUdp(PayloadMatchTcpUdp),
     PayloadMatchIcmp(PayloadMatchIcmp),
@@ -895,7 +765,7 @@ pub enum PayloadMatch {
 /// But generally speaking, if ipv4 data is sent, ipv4 will be returned,
 /// and the same is true for ipv6, so users need to choose two different functions.
 impl PayloadMatch {
-    pub fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
+    pub(crate) fn do_match_ipv4(&self, icmp_payload: &[u8]) -> bool {
         match self {
             // PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv4(icmp_payload),
             PayloadMatch::PayloadMatchTcpUdp(tcp_udp) => tcp_udp.do_match_ipv4(icmp_payload),
@@ -903,7 +773,7 @@ impl PayloadMatch {
             PayloadMatch::PayloadMatchIcmpv6(_) => false,
         }
     }
-    pub fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
+    pub(crate) fn do_match_ipv6(&self, icmpv6_payload: &[u8]) -> bool {
         match self {
             // PayloadMatch::PayloadMatchIp(ip) => ip.do_match_ipv6(icmpv6_payload),
             PayloadMatch::PayloadMatchTcpUdp(tcp_udp) => tcp_udp.do_match_ipv6(icmpv6_payload),
@@ -914,16 +784,16 @@ impl PayloadMatch {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer4FilterIcmp {
-    pub name: &'static str,
-    pub layer3: Option<Layer3Filter>,
-    pub icmp_type: Option<IcmpType>,   // response icmp packet types
-    pub icmp_code: Option<IcmpCode>,   // response icmp packet codes
-    pub payload: Option<PayloadMatch>, // used to confirm which port the data packet is from
+pub(crate) struct Layer4FilterIcmp {
+    pub(crate) name: &'static str,
+    pub(crate) layer3: Option<Layer3Filter>,
+    pub(crate) icmp_type: Option<IcmpType>,   // response icmp packet types
+    pub(crate) icmp_code: Option<IcmpCode>,   // response icmp packet codes
+    pub(crate) payload: Option<PayloadMatch>, // used to confirm which port the data packet is from
 }
 
 impl Layer4FilterIcmp {
-    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
+    pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer3 {
             Some(layer3) => layer3.check(ethernet_packet),
             None => true,
@@ -980,16 +850,16 @@ impl Layer4FilterIcmp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Layer4FilterIcmpv6 {
-    pub name: &'static str,
-    pub layer3: Option<Layer3Filter>,
-    pub icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
-    pub icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
-    pub payload: Option<PayloadMatch>,
+pub(crate) struct Layer4FilterIcmpv6 {
+    pub(crate) name: &'static str,
+    pub(crate) layer3: Option<Layer3Filter>,
+    pub(crate) icmpv6_type: Option<Icmpv6Type>, // response icmp packet types
+    pub(crate) icmpv6_code: Option<Icmpv6Code>, // response icmp packet codes
+    pub(crate) payload: Option<PayloadMatch>,
 }
 
 impl Layer4FilterIcmpv6 {
-    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
+    pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer3 {
             Some(layer3) => layer3.check(ethernet_packet),
             None => true,
@@ -1051,7 +921,7 @@ impl Layer4FilterIcmpv6 {
 /// or rules
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-pub enum PacketFilter {
+pub(crate) enum PacketFilter {
     Layer2Filter(Layer2Filter),
     Layer3Filter(Layer3Filter),
     Layer4FilterTcpUdp(Layer4FilterTcpUdp),
@@ -1060,7 +930,7 @@ pub enum PacketFilter {
 }
 
 impl PacketFilter {
-    pub fn check(&self, ethernet_packet: &[u8]) -> bool {
+    pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         if ethernet_packet.len() > 0 {
             match self {
                 PacketFilter::Layer2Filter(l2) => l2.check(ethernet_packet),
@@ -1073,7 +943,7 @@ impl PacketFilter {
             false
         }
     }
-    pub fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             PacketFilter::Layer2Filter(l2) => l2.name,
             PacketFilter::Layer3Filter(l3) => l3.name,
@@ -1085,7 +955,7 @@ impl PacketFilter {
 }
 
 #[derive(Debug, Clone)]
-pub struct Layer2 {
+pub(crate) struct Layer2 {
     dst_mac: MacAddr,
     interface: NetworkInterface,
     ether_type: EtherType,
@@ -1094,7 +964,7 @@ pub struct Layer2 {
 }
 
 impl Layer2 {
-    pub fn new(
+    pub(crate) fn new(
         dst_mac: MacAddr,
         interface: NetworkInterface,
         ether_type: EtherType,
@@ -1109,8 +979,74 @@ impl Layer2 {
             need_return,
         }
     }
-    /// This function only send data.
-    pub fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
+    /// This function is used to send data in flood attack.
+    pub(crate) fn send_flood(&self, payload: &[u8], limits: usize) -> Result<(), PistolError> {
+        let config = Config {
+            write_buffer_size: ETHERNET_BUFF_SIZE,
+            read_buffer_size: ETHERNET_BUFF_SIZE,
+            read_timeout: Some(self.timeout),
+            write_timeout: Some(self.timeout),
+            channel_type: ChannelType::Layer2,
+            bpf_fd_attempts: 1000,
+            linux_fanout: None,
+            promiscuous: false,
+            socket_fd: None,
+        };
+
+        let (mut sender, _) = match datalink::channel(&self.interface, config) {
+            Ok(Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
+            Err(e) => return Err(e.into()),
+        };
+
+        let src_mac = if self.dst_mac == MacAddr::zero() {
+            MacAddr::zero()
+        } else {
+            match self.interface.mac {
+                Some(m) => m,
+                None => return Err(PistolError::CanNotFoundMacAddress),
+            }
+        };
+
+        let payload_len = payload.len();
+        let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
+        // According to the document, the minimum length of an Ethernet data packet is 64 bytes
+        // (14 bytes of header and at least 46 bytes of data and 4 bytes of FCS),
+        // but I found through packet capture that nmap did not follow this convention,
+        // so this padding is also cancelled here.
+        // let ethernet_buff_len = if ethernet_buff_len < 60 {
+        //     // padding before FCS
+        //     60
+        // } else {
+        //     ethernet_buff_len
+        // };
+        let mut buff = vec![0u8; ethernet_buff_len];
+        let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    location: format!("{}", Location::caller()),
+                });
+            }
+        };
+        ethernet_packet.set_destination(self.dst_mac);
+        ethernet_packet.set_source(src_mac);
+        ethernet_packet.set_ethertype(self.ether_type);
+        ethernet_packet.set_payload(payload);
+
+        if limits > 0 {
+            for _ in 0..limits {
+                let _ = sender.send_to(&buff, None);
+            }
+        } else {
+            loop {
+                let _ = sender.send_to(&buff, None);
+            }
+        }
+        Ok(())
+    }
+    /// This function only send data on normal probe.
+    pub(crate) fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
         let config = Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
@@ -1174,7 +1110,7 @@ impl Layer2 {
     }
 }
 
-pub fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
+pub(crate) fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     let ip = ip.octets();
     // 33:33:FF:xx:xx:xx
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])
@@ -1187,7 +1123,7 @@ fn get_layer2_payload(buff: &[u8]) -> Vec<u8> {
     }
 }
 
-pub struct Layer3 {
+pub(crate) struct Layer3 {
     dst: IpAddr,
     src: IpAddr,
     timeout: Duration,
@@ -1195,7 +1131,7 @@ pub struct Layer3 {
 }
 
 impl Layer3 {
-    pub fn new(dst: IpAddr, src: IpAddr, timeout: Duration, need_return: bool) -> Self {
+    pub(crate) fn new(dst: IpAddr, src: IpAddr, timeout: Duration, need_return: bool) -> Self {
         Self {
             dst,
             src,
@@ -1203,9 +1139,8 @@ impl Layer3 {
             need_return,
         }
     }
-    pub fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
-        let (dst_mac, interface) =
-            RouteVia::get_dst_mac_and_src_if(self.dst, self.src, self.timeout)?;
+    pub(crate) fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
+        let (dst_mac, interface) = get_dst_mac_and_src_if(self.dst, self.src, self.timeout)?;
         debug!(
             "dst addr: {}, dst mac: {}, src addr: {}, sending interface: {}, {:?}",
             self.dst, dst_mac, self.src, interface.name, interface.ips
@@ -1240,7 +1175,7 @@ mod tests {
         if let Some(ia) = ia {
             let timeout = Duration::from_secs_f64(1.0);
             let (_mac, interface) =
-                RouteVia::get_dst_mac_and_src_if(ia.dst_addr, ia.src_addr, timeout).unwrap();
+                get_dst_mac_and_src_if(ia.dst_addr, ia.src_addr, timeout).unwrap();
             println!("{}", interface.name);
         }
         println!("{:?}", ia);

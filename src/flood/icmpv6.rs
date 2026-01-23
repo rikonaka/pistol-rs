@@ -1,4 +1,5 @@
 use chrono::Utc;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Type;
@@ -9,11 +10,13 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use rand::Rng;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::layer3_ipv6_send;
+use crate::layer::Layer2;
+use crate::route::get_dst_mac_and_src_if;
 
 const TTL: u8 = 255;
 
@@ -80,10 +83,15 @@ pub fn send_icmpv6_flood_packet(
     };
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
-    let timeout = None;
 
-    for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
-    }
+    // very short timeout for flood attack
+    let timeout = Duration::from_secs_f32(0.01);
+    let ether_type = EtherTypes::Ipv6;
+    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+
+    // ignore the error
+    let _ = layer2.send_flood(&ipv6_buff, max_same_packet);
+
     Ok(ipv6_buff.len() * max_same_packet)
 }
