@@ -38,7 +38,7 @@ use crate::Target;
 #[cfg(feature = "vs")]
 use crate::error::PistolError;
 #[cfg(feature = "vs")]
-use crate::utils::get_default_timeout;
+use crate::utils::get_attack_default_timeout;
 #[cfg(feature = "vs")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "vs")]
@@ -199,7 +199,7 @@ pub fn vs_scan(
 
     let timeout = match timeout {
         Some(t) => t,
-        None => get_default_timeout(),
+        None => get_attack_default_timeout(),
     };
 
     let pool = get_threads_pool(threads);
@@ -277,7 +277,7 @@ pub fn vs_scan_raw(
 
     let timeout = match timeout {
         Some(t) => t,
-        None => get_default_timeout(),
+        None => get_attack_default_timeout(),
     };
 
     let start_time = Instant::now();

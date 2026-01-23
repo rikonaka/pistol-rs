@@ -1,4 +1,5 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
@@ -11,20 +12,23 @@ use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use std::panic::Location;
+use std::time::Instant;
+use tracing::debug;
 
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmp;
 use crate::layer::PayloadMatchIp;
-use crate::layer::layer3_ipv4_send;
 use crate::trace::HopStatus;
 
 pub fn send_icmp_trace_packet(
@@ -34,7 +38,7 @@ pub fn send_icmp_trace_packet(
     ttl: u8,
     icmp_id: u16,
     seq: u16,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
     const ICMP_DATA_SIZE: usize = 32;
     // ip header
@@ -110,7 +114,7 @@ pub fn send_icmp_trace_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // icmp reply
     let layer3 = Layer3Filter {
@@ -126,33 +130,38 @@ pub fn send_icmp_trace_packet(
         icmp_code: None,
         payload: None,
     };
-    let layer_match_icmp_reply = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![layer_match_icmp_time_exceeded, layer_match_icmp_reply],
-        timeout,
-        true,
-    )?;
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
-            IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
-                Some(icmp_packet) => {
-                    let icmp_type = icmp_packet.get_icmp_type();
-                    let ret_ip = ipv4_packet.get_source();
-                    if icmp_type == IcmpTypes::TimeExceeded {
-                        return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
-                    } else if icmp_type == IcmpTypes::EchoReply {
-                        return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
+    let receiver = ask_runner(vec![filter_1, filter_2])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv icmp trace response timeout: {}", dst_ipv4, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Icmp => {
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                        let icmp_type = icmp_packet.get_icmp_type();
+                        let ret_ip = ip_packet.get_source();
+                        if icmp_type == IcmpTypes::TimeExceeded {
+                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
+                        } else if icmp_type == IcmpTypes::EchoReply {
+                            return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
+                        }
                     }
                 }
-                None => (),
-            },
-            _ => (),
-        },
-        None => (),
+                _ => (),
+            }
+        }
     }
     Ok((HopStatus::NoResponse, rtt))
 }

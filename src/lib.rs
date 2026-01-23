@@ -1,5 +1,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
+use crossbeam::channel::Receiver;
+use crossbeam::channel::Sender;
+use crossbeam::channel::unbounded;
 use dns_lookup::lookup_host;
 use pcapture::Capture;
 #[cfg(feature = "scan")]
@@ -25,10 +28,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::RecvTimeoutError;
-use std::sync::mpsc::Sender;
-use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
 use subnetwork::Ipv4Pool;
@@ -97,7 +96,7 @@ static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(||
 });
 
 /// debug code
-#[allow(dead_code)]
+#[cfg(feature = "debug")]
 fn debug_get_tcp_src_port(ethernet_packet: &[u8]) -> Option<u16> {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
         Some(ethernet_packet) => ethernet_packet,
@@ -157,7 +156,7 @@ fn debug_get_tcp_src_port(ethernet_packet: &[u8]) -> Option<u16> {
 }
 
 /// debug code
-#[allow(dead_code)]
+#[cfg(feature = "debug")]
 fn debug_get_tcp_dst_port(ethernet_packet: &[u8]) -> Option<u16> {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
         Some(ethernet_packet) => ethernet_packet,
@@ -217,7 +216,7 @@ fn debug_get_tcp_dst_port(ethernet_packet: &[u8]) -> Option<u16> {
 }
 
 // sec
-const DEFAULT_TIMEOUT: f32 = 1.0;
+const ATTACK_DEFAULT_TIMEOUT: f32 = 1.0;
 
 pub const TOP_100_PORTS: [u16; 100] = [
     7, 9, 13, 21, 22, 23, 25, 26, 37, 53, 79, 80, 81, 88, 106, 110, 111, 113, 119, 135, 139, 143,
@@ -447,62 +446,100 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
-pub(crate) static RUNNER_SEND_CHANNEL: LazyLock<Mutex<Arc<ConmunicationChannel>>> =
+// Default timeout for runner communication channel in seconds
+const RUNNER_DEFAULT_TIMEOUT: f32 = 2.5;
+
+pub(crate) static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Mutex<Arc<CommunicationChannel>>> =
     LazyLock::new(|| {
-        let (filter_sender, filter_receiver) = channel();
-        let (packet_sender, packet_receiver) = channel();
-        let cc = ConmunicationChannel {
+        let (filter_sender, filter_receiver) = unbounded::<RunnerMsg>();
+        let cc = CommunicationChannel {
             filter_sender,
-            packet_receiver,
+            filter_receiver,
         };
         Mutex::new(Arc::new(cc))
     });
 
-#[derive(Debug)]
-pub struct ConmunicationChannel {
-    pub filter_sender: Sender<Vec<PacketFilter>>, // send matched filters
-    pub packet_receiver: Receiver<Vec<u8>>,       // recv matched packets
+#[derive(Debug, Clone)]
+pub(crate) struct RunnerMsg {
+    pub filters: Vec<PacketFilter>, // runner receive filters to match
+    pub sender: Sender<Vec<u8>>,    // then send matched packets back to threads
 }
 
-impl ConmunicationChannel {
-    pub fn send_filters(&self, filters: Vec<PacketFilter>) -> Result<(), PistolError> {
-        match self.filter_sender.send(filters) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(PistolError::ChannelSendFailed {
-                channel_name: String::from("filter_sender"),
-                e: e.to_string(),
-            }),
-        }
-    }
-    pub fn recv_packets(&self, timeout: Option<Duration>) -> Result<Vec<u8>, PistolError> {
-        let timeout = match timeout {
-            Some(t) => t,
-            None => Duration::from_secs_f32(DEFAULT_TIMEOUT),
-        };
-        match self.packet_receiver.recv_timeout(timeout) {
-            Ok(packets) => Ok(packets),
-            Err(e) => {
-                if e == RecvTimeoutError::Timeout {
-                    // timeout, return empty vec
-                    Ok(Vec::new())
-                } else {
-                    Err(PistolError::ChannelRecvFailed {
-                        channel_name: String::from("packet_receiver"),
-                        e: e.to_string(),
-                    })
-                }
+impl RunnerMsg {
+    pub(crate) fn check_packet(&self, packet: &[u8]) -> bool {
+        for filter in &self.filters {
+            if filter.check(packet) {
+                debug!("layer2 recv matched filter: {}", filter.name());
+                return true;
             }
         }
+        false
+    }
+    pub(crate) fn send_packet_back(&self, packet: &[u8]) {
+        if let Err(e) = self.sender.send(packet.to_vec()) {
+            error!("failed to send matched packet: {}", e);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CommunicationChannel {
+    pub filter_sender: Sender<RunnerMsg>,
+    pub filter_receiver: Receiver<RunnerMsg>,
+}
+
+impl CommunicationChannel {
+    /// Returns a receiver to get matched packets from the runner.
+    pub(crate) fn send_filters(&self, filters: Vec<PacketFilter>) -> Receiver<Vec<u8>> {
+        let (packet_sender, packet_receiver) = unbounded::<Vec<u8>>();
+        let runner_msg = RunnerMsg {
+            filters,
+            sender: packet_sender,
+        };
+        let _ = self.filter_sender.send(runner_msg);
+        packet_receiver
+    }
+    /// We only want to receive one matched packet during each call.
+    /// If no packet is received within the timeout duration, return an empty vec.
+    pub(crate) fn recv_packets(
+        &self,
+        packet_receiver: Receiver<Vec<u8>>,
+        timeout: Option<Duration>,
+    ) -> Vec<u8> {
+        let timeout = match timeout {
+            Some(t) => t,
+            None => Duration::from_secs_f32(RUNNER_DEFAULT_TIMEOUT),
+        };
+        if let Ok(packet) = packet_receiver.recv_timeout(timeout) {
+            packet
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+pub(crate) fn ask_runner(filters: Vec<PacketFilter>) -> Result<Receiver<Vec<u8>>, PistolError> {
+    match RUNNER_COMMUNICATION_CHANNEL.lock() {
+        Ok(cc) => {
+            // let cc = (*cc).clone();
+            let packet_receiver = cc.send_filters(filters);
+            Ok(packet_receiver)
+        }
+        Err(e) => {
+            return Err(PistolError::LockVarFailed {
+                var_name: String::from("RUNNER_COMMUNICATION_CHANNEL"),
+                e: e.to_string(),
+            });
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct NetInfo {
+pub(crate) struct NetInfo {
     addr: InferAddr,
     src_port: Option<u16>,
     dst_ports: Vec<u16>,
     interface: NetworkInterface,
-    cc: ConmunicationChannel,
 }
 
 #[derive(Debug, Clone)]
@@ -593,65 +630,62 @@ impl Pistol {
 
         Ok(())
     }
-    fn runner(
-        if_name: String,
-        timeout: Option<Duration>,
-        filter_receiver: Receiver<Vec<PacketFilter>>, // recv matched filters
-        packet_sender: Sender<Vec<u8>>,               // send matched packets
-    ) -> Result<(), PistolError> {
+    fn runner(if_name: String, timeout: Option<Duration>) -> Result<(), PistolError> {
         let mut cap = Capture::new(&if_name)?;
         if let Some(timeout) = timeout {
             let sec = timeout.as_secs_f32();
             cap.set_timeout((sec * 1000.0) as i32);
         } else {
-            cap.set_timeout((DEFAULT_TIMEOUT * 1000.0) as i32);
+            cap.set_timeout((ATTACK_DEFAULT_TIMEOUT * 1000.0) as i32);
         }
 
-        let mut filters = Vec::new();
-        let loop_timeout = Duration::from_secs_f32(0.001);
+        let mut runner_msgs = Vec::new();
+        let rcc = match RUNNER_COMMUNICATION_CHANNEL.lock() {
+            Ok(rcc) => rcc,
+            Err(e) => {
+                return Err(PistolError::LockVarFailed {
+                    var_name: String::from("RUNNER_COMMUNICATION_CHANNEL"),
+                    e: e.to_string(),
+                });
+            }
+        };
+
+        // very small timeout to check new filters
+        let filter_recv_timeout = Duration::from_secs_f32(0.01);
         loop {
-            match filter_receiver.recv_timeout(loop_timeout) {
-                Ok(new_filters) => {
-                    filters.extend_from_slice(&new_filters);
-                }
-                Err(e) => {
-                    if e == RecvTimeoutError::Timeout {
-                        debug!("layer2 runner recv filter channel timeout, skipping...");
-                    } else {
-                        error!("layer2 runner recv filter channel error: {}", e);
-                        break;
-                    }
-                }
+            if let Ok(msg) = rcc.filter_receiver.recv_timeout(filter_recv_timeout) {
+                runner_msgs.push(msg);
+            } else {
+                // skip if no new filters
+                continue;
             }
 
+            // libpcap version will not loss any packets
             let packets = cap.fetch_as_vec()?;
             for packet in packets {
-                for (i, filter) in filters.iter().enumerate() {
-                    if filter.check(&packet) {
-                        debug!("layer2 recv matched filter: {}", filter.name());
-                        match packet_sender.send(packet.to_vec()) {
-                            Ok(_) => (),
-                            Err(e) => error!("layer2 runner send packet channel error: {}", e),
-                        };
-                        let _droped_filter = filters.swap_remove(i);
+                let mut drop_idx = 0;
+                let mut need_drop = false;
+                for (i, msg) in runner_msgs.iter().enumerate() {
+                    if msg.check_packet(&packet) {
+                        // send matched packet back to thread
+                        msg.send_packet_back(packet);
+                        need_drop = true;
+                        drop_idx = i;
                         break;
                     }
                 }
+                if need_drop {
+                    let _droped_msg = runner_msgs.swap_remove(drop_idx);
+                }
             }
         }
-        Ok(())
     }
-    fn start_runner(
-        &self,
-        if_name: &str,
-        filter_receiver: Receiver<Vec<PacketFilter>>,
-        packet_sender: Sender<Vec<u8>>,
-    ) {
+    fn start_runner(&self, if_name: &str) {
         let timeout = self.timeout.clone();
         let if_name = if_name.to_string();
-        let _ =
-            thread::spawn(move || Self::runner(if_name, timeout, filter_receiver, packet_sender));
+        let _ = thread::spawn(move || Self::runner(if_name, timeout));
     }
+    /// Initialize multiple runners for multiple targets.
     fn init_runners(
         &mut self,
         targets: &[Target],
@@ -682,21 +716,13 @@ impl Pistol {
             };
 
             self.if_name = Some(if_name.clone());
-            let (filter_sender, filter_receiver) = channel();
-            let (packet_sender, packet_receiver) = channel();
-            self.start_runner(&if_name, filter_receiver, packet_sender);
-
-            let cc = ConmunicationChannel {
-                filter_sender,
-                packet_receiver,
-            };
+            self.start_runner(&if_name);
 
             let net_info = NetInfo {
                 addr: infer_addr,
                 src_port,
                 dst_ports: t.ports.clone(),
                 interface,
-                cc,
             };
 
             net_infos.push(net_info);
@@ -704,6 +730,7 @@ impl Pistol {
 
         Ok(net_infos)
     }
+    /// Initialize a single runner for a single target.
     fn init_runner(
         &mut self,
         dst_addr: IpAddr,
@@ -731,21 +758,13 @@ impl Pistol {
         };
 
         self.if_name = Some(if_name.clone());
-        let (filter_sender, filter_receiver) = channel();
-        let (packet_sender, packet_receiver) = channel();
-        self.start_runner(&if_name, filter_receiver, packet_sender);
-
-        let cc = ConmunicationChannel {
-            filter_sender,
-            packet_receiver,
-        };
+        self.start_runner(&if_name);
 
         let net_info = NetInfo {
             addr: infer_addr,
             src_port,
             dst_ports: dst_port,
             interface,
-            cc,
         };
         Ok(net_info)
     }

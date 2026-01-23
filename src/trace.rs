@@ -11,7 +11,7 @@ use tracing::debug;
 #[cfg(any(feature = "trace", feature = "os"))]
 use crate::error::PistolError;
 #[cfg(feature = "trace")]
-use crate::utils::random_port_range;
+use crate::utils;
 
 #[cfg(any(feature = "trace", feature = "os"))]
 pub mod icmp;
@@ -51,6 +51,10 @@ pub fn syn_trace(
         Some(p) => p,
         None => 80,
     };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             if let IpAddr::V4(src_ipv4) = src_addr {
@@ -62,7 +66,7 @@ pub fn syn_trace(
                 }
                 let mut last_response_ttl = 0;
                 for ttl in 1..=30 {
-                    let random_src_port = random_port_range(1000, 65535);
+                    let random_src_port = utils::random_port_range(1000, 65535);
                     // let random_src_port = 61234; // debug use
                     let (hop_status, rtt) = tcp::send_syn_trace_packet(
                         dst_ipv4,
@@ -96,7 +100,7 @@ pub fn syn_trace(
             if let IpAddr::V6(src_ipv6) = src_addr {
                 let mut last_response_hop_limit = 0;
                 for hop_limit in 1..=30 {
-                    let random_src_port = random_port_range(1000, 65535);
+                    let random_src_port = utils::random_port_range(1000, 65535);
                     let (hop_status, rtt) = tcp6::send_syn_trace_packet(
                         dst_ipv6,
                         dst_port,
@@ -140,6 +144,10 @@ pub fn icmp_trace(
 ) -> Result<u8, PistolError> {
     let mut rng = rand::rng();
     let icmp_id = rng.random();
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             if let IpAddr::V4(src_ipv4) = src_addr {
@@ -212,6 +220,10 @@ pub fn udp_trace(
     src_addr: IpAddr,
     timeout: Option<Duration>,
 ) -> Result<u8, PistolError> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             if let IpAddr::V4(src_ipv4) = src_addr {
@@ -222,7 +234,7 @@ pub fn udp_trace(
                 }
                 let mut last_response_ttl = 0;
                 for ttl in 1..=30 {
-                    let random_src_port = random_port_range(1000, 65535);
+                    let random_src_port = utils::random_port_range(1000, 65535);
                     let dst_port = START_PORT + (ttl - 1) as u16;
                     let (hop_status, rtt) = udp::send_udp_trace_packet(
                         dst_ipv4,
@@ -254,7 +266,7 @@ pub fn udp_trace(
             if let IpAddr::V6(src_ipv6) = src_addr {
                 let mut last_response_hop_limit = 0;
                 for hop_limit in 1..=30 {
-                    let random_src_port = random_port_range(1000, 65535);
+                    let random_src_port = utils::random_port_range(1000, 65535);
                     let dst_port = START_PORT + (hop_limit - 1) as u16;
                     let (hop_status, rtt) = udp6::send_udp_trace_packet(
                         dst_ipv6,

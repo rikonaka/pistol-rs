@@ -1,4 +1,5 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -14,9 +15,13 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -25,7 +30,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::layer::layer3_ipv4_send;
 use crate::trace::HopStatus;
 
 const TCP_DATA_SIZE: usize = 0;
@@ -43,7 +47,7 @@ pub fn send_syn_trace_packet(
     src_port: u16,
     ip_id: u16,
     ttl: u8,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
     const TCP_OPTIONS_SIZE: usize =
         MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
@@ -124,7 +128,7 @@ pub fn send_syn_trace_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // tcp syn, ack or rst packet
     let layer3 = Layer3Filter {
@@ -139,39 +143,40 @@ pub fn send_syn_trace_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
-    let layer_match_tcp = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![layer_match_icmp_time_exceeded, layer_match_tcp],
-        timeout,
-        true,
-    )?;
+    let receiver = ask_runner(vec![filter_1, filter_2])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv syn trace response timeout: {}", dst_ipv4, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
 
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => {
-            let protocol = ipv4_packet.get_next_level_protocol();
-            match protocol {
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Tcp => {
-                    let ret_ip = ipv4_packet.get_source();
+                    let ret_ip = ip_packet.get_source();
                     return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
                 }
-                IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
-                    Some(icmp_packet) => {
+                IpNextHeaderProtocols::Icmp => {
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
                         let icmp_type = icmp_packet.get_icmp_type();
-                        let ret_ip = ipv4_packet.get_source();
+                        let ret_ip = ip_packet.get_source();
                         if icmp_type == IcmpTypes::TimeExceeded {
                             return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
                         }
                     }
-                    None => (),
-                },
+                }
                 _ => (),
             }
         }
-        None => (),
     }
     Ok((HopStatus::NoResponse, rtt))
 }

@@ -1,4 +1,5 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
 use pnet::packet::icmp::destination_unreachable;
@@ -13,9 +14,13 @@ use rand::Rng;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -24,7 +29,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::layer::layer3_ipv4_send;
 use crate::scan::DataRecvStatus;
 use crate::scan::PortStatus;
 
@@ -36,7 +40,7 @@ pub fn send_udp_scan_packet(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
     // ip header
@@ -108,8 +112,8 @@ pub fn send_udp_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let codes_1 = vec![
         destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
@@ -122,43 +126,44 @@ pub fn send_udp_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![layer_match_1, layer_match_2],
-        timeout,
-        true,
-    )?;
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => {
-            match ipv4_packet.get_next_level_protocol() {
+    let receiver = ask_runner(vec![filter_1, filter_2])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv udp scan response timeout: {}", dst_ipv4, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => {
                     // any udp response from target port (unusual)
                     return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                 }
                 IpNextHeaderProtocols::Icmp => {
-                    match IcmpPacket::new(ipv4_packet.payload()) {
-                        Some(icmp_packet) => {
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let icmp_code = icmp_packet.get_icmp_code();
-                            if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes_1.contains(&icmp_code) {
-                                    // icmp port unreachable error (type 3, code 3)
-                                    return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
-                                } else if codes_2.contains(&icmp_code) {
-                                    // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
-                                }
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                        let icmp_type = icmp_packet.get_icmp_type();
+                        let icmp_code = icmp_packet.get_icmp_code();
+                        if icmp_type == IcmpTypes::DestinationUnreachable {
+                            if codes_1.contains(&icmp_code) {
+                                // icmp port unreachable error (type 3, code 3)
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
+                            } else if codes_2.contains(&icmp_code) {
+                                // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
-                        None => (),
                     }
                 }
                 _ => (),
             }
         }
-        None => (),
     }
     // no response received (even after retransmissions)
     Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))

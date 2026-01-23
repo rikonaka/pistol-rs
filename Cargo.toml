@@ -8,43 +8,39 @@ homepage = "https://github.com/rikonaka/pistol-rs"
 documentation = "https://docs.rs/pistol"
 repository = "https://github.com/rikonaka/pistol-rs"
 readme = "README.md"
-keywords = ["penetration-test", "cybersecurity", "nmap"]
+keywords = ["pentest", "cyber", "nmap", "scan", "security"]
 
 [dependencies]
-num_cpus = "^1"
-rand = "^0"
-subnetwork = "^0"
-threadpool = "^1"
-chrono = "^0"
-gcdx = "^0"
-crc32fast = "^1"
 hex = "^0"
-serde = { version = "^1", features = ["derive"] }
+zip = "^4"
+rand = "^0"
+gcdx = "^0"
+regex = "^1"
+chrono = "^0"
+tracing = "^0"
+num_cpus = "^1"
+crc32fast = "^1"
+thiserror = "^2"
+crossbeam = "^0"
 serde_json = "^1"
 dns-lookup = "^3"
+subnetwork = "^0"
+threadpool = "^1"
 fancy-regex = "^0"
-pnet = { version = "^0", features = ["serde"] }
-prettytable-rs = "^0"
-regex = "^1"
-thiserror = "^2"
-zip = "^4"
 escape-bytes = "^0"
-tracing = "^0"
+prettytable-rs = "^0"
 tracing-subscriber = "^0"
+pnet = { version = "^0", features = ["serde"] }
+serde = { version = "^1", features = ["derive"] }
 pcapture = { version = "^0", features = ["pcapng", "libpcap"] }
-crossbeam-channel = "0.5.15"
 
 [features]
-# default = ["scan"]
-# default = ["ping"]
-# default = ["flood"]
-# default = ["os"]
-# default = ["vs"]
-# default = ["trace"]
 default = ["scan", "ping", "flood", "os", "vs", "trace"]
+dev = ["scan", "ping", "flood", "os", "vs", "trace", "debug"]
 scan = []
 ping = []
 flood = []
 os = []
 vs = []
 trace = []
+debug = []

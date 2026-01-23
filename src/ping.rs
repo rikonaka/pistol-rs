@@ -53,13 +53,7 @@ use crate::scan::udp;
 #[cfg(feature = "ping")]
 use crate::scan::udp6;
 #[cfg(feature = "ping")]
-use crate::utils::get_threads_pool;
-#[cfg(feature = "ping")]
-use crate::utils::num_threads_check;
-#[cfg(feature = "ping")]
-use crate::utils::random_port;
-#[cfg(feature = "ping")]
-use crate::utils::time_sec_to_string;
+use crate::utils;
 #[cfg(feature = "ping")]
 use tracing::warn;
 
@@ -134,12 +128,9 @@ impl fmt::Display for PistolPings {
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!(
-                "Ping Results (attempts:{})",
-                self.attempts
-            ))
-            .style_spec("c")
-            .with_hspan(4),
+            Cell::new(&format!("Ping Results (attempts:{})", self.attempts))
+                .style_spec("c")
+                .with_hspan(4),
         ]));
 
         table.add_row(row![
@@ -167,7 +158,7 @@ impl fmt::Display for PistolPings {
                 None => format!("{}", report.addr),
             };
             let status_str = format!("{}", report.status);
-            let rtt_str = time_sec_to_string(report.cost);
+            let rtt_str = utils::time_sec_to_string(report.cost);
             table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> rtt_str]);
             i += 1;
         }
@@ -208,6 +199,10 @@ fn ping_thread(
     src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     let (ping_status, data_return, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -282,6 +277,10 @@ fn ping_thread6(
     src_port: u16,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     let (ping_status, data_return, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -350,12 +349,12 @@ fn ping(
         Some(t) => t,
         None => {
             let threads = targets.len();
-            let threads = num_threads_check(threads);
+            let threads = utils::num_threads_check(threads);
             threads
         }
     };
 
-    let pool = get_threads_pool(threads);
+    let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
@@ -366,7 +365,7 @@ fn ping(
             IpAddr::V4(_) => {
                 let src_port = match src_port {
                     Some(p) => p,
-                    None => random_port(),
+                    None => utils::random_port(),
                 };
                 let tx = tx.clone();
                 let (dst_ipv4, src_ipv4) = match infer_addr(dst_addr, src_addr)? {
@@ -437,7 +436,7 @@ fn ping(
             IpAddr::V6(_) => {
                 let src_port = match src_port {
                     Some(p) => p,
-                    None => random_port(),
+                    None => utils::random_port(),
                 };
                 let tx = tx.clone();
                 let (dst_ipv6, src_ipv6) = match infer_addr(dst_addr, src_addr)? {
@@ -572,7 +571,11 @@ pub fn tcp_syn_ping_raw(
 ) -> Result<(PingStatus, Duration), PistolError> {
     let src_port = match src_port {
         Some(p) => p,
-        None => random_port(),
+        None => utils::random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
@@ -633,7 +636,11 @@ pub fn tcp_ack_ping_raw(
 ) -> Result<(PingStatus, Duration), PistolError> {
     let src_port = match src_port {
         Some(p) => p,
-        None => random_port(),
+        None => utils::random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
@@ -694,7 +701,11 @@ pub fn udp_ping_raw(
 ) -> Result<(PingStatus, Duration), PistolError> {
     let src_port = match src_port {
         Some(p) => p,
-        None => random_port(),
+        None => utils::random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
@@ -756,6 +767,10 @@ pub fn icmp_echo_ping_raw(
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSrcAddress),
     };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(_) => {
             let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
@@ -801,6 +816,10 @@ pub fn icmp_timestamp_ping_raw(
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSrcAddress),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(_) => {
@@ -849,6 +868,10 @@ pub fn icmp_address_mask_ping_raw(
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSrcAddress),
     };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
     match dst_addr {
         IpAddr::V4(_) => {
             let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
@@ -895,6 +918,10 @@ pub fn icmp_ping_raw(
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSrcAddress),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(_) => {
@@ -1041,15 +1068,7 @@ mod attempts {
 
         let attempts = 4;
         let threads = Some(8);
-        let ret = icmp_echo_ping(
-            &targets,
-            threads,
-            src_ipv4,
-            src_port,
-            timeout,
-            attempts,
-        )
-        .unwrap();
+        let ret = icmp_echo_ping(&targets, threads, src_ipv4, src_port, timeout, attempts).unwrap();
         println!("{}", ret.ping_reports.len());
         println!("{}", ret);
     }
@@ -1097,15 +1116,8 @@ mod attempts {
             );
             let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
             let target = Target::new(addr1, None);
-            let _ret = icmp_echo_ping(
-                &[target],
-                threads,
-                None,
-                None,
-                Some(Duration::new(1, 0)),
-                1,
-            )
-            .unwrap();
+            let _ret = icmp_echo_ping(&[target], threads, None, None, Some(Duration::new(1, 0)), 1)
+                .unwrap();
             // println!("{}\n{:?}", i, ret);
             println!("id: {}", i);
             // std::thread::sleep(Duration::new(1, 0));

@@ -1,4 +1,5 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
@@ -12,9 +13,13 @@ use pnet::packet::udp::ipv4_checksum;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -23,7 +28,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::layer::layer3_ipv4_send;
 use crate::trace::HopStatus;
 use crate::trace::UDP_DATA_SIZE;
 
@@ -34,7 +38,7 @@ pub fn send_udp_trace_packet(
     src_port: u16,
     ip_id: u16,
     ttl: u8,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -101,7 +105,7 @@ pub fn send_udp_trace_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmp_time_exceeded = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // finally, the UDP packet arrives at the target machine.
     let layer3 = Layer3Filter {
@@ -117,7 +121,7 @@ pub fn send_udp_trace_packet(
         icmp_code: Some(IcmpCode(3)),
         payload: None,
     };
-    let layer_match_icmp_port_unreachable = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     // there is a small chance that the target's UDP port will be open.
     let layer3 = Layer3Filter {
@@ -132,45 +136,47 @@ pub fn send_udp_trace_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
-    let layer_match_udp = PacketFilter::Layer4FilterTcpUdp(layer4);
+    let filter_3 = PacketFilter::Layer4FilterTcpUdp(layer4);
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![
-            layer_match_icmp_time_exceeded,
-            layer_match_icmp_port_unreachable,
-            layer_match_udp,
-        ],
-        timeout,
-        true,
-    )?;
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
-            IpNextHeaderProtocols::Udp => {
-                let ret_ip = ipv4_packet.get_source();
-                return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
-            }
-            IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
-                Some(icmp_packet) => {
-                    let icmp_type = icmp_packet.get_icmp_type();
-                    let icmp_code = icmp_packet.get_icmp_code();
-                    let ret_ip = ipv4_packet.get_source();
-                    if icmp_type == IcmpTypes::TimeExceeded {
-                        return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
-                    } else if icmp_type == IcmpTypes::DestinationUnreachable {
-                        if icmp_code == IcmpCode(3) {
-                            // icmp type 3, code 3 (port unreachable)
-                            return Ok((HopStatus::Unreachable(ret_ip.into()), rtt));
+    let receiver = ask_runner(vec![filter_1, filter_2, filter_3])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv udp trace response timeout: {}", dst_ipv4, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Udp => {
+                    // any udp response from target port (unusual)
+                    let ret_ip = ip_packet.get_source();
+                    return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
+                }
+                IpNextHeaderProtocols::Icmp => {
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                        let icmp_type = icmp_packet.get_icmp_type();
+                        let icmp_code = icmp_packet.get_icmp_code();
+                        let ret_ip = ip_packet.get_source();
+                        if icmp_type == IcmpTypes::TimeExceeded {
+                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
+                        } else if icmp_type == IcmpTypes::DestinationUnreachable {
+                            if icmp_code == IcmpCode(3) {
+                                // icmp type 3, code 3 (port unreachable)
+                                return Ok((HopStatus::Unreachable(ret_ip.into()), rtt));
+                            }
                         }
                     }
                 }
-                None => (),
-            },
-            _ => (),
-        },
-        None => (),
+                _ => (),
+            }
+        }
     }
     Ok((HopStatus::NoResponse, rtt))
 }

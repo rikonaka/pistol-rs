@@ -20,8 +20,9 @@ use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6AddrExt;
+use tracing::debug;
 
-use crate::ConmunicationChannel;
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
@@ -63,8 +64,7 @@ pub fn send_ndp_ns_scan_packet(
     src_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     interface: &NetworkInterface,
-    cc: &ConmunicationChannel,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     // same as arp in ipv4
     // ipv6
@@ -135,24 +135,23 @@ pub fn send_ndp_ns_scan_packet(
         payload: None,
     };
     let filters = vec![PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6.clone())];
-    cc.send_filters(filters)?;
 
+    let receiver = ask_runner(filters)?;
     let ether_type = EtherTypes::Ipv6;
     let dst_mac = multicast_mac(dst_ipv6);
-    let layer2 = Layer2::new(
-        dst_mac,
-        interface.clone(),
-        ether_type,
-        timeout,
-        true,
-    );
-
+    let layer2 = Layer2::new(dst_mac, interface.clone(), ether_type, timeout, true);
     let start = Instant::now();
     layer2.send(&ipv6_buff)?;
-    let ret = cc.recv_packets(timeout)?;
+    let eth_response = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
+            Vec::new()
+        }
+    };
     let rtt = start.elapsed();
 
-    let mac = get_mac_from_ndp_ns(&ret);
+    let mac = get_mac_from_ndp_ns(&eth_response);
     Ok((mac, rtt))
 }
 

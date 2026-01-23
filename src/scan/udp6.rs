@@ -1,4 +1,5 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Types;
@@ -10,9 +11,13 @@ use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
@@ -21,7 +26,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::layer::layer3_ipv6_send;
 use crate::scan::DataRecvStatus;
 use crate::scan::PortStatus;
 
@@ -33,7 +37,7 @@ pub fn send_udp_scan_packet(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -101,8 +105,8 @@ pub fn send_udp_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let layer_match_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     let codes_1 = vec![
         Icmpv6Code(4), // port unreachable
@@ -112,42 +116,43 @@ pub fn send_udp_scan_packet(
         Icmpv6Code(3), // address unreachable
     ];
 
-    let (ret, rtt) = layer3_ipv6_send(
-        dst_ipv6,
-        src_ipv6,
-        &ipv6_buff,
-        vec![layer_match_1, layer_match_2],
-        timeout,
-        true,
-    )?;
-    match Ipv6Packet::new(&ret) {
-        Some(ipv6_packet) => {
+    let receiver = ask_runner(vec![filter_1, filter_2])?;
+    let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ipv6_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv udp6 scan response timeout: {}", dst_ipv6, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
             match ipv6_packet.get_next_header() {
                 IpNextHeaderProtocols::Udp => {
                     // any udp response from target port (unusual)
                     return Ok((PortStatus::Open, DataRecvStatus::Yes, rtt));
                 }
                 IpNextHeaderProtocols::Icmpv6 => {
-                    match Icmpv6Packet::new(ipv6_packet.payload()) {
-                        Some(icmpv6_packet) => {
-                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes_1.contains(&icmpv6_code) {
-                                    // icmpv6 port unreachable error (type 1, code 4)
-                                    return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
-                                } else if codes_2.contains(&icmpv6_code) {
-                                    return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
-                                }
+                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                            if codes_1.contains(&icmpv6_code) {
+                                // icmpv6 port unreachable error (type 1, code 4)
+                                return Ok((PortStatus::Closed, DataRecvStatus::Yes, rtt));
+                            } else if codes_2.contains(&icmpv6_code) {
+                                return Ok((PortStatus::Filtered, DataRecvStatus::Yes, rtt));
                             }
                         }
-                        None => (),
                     }
                 }
                 _ => (),
             }
         }
-        None => (),
     }
     // no response received (even after retransmissions)
     Ok((PortStatus::OpenOrFiltered, DataRecvStatus::No, rtt))

@@ -57,13 +57,7 @@ use crate::scan::arp::send_arp_scan_packet;
 #[cfg(feature = "scan")]
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::get_threads_pool;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::num_threads_check;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::random_port;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use crate::utils::time_sec_to_string;
+use crate::utils;
 
 /// This structure is used to indicate whether the status
 /// is a conclusion drawn from data received or from no data received.
@@ -119,7 +113,7 @@ impl fmt::Display for PistolMacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
         let total_cost_str =
-            time_sec_to_string(Duration::from_secs_f64(total_cost.as_seconds_f64()));
+            utils::time_sec_to_string(Duration::from_secs_f64(total_cost.as_seconds_f64()));
         let mut table = Table::new();
         table.add_row(Row::new(vec![
             Cell::new(&format!("Mac Scan Results (attempts:{})", self.attempts))
@@ -137,7 +131,7 @@ impl fmt::Display for PistolMacScans {
 
         let mut i = 1;
         for (_addr, report) in btm_addr {
-            let rtt_str = time_sec_to_string(report.rtt);
+            let rtt_str = utils::time_sec_to_string(report.rtt);
             match report.mac {
                 Some(mac) => {
                     table.add_row(
@@ -205,13 +199,17 @@ pub fn arp_scan_raw(
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
     let (dst_ipv4, src_ipv4) = net_info.addr.get_ipv4_addr()?;
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
+
     match send_arp_scan_packet(
         dst_ipv4,
         dst_mac,
         src_ipv4,
         src_mac,
         &net_info.interface,
-        &net_info.cc,
         timeout,
     ) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
@@ -228,15 +226,13 @@ pub fn ndp_ns_scan_raw(
         Some(m) => m,
         None => return Err(PistolError::CanNotFoundMacAddress),
     };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
+
     let (dst_ipv6, src_ipv6) = net_info.addr.get_ipv6_addr()?;
-    match send_ndp_ns_scan_packet(
-        dst_ipv6,
-        src_ipv6,
-        src_mac,
-        &net_info.interface,
-        &net_info.cc,
-        timeout,
-    ) {
+    match send_ndp_ns_scan_packet(dst_ipv6, src_ipv6, src_mac, &net_info.interface, timeout) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
@@ -251,9 +247,8 @@ pub fn mac_scan(
 ) -> Result<PistolMacScans, PistolError> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut ret = PistolMacScans::new(attempts);
-    let threads = num_threads_check(threads);
-
-    let pool = get_threads_pool(threads);
+    let threads = utils::num_threads_check(threads);
+    let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
     for ni in net_infos {
@@ -507,7 +502,7 @@ impl fmt::Display for PistolPortScans {
                     None => format!("{}", report.addr),
                 };
                 let status_str = format!("{}", report.status);
-                let time_cost_str = time_sec_to_string(report.cost);
+                let time_cost_str = utils::time_sec_to_string(report.cost);
                 table.add_row(
                     row![c -> i, c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
                 );
@@ -541,7 +536,7 @@ fn scan_thread(
     src_port: u16,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let (port_status, data_return, rtt) = match method {
         ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv4.into(), dst_port, timeout)?,
@@ -595,7 +590,7 @@ fn scan_thread6(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let (port_status, data_return, rtt) = match method {
         ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv6.into(), dst_port, timeout)?,
@@ -652,13 +647,17 @@ fn scan(
             for ni in net_infos {
                 init_numm_threads += ni.dst_ports.len();
             }
-            let threads = num_threads_check(init_numm_threads);
+            let threads = utils::num_threads_check(init_numm_threads);
             threads
         }
     };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
 
     debug!("scan will create {} threads to do the jobs", threads);
-    let pool = get_threads_pool(threads);
+    let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
 
@@ -669,7 +668,7 @@ fn scan(
             for &dst_port in &ni.dst_ports {
                 let src_port = match ni.src_port {
                     Some(s) => s,
-                    None => random_port(),
+                    None => utils::random_port(),
                 };
                 // debug!(
                 //     "sending scan packet to [{}] port [{}] and src port [{}]",
@@ -746,7 +745,7 @@ fn scan(
             for &dst_port in &ni.dst_ports {
                 let src_port = match ni.src_port {
                     Some(s) => s,
-                    None => random_port(),
+                    None => utils::random_port(),
                 };
                 let tx = tx.clone();
                 let ori_target = format!("{}:{}", ni.addr.ori_dst_addr, dst_port);
@@ -1137,7 +1136,11 @@ fn scan_raw(
 ) -> Result<(PortStatus, Duration), PistolError> {
     let src_port = match net_info.src_port {
         Some(s) => s,
-        None => random_port(),
+        None => utils::random_port(),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
 
     let dst_port = if net_info.dst_ports.len() > 0 {

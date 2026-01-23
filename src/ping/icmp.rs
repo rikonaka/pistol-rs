@@ -1,5 +1,6 @@
 use chrono::Utc;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
@@ -13,32 +14,36 @@ use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use rand::Rng;
-use std::panic::Location;
-
 use std::net::Ipv4Addr;
+use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::PacketFilter;
-use crate::layer::layer3_ipv4_send;
 use crate::ping::PingStatus;
 use crate::scan::DataRecvStatus;
 
+const ICMP_ECHO_DATA_SIZE: usize = 16;
+const ICMP_TIMESTAMP_DATA_SIZE: usize = 12;
+const ICMP_ADDRESS_DATA_SIZE: usize = 4;
 const TTL: u8 = 64;
 
 pub fn send_icmp_echo_packet(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_ECHO_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
         Some(p) => p,
         None => {
@@ -51,7 +56,7 @@ pub fn send_icmp_echo_packet(
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_ECHO_DATA_SIZE) as u16);
     let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
@@ -115,35 +120,40 @@ pub fn send_icmp_echo_packet(
         icmp_code: None,
         payload: None,
     };
-    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
-            IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
-                Some(icmp_packet) => {
-                    let icmp_type = icmp_packet.get_icmp_type();
-                    let icmp_code = icmp_packet.get_icmp_code();
-                    if icmp_type == IcmpTypes::DestinationUnreachable {
-                        if codes_1.contains(&icmp_code) {
-                            return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
+    let receiver = ask_runner(vec![filter_1])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv icmp echo ping response timeout: {}", dst_ipv4, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Icmpv6 => {
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                        let icmp_type = icmp_packet.get_icmp_type();
+                        let icmp_code = icmp_packet.get_icmp_code();
+                        if icmp_type == IcmpTypes::DestinationUnreachable {
+                            if codes_1.contains(&icmp_code) {
+                                return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
+                            }
+                        } else if icmp_type == IcmpTypes::EchoReply {
+                            return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                         }
-                    } else if icmp_type == IcmpTypes::EchoReply {
-                        return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                     }
                 }
-                None => (),
-            },
-            _ => (),
-        },
-        None => (),
+                _ => (),
+            }
+        }
     }
     // no response received (even after retransmissions)
     Ok((PingStatus::Down, DataRecvStatus::No, rtt))
@@ -152,12 +162,11 @@ pub fn send_icmp_echo_packet(
 pub fn send_icmp_timestamp_packet(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    const ICMP_DATA_SIZE: usize = 12;
     let mut rng = rand::rng();
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_TIMESTAMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
         Some(p) => p,
         None => {
@@ -170,7 +179,8 @@ pub fn send_icmp_timestamp_packet(
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header
+        .set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_TIMESTAMP_DATA_SIZE) as u16);
     let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
@@ -192,7 +202,7 @@ pub fn send_icmp_timestamp_packet(
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_identifier(rng.random());
     icmp_header.set_sequence_number(0);
-    let timestamp_payload = [0u8; ICMP_DATA_SIZE];
+    let timestamp_payload = [0u8; ICMP_TIMESTAMP_DATA_SIZE];
     icmp_header.set_payload(&timestamp_payload);
 
     let mut icmp_header = match MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -220,32 +230,40 @@ pub fn send_icmp_timestamp_packet(
         icmp_code: None,
         payload: None,
     };
-    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => match ipv4_packet.get_next_level_protocol() {
-            IpNextHeaderProtocols::Icmp => match IcmpPacket::new(ipv4_packet.payload()) {
-                Some(icmp_packet) => {
-                    let icmp_type = icmp_packet.get_icmp_type();
-                    if icmp_type == IcmpTypes::DestinationUnreachable {
-                        return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
-                    } else if icmp_type == IcmpTypes::TimestampReply {
-                        return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
+    let receiver = ask_runner(vec![filter_1])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!(
+                "{} recv icmp timestamp ping response timeout: {}",
+                dst_ipv4, e
+            );
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Icmpv6 => {
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                        let icmp_type = icmp_packet.get_icmp_type();
+                        if icmp_type == IcmpTypes::DestinationUnreachable {
+                            return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
+                        } else if icmp_type == IcmpTypes::TimestampReply {
+                            return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
+                        }
                     }
                 }
-                None => (),
-            },
-            _ => (),
-        },
-        None => (),
+                _ => (),
+            }
+        }
     }
     // no response received (even after retransmissions)
     Ok((PingStatus::Down, DataRecvStatus::No, rtt))
@@ -254,12 +272,11 @@ pub fn send_icmp_timestamp_packet(
 pub fn send_icmp_address_mask_packet(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    const ICMP_DATA_SIZE: usize = 4;
     let mut rng = rand::rng();
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_ADDRESS_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
         Some(p) => p,
         None => {
@@ -272,7 +289,8 @@ pub fn send_icmp_address_mask_packet(
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header
+        .set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_ADDRESS_DATA_SIZE) as u16);
     let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
@@ -294,7 +312,7 @@ pub fn send_icmp_address_mask_packet(
     icmp_header.set_icmp_code(IcmpCode(0));
     icmp_header.set_identifier(rng.random());
     icmp_header.set_sequence_number(0);
-    let timestamp_payload = [0u8; ICMP_DATA_SIZE];
+    let timestamp_payload = [0u8; ICMP_ADDRESS_DATA_SIZE];
     icmp_header.set_payload(&timestamp_payload);
 
     let mut icmp_header = match MutableIcmpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
@@ -331,40 +349,44 @@ pub fn send_icmp_address_mask_packet(
         icmp_code: None,
         payload: None,
     };
-    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let (ret, rtt) = layer3_ipv4_send(
-        dst_ipv4,
-        src_ipv4,
-        &ip_buff,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
-    match Ipv4Packet::new(&ret) {
-        Some(ipv4_packet) => {
-            match ipv4_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Icmp => {
-                    match IcmpPacket::new(ipv4_packet.payload()) {
-                        Some(icmp_packet) => {
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let icmp_code = icmp_packet.get_icmp_code();
-                            if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes_1.contains(&icmp_code) {
-                                    // icmp protocol unreachable error (type 3, code 2)
-                                    return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
-                                }
-                            } else if icmp_type == IcmpTypes::AddressMaskReply {
-                                return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
+    let receiver = ask_runner(vec![filter_1])?;
+    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ip_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!(
+                "{} recv icmp address ping response timeout: {}",
+                dst_ipv4, e
+            );
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+            match ip_packet.get_next_level_protocol() {
+                IpNextHeaderProtocols::Icmpv6 => {
+                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                        let icmp_type = icmp_packet.get_icmp_type();
+                        let icmp_code = icmp_packet.get_icmp_code();
+                        if icmp_type == IcmpTypes::DestinationUnreachable {
+                            if codes_1.contains(&icmp_code) {
+                                // icmp protocol unreachable error (type 3, code 2)
+                                return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
                             }
+                        } else if icmp_type == IcmpTypes::AddressMaskReply {
+                            return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
                         }
-                        None => (),
                     }
                 }
                 _ => (),
             }
         }
-        None => (),
     }
     // no response received (even after retransmissions)
     Ok((PingStatus::Down, DataRecvStatus::No, rtt))

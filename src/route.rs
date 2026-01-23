@@ -2,6 +2,7 @@ use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
 use pnet::ipnetwork::IpNetwork;
+use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6;
@@ -26,6 +27,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
+use std::time::Instant;
 use tracing::debug;
 use tracing::warn;
 
@@ -33,6 +35,7 @@ use crate::DST_CACHE;
 use crate::NEIGHBOR_SCAN_STATUS;
 use crate::PacketFilter;
 use crate::SYSTEM_NET_CACHE;
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_RS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
@@ -706,7 +709,7 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
 
 fn send_ndp_rs_packet(
     src_ipv6: Ipv6Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     // router solicitation
     let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
@@ -800,17 +803,31 @@ fn send_ndp_rs_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let filter = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ether_type = EtherTypes::Ipv6;
+
+    let receiver = ask_runner(vec![filter_1])?;
     let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, true);
-    layer2.set_filter(filter);
+    let start = Instant::now();
+    layer2.send(&ipv6_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv ndp_rs response timeout: {}", dst_mac, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
 
-    let (r, rtt) = layer2.send_and_recv(&ipv6_buff)?;
-
-    let mac = get_mac_from_ndp_rs(&r);
-    Ok((mac, rtt))
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        let eth_payload = eth_packet.payload();
+        let mac = get_mac_from_ndp_rs(eth_payload);
+        Ok((mac, rtt))
+    } else {
+        Ok((None, rtt))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -839,7 +856,7 @@ impl RouteVia {
         dst_addr: IpAddr,
         src_addr: IpAddr,
         src_interface: NetworkInterface,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> Result<MacAddr, PistolError> {
         if dst_addr.is_loopback() || addr_is_my_ip(dst_addr) {
             // target is your own machine, such as when using localhost or 127.0.0.1 as the target
@@ -870,7 +887,7 @@ impl RouteVia {
                                     MacAddr::broadcast(),
                                     src_ipv4,
                                     src_mac,
-                                    src_interface,
+                                    &src_interface,
                                     timeout,
                                 )? {
                                     (Some(m), _rtt) => m,
@@ -890,7 +907,7 @@ impl RouteVia {
                                     via_ipv6,
                                     src_ipv6,
                                     src_mac,
-                                    src_interface,
+                                    &src_interface,
                                     timeout,
                                 )? {
                                     (Some(m), _rtt) => m,
@@ -941,7 +958,7 @@ impl RouteVia {
                                     dst_mac,
                                     src_ipv4,
                                     src_mac,
-                                    src_interface,
+                                    &src_interface,
                                     timeout,
                                 )? {
                                     (Some(m), _rtt) => {
@@ -984,7 +1001,7 @@ impl RouteVia {
     pub fn get_dst_mac_and_src_if_with_lock(
         dst_addr: IpAddr,
         src_addr: IpAddr,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> Result<(MacAddr, NetworkInterface), PistolError> {
         // search in the program cache
         if let Some((dst_mac, src_interface)) = DstCache::get(dst_addr)? {
@@ -1098,7 +1115,7 @@ impl RouteVia {
     pub fn get_dst_mac_and_src_if(
         dst_addr: IpAddr,
         src_addr: IpAddr,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> Result<(MacAddr, NetworkInterface), PistolError> {
         let mut neighbor_scan_status = match NEIGHBOR_SCAN_STATUS.lock() {
             Ok(n) => n,

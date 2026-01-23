@@ -1,4 +1,5 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -12,9 +13,13 @@ use rand::Rng;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
@@ -23,7 +28,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::layer::layer3_ipv6_send;
 use crate::trace::HopStatus;
 
 const TCP_DATA_SIZE: usize = 0;
@@ -40,7 +44,7 @@ pub fn send_syn_trace_packet(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     hop_limit: u8,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
     const TCP_OPTIONS_SIZE: usize =
         MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
@@ -120,7 +124,7 @@ pub fn send_syn_trace_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let layer_match_icmpv6_time_exceeded = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
     // tcp syn, ack or rst packet
     let layer3 = Layer3Filter {
@@ -135,36 +139,40 @@ pub fn send_syn_trace_packet(
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
-    let layer_match_tcp = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
-    let (ret, rtt) = layer3_ipv6_send(
-        dst_ipv6,
-        src_ipv6,
-        &ipv6_buff,
-        vec![layer_match_icmpv6_time_exceeded, layer_match_tcp],
-        timeout,
-        true,
-    )?;
+    let receiver = ask_runner(vec![filter_1, filter_2])?;
+    let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ipv6_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv syn6 trace response timeout: {}", dst_ipv6, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
 
-    match Ipv6Packet::new(&ret) {
-        Some(ipv6_packet) => match ipv6_packet.get_next_header() {
-            IpNextHeaderProtocols::Tcp => {
-                let ret_ip = ipv6_packet.get_source();
-                return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
-            }
-            IpNextHeaderProtocols::Icmpv6 => match Icmpv6Packet::new(ipv6_packet.payload()) {
-                Some(icmpv6_packet) => {
-                    let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+            match ipv6_packet.get_next_header() {
+                IpNextHeaderProtocols::Tcp => {
                     let ret_ip = ipv6_packet.get_source();
-                    if icmpv6_type == Icmpv6Types::TimeExceeded {
-                        return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
+                    return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
+                }
+                IpNextHeaderProtocols::Icmpv6 => {
+                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                        let ret_ip = ipv6_packet.get_source();
+                        if icmpv6_type == Icmpv6Types::TimeExceeded {
+                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
+                        }
                     }
                 }
-                None => (),
-            },
-            _ => (),
-        },
-        None => (),
+                _ => (),
+            }
+        }
     }
     Ok((HopStatus::NoResponse, rtt))
 }

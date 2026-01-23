@@ -1089,7 +1089,7 @@ pub struct Layer2 {
     dst_mac: MacAddr,
     interface: NetworkInterface,
     ether_type: EtherType,
-    timeout: Option<Duration>,
+    timeout: Duration,
     need_return: bool,
 }
 
@@ -1098,7 +1098,7 @@ impl Layer2 {
         dst_mac: MacAddr,
         interface: NetworkInterface,
         ether_type: EtherType,
-        timeout: Option<Duration>,
+        timeout: Duration,
         need_return: bool,
     ) -> Self {
         Self {
@@ -1114,8 +1114,8 @@ impl Layer2 {
         let config = Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
-            read_timeout: self.timeout,
-            write_timeout: self.timeout,
+            read_timeout: Some(self.timeout),
+            write_timeout: Some(self.timeout),
             channel_type: ChannelType::Layer2,
             bpf_fd_attempts: 1000,
             linux_fanout: None,
@@ -1190,17 +1190,12 @@ fn get_layer2_payload(buff: &[u8]) -> Vec<u8> {
 pub struct Layer3 {
     dst: IpAddr,
     src: IpAddr,
-    timeout: Option<Duration>,
+    timeout: Duration,
     need_return: bool,
 }
 
 impl Layer3 {
-    pub fn new(
-        dst: IpAddr,
-        src: IpAddr,
-        timeout: Option<Duration>,
-        need_return: bool,
-    ) -> Self {
+    pub fn new(dst: IpAddr, src: IpAddr, timeout: Duration, need_return: bool) -> Self {
         Self {
             dst,
             src,
@@ -1243,7 +1238,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 129);
         let ia = infer_addr(dst_ipv4.into(), None).unwrap();
         if let Some(ia) = ia {
-            let timeout = Some(Duration::from_secs_f64(1.0));
+            let timeout = Duration::from_secs_f64(1.0);
             let (_mac, interface) =
                 RouteVia::get_dst_mac_and_src_if(ia.dst_addr, ia.src_addr, timeout).unwrap();
             println!("{}", interface.name);

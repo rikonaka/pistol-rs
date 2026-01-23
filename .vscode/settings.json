@@ -1,0 +1,4 @@
+{
+  "rust-analyzer.cargo.features": ["dev"],
+  "rust-analyzer.cargo.noDefaultFeatures": true
+}

@@ -1,5 +1,6 @@
 use chrono::Utc;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
@@ -13,25 +14,28 @@ use rand::Rng;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
+use std::time::Instant;
+use tracing::debug;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
-use crate::layer::layer3_ipv6_send;
 use crate::ping::PingStatus;
 use crate::scan::DataRecvStatus;
 
+const ICMPV6_DATA_SIZE: usize = 16;
 const TTL: u8 = 255;
 
 pub fn send_icmpv6_ping_packet(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
@@ -102,33 +106,37 @@ pub fn send_icmpv6_ping_packet(
         icmpv6_code: None,
         payload: None,
     };
-    let layer_match = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
-    let (ret, rtt) = layer3_ipv6_send(
-        dst_ipv6,
-        src_ipv6,
-        &ipv6_buff,
-        vec![layer_match],
-        timeout,
-        true,
-    )?;
+    let receiver = ask_runner(vec![filter_1])?;
+    let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
+    let start = Instant::now();
+    layer3.send(&ipv6_buff)?;
+    let eth_buff = match receiver.recv_timeout(timeout) {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("{} recv icmpv6 ping response timeout: {}", dst_ipv6, e);
+            Vec::new()
+        }
+    };
+    let rtt = start.elapsed();
 
-    match Ipv6Packet::new(&ret) {
-        Some(ipv6_packet) => match ipv6_packet.get_next_header() {
-            IpNextHeaderProtocols::Icmpv6 => match Icmpv6Packet::new(ipv6_packet.payload()) {
-                Some(icmpv6_packet) => {
-                    let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                    if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                        return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
-                    } else if icmpv6_type == Icmpv6Types::EchoReply {
-                        return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
+    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+            match ipv6_packet.get_next_header() {
+                IpNextHeaderProtocols::Icmpv6 => {
+                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                            return Ok((PingStatus::Down, DataRecvStatus::Yes, rtt));
+                        } else if icmpv6_type == Icmpv6Types::EchoReply {
+                            return Ok((PingStatus::Up, DataRecvStatus::Yes, rtt));
+                        }
                     }
                 }
-                None => (),
-            },
-            _ => (),
-        },
-        None => (),
+                _ => (),
+            }
+        }
     }
     // no response received (even after retransmissions)
     Ok((PingStatus::Down, DataRecvStatus::No, rtt))

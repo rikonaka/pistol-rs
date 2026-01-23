@@ -11,13 +11,16 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::panic::Location;
+use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::layer3_ipv4_send;
+use crate::layer::Layer3;
 
+const ICMP_DATA_SIZE: usize = 16;
 const TTL: u8 = 64;
+
 pub fn send_icmp_flood_packet(
     dst_ipv4: Ipv4Addr,
     _: u16, // unified interface
@@ -25,7 +28,6 @@ pub fn send_icmp_flood_packet(
     _: u16, // unified interface
     max_same_packet: usize,
 ) -> Result<usize, PistolError> {
-    const ICMP_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
@@ -83,10 +85,11 @@ pub fn send_icmp_flood_packet(
     };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    let timeout = None; // not wait the result
+    let timeout = Duration::from_secs(0); // not wait the result
 
     for _ in 0..max_same_packet {
-        let _ret = layer3_ipv4_send(dst_ipv4, src_ipv4, &ip_buff, vec![], timeout, false)?;
+        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+        layer3.send(&ip_buff).unwrap();
     }
 
     Ok(ip_buff.len() * max_same_packet)

@@ -2,6 +2,8 @@ use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
 use pnet::datalink::MacAddr;
+use pnet::packet::Packet;
+use pnet::packet::ethernet::EthernetPacket;
 use rand::Rng;
 use std::collections::HashMap;
 use std::fmt;
@@ -12,15 +14,17 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
+use tracing::error;
 use tracing::warn;
 
 use crate::IpCheckMethods;
+use crate::ask_runner;
 use crate::error::PistolError;
+use crate::layer::Layer3;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
 use crate::layer::PacketFilter;
-use crate::layer::layer3_ipv4_send;
 use crate::os::OsInfo;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::operator::icmp_cd;
@@ -263,7 +267,7 @@ fn send_seq_probes(
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<SEQRR, PistolError> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
@@ -303,31 +307,52 @@ fn send_seq_probes(
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
         };
-        let layer_match = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+        let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret = layer3_ipv4_send(
-                    dst_ipv4,
-                    src_ipv4,
-                    &buff,
-                    vec![layer_match.clone()],
-                    timeout,
-                    true,
-                );
-                match ret {
-                    Ok((response, rtt)) => {
-                        if response.len() > 0 {
-                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
-                            break;
-                        } else if retry_time == MAX_RETRY - 1 {
-                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
+                match ask_runner(vec![filter_1]) {
+                    Ok(receiver) => {
+                        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+                        let start = Instant::now();
+                        if let Err(e) = layer3.send(&buff) {
+                            error!("send seq_{} probe packet error: {}", i, e);
+                            continue;
+                        }
+                        let eth_buff = match receiver.recv_timeout(timeout) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                debug!("{} recv seq_{} probe response timeout: {}", dst_ipv4, i, e);
+                                Vec::new()
+                            }
+                        };
+                        let rtt = start.elapsed();
+                        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+                            let eth_payload = eth_packet.payload().to_vec();
+                            if eth_payload.len() > 0 {
+                                let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
+                                if let Err(e) = tx.send(data) {
+                                    error!("send seq probe result error: {}", e);
+                                }
+                            } else if retry_time == MAX_RETRY - 1 {
+                                let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
+                                if let Err(e) = tx.send(data) {
+                                    error!("send seq probe result error: {}", e);
+                                }
+                            }
+                        } else {
+                            if let Err(e) = tx.send((i, buff.to_vec(), Ok((Vec::new(), rtt)))) {
+                                error!("send seq probe result error: {}", e);
+                            }
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            let _ = tx.send((i, buff.to_vec(), Err(e)));
+                            let data = (i, buff.to_vec(), Err(e));
+                            if let Err(e) = tx.send(data) {
+                                error!("send seq probe result error: {}", e);
+                            }
                         }
                     }
                 }
@@ -342,7 +367,7 @@ fn send_seq_probes(
     for (i, request, ret) in iter {
         let (response, _rtt) = ret?;
         if response.len() == 0 {
-            warn!("SQX-{} response is null", i);
+            warn!("sqx_{} response is null", i);
         }
         let rr = RequestResponse { request, response };
         seq_hm.insert(i, rr);
@@ -384,7 +409,7 @@ fn send_seq_probes(
 fn send_ie_probes(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<IERR, PistolError> {
     let (tx, rx) = channel();
 
@@ -409,7 +434,7 @@ fn send_ie_probes(
         icmp_code: None,
         payload: None,
     };
-    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
@@ -417,26 +442,47 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            let ret = layer3_ipv4_send(
-                dst_ipv4,
-                src_ipv4,
-                &buff,
-                vec![layer_match.clone()],
-                timeout,
-                true,
-            );
-            match ret {
-                Ok((response, rtt)) => {
-                    if response.len() > 0 {
-                        let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
-                        break;
-                    } else if retry_time == MAX_RETRY - 1 {
-                        let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
+            match ask_runner(vec![filter_1]) {
+                Ok(receiver) => {
+                    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+                    let start = Instant::now();
+                    if let Err(e) = layer3.send(&buff) {
+                        error!("send ie_{} probe packet error: {}", i, e);
+                        continue;
+                    }
+                    let eth_buff = match receiver.recv_timeout(timeout) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            debug!("{} recv ie_{} probe timeout: {}", dst_ipv4, i, e);
+                            Vec::new()
+                        }
+                    };
+                    let rtt = start.elapsed();
+                    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+                        let eth_payload = eth_packet.payload().to_vec();
+                        if eth_payload.len() > 0 {
+                            let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
+                            if let Err(e) = tx.send(data) {
+                                error!("send ie probe result error: {}", e);
+                            }
+                        } else if retry_time == MAX_RETRY - 1 {
+                            let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
+                            if let Err(e) = tx.send(data) {
+                                error!("send ie probe result error: {}", e);
+                            }
+                        }
+                    } else {
+                        if let Err(e) = tx.send((i, buff.to_vec(), Ok((Vec::new(), rtt)))) {
+                            error!("send ie probe result error: {}", e);
+                        }
                     }
                 }
                 Err(e) => {
                     if retry_time == MAX_RETRY - 1 {
-                        let _ = tx.send((i, buff.to_vec(), Err(e)));
+                        let data = (i, buff.to_vec(), Err(e));
+                        if let Err(e) = tx.send(data) {
+                            error!("send ie probe result error: {}", e);
+                        }
                     }
                 }
             }
@@ -463,7 +509,7 @@ fn send_ecn_probe(
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -478,29 +524,36 @@ fn send_ecn_probe(
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
     };
-    let layer_match = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let (response, _rtt) = layer3_ipv4_send(
-            dst_ipv4,
-            src_ipv4,
-            &buff,
-            vec![layer_match.clone()],
-            timeout,
-            true,
-        )?;
-        if response.len() > 0 {
-            let rr = RequestResponse {
-                request: buff,
-                response,
-            };
+        let receiver = ask_runner(vec![filter_1])?;
+        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+        let start = Instant::now();
+        layer3.send(&buff)?;
+        let eth_buff = match receiver.recv_timeout(timeout) {
+            Ok(b) => b,
+            Err(e) => {
+                debug!("{} recv ecn probe response timeout: {}", dst_ipv4, e);
+                Vec::new()
+            }
+        };
+        let _rtt = start.elapsed();
 
-            let ecn = ECNRR { ecn: rr };
-            return Ok(ecn);
+        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+            let eth_payload = eth_packet.payload().to_vec();
+            if eth_payload.len() > 0 {
+                let rr = RequestResponse {
+                    request: buff,
+                    response: eth_payload,
+                };
+                let ecn = ECNRR { ecn: rr };
+                return Ok(ecn);
+            }
         }
     }
 
@@ -518,7 +571,7 @@ fn send_tx_probes(
     dst_open_port: u16,
     dst_closed_port: u16,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<TXRR, PistolError> {
     // 6 packets with 6 threads
     let pool = get_threads_pool(6);
@@ -578,7 +631,7 @@ fn send_tx_probes(
     let layer_match_4 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4);
     let layer_match_5 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5);
     let layer_match_6 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6);
-    let ms = vec![
+    let filters = vec![
         layer_match_1,
         layer_match_2,
         layer_match_3,
@@ -604,23 +657,50 @@ fn send_tx_probes(
 
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
-        let m = ms[i].clone();
+        let filter_1 = filters[i].clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                let ret =
-                    layer3_ipv4_send(dst_ipv4, src_ipv4, &buff, vec![m.clone()], timeout, true);
-                match ret {
-                    Ok((response, rtt)) => {
-                        if response.len() > 0 {
-                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
-                            break;
-                        } else if retry_time == MAX_RETRY - 1 {
-                            let _ = tx.send((i, buff.to_vec(), Ok((response, rtt))));
+                match ask_runner(vec![filter_1]) {
+                    Ok(receiver) => {
+                        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+                        let start = Instant::now();
+                        if let Err(e) = layer3.send(&buff) {
+                            error!("send tx_{} probe packet error: {}", i, e);
+                            continue;
+                        }
+                        let eth_buff = match receiver.recv_timeout(timeout) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                debug!("{} recv tx_{} probe response timeout: {}", dst_ipv4, i, e);
+                                Vec::new()
+                            }
+                        };
+                        let rtt = start.elapsed();
+                        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+                            let eth_payload = eth_packet.payload().to_vec();
+                            if eth_payload.len() > 0 {
+                                let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
+                                if let Err(e) = tx.send(data) {
+                                    error!("send tx probe result error: {}", e);
+                                }
+                            } else if retry_time == MAX_RETRY - 1 {
+                                let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
+                                if let Err(e) = tx.send(data) {
+                                    error!("send tx probe result error: {}", e);
+                                }
+                            }
+                        } else {
+                            if let Err(e) = tx.send((i, buff.to_vec(), Ok((Vec::new(), rtt)))) {
+                                error!("send tx probe result error: {}", e);
+                            }
                         }
                     }
                     Err(e) => {
                         if retry_time == MAX_RETRY - 1 {
-                            let _ = tx.send((i, buff.to_vec(), Err(e)));
+                            let data = (i, buff.to_vec(), Err(e));
+                            if let Err(e) = tx.send(data) {
+                                error!("send tx probe result error: {}", e);
+                            }
                         }
                     }
                 }
@@ -671,7 +751,7 @@ fn send_u1_probe(
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -687,30 +767,37 @@ fn send_u1_probe(
         icmp_code: None,
         payload: None,
     };
-    let layer_match = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let buff = packet::udp_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let (response, _rtt) = layer3_ipv4_send(
-            dst_ipv4,
-            src_ipv4,
-            &buff,
-            vec![layer_match.clone()],
-            timeout,
-            true,
-        )?;
+        let receiver = ask_runner(vec![filter_1])?;
+        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+        let start = Instant::now();
+        layer3.send(&buff)?;
+        let eth_buff = match receiver.recv_timeout(timeout) {
+            Ok(b) => b,
+            Err(e) => {
+                debug!("{} recv u1 probe response timeout: {}", dst_ipv4, e);
+                Vec::new()
+            }
+        };
+        let _rtt = start.elapsed();
 
-        if response.len() > 0 {
-            let rr = RequestResponse {
-                request: buff,
-                response,
-            };
+        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+            let eth_payload = eth_packet.payload().to_vec();
+            if eth_payload.len() > 0 {
+                let rr = RequestResponse {
+                    request: buff,
+                    response: eth_payload,
+                };
 
-            let u1 = U1RR { u1: rr };
-            return Ok(u1);
+                let u1 = U1RR { u1: rr };
+                return Ok(u1);
+            }
         }
     }
     let rr = RequestResponse {
@@ -728,7 +815,7 @@ fn send_all_probes(
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
     src_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<AllPacketRR, PistolError> {
     debug!("sending SEQ probe");
     let seq = send_seq_probes(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
@@ -1847,7 +1934,7 @@ pub fn os_probe_thread(
     src_ipv4: Ipv4Addr,
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {
     // exec this line first to return error for host which dead
     let (dst_mac, _interface) =
@@ -1867,7 +1954,7 @@ pub fn os_probe_thread(
     let good_results = true;
 
     debug!("send trace packet");
-    let hops = icmp_trace(dst_ipv4.into(), src_ipv4.into(), timeout)?;
+    let hops = icmp_trace(dst_ipv4.into(), src_ipv4.into(), Some(timeout))?;
     let scan = get_scan_line(
         dst_mac,
         dst_open_tcp_port,
@@ -1963,7 +2050,7 @@ mod tests {
         let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 4);
         let dst_open_tcp_port = 3389;
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let timeout = Some(Duration::from_secs_f64(1.0));
+        let timeout = Duration::from_secs_f64(1.0);
 
         let dst_closed_tcp_port = 7890;
         let dst_closed_udp_port = 8901;

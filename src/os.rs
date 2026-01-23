@@ -55,11 +55,7 @@ use crate::os::osscan6::Fingerprint6;
 #[cfg(feature = "os")]
 use crate::os::osscan6::os_probe_thread6;
 #[cfg(feature = "os")]
-use crate::utils::get_threads_pool;
-#[cfg(feature = "os")]
-use crate::utils::num_threads_check;
-#[cfg(feature = "os")]
-use crate::utils::time_sec_to_string;
+use crate::utils;
 
 #[cfg(feature = "os")]
 pub mod dbparser;
@@ -187,7 +183,7 @@ impl fmt::Display for PistolOsDetects {
         for (addr, detect) in btm_addr {
             match detect {
                 OsDetect::V4(o) => {
-                    let time_cost_str = time_sec_to_string(o.cost);
+                    let time_cost_str = utils::time_sec_to_string(o.cost);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         if o.detects.len() > 0 {
@@ -221,7 +217,7 @@ impl fmt::Display for PistolOsDetects {
                     }
                 }
                 OsDetect::V6(o) => {
-                    let time_cost_str = time_sec_to_string(o.cost);
+                    let time_cost_str = utils::time_sec_to_string(o.cost);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         if o.detects.len() > 0 {
@@ -381,13 +377,17 @@ pub fn os_detect(
         Some(t) => t,
         None => {
             let threads = targets.len();
-            let threads = num_threads_check(threads);
+            let threads = utils::num_threads_check(threads);
             threads
         }
     };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
+    };
 
     let (tx, rx) = channel();
-    let pool = get_threads_pool(threads);
+    let pool = utils::get_threads_pool(threads);
     let mut recv_size = 0;
     let mut ret = PistolOsDetects::new();
     for target in targets {
@@ -547,6 +547,10 @@ pub fn os_detect_raw(
     let ia = match infer_addr(dst_addr, src_addr)? {
         Some(ia) => ia,
         None => return Err(PistolError::CanNotFoundSrcAddress),
+    };
+    let timeout = match timeout {
+        Some(t) => t,
+        None => utils::get_attack_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(_) => {

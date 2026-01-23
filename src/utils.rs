@@ -9,7 +9,7 @@ use threadpool::ThreadPool;
 use tracing::debug;
 use tracing::warn;
 
-use crate::DEFAULT_TIMEOUT;
+use crate::ATTACK_DEFAULT_TIMEOUT;
 use crate::SYSTEM_NET_CACHE;
 use crate::error::PistolError;
 
@@ -103,8 +103,8 @@ pub fn get_threads_pool(threads: usize) -> ThreadPool {
     pool
 }
 
-pub fn get_default_timeout() -> Duration {
-    Duration::from_secs_f32(DEFAULT_TIMEOUT)
+pub fn get_attack_default_timeout() -> Duration {
+    Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT)
 }
 
 pub struct PistolHex {
