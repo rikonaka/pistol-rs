@@ -13,7 +13,7 @@ use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer2;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::route::get_dst_mac_and_src_if;
+use crate::route::infer_mac;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
@@ -71,7 +71,7 @@ pub fn send_syn_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let (dst_mac, interface) = infer_mac(dst_ipv6.into(), src_ipv6.into(), timeout)?;
     let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
 
     // ignore the error
@@ -133,7 +133,7 @@ pub fn send_ack_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let (dst_mac, interface) = infer_mac(dst_ipv6.into(), src_ipv6.into(), timeout)?;
     let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
 
     // ignore the error
@@ -195,7 +195,7 @@ pub fn send_ack_psh_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let (dst_mac, interface) = infer_mac(dst_ipv6.into(), src_ipv6.into(), timeout)?;
     let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
 
     // ignore the error

@@ -10,7 +10,7 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::ATTACK_DEFAULT_TIMEOUT;
-use crate::SYSTEM_NET_CACHE;
+use crate::SYSTEM_NETWORK_CACHE;
 use crate::error::PistolError;
 
 const MAX_THREADS: usize = 40960;
@@ -38,10 +38,10 @@ pub fn num_threads_check(threads: usize) -> usize {
 
 pub fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
     // release the lock when leaving the function
-    let mut snc = match SYSTEM_NET_CACHE.lock() {
+    let mut snc = match SYSTEM_NETWORK_CACHE.lock() {
         Ok(snc) => snc,
         Err(e) => {
-            return Err(PistolError::LockVarFailed {
+            return Err(PistolError::LockGlobalVarFailed {
                 var_name: String::from("SYSTEM_NET_CACHE"),
                 e: e.to_string(),
             });

@@ -16,7 +16,7 @@ use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer2;
-use crate::route::get_dst_mac_and_src_if;
+use crate::route::infer_mac;
 
 const TTL: u8 = 255;
 
@@ -87,7 +87,7 @@ pub fn send_icmpv6_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let (dst_mac, interface) = get_dst_mac_and_src_if(dst_ipv6.into(), src_ipv6.into(), timeout)?;
+    let (dst_mac, interface) = infer_mac(dst_ipv6.into(), src_ipv6.into(), timeout)?;
     let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
 
     // ignore the error

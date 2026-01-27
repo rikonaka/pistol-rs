@@ -59,6 +59,8 @@ pub enum PistolError {
     SerdeJsonError(#[from] serde_json::Error),
     #[error("no destination port specified")]
     NoDstPortSpecified,
+    #[error("arp scan address {addr} not match")]
+    ArpScanAddressNotMatch { addr: IpAddr },
 
     /* SERVICE DETECT ERROR */
     #[error("parse int error")]
@@ -73,12 +75,14 @@ pub enum PistolError {
     /* LAYERS ERROR */
     #[error("create datalink channel failed")]
     CreateDatalinkChannelFailed,
+    #[error("can not found the target mac address, please check your network connection")]
+    CanNotFoundSrcMacAddress,
     #[error("can not found the target mac address, please make sure the target is alive")]
     CanNotFoundMacAddress,
     #[error("can not found the route's mac address")]
     CanNotFoundRouteMacAddress,
-    #[error("can not found the interface")]
-    CanNotFoundInterface,
+    #[error("can not found the interface {i}")]
+    CanNotFoundInterface { i: String },
     #[error("can not found the source address, please set the source address manually")]
     CanNotFoundSrcAddress,
     #[error("can not found the destination address, please check your destination address again")]
@@ -111,8 +115,8 @@ pub enum PistolError {
     FromHexError(#[from] hex::FromHexError),
     #[error("pcapture error")]
     PcaptureError(#[from] pcapture::error::PcaptureError),
-    #[error("try lock {var_name} failed: {e}")]
-    LockVarFailed { var_name: String, e: String },
+    #[error("try to lock some var failed: {e}")]
+    LockGlobalVarFailed { e: String },
     #[error("tracing error")]
     SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
     #[error("input {v} is too loog to convert to u32")]

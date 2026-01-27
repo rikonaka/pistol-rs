@@ -8,6 +8,7 @@ use pcapture::Capture;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
+use pnet::datalink::interfaces;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -30,14 +31,13 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
 use tracing::Level;
 use tracing::debug;
 use tracing::error;
 use tracing_subscriber::FmtSubscriber;
-use pnet::datalink::interfaces;
-
 
 mod error;
 mod flood;
@@ -50,14 +50,10 @@ mod trace;
 mod utils;
 mod vs;
 
-use crate::route::get_default_route;
 use crate::error::PistolError;
 #[cfg(feature = "flood")]
 use crate::flood::PistolFloods;
-use crate::layer::InferAddr;
 use crate::layer::PacketFilter;
-use crate::layer::find_interface_by_name;
-use crate::layer::find_interface_by_src;
 #[cfg(feature = "os")]
 use crate::os::OsDetect;
 #[cfg(feature = "os")]
@@ -68,8 +64,10 @@ use crate::os::dbparser::NmapOsDb;
 use crate::ping::PingStatus;
 #[cfg(feature = "ping")]
 use crate::ping::PistolPings;
-use crate::route::DstCache;
+use crate::route::ProgramNetworkCache;
 use crate::route::SystemNetCache;
+use crate::route::infer_addr;
+use crate::route::infer_mac;
 #[cfg(feature = "scan")]
 use crate::scan::PistolMacScans;
 #[cfg(feature = "scan")]
@@ -80,26 +78,27 @@ use crate::scan::PortStatus;
 use crate::vs::PistolVsScans;
 #[cfg(feature = "vs")]
 use crate::vs::PortService;
-use crate::route::search_route_table;
-
 
 pub(crate) type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
-// in order to reduce multiple neighbor detection in a multi-threaded environment
-static NEIGHBOR_SCAN_STATUS: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
+/// In order to reduce multiple neighbor detection in a multi-threaded environment.
+static NEIGHBOR_DETECT_MUTEX: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-static DST_CACHE: LazyLock<Arc<Mutex<HashMap<IpAddr, DstCache>>>> = LazyLock::new(|| {
-    let hm = HashMap::new();
-    Arc::new(Mutex::new(hm))
-});
+/// Cache the network information of the program runtime process to avoid repeated calculations.
+static PROGRAM_NETWORK_CACHE: LazyLock<Arc<Mutex<HashMap<IpAddr, ProgramNetworkCache>>>> =
+    LazyLock::new(|| {
+        let hm = HashMap::new();
+        Arc::new(Mutex::new(hm))
+    });
 
-static SYSTEM_NET_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(|| {
+/// Get from system network cache.
+static SYSTEM_NETWORK_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::new(|| {
     let snc = SystemNetCache::init().expect("can not init the system net cache");
     Arc::new(Mutex::new(snc))
 });
 
-/// debug code
+// debug code
 #[cfg(feature = "debug")]
 fn debug_get_tcp_src_port(ethernet_packet: &[u8]) -> Option<u16> {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
@@ -465,8 +464,11 @@ pub(crate) static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Mutex<Arc<Communication
 
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerMsg {
-    pub(crate) filters: Vec<PacketFilter>, // runner receive filters to match
-    pub(crate) sender: Sender<Vec<u8>>,    // then send matched packets back to threads
+    pub iface: String,              // runner listen interface
+    pub filters: Vec<PacketFilter>, // runner receive filters to match
+    pub sender: Sender<Vec<u8>>,    // then send matched packets back to threads
+    pub start: Instant,             // start time, used to drop if exceed timeout
+    pub elapsed: f32,               // elapsed seconds
 }
 
 impl RunnerMsg {
@@ -494,11 +496,19 @@ pub(crate) struct CommunicationChannel {
 
 impl CommunicationChannel {
     /// Returns a receiver to get matched packets from the runner.
-    pub(crate) fn send_filters(&self, filters: Vec<PacketFilter>) -> Receiver<Vec<u8>> {
+    pub(crate) fn send_filters(
+        &self,
+        iface: String,
+        filters: Vec<PacketFilter>,
+        elapsed: f32,
+    ) -> Receiver<Vec<u8>> {
         let (packet_sender, packet_receiver) = unbounded::<Vec<u8>>();
         let runner_msg = RunnerMsg {
+            iface,
             filters,
             sender: packet_sender,
+            start: Instant::now(),
+            elapsed,
         };
         let _ = self.filter_sender.send(runner_msg);
         packet_receiver
@@ -522,151 +532,62 @@ impl CommunicationChannel {
     }
 }
 
-pub(crate) fn ask_runner(filters: Vec<PacketFilter>) -> Result<Receiver<Vec<u8>>, PistolError> {
-    match RUNNER_COMMUNICATION_CHANNEL.lock() {
-        Ok(cc) => {
-            // let cc = (*cc).clone();
-            let packet_receiver = cc.send_filters(filters);
-            Ok(packet_receiver)
-        }
-        Err(e) => {
-            return Err(PistolError::LockVarFailed {
-                var_name: String::from("RUNNER_COMMUNICATION_CHANNEL"),
-                e: e.to_string(),
-            });
-        }
-    }
-}
-
-
-/// The source address is inferred from the target address.
-/// When the target address is a loopback address,
-/// it is mapped to an internal private address
-/// because the loopback address only works at the transport layer
-/// and cannot send data frames.
-pub(crate) fn infer_addr(
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-) -> Result<Option<(IpAddr, IpAddr)>, PistolError> {
-    if dst_addr.is_loopback() {
-        for interface in interfaces() {
-            if !interface.is_loopback() {
-                for ipn in interface.ips {
-                    match ipn.ip() {
-                        IpAddr::V4(src_ipv4) => {
-                            if dst_addr.is_ipv4() && src_ipv4.is_private() {
-                                return Ok(Some((src_ipv4.into(),src_ipv4.into())));
-                            }
-                        }
-                        IpAddr::V6(src_ipv6) => {
-                            if dst_addr.is_ipv6()
-                                && (src_ipv6.is_unicast_link_local() || src_ipv6.is_unique_local())
-                            {
-                                return Ok(Some((src_ipv6.into(),src_ipv6.into())));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        if let Some(src_addr) = src_addr {
-            return Ok(Some((dst_addr,src_addr)));
-        }
-        if let Some(route_info) = search_route_table(dst_addr)? {
-            // Try to get the interface for sending through the system routing table,
-            // and then get the IP on it through the interface.
-            for ipn in route_info.dev.ips {
-                match ipn.ip() {
-                    IpAddr::V4(src_ipv4) => {
-                        if dst_addr.is_ipv4() && !src_ipv4.is_loopback() {
-                            return Ok(Some((dst_addr,src_ipv4.into())));
-                        }
-                    }
-                    IpAddr::V6(src_ipv6) => {
-                        if dst_addr.is_ipv6() && !src_ipv6.is_loopback() {
-                            return Ok(Some((dst_addr,src_ipv6.into())));
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            // When the above methods do not work,
-            // try to find an IP address in the same subnet as the target address
-            // in the local interface as the source address.
-            for interface in interfaces() {
-                for ipn in interface.ips {
-                    if ipn.contains(dst_addr) {
-                        let src_addr = ipn.ip();
-                        return Ok(Some((dst_addr,src_addr)));
-                    }
-                }
-            }
-            // Finally, if we really can't find the source address,
-            // transform it to the address in the same network segment as the default route.
-            let (default_route, default_route6) = get_default_route()?;
-            let dr = if dst_addr.is_ipv4() {
-                if let Some(dr_ipv4) = default_route {
-                    dr_ipv4
-                } else {
-                    return Err(PistolError::CanNotFoundRouterAddress);
-                }
-            } else {
-                if let Some(dr_ipv6) = default_route6 {
-                    dr_ipv6
-                } else {
-                    return Err(PistolError::CanNotFoundRouterAddress);
-                }
-            };
-            for interface in interfaces() {
-                for ipn in interface.ips {
-                    if ipn.contains(dr.via) {
-                        let src_addr = ipn.ip();
-                        return Ok(Some((dst_addr,src_addr)));
-                    }
-                }
-            }
-        }
-    }
-    Ok(None)
+pub(crate) fn ask_runner(
+    iface: String,
+    filters: Vec<PacketFilter>,
+    elapsed: f32,
+) -> Result<Receiver<Vec<u8>>, PistolError> {
+    let rcc = RUNNER_COMMUNICATION_CHANNEL
+        .lock()
+        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+    let packet_receiver = rcc.send_filters(iface, filters, elapsed);
+    Ok(packet_receiver)
 }
 
 #[derive(Debug)]
 pub(crate) struct NetInfo {
-    pub(crate) dst_mac: MacAddr,
-    pub(crate) src_mac: MacAddr,
+    pub dst_mac: MacAddr,
+    pub src_mac: MacAddr,
     /// User input destination IP address.
-    pub(crate) ori_dst_addr: IpAddr,
+    pub ori_dst_addr: IpAddr,
     /// Inferred destination IP address.
-    pub(crate) dst_addr: IpAddr,
+    pub dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
-    pub(crate) src_addr: IpAddr,
+    pub src_addr: IpAddr,
     /// User input destination ports.
-    pub(crate) dst_ports: Vec<u16>,
+    pub dst_ports: Vec<u16>,
     /// User input source port.
-    pub(crate) src_port: Option<u16>,
-    pub(crate) interface: NetworkInterface,
+    pub src_port: Option<u16>,
+    pub interface: NetworkInterface,
 }
 
 impl NetInfo {
     pub(crate) fn new(
         dst_addr: IpAddr,
-        src_addr: IpAddr,
         dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Self {
-        let 
+    ) -> Result<Self, PistolError> {
+        let ori_dst_addr = dst_addr;
+        let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
+            Some(ret) => ret,
+            None => return Err(PistolError::CanNotFoundSrcAddress),
+        };
 
-        NetInfo {
-            dst_mac,
-            src_mac,
-            ori_dst_addr,
-            dst_addr,
-            src_addr,
-            dst_ports,
-            src_port,
-            interface,
+        let timeout = Duration::from_secs_f32(1.0);
+        let (dst_mac, interface) = infer_mac(dst_addr, src_addr, timeout)?;
+        match interface.mac {
+            Some(src_mac) => Ok(NetInfo {
+                dst_mac,
+                src_mac,
+                ori_dst_addr,
+                dst_addr,
+                src_addr,
+                dst_ports,
+                src_port,
+                interface,
+            }),
+            None => Err(PistolError::CanNotFoundSrcMacAddress),
         }
     }
 }
@@ -759,8 +680,8 @@ impl Pistol {
 
         Ok(())
     }
-    fn runner(if_name: String, timeout: Option<Duration>) -> Result<(), PistolError> {
-        let mut cap = Capture::new(&if_name)?;
+    fn runner(iface: String, timeout: Option<Duration>) -> Result<(), PistolError> {
+        let mut cap = Capture::new(&iface)?;
         if let Some(timeout) = timeout {
             let sec = timeout.as_secs_f32();
             cap.set_timeout((sec * 1000.0) as i32);
@@ -769,24 +690,24 @@ impl Pistol {
         }
 
         let mut runner_msgs = Vec::new();
-        let rcc = match RUNNER_COMMUNICATION_CHANNEL.lock() {
-            Ok(rcc) => rcc,
-            Err(e) => {
-                return Err(PistolError::LockVarFailed {
-                    var_name: String::from("RUNNER_COMMUNICATION_CHANNEL"),
-                    e: e.to_string(),
-                });
-            }
-        };
+
+        let rcc = RUNNER_COMMUNICATION_CHANNEL
+            .lock()
+            .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
 
         // very small timeout to check new filters
         let filter_recv_timeout = Duration::from_secs_f32(0.01);
         loop {
-            if let Ok(msg) = rcc.filter_receiver.recv_timeout(filter_recv_timeout) {
-                runner_msgs.push(msg);
-            } else {
-                // skip if no new filters
-                continue;
+            match rcc.filter_receiver.recv_timeout(filter_recv_timeout) {
+                Ok(msg) => {
+                    if msg.iface == iface {
+                        runner_msgs.push(msg)
+                    } else {
+                        // put it back to the channel
+                        let _ = rcc.filter_sender.send(msg);
+                    }
+                }
+                Err(_) => continue, // skip if no new filters
             }
 
             // libpcap version will not loss any packets
@@ -807,12 +728,22 @@ impl Pistol {
                     let _droped_msg = runner_msgs.swap_remove(drop_idx);
                 }
             }
+
+            let mut drop_idxs = Vec::new();
+            let mut need_drop = false;
+            for (i, msg) in runner_msgs.iter().enumerate() {
+                if msg.start.elapsed().as_secs_f32() > msg.elapsed {
+                    // timeout, remove this msg
+                    drop_idxs.push(i);
+                    need_drop = true;
+                }
+            }
+            if need_drop {
+                for drop_idx in drop_idxs.iter().rev() {
+                    let _droped_msg = runner_msgs.swap_remove(*drop_idx);
+                }
+            }
         }
-    }
-    fn start_runner(&self, if_name: &str) {
-        let timeout = self.timeout.clone();
-        let if_name = if_name.to_string();
-        let _ = thread::spawn(move || Self::runner(if_name, timeout));
     }
     /// Initialize multiple runners for multiple targets.
     fn init_runners(
@@ -822,39 +753,26 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<Vec<NetInfo>, PistolError> {
         let mut net_infos = Vec::new();
-
         for t in targets {
             let dst_addr = t.addr;
-            let infer_addr = match infer_addr(dst_addr, src_addr)? {
-                Some(ia) => ia,
-                None => return Err(PistolError::CanNotFoundSrcAddress),
-            };
-
-            let (if_name, interface) = match &self.if_name {
-                Some(name) => match find_interface_by_name(&name) {
-                    Some(i) => (name.clone(), i),
-                    None => return Err(PistolError::CanNotFoundInterface),
-                },
-                None => match find_interface_by_src(infer_addr.src_addr) {
-                    Some(i) => {
-                        self.if_name = Some(i.name.clone());
-                        (i.name.clone(), i)
-                    }
-                    None => return Err(PistolError::CanNotFoundInterface),
-                },
-            };
-
-            self.if_name = Some(if_name.clone());
-            self.start_runner(&if_name);
-
-            let net_info = NetInfo {
-                addr: infer_addr,
-                src_port,
-                dst_ports: t.ports.clone(),
-                interface,
-            };
-
+            let dst_ports = t.ports.clone();
+            let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
             net_infos.push(net_info);
+        }
+
+        // start runners
+        let mut ifaces = Vec::new();
+        for ni in &net_infos {
+            let iface = ni.interface.name.clone();
+            if !ifaces.contains(&iface) {
+                ifaces.push(iface);
+            }
+        }
+
+        // spawn a runner thread for each interface we need
+        for iface in ifaces {
+            let timeout = self.timeout;
+            let _ = thread::spawn(move || Self::runner(iface, timeout));
         }
 
         Ok(net_infos)
@@ -863,38 +781,11 @@ impl Pistol {
     fn init_runner(
         &mut self,
         dst_addr: IpAddr,
-        dst_port: Vec<u16>,
+        dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<NetInfo, PistolError> {
-        let infer_addr = match infer_addr(dst_addr, src_addr)? {
-            Some(ia) => ia,
-            None => return Err(PistolError::CanNotFoundSrcAddress),
-        };
-
-        let (if_name, interface) = match &self.if_name {
-            Some(name) => match find_interface_by_name(&name) {
-                Some(i) => (name.clone(), i),
-                None => return Err(PistolError::CanNotFoundInterface),
-            },
-            None => match find_interface_by_src(infer_addr.src_addr) {
-                Some(i) => {
-                    self.if_name = Some(i.name.clone());
-                    (i.name.clone(), i)
-                }
-                None => return Err(PistolError::CanNotFoundInterface),
-            },
-        };
-
-        self.if_name = Some(if_name.clone());
-        self.start_runner(&if_name);
-
-        let net_info = NetInfo {
-            addr: infer_addr,
-            src_port,
-            dst_ports: dst_port,
-            interface,
-        };
+        let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
         Ok(net_info)
     }
     /* Scan */
@@ -1982,7 +1873,7 @@ impl PistolCapture {
 
         let pp = CAPTURED_PACKETS
             .lock()
-            .map_err(|e| PistolError::LockVarFailed {
+            .map_err(|e| PistolError::LockGlobalVarFailed {
                 var_name: String::from("CAPTURED_PACKETS"),
                 e: e.to_string(),
             })?;

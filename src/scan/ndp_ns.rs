@@ -15,6 +15,7 @@ use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
+use std::net::IpAddr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
@@ -22,6 +23,7 @@ use std::time::Instant;
 use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 
+use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
@@ -60,14 +62,31 @@ fn get_mac_from_ndp_ns(ethernet_packet: &[u8]) -> Option<MacAddr> {
 }
 
 pub fn send_ndp_ns_scan_packet(
-    dst_ipv6: Ipv6Addr,
-    src_ipv6: Ipv6Addr,
-    src_mac: MacAddr,
-    interface: &NetworkInterface,
+    net_info: &NetInfo,
     timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    // same as arp in ipv4
-    // ipv6
+    let dst_mac = net_info.dst_mac;
+    let src_mac = net_info.src_mac;
+    let dst_ipv6 = match net_info.dst_addr {
+        IpAddr::V6(dst_ipv6) => dst_ipv6,
+        _ => {
+            return Err(PistolError::ArpScanAddressNotMatch {
+                addr: net_info.dst_addr,
+            });
+        }
+    };
+    let src_ipv6 = match net_info.src_addr {
+        IpAddr::V6(src_ipv6) => src_ipv6,
+        _ => {
+            return Err(PistolError::ArpScanAddressNotMatch {
+                addr: net_info.src_addr,
+            });
+        }
+    };
+    let interface = &net_info.interface;
+    let iface = interface.name.clone();
+
+    // same as arp in ipv4, but use icmpv6 neighbor solicitation
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
         Some(p) => p,

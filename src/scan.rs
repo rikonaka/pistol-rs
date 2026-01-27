@@ -193,25 +193,16 @@ pub fn arp_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let dst_mac = MacAddr::broadcast();
-    let src_mac = match net_info.interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
-    };
-    let (dst_ipv4, src_ipv4) = net_info.addr.get_ipv4_addr()?;
+    let mut net_info = *net_info.clone();
+    // fixed dst mac to broadcast
+    net_info.dst_mac = MacAddr::broadcast();
+
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
 
-    match send_arp_scan_packet(
-        dst_ipv4,
-        dst_mac,
-        src_ipv4,
-        src_mac,
-        &net_info.interface,
-        timeout,
-    ) {
+    match send_arp_scan_packet(&net_info, timeout) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
