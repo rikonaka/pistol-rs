@@ -1,4 +1,7 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Packet;
@@ -17,7 +20,7 @@ use tracing::debug;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
@@ -33,10 +36,13 @@ const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub fn send_udp_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     // ipv6 header
@@ -116,10 +122,19 @@ pub fn send_udp_scan_packet(
         Icmpv6Code(3), // address unreachable
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv6;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ipv6_buff)?;
+    layer2.send(&ipv6_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {

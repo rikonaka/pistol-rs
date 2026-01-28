@@ -30,6 +30,8 @@ use std::time::Duration;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Instant;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use subnetwork::Ipv6AddrExt;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::debug;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::error;
@@ -51,6 +53,8 @@ pub mod udp6;
 use crate::NetInfo;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::layer::multicast_mac;
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[cfg(feature = "scan")]
 use crate::scan::arp::send_arp_scan_packet;
@@ -193,16 +197,33 @@ pub fn arp_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let mut net_info = *net_info.clone();
-    // fixed dst mac to broadcast
-    net_info.dst_mac = MacAddr::broadcast();
-
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
 
-    match send_arp_scan_packet(&net_info, timeout) {
+    // broadcast mac address
+    let dst_mac = MacAddr::broadcast();
+    let src_mac = net_info.src_mac;
+    let dst_ipv4 = match net_info.dst_addr {
+        IpAddr::V4(dst_ipv4) => dst_ipv4,
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.dst_addr,
+            });
+        }
+    };
+    let src_ipv4 = match net_info.src_addr {
+        IpAddr::V4(src_ipv4) => src_ipv4,
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.src_addr,
+            });
+        }
+    };
+    let interface = &net_info.interface;
+
+    match send_arp_scan_packet(dst_mac, src_mac, dst_ipv4, src_ipv4, interface, timeout) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
@@ -213,17 +234,34 @@ pub fn ndp_ns_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let src_mac = match net_info.interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
-    };
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
 
-    let (dst_ipv6, src_ipv6) = net_info.addr.get_ipv6_addr()?;
-    match send_ndp_ns_scan_packet(dst_ipv6, src_ipv6, src_mac, &net_info.interface, timeout) {
+    let src_mac = net_info.src_mac;
+    let dst_ipv6 = match net_info.dst_addr {
+        IpAddr::V6(dst_ipv6) => dst_ipv6,
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.dst_addr,
+            });
+        }
+    };
+    let src_ipv6 = match net_info.src_addr {
+        IpAddr::V6(src_ipv6) => src_ipv6,
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.src_addr,
+            });
+        }
+    };
+    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
+    let dst_ipv6 = dst_ipv6_ext.link_multicast();
+    let interface = &net_info.interface;
+    let dst_mac = multicast_mac(dst_ipv6);
+
+    match send_ndp_ns_scan_packet(dst_mac, src_mac, dst_ipv6, src_ipv6, interface, timeout) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }

@@ -1,4 +1,5 @@
 use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::arp::ArpHardwareTypes;
 use pnet::packet::arp::ArpOperations;
@@ -6,13 +7,12 @@ use pnet::packet::arp::ArpPacket;
 use pnet::packet::arp::MutableArpPacket;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
-use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
 
-use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ARP_HEADER_SIZE;
@@ -38,28 +38,13 @@ fn get_mac_from_arp_response(ethernet_packet: &[u8]) -> Option<MacAddr> {
 }
 
 pub fn send_arp_scan_packet(
-    net_info: &NetInfo,
+    dst_mac: MacAddr,
+    dst_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
+    src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let dst_mac = net_info.dst_mac;
-    let src_mac = net_info.src_mac;
-    let dst_ipv4 = match net_info.dst_addr {
-        IpAddr::V4(dst_ipv4) => dst_ipv4,
-        _ => {
-            return Err(PistolError::ArpScanAddressNotMatch {
-                addr: net_info.dst_addr,
-            });
-        }
-    };
-    let src_ipv4 = match net_info.src_addr {
-        IpAddr::V4(src_ipv4) => src_ipv4,
-        _ => {
-            return Err(PistolError::ArpScanAddressNotMatch {
-                addr: net_info.src_addr,
-            });
-        }
-    };
-    let interface = &net_info.interface;
     let iface = interface.name.clone();
 
     let mut arp_buff = [0u8; ARP_HEADER_SIZE];
@@ -98,8 +83,15 @@ pub fn send_arp_scan_packet(
     let filters = vec![PacketFilter::Layer3Filter(layer3)];
 
     // send the filters to runner
-    let receiver = ask_runner(iface, filters, timeout.as_secs_f32())?;
-    let layer2 = Layer2::new(dst_mac, interface.clone(), ether_type, timeout, true);
+    let receiver = ask_runner(iface, filters, timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
     layer2.send(&arp_buff)?;
     let eth_reponse = match receiver.recv_timeout(timeout) {

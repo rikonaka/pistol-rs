@@ -905,6 +905,7 @@ impl PacketFilter {
 #[derive(Debug, Clone)]
 pub(crate) struct Layer2 {
     dst_mac: MacAddr,
+    src_mac: MacAddr,
     interface: NetworkInterface,
     ether_type: EtherType,
     timeout: Duration,
@@ -914,6 +915,7 @@ pub(crate) struct Layer2 {
 impl Layer2 {
     pub(crate) fn new(
         dst_mac: MacAddr,
+        src_mac: MacAddr,
         interface: NetworkInterface,
         ether_type: EtherType,
         timeout: Duration,
@@ -921,6 +923,7 @@ impl Layer2 {
     ) -> Self {
         Self {
             dst_mac,
+            src_mac,
             interface,
             ether_type,
             timeout,
@@ -947,15 +950,6 @@ impl Layer2 {
             Err(e) => return Err(e.into()),
         };
 
-        let src_mac = if self.dst_mac == MacAddr::zero() {
-            MacAddr::zero()
-        } else {
-            match self.interface.mac {
-                Some(m) => m,
-                None => return Err(PistolError::CanNotFoundMacAddress),
-            }
-        };
-
         let payload_len = payload.len();
         let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
         // According to the document, the minimum length of an Ethernet data packet is 64 bytes
@@ -978,7 +972,7 @@ impl Layer2 {
             }
         };
         ethernet_packet.set_destination(self.dst_mac);
-        ethernet_packet.set_source(src_mac);
+        ethernet_packet.set_source(self.src_mac);
         ethernet_packet.set_ethertype(self.ether_type);
         ethernet_packet.set_payload(payload);
 
@@ -1013,15 +1007,6 @@ impl Layer2 {
             Err(e) => return Err(e.into()),
         };
 
-        let src_mac = if self.dst_mac == MacAddr::zero() {
-            MacAddr::zero()
-        } else {
-            match self.interface.mac {
-                Some(m) => m,
-                None => return Err(PistolError::CanNotFoundMacAddress),
-            }
-        };
-
         let payload_len = payload.len();
         let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
         // According to the document, the minimum length of an Ethernet data packet is 64 bytes
@@ -1044,7 +1029,7 @@ impl Layer2 {
             }
         };
         ethernet_packet.set_destination(self.dst_mac);
-        ethernet_packet.set_source(src_mac);
+        ethernet_packet.set_source(self.src_mac);
         ethernet_packet.set_ethertype(self.ether_type);
         ethernet_packet.set_payload(payload);
 

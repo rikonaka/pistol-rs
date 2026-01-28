@@ -468,7 +468,7 @@ pub(crate) struct RunnerMsg {
     pub filters: Vec<PacketFilter>, // runner receive filters to match
     pub sender: Sender<Vec<u8>>,    // then send matched packets back to threads
     pub start: Instant,             // start time, used to drop if exceed timeout
-    pub elapsed: f32,               // elapsed seconds
+    pub elapsed: Duration,          // elapsed
 }
 
 impl RunnerMsg {
@@ -500,7 +500,7 @@ impl CommunicationChannel {
         &self,
         iface: String,
         filters: Vec<PacketFilter>,
-        elapsed: f32,
+        elapsed: Duration,
     ) -> Receiver<Vec<u8>> {
         let (packet_sender, packet_receiver) = unbounded::<Vec<u8>>();
         let runner_msg = RunnerMsg {
@@ -535,7 +535,7 @@ impl CommunicationChannel {
 pub(crate) fn ask_runner(
     iface: String,
     filters: Vec<PacketFilter>,
-    elapsed: f32,
+    elapsed: Duration,
 ) -> Result<Receiver<Vec<u8>>, PistolError> {
     let rcc = RUNNER_COMMUNICATION_CHANNEL
         .lock()
@@ -732,15 +732,15 @@ impl Pistol {
             let mut drop_idxs = Vec::new();
             let mut need_drop = false;
             for (i, msg) in runner_msgs.iter().enumerate() {
-                if msg.start.elapsed().as_secs_f32() > msg.elapsed {
+                if msg.start.elapsed() > msg.elapsed {
                     // timeout, remove this msg
                     drop_idxs.push(i);
                     need_drop = true;
                 }
             }
             if need_drop {
-                for drop_idx in drop_idxs.iter().rev() {
-                    let _droped_msg = runner_msgs.swap_remove(*drop_idx);
+                for &drop_idx in drop_idxs.iter().rev() {
+                    let _droped_msg = runner_msgs.swap_remove(drop_idx);
                 }
             }
         }
@@ -771,8 +771,7 @@ impl Pistol {
 
         // spawn a runner thread for each interface we need
         for iface in ifaces {
-            let timeout = self.timeout;
-            let _ = thread::spawn(move || Self::runner(iface, timeout));
+            let _ = thread::spawn(move || Self::runner(iface, self.timeout));
         }
 
         Ok(net_infos)
@@ -786,6 +785,8 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<NetInfo, PistolError> {
         let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
+        let iface = net_info.interface.name.clone();
+        let _ = thread::spawn(move || Self::runner(iface, self.timeout));
         Ok(net_info)
     }
     /* Scan */

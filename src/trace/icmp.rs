@@ -1,3 +1,5 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp;
@@ -22,7 +24,7 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::PacketFilter;
@@ -32,8 +34,11 @@ use crate::layer::PayloadMatchIp;
 use crate::trace::HopStatus;
 
 pub fn send_icmp_trace_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     ip_id: u16,
     ttl: u8,
     icmp_id: u16,
@@ -132,10 +137,20 @@ pub fn send_icmp_trace_packet(
     };
     let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv6;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
+
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {

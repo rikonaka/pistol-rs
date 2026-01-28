@@ -15,15 +15,12 @@ use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use std::net::IpAddr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
-use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 
-use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
@@ -32,7 +29,6 @@ use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
-use crate::layer::multicast_mac;
 
 fn get_mac_from_ndp_ns(ethernet_packet: &[u8]) -> Option<MacAddr> {
     if ethernet_packet.len() == 0 {
@@ -62,30 +58,13 @@ fn get_mac_from_ndp_ns(ethernet_packet: &[u8]) -> Option<MacAddr> {
 }
 
 pub fn send_ndp_ns_scan_packet(
-    net_info: &NetInfo,
+    dst_mac: MacAddr,
+    dst_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
+    src_ipv6: Ipv6Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let dst_mac = net_info.dst_mac;
-    let src_mac = net_info.src_mac;
-    let dst_ipv6 = match net_info.dst_addr {
-        IpAddr::V6(dst_ipv6) => dst_ipv6,
-        _ => {
-            return Err(PistolError::ArpScanAddressNotMatch {
-                addr: net_info.dst_addr,
-            });
-        }
-    };
-    let src_ipv6 = match net_info.src_addr {
-        IpAddr::V6(src_ipv6) => src_ipv6,
-        _ => {
-            return Err(PistolError::ArpScanAddressNotMatch {
-                addr: net_info.src_addr,
-            });
-        }
-    };
-    let interface = &net_info.interface;
-    let iface = interface.name.clone();
-
     // same as arp in ipv4, but use icmpv6 neighbor solicitation
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -103,9 +82,7 @@ pub fn send_ndp_ns_scan_packet(
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    let ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
-    let dst_multicast = ipv6_ext.link_multicast();
-    ipv6_header.set_destination(dst_multicast);
+    ipv6_header.set_destination(dst_ipv6);
 
     // icmpv6
     let mut icmpv6_header =
@@ -137,7 +114,7 @@ pub fn send_ndp_ns_scan_packet(
             });
         }
     };
-    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_multicast);
+    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
@@ -155,10 +132,17 @@ pub fn send_ndp_ns_scan_packet(
     };
     let filters = vec![PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6.clone())];
 
-    let receiver = ask_runner(filters)?;
+    let iface = interface.name.clone();
+    let receiver = ask_runner(iface, filters, timeout)?;
     let ether_type = EtherTypes::Ipv6;
-    let dst_mac = multicast_mac(dst_ipv6);
-    let layer2 = Layer2::new(dst_mac, interface.clone(), ether_type, timeout, true);
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
     layer2.send(&ipv6_buff)?;
     let eth_response = match receiver.recv_timeout(timeout) {

@@ -1,4 +1,7 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
@@ -29,7 +32,7 @@ use tracing::debug;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer3;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -54,10 +57,13 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
 
 pub fn send_syn_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -147,10 +153,19 @@ pub fn send_syn_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let ether_type = EtherTypes::Ipv4;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -196,10 +211,13 @@ pub fn send_syn_scan_packet(
 }
 
 pub fn send_fin_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -289,10 +307,19 @@ pub fn send_fin_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -338,10 +365,13 @@ pub fn send_fin_scan_packet(
 }
 
 pub fn send_ack_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -432,10 +462,19 @@ pub fn send_ack_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -478,10 +517,13 @@ pub fn send_ack_scan_packet(
 }
 
 pub fn send_null_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -571,10 +613,19 @@ pub fn send_null_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -617,10 +668,13 @@ pub fn send_null_scan_packet(
 }
 
 pub fn send_xmas_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -711,10 +765,19 @@ pub fn send_xmas_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -757,10 +820,13 @@ pub fn send_xmas_scan_packet(
 }
 
 pub fn send_window_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -850,10 +916,19 @@ pub fn send_window_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -901,10 +976,13 @@ pub fn send_window_scan_packet(
 }
 
 pub fn send_maimon_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
     src_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let mut rng = rand::rng();
@@ -994,10 +1072,19 @@ pub fn send_maimon_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -1040,19 +1127,23 @@ pub fn send_maimon_scan_packet(
 }
 
 pub fn send_idle_scan_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    src_port: u16,
     zombie_ipv4: Ipv4Addr,
+    src_port: u16,
+    zombie_mac: MacAddr,
     zombie_port: u16,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     fn forge_syn_packet(
-        src_ipv4: Ipv4Addr,
         dst_ipv4: Ipv4Addr,
-        src_port: u16,
         dst_port: u16,
+        src_ipv4: Ipv4Addr,
+        src_port: u16,
     ) -> Result<Vec<u8>, PistolError> {
         let mut rng = rand::rng();
         // ip header
@@ -1146,11 +1237,21 @@ pub fn send_idle_scan_packet(
         destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
     ];
 
-    let ip_buff = forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
-    let receiver = ask_runner(vec![filter_zombie_1, filter_zombie_2])?;
-    let layer3 = Layer3::new(zombie_ipv4.into(), src_ipv4.into(), timeout, true);
+    let ip_buff = forge_syn_packet(zombie_ipv4, zombie_port, src_ipv4, src_port)?;
+
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_zombie_1, filter_zombie_2], timeout)?;
+    let layer2 = Layer2::new(
+        zombie_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff)?;
+    layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -1195,13 +1296,19 @@ pub fn send_idle_scan_packet(
     }
 
     // 3. forge a syn packet from the zombie to the target
-    let ip_buff_2 = forge_syn_packet(zombie_ipv4, dst_ipv4, zombie_port, dst_port)?;
+    let ip_buff_2 = forge_syn_packet(dst_ipv4, dst_port, zombie_ipv4, zombie_port)?;
     // ignore the response
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
-    layer3.send(&ip_buff_2)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
+    layer2.send(&ip_buff_2)?;
 
     // 4. probe the zombie's ip id again
-    let ip_buff_3 = forge_syn_packet(src_ipv4, zombie_ipv4, src_port, zombie_port)?;
     let layer3 = Layer3Filter {
         name: "tcp zombie scan layer 2",
         layer2: None,
@@ -1235,10 +1342,21 @@ pub fn send_idle_scan_packet(
     let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
     let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+    let ip_buff_3 = forge_syn_packet(zombie_ipv4, zombie_port, src_ipv4, src_port)?;
+
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(
+        dst_mac,
+        src_mac,
+        interface.clone(),
+        ether_type,
+        timeout,
+        true,
+    );
     let start = Instant::now();
-    layer3.send(&ip_buff_3)?;
+    layer2.send(&ip_buff_3)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {

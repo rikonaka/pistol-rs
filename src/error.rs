@@ -60,7 +60,7 @@ pub enum PistolError {
     #[error("no destination port specified")]
     NoDstPortSpecified,
     #[error("arp scan address {addr} not match")]
-    ArpScanAddressNotMatch { addr: IpAddr },
+    AttackAddressNotMatch { addr: IpAddr },
 
     /* SERVICE DETECT ERROR */
     #[error("parse int error")]
