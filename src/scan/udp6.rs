@@ -125,14 +125,7 @@ pub fn send_udp_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(
-        dst_mac,
-        src_mac,
-        interface.clone(),
-        ether_type,
-        timeout,
-        true,
-    );
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
     let start = Instant::now();
     layer2.send(&ipv6_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {

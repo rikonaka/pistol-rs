@@ -49,7 +49,6 @@ use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
-use crate::utils::neigh_cache_update;
 
 #[cfg(any(
     target_os = "linux",
@@ -65,6 +64,16 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
         }
     }
     None
+}
+
+fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
+    // release the lock when leaving the function
+    let mut snc = SYSTEM_NETWORK_CACHE
+        .lock()
+        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+    let _ = snc.update_neighbor_cache(addr, mac);
+    debug!("update neighbor cache finish: {:?}", (*snc));
+    Ok(())
 }
 
 fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {

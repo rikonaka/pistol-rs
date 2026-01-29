@@ -1,4 +1,6 @@
 use chrono::Utc;
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
@@ -16,18 +18,20 @@ use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer2;
-use crate::route::infer_mac;
 
 const TTL: u8 = 255;
+const ICMPV6_DATA_SIZE: usize = 16;
 
 pub fn send_icmpv6_flood_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     _: u16, // unified interface
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     _: u16, // unified interface
-    max_same_packet: usize,
+    interface: &NetworkInterface,
+    retransmit: usize,
 ) -> Result<usize, PistolError> {
-    const ICMPV6_DATA_SIZE: usize = 16;
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
@@ -87,11 +91,10 @@ pub fn send_icmpv6_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let (dst_mac, interface) = infer_mac(dst_ipv6.into(), src_ipv6.into(), timeout)?;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
 
     // ignore the error
-    let _ = layer2.send_flood(&ipv6_buff, max_same_packet);
+    let _ = layer2.send_flood(&ipv6_buff, retransmit);
 
-    Ok(ipv6_buff.len() * max_same_packet)
+    Ok(ipv6_buff.len() * retransmit)
 }

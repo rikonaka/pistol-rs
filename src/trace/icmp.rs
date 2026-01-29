@@ -1,6 +1,7 @@
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp;
 use pnet::packet::icmp::IcmpCode;
@@ -33,6 +34,8 @@ use crate::layer::PayloadMatchIcmp;
 use crate::layer::PayloadMatchIp;
 use crate::trace::HopStatus;
 
+const ICMP_DATA_SIZE: usize = 32;
+
 pub fn send_icmp_trace_packet(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
@@ -45,7 +48,6 @@ pub fn send_icmp_trace_packet(
     seq: u16,
     timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
-    const ICMP_DATA_SIZE: usize = 32;
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
@@ -138,16 +140,9 @@ pub fn send_icmp_trace_packet(
     let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
     let iface = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
+    let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(
-        dst_mac,
-        src_mac,
-        interface.clone(),
-        ether_type,
-        timeout,
-        true,
-    );
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
 
     let start = Instant::now();
     layer2.send(&ip_buff)?;

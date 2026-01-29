@@ -1,4 +1,7 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
@@ -19,7 +22,7 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
@@ -28,15 +31,19 @@ use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
 use crate::trace::HopStatus;
 
+const ICMPV6_DATA_SIZE: usize = 32;
+
 pub fn send_icmpv6_trace_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface: &NetworkInterface,
     hop_limit: u8,
     icmpv6_id: u16,
     seq: u16,
     timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
-    const ICMPV6_DATA_SIZE: usize = 32;
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -128,10 +135,13 @@ pub fn send_icmpv6_trace_packet(
     };
     let filter_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv6;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+
     let start = Instant::now();
-    layer3.send(&ipv6_buff)?;
+    layer2.send(&ipv6_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {

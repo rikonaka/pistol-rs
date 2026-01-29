@@ -145,7 +145,7 @@ pub fn send_syn_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,
@@ -294,7 +294,7 @@ pub fn send_fin_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,
@@ -443,7 +443,7 @@ pub fn send_ack_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,
@@ -589,7 +589,7 @@ pub fn send_null_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,
@@ -735,7 +735,7 @@ pub fn send_xmas_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,
@@ -881,7 +881,7 @@ pub fn send_window_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,
@@ -1032,7 +1032,7 @@ pub fn send_maimon_scan_packet(
     let layer2 = Layer2::new(
         dst_mac,
         src_mac,
-        interface.clone(),
+        interface,
         ether_type,
         timeout,
         true,

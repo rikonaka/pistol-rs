@@ -1,24 +1,31 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::time::Duration;
 
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
+use crate::layer::Layer2;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::layer::layer3_ipv6_send;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub fn send_udp_flood_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    max_same_packet: usize,
+    interface: &NetworkInterface,
+    retransmit: usize,
 ) -> Result<usize, PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -55,10 +62,14 @@ pub fn send_udp_flood_packet(
     udp_header.set_length((UDP_HEADER_SIZE + UDP_DATA_SIZE) as u16);
     let checksum = ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
-    let timeout = None;
 
-    for _ in 0..max_same_packet {
-        let _ret = layer3_ipv6_send(dst_ipv6, src_ipv6, &ipv6_buff, vec![], timeout, false)?;
-    }
-    Ok(ipv6_buff.len() * max_same_packet)
+    // very short timeout for flood attack
+    let timeout = Duration::from_secs_f32(0.01);
+    let ether_type = EtherTypes::Ipv6;
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
+
+    // ignore the error
+    let _ = layer2.send_flood(&ipv6_buff, retransmit);
+
+    Ok(ipv6_buff.len() * retransmit)
 }

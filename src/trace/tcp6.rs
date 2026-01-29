@@ -1,4 +1,7 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Types;
@@ -19,7 +22,7 @@ use tracing::debug;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer3;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
@@ -37,18 +40,19 @@ const MSS_SIZE: usize = 4;
 const WSCALE_SIZE: usize = 3;
 const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
+const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
 
 pub fn send_syn_trace_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
+    interface: &NetworkInterface,
     hop_limit: u8,
     timeout: Duration,
 ) -> Result<(HopStatus, Duration), PistolError> {
-    const TCP_OPTIONS_SIZE: usize =
-        MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
-
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff =
@@ -141,10 +145,12 @@ pub fn send_syn_trace_packet(
     };
     let filter_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
-    let receiver = ask_runner(vec![filter_1, filter_2])?;
-    let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv6;
+    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
     let start = Instant::now();
-    layer3.send(&ipv6_buff)?;
+    layer2.send(&ipv6_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {

@@ -1,4 +1,5 @@
 use chrono::Utc;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::icmp;
 use pnet::packet::icmp::IcmpCode;
@@ -9,6 +10,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::MutableIpv4Packet;
+use pnet::util::MacAddr;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::panic::Location;
@@ -18,17 +20,19 @@ use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer2;
-use crate::route::infer_mac;
 
 const ICMP_DATA_SIZE: usize = 16;
 const TTL: u8 = 64;
 
 pub fn send_icmp_flood_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     _: u16, // unified interface
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     _: u16, // unified interface
-    max_same_packet: usize,
+    interface: &NetworkInterface,
+    retransmit: usize,
 ) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ip header
@@ -91,11 +95,10 @@ pub fn send_icmp_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let (dst_mac, interface) = infer_mac(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
 
     // ignore the error
-    let _ = layer2.send_flood(&ip_buff, max_same_packet);
+    let _ = layer2.send_flood(&ip_buff, retransmit);
 
-    Ok(ip_buff.len() * max_same_packet)
+    Ok(ip_buff.len() * retransmit)
 }

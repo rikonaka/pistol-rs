@@ -1,3 +1,5 @@
+use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
@@ -15,17 +17,19 @@ use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer2;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::route::infer_mac;
 
 const TCP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
 
 pub fn send_syn_flood_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    max_same_packet: usize,
+    interface: &NetworkInterface,
+    retransmit: usize,
 ) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ip header
@@ -75,21 +79,23 @@ pub fn send_syn_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let (dst_mac, interface) = infer_mac(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
 
     // ignore the error
-    let _ = layer2.send_flood(&ip_buff, max_same_packet);
+    let _ = layer2.send_flood(&ip_buff, retransmit);
 
-    Ok(ip_buff.len() * max_same_packet)
+    Ok(ip_buff.len() * retransmit)
 }
 
 pub fn send_ack_flood_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    max_same_packet: usize,
+    interface: &NetworkInterface,
+    retransmit: usize,
 ) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ip header
@@ -139,21 +145,23 @@ pub fn send_ack_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let (dst_mac, interface) = infer_mac(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
 
     // ignore the error
-    let _ = layer2.send_flood(&ip_buff, max_same_packet);
+    let _ = layer2.send_flood(&ip_buff, retransmit);
 
-    Ok(ip_buff.len() * max_same_packet)
+    Ok(ip_buff.len() * retransmit)
 }
 
 pub fn send_ack_psh_flood_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    max_same_packet: usize,
+    interface: &NetworkInterface,
+    retransmit: usize,
 ) -> Result<usize, PistolError> {
     let mut rng = rand::rng();
     // ip header
@@ -203,11 +211,10 @@ pub fn send_ack_psh_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let (dst_mac, interface) = infer_mac(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
 
     // ignore the error
-    let _ = layer2.send_flood(&ip_buff, max_same_packet);
+    let _ = layer2.send_flood(&ip_buff, retransmit);
 
-    Ok(ip_buff.len() * max_same_packet)
+    Ok(ip_buff.len() * retransmit)
 }

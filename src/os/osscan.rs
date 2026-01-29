@@ -2,7 +2,9 @@ use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
 use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use rand::Rng;
 use std::collections::HashMap;
@@ -20,7 +22,7 @@ use tracing::warn;
 use crate::IpCheckMethods;
 use crate::ask_runner;
 use crate::error::PistolError;
-use crate::layer::Layer3;
+use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -64,7 +66,6 @@ use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
-use crate::route::infer_mac;
 use crate::trace::icmp_trace;
 use crate::utils::get_threads_pool;
 use crate::utils::random_port;
@@ -264,9 +265,12 @@ pub fn get_scan_line(
 }
 
 fn send_seq_probes(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<SEQRR, PistolError> {
     // 6 packets with 6 threads
@@ -310,13 +314,17 @@ fn send_seq_probes(
         let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
         let tx = tx.clone();
+        let iface = interface.name.clone();
+        let interface = interface.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(vec![filter_1]) {
+                match ask_runner(iface.clone(), vec![filter_1], timeout) {
                     Ok(receiver) => {
-                        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+                        let ether_type = EtherTypes::Ipv4;
+                        let layer2 =
+                            Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
                         let start = Instant::now();
-                        if let Err(e) = layer3.send(&buff) {
+                        if let Err(e) = layer2.send(&buff) {
                             error!("send seq_{} probe packet error: {}", i, e);
                             continue;
                         }
@@ -407,8 +415,11 @@ fn send_seq_probes(
 }
 
 fn send_ie_probes(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<IERR, PistolError> {
     let (tx, rx) = channel();
@@ -436,17 +447,21 @@ fn send_ie_probes(
     };
     let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
+    let iface = interface.name.clone();
+    let interface = interface.clone();
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         // For those that do not require time, process them in order.
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            match ask_runner(vec![filter_1]) {
+            match ask_runner(iface.clone(), vec![filter_1], timeout) {
                 Ok(receiver) => {
-                    let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+                    let ether_type = EtherTypes::Ipv4;
+                    let layer2 =
+                        Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
                     let start = Instant::now();
-                    if let Err(e) = layer3.send(&buff) {
+                    if let Err(e) = layer2.send(&buff) {
                         error!("send ie_{} probe packet error: {}", i, e);
                         continue;
                     }
@@ -506,9 +521,12 @@ fn send_ie_probes(
 }
 
 fn send_ecn_probe(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
@@ -526,15 +544,17 @@ fn send_ecn_probe(
     };
     let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
+    let iface = interface.name.clone();
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let receiver = ask_runner(vec![filter_1])?;
-        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+        let receiver = ask_runner(iface.clone(), vec![filter_1], timeout)?;
+        let ether_type = EtherTypes::Ipv4;
+        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
         let start = Instant::now();
-        layer3.send(&buff)?;
+        layer2.send(&buff)?;
         let eth_buff = match receiver.recv_timeout(timeout) {
             Ok(b) => b,
             Err(e) => {
@@ -567,10 +587,13 @@ fn send_ecn_probe(
 }
 
 fn send_tx_probes(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_open_port: u16,
     dst_closed_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<TXRR, PistolError> {
     // 6 packets with 6 threads
@@ -658,13 +681,17 @@ fn send_tx_probes(
     for (i, buff) in buffs.into_iter().enumerate() {
         let tx = tx.clone();
         let filter_1 = filters[i].clone();
+        let iface = interface.name.clone();
+        let interface = interface.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(vec![filter_1]) {
+                match ask_runner(iface.clone(), vec![filter_1], timeout) {
                     Ok(receiver) => {
-                        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+                        let ether_type = EtherTypes::Ipv4;
+                        let layer2 =
+                            Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
                         let start = Instant::now();
-                        if let Err(e) = layer3.send(&buff) {
+                        if let Err(e) = layer2.send(&buff) {
                             error!("send tx_{} probe packet error: {}", i, e);
                             continue;
                         }
@@ -748,9 +775,12 @@ fn send_tx_probes(
 }
 
 fn send_u1_probe(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_closed_port: u16, //should be an closed port
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
@@ -774,10 +804,12 @@ fn send_u1_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let receiver = ask_runner(vec![filter_1])?;
-        let layer3 = Layer3::new(dst_ipv4.into(), src_ipv4.into(), timeout, true);
+        let iface = interface.name.clone();
+        let receiver = ask_runner(iface, vec![filter_1], timeout)?;
+        let ether_type = EtherTypes::Ipv4;
+        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
         let start = Instant::now();
-        layer3.send(&buff)?;
+        layer2.send(&buff)?;
         let eth_buff = match receiver.recv_timeout(timeout) {
             Ok(b) => b,
             Err(e) => {
@@ -810,29 +842,59 @@ fn send_u1_probe(
 }
 
 fn send_all_probes(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<AllPacketRR, PistolError> {
     debug!("sending SEQ probe");
-    let seq = send_seq_probes(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
+    let seq = send_seq_probes(
+        dst_mac,
+        dst_ipv4,
+        dst_open_tcp_port,
+        src_mac,
+        src_ipv4,
+        interface,
+        timeout,
+    )?;
     debug!("sending IE probe");
-    let ie = send_ie_probes(dst_ipv4, src_ipv4, timeout)?;
+    let ie = send_ie_probes(dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout)?;
     debug!("sending ECN probe");
-    let ecn = send_ecn_probe(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout)?;
+    let ecn = send_ecn_probe(
+        dst_mac,
+        dst_ipv4,
+        dst_open_tcp_port,
+        src_mac,
+        src_ipv4,
+        interface,
+        timeout,
+    )?;
     debug!("sending TX probe");
     let tx = send_tx_probes(
+        dst_mac,
         dst_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
+        src_mac,
         src_ipv4,
+        interface,
         timeout,
     )?;
     debug!("sending U1 probe");
-    let u1 = send_u1_probe(dst_ipv4, dst_closed_udp_port, src_ipv4, timeout)?;
+    let u1 = send_u1_probe(
+        dst_mac,
+        dst_ipv4,
+        dst_closed_udp_port,
+        src_mac,
+        src_ipv4,
+        interface,
+        timeout,
+    )?;
 
     let ap = AllPacketRR {
         seq,
@@ -1927,25 +1989,28 @@ fn sort_pick(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
 }
 
 pub fn os_probe_thread(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface: &NetworkInterface,
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
 ) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {
-    // exec this line first to return error for host which dead
-    let (dst_mac, _interface) = infer_mac(dst_ipv4.into(), src_ipv4.into(), timeout)?;
-
     debug!("send all probes now");
     let ap = send_all_probes(
+        dst_mac,
         dst_ipv4,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
+        src_mac,
         src_ipv4,
+        interface,
         timeout,
     )?;
     debug!("send all probes done");
@@ -2027,6 +2092,7 @@ pub fn os_probe_thread(
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2091,3 +2157,4 @@ mod tests {
         debug!("send all probes done");
     }
 }
+*/

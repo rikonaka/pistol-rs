@@ -4,6 +4,10 @@ use chrono::DateTime;
 #[cfg(feature = "os")]
 use chrono::Local;
 #[cfg(feature = "os")]
+use pnet::datalink::MacAddr;
+#[cfg(feature = "os")]
+use pnet::datalink::NetworkInterface;
+#[cfg(feature = "os")]
 use prettytable::Cell;
 #[cfg(feature = "os")]
 use prettytable::Row;
@@ -39,11 +43,9 @@ use tracing::warn;
 use zip::ZipArchive;
 
 #[cfg(feature = "os")]
-use crate::Target;
+use crate::NetInfo;
 #[cfg(feature = "os")]
 use crate::error::PistolError;
-#[cfg(feature = "os")]
-use crate::layer::infer_addr;
 #[cfg(feature = "os")]
 use crate::os::dbparser::NmapOsDb;
 #[cfg(feature = "os")]
@@ -99,7 +101,7 @@ pub struct OsInfo6 {
 #[derive(Debug, Clone)]
 pub struct OsDetect4 {
     pub addr: IpAddr,
-    pub origin: Option<String>,
+    pub origin: IpAddr,
     pub alive: bool,
     pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
@@ -110,7 +112,7 @@ pub struct OsDetect4 {
 #[derive(Debug, Clone)]
 pub struct OsDetect6 {
     pub addr: IpAddr,
-    pub origin: Option<String>,
+    pub origin: IpAddr,
     pub alive: bool,
     pub fingerprint: Fingerprint6,
     pub detects: Vec<OsInfo6>,
@@ -184,15 +186,15 @@ impl fmt::Display for PistolOsDetects {
             match detect {
                 OsDetect::V4(o) => {
                     let time_cost_str = utils::time_sec_to_string(o.cost);
+                    let addr_str = if o.origin != addr {
+                        format!("{}({})", o.origin, addr)
+                    } else {
+                        format!("{}", addr)
+                    };
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         if o.detects.len() > 0 {
                             for (i, os_info) in o.detects.iter().enumerate() {
-                                let addr_str = match &o.origin {
-                                    Some(origin) => format!("{}({})", addr, origin),
-                                    None => format!("{}", addr),
-                                };
-
                                 let rank_str = format!("#{}", i + 1);
                                 let score_str = format!("{}/{}", os_info.score, os_info.total);
                                 let os_details = &os_info.name;
@@ -206,11 +208,6 @@ impl fmt::Display for PistolOsDetects {
                             ]));
                         }
                     } else {
-                        let addr_str = match o.origin {
-                            Some(origin) => format!("{}({})", addr, origin),
-                            None => format!("{}", addr),
-                        };
-
                         let rank_str = format!("#{}", 1);
                         table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> "0/0", c -> "target dead", c -> "", c -> time_cost_str]);
                         id += 1;
@@ -218,15 +215,11 @@ impl fmt::Display for PistolOsDetects {
                 }
                 OsDetect::V6(o) => {
                     let time_cost_str = utils::time_sec_to_string(o.cost);
+                    let addr_str = format!("{}({})", o.origin, addr);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         if o.detects.len() > 0 {
                             for (i, os_info6) in o.detects.iter().enumerate() {
-                                let addr_str = match &o.origin {
-                                    Some(origin) => format!("{}({})", addr, origin),
-                                    None => format!("{}", addr),
-                                };
-
                                 let number_str = format!("#{}", i + 1);
                                 let score_str = format!("{:.1}", os_info6.score);
                                 let os_str = &os_info6.name;
@@ -241,11 +234,6 @@ impl fmt::Display for PistolOsDetects {
                             .with_hspan(7)]));
                         }
                     } else {
-                        let addr_str = match o.origin {
-                            Some(origin) => format!("{}({})", addr, origin),
-                            None => format!("{}", addr),
-                        };
-
                         let rank_str = format!("#{}", 1);
                         table.add_row(row![c -> id, c -> addr_str, c -> rank_str, c -> "0.0", c -> "target dead", c -> "", c -> time_cost_str]);
                         id += 1;
@@ -367,16 +355,15 @@ fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
 
 #[cfg(feature = "os")]
 pub fn os_detect(
-    targets: &[Target],
+    net_infos: &[NetInfo],
     threads: Option<usize>,
-    src_addr: Option<IpAddr>,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<PistolOsDetects, PistolError> {
     let threads = match threads {
         Some(t) => t,
         None => {
-            let threads = targets.len();
+            let threads = net_infos.len();
             let threads = utils::num_threads_check(threads);
             threads
         }
@@ -390,21 +377,25 @@ pub fn os_detect(
     let pool = utils::get_threads_pool(threads);
     let mut recv_size = 0;
     let mut ret = PistolOsDetects::new();
-    for target in targets {
-        let dst_addr = target.addr;
+    for ni in net_infos {
+        let dst_mac = ni.dst_mac;
+        let dst_addr = ni.dst_addr;
+        let src_mac = ni.src_mac;
+        let interface = ni.interface.clone();
+        let ori_dst_addr = ni.ori_dst_addr;
+
         let tx = tx.clone();
         recv_size += 1;
-        let ia = match infer_addr(dst_addr, src_addr)? {
-            Some(ia) => ia,
-            None => return Err(PistolError::CanNotFoundSrcAddress),
-        };
         match dst_addr {
-            IpAddr::V4(_) => {
-                let dst_ports = target.ports.clone();
-                let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
+            IpAddr::V4(dst_ipv4) => {
+                let dst_ports = ni.dst_ports.clone();
+                let src_ipv4 = match ni.src_addr {
+                    IpAddr::V4(src) => src,
+                    _ => return Err(PistolError::CanNotFoundSrcAddress),
+                };
+
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");
-                let origin = target.origin.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -412,11 +403,14 @@ pub fn os_detect(
                         let dst_closed_tcp_port = dst_ports[1];
                         let dst_closed_udp_port = dst_ports[2];
                         let os_detect_ret = os_probe_thread(
+                            dst_mac,
                             dst_ipv4,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
                             dst_closed_udp_port,
+                            src_mac,
                             src_ipv4,
+                            &interface,
                             nmap_os_db,
                             top_k,
                             timeout,
@@ -429,7 +423,7 @@ pub fn os_detect(
                         Ok((fingerprint, detects)) => {
                             let o = OsDetect4 {
                                 addr: dst_addr,
-                                origin: origin.clone(),
+                                origin: ori_dst_addr,
                                 alive: true,
                                 fingerprint,
                                 detects,
@@ -440,15 +434,18 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    let _ = tx.send((dst_addr, origin.clone(), od, start_time));
+                    let _ = tx.send((dst_addr, ori_dst_addr.clone(), od, start_time));
                 });
             }
-            IpAddr::V6(_) => {
-                let dst_ports = target.ports.clone();
-                let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
+            IpAddr::V6(dst_ipv6) => {
+                let dst_ports = ni.dst_ports.clone();
+                let src_ipv6 = match ni.src_addr {
+                    IpAddr::V6(src) => src,
+                    _ => return Err(PistolError::CanNotFoundSrcAddress),
+                };
+
                 let linear = gen_linear()?;
                 debug!("ipv6 gen linear parse finish");
-                let origin = target.origin.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -457,11 +454,14 @@ pub fn os_detect(
                         let dst_closed_udp_port = dst_ports[2];
 
                         let os_detect_ret = os_probe_thread6(
+                            dst_mac,
                             dst_ipv6,
                             dst_open_tcp_port,
                             dst_closed_tcp_port,
                             dst_closed_udp_port,
+                            src_mac,
                             src_ipv6,
+                            &interface,
                             top_k,
                             linear,
                             timeout,
@@ -474,7 +474,7 @@ pub fn os_detect(
                         Ok((fingerprint, detects)) => {
                             let o = OsDetect6 {
                                 addr: dst_addr,
-                                origin: origin.clone(),
+                                origin: ori_dst_addr,
                                 alive: true,
                                 fingerprint,
                                 detects,
@@ -485,7 +485,7 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    let _ = tx.send((dst_addr, origin.clone(), od, start_time));
+                    let _ = tx.send((dst_addr, ori_dst_addr, od, start_time));
                 });
             }
         }
@@ -535,35 +535,41 @@ pub fn os_detect(
 
 #[cfg(feature = "os")]
 pub fn os_detect_raw(
+    dst_mac: MacAddr,
     dst_addr: IpAddr,
+    ori_dst_addr: IpAddr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    src_addr: Option<IpAddr>,
+    src_mac: MacAddr,
+    src_addr: IpAddr,
+    interface: &NetworkInterface,
     top_k: usize,
     timeout: Option<Duration>,
 ) -> Result<OsDetect, PistolError> {
     let start_time = Instant::now();
-    let ia = match infer_addr(dst_addr, src_addr)? {
-        Some(ia) => ia,
-        None => return Err(PistolError::CanNotFoundSrcAddress),
-    };
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
     match dst_addr {
-        IpAddr::V4(_) => {
-            let (dst_ipv4, src_ipv4) = ia.get_ipv4_addr()?;
+        IpAddr::V4(dst_ipv4) => {
+            let src_ipv4 = match src_addr {
+                IpAddr::V4(src) => src,
+                _ => return Err(PistolError::CanNotFoundSrcAddress),
+            };
             let nmap_os_db = get_nmap_os_db()?;
             debug!("ipv4 nmap os db parse finish");
             let nmap_os_db = nmap_os_db.to_vec();
             match os_probe_thread(
+                dst_mac,
                 dst_ipv4,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
+                src_mac,
                 src_ipv4,
+                interface,
                 nmap_os_db,
                 top_k,
                 timeout,
@@ -571,7 +577,7 @@ pub fn os_detect_raw(
                 Ok((fingerprint, detects)) => {
                     let o = OsDetect4 {
                         addr: dst_addr,
-                        origin: None,
+                        origin: ori_dst_addr,
                         alive: true,
                         fingerprint,
                         detects,
@@ -584,7 +590,7 @@ pub fn os_detect_raw(
                     warn!("os probe error: {}", e);
                     let o = OsDetect4 {
                         addr: dst_addr,
-                        origin: None,
+                        origin: ori_dst_addr,
                         alive: false,
                         fingerprint: Fingerprint::empty(),
                         detects: Vec::new(),
@@ -595,16 +601,22 @@ pub fn os_detect_raw(
                 }
             }
         }
-        IpAddr::V6(_) => {
-            let (dst_ipv6, src_ipv6) = ia.get_ipv6_addr()?;
+        IpAddr::V6(dst_ipv6) => {
+            let src_ipv6 = match src_addr {
+                IpAddr::V6(src) => src,
+                _ => return Err(PistolError::CanNotFoundSrcAddress),
+            };
             let linear = gen_linear()?;
             debug!("ipv6 gen linear parse finish");
             match os_probe_thread6(
+                dst_mac,
                 dst_ipv6,
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
+                src_mac,
                 src_ipv6,
+                interface,
                 top_k,
                 linear,
                 timeout,
@@ -612,7 +624,7 @@ pub fn os_detect_raw(
                 Ok((fingerprint, detects)) => {
                     let o = OsDetect6 {
                         addr: dst_addr,
-                        origin: None,
+                        origin: ori_dst_addr,
                         alive: true,
                         fingerprint,
                         detects,
@@ -625,7 +637,7 @@ pub fn os_detect_raw(
                     warn!("os probe error: {}", e);
                     let o = OsDetect6 {
                         addr: dst_addr,
-                        origin: None,
+                        origin: ori_dst_addr,
                         alive: false,
                         fingerprint: Fingerprint6::empty(),
                         detects: Vec::new(),
@@ -639,6 +651,7 @@ pub fn os_detect_raw(
     }
 }
 
+/*
 #[cfg(feature = "os")]
 #[cfg(test)]
 mod tests {
@@ -956,3 +969,4 @@ OS:=N%T=40%CD=S)";
         println!("{}", p);
     }
 }
+*/

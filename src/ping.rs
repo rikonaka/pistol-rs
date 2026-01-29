@@ -39,8 +39,6 @@ use crate::Target;
 #[cfg(feature = "ping")]
 use crate::error::PistolError;
 #[cfg(feature = "ping")]
-use crate::layer::infer_addr;
-#[cfg(feature = "ping")]
 use crate::scan::DataRecvStatus;
 #[cfg(feature = "ping")]
 use crate::scan::PortStatus;
@@ -88,7 +86,7 @@ impl fmt::Display for PingStatus {
 #[derive(Debug, Clone)]
 pub struct PingReport {
     pub addr: IpAddr,
-    pub origin: Option<String>,
+    pub origin: IpAddr,
     pub status: PingStatus,
     pub cost: Duration,
 }
@@ -153,9 +151,10 @@ impl fmt::Display for PistolPings {
                 PingStatus::Up => alive_hosts += 1,
                 _ => (),
             }
-            let addr_str = match report.origin {
-                Some(o) => format!("{}({})", report.addr, o),
-                None => format!("{}", report.addr),
+            let addr_str = if report.origin != report.addr {
+                format!("{}({})", report.origin, report.addr)
+            } else {
+                format!("{}", report.addr)
             };
             let status_str = format!("{}", report.status);
             let rtt_str = utils::time_sec_to_string(report.cost);

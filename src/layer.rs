@@ -23,7 +23,6 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use std::net::IpAddr;
-use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
@@ -903,20 +902,20 @@ impl PacketFilter {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Layer2 {
+pub(crate) struct Layer2<'a> {
     dst_mac: MacAddr,
     src_mac: MacAddr,
-    interface: NetworkInterface,
+    interface: &'a NetworkInterface,
     ether_type: EtherType,
     timeout: Duration,
     need_return: bool,
 }
 
-impl Layer2 {
+impl<'a> Layer2<'a> {
     pub(crate) fn new(
         dst_mac: MacAddr,
         src_mac: MacAddr,
-        interface: NetworkInterface,
+        interface: &'a NetworkInterface,
         ether_type: EtherType,
         timeout: Duration,
         need_return: bool,
@@ -931,7 +930,7 @@ impl Layer2 {
         }
     }
     /// This function is used to send data in flood attack.
-    pub(crate) fn send_flood(&self, payload: &[u8], limits: usize) -> Result<(), PistolError> {
+    pub(crate) fn send_flood(&self, payload: &[u8], retransmit: usize) -> Result<(), PistolError> {
         let config = Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
@@ -976,8 +975,8 @@ impl Layer2 {
         ethernet_packet.set_ethertype(self.ether_type);
         ethernet_packet.set_payload(payload);
 
-        if limits > 0 {
-            for _ in 0..limits {
+        if retransmit > 0 {
+            for _ in 0..retransmit {
                 let _ = sender.send_to(&buff, None);
             }
         } else {
@@ -1061,6 +1060,7 @@ mod tests {
     use super::*;
     use pnet::packet::icmp::IcmpTypes;
     use pnet::packet::icmpv6::Icmpv6Types;
+    use std::net::Ipv4Addr;
     use std::str::FromStr;
     #[test]
     fn test_layer_match() {

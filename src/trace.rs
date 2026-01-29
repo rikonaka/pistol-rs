@@ -27,7 +27,6 @@ pub mod udp;
 pub mod udp6;
 
 #[cfg(any(feature = "trace", feature = "os"))]
-const UDP_DATA_SIZE: usize = 32;
 #[cfg(feature = "trace")]
 const START_PORT: u16 = 33434;
 
