@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::time::Instant;
+use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 use tracing::warn;
 
@@ -47,6 +48,7 @@ use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
+use crate::layer::multicast_mac;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 
@@ -704,7 +706,7 @@ fn send_ndp_rs_packet(
     }
 
     // router solicitation
-    let route_addr_2 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
+    let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
     let interface = match find_interface_by_src_ip(src_ipv6.into()) {
         Some(i) => i,
@@ -736,7 +738,7 @@ fn send_ndp_rs_packet(
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    ipv6_header.set_destination(route_addr_2);
+    ipv6_header.set_destination(route_addr_ipv6);
 
     // icmpv6
     let mut icmpv6_header =
@@ -767,7 +769,7 @@ fn send_ndp_rs_packet(
             });
         }
     };
-    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &route_addr_2);
+    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &route_addr_ipv6);
     icmpv6_header.set_checksum(checksum);
 
     // let layer3 = Layer3Match {
@@ -804,8 +806,9 @@ fn send_ndp_rs_packet(
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ether_type = EtherTypes::Ipv6;
 
-    let receiver = ask_runner(vec![filter_1])?;
-    let layer2 = Layer2::new(dst_mac, interface, ether_type, timeout, true);
+    let iface = interface.name.clone();
+    let receiver = ask_runner(iface, vec![filter_1], timeout)?;
+    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
     let start = Instant::now();
     layer2.send(&ipv6_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -829,12 +832,12 @@ fn send_ndp_rs_packet(
 fn send_neighbor_detect_packet(
     dst_addr: IpAddr,
     src_addr: IpAddr,
-    src_interface: NetworkInterface,
+    interface: NetworkInterface,
     timeout: Duration,
 ) -> Result<MacAddr, PistolError> {
     if dst_addr.is_loopback() || addr_is_my_ip(dst_addr) {
         // target is your own machine, such as when using localhost or 127.0.0.1 as the target
-        if let Some(dst_mac) = src_interface.mac {
+        if let Some(dst_mac) = interface.mac {
             Ok(dst_mac)
         } else {
             Err(PistolError::CanNotFoundMacAddress)
@@ -847,49 +850,48 @@ fn send_neighbor_detect_packet(
             debug!("dst {} not in arp cache", dst_addr);
             // if addr is local address and in local net
             // use the arp or ndp_ns to ask the mac address
-            let src_mac = match src_interface.mac {
+            let src_mac = match interface.mac {
                 Some(m) => m,
                 None => return Err(PistolError::CanNotFoundMacAddress),
             };
 
             match dst_addr {
-                IpAddr::V4(via_ipv4) => {
-                    if let IpAddr::V4(src_ipv4) = src_addr {
-                        match send_arp_scan_packet(
-                            via_ipv4,
-                            MacAddr::broadcast(),
-                            src_ipv4,
-                            src_mac,
-                            &src_interface,
-                            timeout,
-                        )? {
-                            (Some(dst_mac), _rtt) => {
-                                neigh_cache_update(via_ipv4.into(), dst_mac)?;
-                                Ok(dst_mac)
-                            }
-                            (None, _rtt) => Err(PistolError::CanNotFoundMacAddress),
+                IpAddr::V4(dst_ipv4) => {
+                    let dst_mac = MacAddr::broadcast();
+                    let src_ipv4 = match src_addr {
+                        IpAddr::V4(src) => src,
+                        _ => {
+                            return Err(PistolError::CanNotFoundSrcAddress);
                         }
-                    } else {
-                        Err(PistolError::CanNotFoundMacAddress)
+                    };
+                    let (mac, _rtt) = send_arp_scan_packet(
+                        dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout,
+                    )?;
+                    match mac {
+                        Some(dst_mac) => {
+                            neigh_cache_update(dst_ipv4.into(), dst_mac)?;
+                            Ok(dst_mac)
+                        }
+                        None => Err(PistolError::CanNotFoundMacAddress),
                     }
                 }
-                IpAddr::V6(via_ipv6) => {
-                    if let IpAddr::V6(src_ipv6) = src_addr {
-                        match send_ndp_ns_scan_packet(
-                            via_ipv6,
-                            src_ipv6,
-                            src_mac,
-                            &src_interface,
-                            timeout,
-                        )? {
-                            (Some(dst_mac), _rtt) => {
-                                neigh_cache_update(via_ipv6.into(), dst_mac)?;
-                                Ok(dst_mac)
-                            }
-                            (None, _rtt) => Err(PistolError::CanNotFoundMacAddress),
+                IpAddr::V6(dst_ipv6) => {
+                    let src_ipv6 = match src_addr {
+                        IpAddr::V6(src) => src,
+                        _ => return Err(PistolError::CanNotFoundSrcAddress),
+                    };
+                    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
+                    let dst_ipv6 = dst_ipv6_ext.link_multicast();
+                    let dst_mac = multicast_mac(dst_ipv6);
+                    let (mac, _rtt) = send_ndp_ns_scan_packet(
+                        dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout,
+                    )?;
+                    match mac {
+                        Some(dst_mac) => {
+                            neigh_cache_update(dst_ipv6.into(), dst_mac)?;
+                            Ok(dst_mac)
                         }
-                    } else {
-                        Err(PistolError::CanNotFoundMacAddress)
+                        None => Err(PistolError::CanNotFoundMacAddress),
                     }
                 }
             }
@@ -898,16 +900,14 @@ fn send_neighbor_detect_packet(
         // finally, send it to the the default route address in layer2
         let (default_route, default_route6) = get_default_route()?;
         let dr = if dst_addr.is_ipv4() {
-            if let Some(dr_ipv4) = default_route {
-                dr_ipv4
-            } else {
-                return Err(PistolError::CanNotFoundRouterAddress);
+            match default_route {
+                Some(dr) => dr,
+                None => return Err(PistolError::CanNotFoundRouterAddress),
             }
         } else {
-            if let Some(dr_ipv6) = default_route6 {
-                dr_ipv6
-            } else {
-                return Err(PistolError::CanNotFoundRouterAddress);
+            match default_route6 {
+                Some(dr) => dr,
+                None => return Err(PistolError::CanNotFoundRouterAddress),
             }
         };
 
@@ -915,7 +915,7 @@ fn send_neighbor_detect_packet(
             Some(m) => m,
             None => {
                 let dst_mac = MacAddr::broadcast();
-                let src_mac = match src_interface.mac {
+                let src_mac = match interface.mac {
                     Some(m) => m,
                     None => return Err(PistolError::CanNotFoundMacAddress),
                 };
@@ -923,22 +923,16 @@ fn send_neighbor_detect_packet(
                     IpAddr::V4(dr_ipv4) => {
                         debug!("try to found the dst mac by arp scan");
                         if let IpAddr::V4(src_ipv4) = src_addr {
-                            match send_arp_scan_packet(
-                                dr_ipv4,
-                                dst_mac,
-                                src_ipv4,
-                                src_mac,
-                                &src_interface,
-                                timeout,
-                            )? {
-                                (Some(m), _rtt) => {
+                            let (mac, _rtt) = send_arp_scan_packet(
+                                dst_mac, dr_ipv4, src_mac, src_ipv4, &interface, timeout,
+                            )?;
+                            match mac {
+                                Some(m) => {
                                     debug!("update the neigh cache: {} - {}", dr_ipv4, m);
                                     neigh_cache_update(dr_ipv4.into(), m)?;
                                     m
                                 }
-                                (None, _rtt) => {
-                                    return Err(PistolError::CanNotFoundRouteMacAddress);
-                                }
+                                None => return Err(PistolError::CanNotFoundRouteMacAddress),
                             }
                         } else {
                             return Err(PistolError::CanNotFoundRouteMacAddress);
@@ -948,15 +942,14 @@ fn send_neighbor_detect_packet(
                         debug!("try to found the dst mac by ndp_ns scan");
                         if let IpAddr::V6(src_ipv6) = src_addr {
                             // this is not ndp_ns scan packet
-                            match send_ndp_rs_packet(src_ipv6, timeout)? {
-                                (Some(m), _rtt) => {
+                            let (mac, _rtt) = send_ndp_rs_packet(src_ipv6, timeout)?;
+                            match mac {
+                                Some(m) => {
                                     debug!("update the neigh cache: {} - {}", dr_ipv6, m);
                                     neigh_cache_update(dr_ipv6.into(), m)?;
                                     m
                                 }
-                                (None, _rtt) => {
-                                    return Err(PistolError::CanNotFoundRouteMacAddress);
-                                }
+                                None => return Err(PistolError::CanNotFoundRouteMacAddress),
                             }
                         } else {
                             return Err(PistolError::CanNotFoundRouteMacAddress);

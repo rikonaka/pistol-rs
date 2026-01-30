@@ -55,6 +55,10 @@ pub enum PistolError {
         zombie_ipv4: Ipv4Addr,
         zombie_port: u16,
     },
+    #[error("idle scan has no params: {params}")]
+    IdleScanNoParamsError { params: String },
+    #[error("idle scan not support ipv6")]
+    IdleScanNotSupportIpVersion,
     #[error("serde json error")]
     SerdeJsonError(#[from] serde_json::Error),
     #[error("no destination port specified")]
@@ -99,12 +103,6 @@ pub enum PistolError {
     /* ROUTE ERROR */
     #[error("subnetwork error")]
     RegexError(#[from] regex::Error),
-
-    /* HOP ERROR */
-    #[error(
-        "the destination address {dst_addr} and source address {src_addr} protocols do not match"
-    )]
-    AddressProtocolError { dst_addr: IpAddr, src_addr: IpAddr },
 
     /* OTHER ERROR */
     #[error("std error")]

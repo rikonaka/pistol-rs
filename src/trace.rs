@@ -8,6 +8,8 @@ use std::time::Duration;
 #[cfg(any(feature = "trace", feature = "os"))]
 use tracing::debug;
 
+#[cfg(feature = "trace")]
+use crate::NetInfo;
 #[cfg(any(feature = "trace", feature = "os"))]
 use crate::error::PistolError;
 #[cfg(feature = "trace")]
@@ -39,98 +41,116 @@ pub enum HopStatus {
     RecvReply(IpAddr),
 }
 
+/// The default target port is 80 if not specified.
 #[cfg(feature = "trace")]
-pub fn syn_trace(
-    dst_addr: IpAddr,
-    dst_port: Option<u16>, // default is 80
-    src_addr: IpAddr,
-    timeout: Option<Duration>,
-) -> Result<u8, PistolError> {
-    let dst_port = match dst_port {
-        Some(p) => p,
-        None => 80,
+pub fn syn_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
+    let dst_mac = net_info.dst_mac;
+    let dst_addr = net_info.dst_addr;
+    let dst_port = if net_info.dst_ports.len() > 0 {
+        net_info.dst_ports[0]
+    } else {
+        80
     };
+    let src_mac = net_info.src_mac;
+    let interface = &net_info.interface;
+
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            if let IpAddr::V4(src_ipv4) = src_addr {
-                let mut rng = rand::rng();
-                let mut ip_id = rng.random();
-                // ensure that this u16 does not overflow
-                if ip_id > u16::MAX - 30 {
-                    ip_id -= 30
+            let src_ipv4 = match net_info.src_addr {
+                IpAddr::V4(src) => src,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch {
+                        addr: net_info.src_addr,
+                    });
                 }
-                let mut last_response_ttl = 0;
-                for ttl in 1..=30 {
-                    let random_src_port = utils::random_port_range(1000, 65535);
-                    // let random_src_port = 61234; // debug use
-                    let (hop_status, rtt) = tcp::send_syn_trace_packet(
-                        dst_ipv4,
-                        dst_port,
-                        src_ipv4,
-                        random_src_port,
-                        ip_id,
-                        ttl,
-                        timeout,
-                    )?;
-                    ip_id += 1;
-                    match hop_status {
-                        HopStatus::TimeExceeded(_) => {
-                            last_response_ttl = ttl;
-                        }
-                        HopStatus::RecvReply(_) => {
-                            // tcp rst packet, means packet arrive the target machine
-                            debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
-                            return Ok(ttl);
-                        }
-                        _ => (),
-                    }
-                }
-                debug!("last ttl: {}", last_response_ttl);
-                Ok(last_response_ttl)
-            } else {
-                return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
+            };
+
+            let mut rng = rand::rng();
+            let mut ip_id: u16 = rng.random();
+            // ensure that this u16 does not overflow
+            if ip_id >= u16::MAX - 30 {
+                ip_id -= 30
             }
+            let mut last_response_ttl = 0;
+            for ttl in 1..=30 {
+                let random_src_port = utils::random_port_range(1000, 65535);
+                // let random_src_port = 61234; // debug use
+                let (hop_status, rtt) = tcp::send_syn_trace_packet(
+                    dst_mac,
+                    dst_ipv4,
+                    dst_port,
+                    src_mac,
+                    src_ipv4,
+                    random_src_port,
+                    interface,
+                    ip_id,
+                    ttl,
+                    timeout,
+                )?;
+                ip_id += 1;
+                match hop_status {
+                    HopStatus::TimeExceeded(_) => {
+                        last_response_ttl = ttl;
+                    }
+                    HopStatus::RecvReply(_) => {
+                        // tcp rst packet, means packet arrive the target machine
+                        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
+                        return Ok(ttl);
+                    }
+                    _ => (),
+                }
+            }
+            debug!("last ttl: {}", last_response_ttl);
+            Ok(last_response_ttl)
         }
         IpAddr::V6(dst_ipv6) => {
-            if let IpAddr::V6(src_ipv6) = src_addr {
-                let mut last_response_hop_limit = 0;
-                for hop_limit in 1..=30 {
-                    let random_src_port = utils::random_port_range(1000, 65535);
-                    let (hop_status, rtt) = tcp6::send_syn_trace_packet(
-                        dst_ipv6,
-                        dst_port,
-                        src_ipv6,
-                        random_src_port,
-                        hop_limit,
-                        timeout,
-                    )?;
-
-                    match hop_status {
-                        HopStatus::TimeExceeded(_) => {
-                            last_response_hop_limit = hop_limit;
-                        }
-                        HopStatus::RecvReply(_) => {
-                            debug!(
-                                "hop_limit: {}, {:?} - {:.2}s",
-                                hop_limit,
-                                hop_status,
-                                rtt.as_secs_f64()
-                            );
-                            // tcp rst packet, means packet arrive the target machine
-                            return Ok(hop_limit);
-                        }
-                        _ => (),
-                    }
+            let src_ipv6 = match net_info.src_addr {
+                IpAddr::V6(src) => src,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch {
+                        addr: net_info.src_addr,
+                    });
                 }
-                debug!("last hop limit: {}", last_response_hop_limit);
-                Ok(last_response_hop_limit)
-            } else {
-                return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
+            };
+
+            let mut last_response_hop_limit = 0;
+            for hop_limit in 1..=30 {
+                let random_src_port = utils::random_port_range(1000, 65535);
+                let (hop_status, rtt) = tcp6::send_syn_trace_packet(
+                    dst_mac,
+                    dst_ipv6,
+                    dst_port,
+                    src_mac,
+                    src_ipv6,
+                    random_src_port,
+                    interface,
+                    hop_limit,
+                    timeout,
+                )?;
+
+                match hop_status {
+                    HopStatus::TimeExceeded(_) => {
+                        last_response_hop_limit = hop_limit;
+                    }
+                    HopStatus::RecvReply(_) => {
+                        debug!(
+                            "hop_limit: {}, {:?} - {:.2}s",
+                            hop_limit,
+                            hop_status,
+                            rtt.as_secs_f64()
+                        );
+                        // tcp rst packet, means packet arrive the target machine
+                        return Ok(hop_limit);
+                    }
+                    _ => (),
+                }
             }
+            debug!("last hop limit: {}", last_response_hop_limit);
+            Ok(last_response_hop_limit)
         }
     }
 }

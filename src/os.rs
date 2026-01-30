@@ -391,7 +391,7 @@ pub fn os_detect(
                 let dst_ports = ni.dst_ports.clone();
                 let src_ipv4 = match ni.src_addr {
                     IpAddr::V4(src) => src,
-                    _ => return Err(PistolError::CanNotFoundSrcAddress),
+                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
 
                 let nmap_os_db = get_nmap_os_db()?;
@@ -441,7 +441,7 @@ pub fn os_detect(
                 let dst_ports = ni.dst_ports.clone();
                 let src_ipv6 = match ni.src_addr {
                     IpAddr::V6(src) => src,
-                    _ => return Err(PistolError::CanNotFoundSrcAddress),
+                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
 
                 let linear = gen_linear()?;

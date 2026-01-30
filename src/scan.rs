@@ -6,6 +6,8 @@ use chrono::Local;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use pnet::datalink::NetworkInterface;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::Cell;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::Row;
@@ -35,8 +37,6 @@ use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::error;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use tracing::warn;
 
 pub mod arp;
 pub mod ndp_ns;
@@ -223,7 +223,7 @@ pub fn arp_scan_raw(
     };
     let interface = &net_info.interface;
 
-    match send_arp_scan_packet(dst_mac, src_mac, dst_ipv4, src_ipv4, interface, timeout) {
+    match send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
@@ -258,10 +258,10 @@ pub fn ndp_ns_scan_raw(
     };
     let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
     let dst_ipv6 = dst_ipv6_ext.link_multicast();
-    let interface = &net_info.interface;
     let dst_mac = multicast_mac(dst_ipv6);
+    let interface = &net_info.interface;
 
-    match send_ndp_ns_scan_packet(dst_mac, src_mac, dst_ipv6, src_ipv6, interface, timeout) {
+    match send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, interface, timeout) {
         Ok((mac, rtt)) => Ok((mac, rtt)),
         Err(e) => Err(e),
     }
@@ -281,63 +281,63 @@ pub fn mac_scan(
     let (tx, rx) = channel();
     let mut recv_size = 0;
     for ni in net_infos {
-        let infer_addr = ni.addr;
-        let dst_addr = infer_addr.dst_addr;
-        if infer_addr.is_ipv4() {
-            let tx = tx.clone();
-            recv_size += 1;
-            pool.execute(move || {
-                for i in 0..attempts {
-                    debug!("arp scan packets: #{}/{}", i + 1, attempts);
-                    let scan_ret = arp_scan_raw(&ni, timeout);
-                    if i == attempts - 1 {
-                        let _ = tx.send((dst_addr, scan_ret));
-                    } else {
-                        match scan_ret {
-                            Ok((value, _)) => match value {
-                                Some(_) => {
+        let dst_addr = ni.dst_addr;
+        match dst_addr {
+            IpAddr::V4(_dst_ipv4) => {
+                let tx = tx.clone();
+                recv_size += 1;
+                pool.execute(move || {
+                    for i in 0..attempts {
+                        debug!("arp scan packets: #{}/{}", i + 1, attempts);
+                        let scan_ret = arp_scan_raw(&ni, timeout);
+                        if i == attempts - 1 {
+                            let _ = tx.send((dst_addr, scan_ret));
+                        } else {
+                            match scan_ret {
+                                Ok((value, _)) => match value {
+                                    Some(_) => {
+                                        let _ = tx.send((dst_addr, scan_ret));
+                                        break;
+                                    }
+                                    None => (),
+                                },
+                                Err(_) => {
                                     let _ = tx.send((dst_addr, scan_ret));
                                     break;
                                 }
-                                None => (),
-                            },
-                            Err(_) => {
-                                let _ = tx.send((dst_addr, scan_ret));
-                                break;
                             }
                         }
                     }
-                }
-            });
-        } else if infer_addr.is_ipv6() {
-            let tx = tx.clone();
-            recv_size += 1;
-            pool.execute(move || {
-                for i in 0..attempts {
-                    debug!("ndp_ns scan packets: #{}/{}", i + 1, attempts);
-                    let scan_ret = ndp_ns_scan_raw(&ni, timeout);
-                    if i == attempts - 1 {
-                        let _ = tx.send((dst_addr, scan_ret));
-                    } else {
-                        match scan_ret {
-                            Ok((value, _)) => match value {
-                                Some(_) => {
+                });
+            }
+            IpAddr::V6(_dst_ipv6) => {
+                let tx = tx.clone();
+                recv_size += 1;
+                pool.execute(move || {
+                    for i in 0..attempts {
+                        debug!("ndp_ns scan packets: #{}/{}", i + 1, attempts);
+                        let scan_ret = ndp_ns_scan_raw(&ni, timeout);
+                        if i == attempts - 1 {
+                            let _ = tx.send((dst_addr, scan_ret));
+                        } else {
+                            match scan_ret {
+                                Ok((value, _)) => match value {
+                                    Some(_) => {
+                                        let _ = tx.send((dst_addr, scan_ret));
+                                        break;
+                                    }
+                                    None => (),
+                                },
+                                Err(_) => {
+                                    // println!("{}", e);
                                     let _ = tx.send((dst_addr, scan_ret));
                                     break;
                                 }
-                                None => (),
-                            },
-                            Err(_) => {
-                                // println!("{}", e);
-                                let _ = tx.send((dst_addr, scan_ret));
-                                break;
                             }
                         }
                     }
-                }
-            });
-        } else {
-            return Err(PistolError::IpVersionNotMatch);
+                });
+            }
         }
     }
 
@@ -558,55 +558,85 @@ impl fmt::Display for PistolPortScans {
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn scan_thread(
-    method: ScanMethod,
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
+    interface: &NetworkInterface,
+    method: ScanMethod,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let (port_status, data_return, rtt) = match method {
         ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv4.into(), dst_port, timeout)?,
-        ScanMethod::Syn => {
-            tcp::send_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
-        ScanMethod::Fin => {
-            tcp::send_fin_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
-        ScanMethod::Ack => {
-            tcp::send_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
-        ScanMethod::Null => {
-            tcp::send_null_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
-        ScanMethod::Xmas => {
-            tcp::send_xmas_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
-        ScanMethod::Window => {
-            tcp::send_window_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
-        ScanMethod::Maimon => {
-            tcp::send_maimon_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
+        ScanMethod::Syn => tcp::send_syn_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
+        ScanMethod::Fin => tcp::send_fin_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
+        ScanMethod::Ack => tcp::send_ack_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
+        ScanMethod::Null => tcp::send_null_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
+        ScanMethod::Xmas => tcp::send_xmas_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
+        ScanMethod::Window => tcp::send_window_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
+        ScanMethod::Maimon => tcp::send_maimon_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
         ScanMethod::Idle => {
-            // this two parameters must be Some
-            let zombie_ipv4 = zombie_ipv4.unwrap();
-            let zombie_port = zombie_port.unwrap();
+            // this three parameters must be Some
+            let zombie_mac = match zombie_mac {
+                Some(zm) => zm,
+                None => {
+                    return Err(PistolError::IdleScanNoParamsError {
+                        params: "zombie_mac".to_string(),
+                    });
+                }
+            };
+            let zombie_ipv4 = match zombie_ipv4 {
+                Some(zi) => zi,
+                None => {
+                    return Err(PistolError::IdleScanNoParamsError {
+                        params: "zombie_ipv4".to_string(),
+                    });
+                }
+            };
+            let zombie_port = match zombie_port {
+                Some(zp) => zp,
+                None => {
+                    return Err(PistolError::IdleScanNoParamsError {
+                        params: "zombie_port".to_string(),
+                    });
+                }
+            };
             tcp::send_idle_scan_packet(
+                dst_mac,
                 dst_ipv4,
                 dst_port,
+                src_mac,
                 src_ipv4,
                 src_port,
+                zombie_mac,
                 zombie_ipv4,
                 zombie_port,
+                interface,
                 timeout,
             )?
         }
-        ScanMethod::Udp => {
-            udp::send_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port, timeout)?
-        }
+        ScanMethod::Udp => udp::send_udp_scan_packet(
+            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
+        )?,
     };
 
     Ok((port_status, data_return, rtt))
@@ -614,43 +644,43 @@ fn scan_thread(
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn scan_thread6(
-    method: ScanMethod,
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
+    interface: &NetworkInterface,
+    method: ScanMethod,
     timeout: Duration,
 ) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
     let (port_status, data_return, rtt) = match method {
         ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv6.into(), dst_port, timeout)?,
-        ScanMethod::Syn => {
-            tcp6::send_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Fin => {
-            tcp6::send_fin_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Ack => {
-            tcp6::send_ack_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Null => {
-            tcp6::send_null_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Xmas => {
-            tcp6::send_xmas_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Window => {
-            tcp6::send_window_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Maimon => {
-            tcp6::send_maimon_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Udp => {
-            udp6::send_udp_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port, timeout)?
-        }
-        ScanMethod::Idle => {
-            warn!("idel scan not supported the ipv6 address, use connect scan instead now");
-            tcp::send_connect_scan_packet(dst_ipv6.into(), dst_port, timeout)?
-        }
+        ScanMethod::Syn => tcp6::send_syn_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Fin => tcp6::send_fin_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Ack => tcp6::send_ack_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Null => tcp6::send_null_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Xmas => tcp6::send_xmas_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Window => tcp6::send_window_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Maimon => tcp6::send_maimon_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Udp => udp6::send_udp_scan_packet(
+            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
+        )?,
+        ScanMethod::Idle => return Err(PistolError::IpVersionNotMatch),
     };
 
     Ok((port_status, data_return, rtt))
@@ -660,10 +690,11 @@ fn scan_thread6(
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn scan(
     net_infos: &[NetInfo],
-    method: ScanMethod,
-    threads: Option<usize>,
+    zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
+    method: ScanMethod,
+    threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
@@ -691,142 +722,160 @@ fn scan(
     let mut recv_size = 0;
 
     for ni in net_infos {
-        if ni.addr.is_ipv4() {
-            let (dst_ipv4, src_ipv4) = ni.addr.get_ipv4_addr()?;
-            let dst_addr: IpAddr = dst_ipv4.into();
-            for &dst_port in &ni.dst_ports {
-                let src_port = match ni.src_port {
-                    Some(s) => s,
-                    None => utils::random_port(),
+        let dst_mac = ni.dst_mac;
+        let dst_addr = ni.dst_addr;
+        let src_mac = ni.src_mac;
+        match dst_addr {
+            IpAddr::V4(dst_ipv4) => {
+                let src_ipv4 = match ni.src_addr {
+                    IpAddr::V4(s) => s,
+                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
-                // debug!(
-                //     "sending scan packet to [{}] port [{}] and src port [{}]",
-                //     dst_addr, dst_port, src_port
-                // );
-                let tx = tx.clone();
-                let ori_target = format!("{}:{}", ni.addr.ori_dst_addr, dst_port);
-                recv_size += 1;
+                for &dst_port in &ni.dst_ports {
+                    let interface = ni.interface.clone();
+                    let src_port = match ni.src_port {
+                        Some(s) => s,
+                        None => utils::random_port(),
+                    };
+                    // debug!(
+                    //     "sending scan packet to [{}] port [{}] and src port [{}]",
+                    //     dst_addr, dst_port, src_port
+                    // );
+                    let tx = tx.clone();
+                    let ori_target = format!("{}:{}", ni.ori_dst_addr, dst_port);
+                    recv_size += 1;
 
-                pool.execute(move || {
-                    for ind in 0..attempts {
-                        let start_time = Instant::now();
-                        debug!(
-                            "sending scan packet to [{}] port [{}] try [{}]",
-                            dst_ipv4, dst_port, ind
-                        );
-                        let scan_ret = scan_thread(
-                            method,
-                            dst_ipv4,
-                            dst_port,
-                            src_ipv4,
-                            src_port,
-                            zombie_ipv4,
-                            zombie_port,
-                            timeout,
-                        );
-                        if ind == attempts - 1 {
-                            // last attempt
-                            tx.send((
-                                dst_addr,
+                    pool.execute(move || {
+                        for ind in 0..attempts {
+                            let start_time = Instant::now();
+                            debug!(
+                                "sending scan packet to [{}] port [{}] try [{}]",
+                                dst_ipv4, dst_port, ind
+                            );
+                            let scan_ret = scan_thread(
+                                dst_mac,
+                                dst_ipv4,
                                 dst_port,
-                                ori_target.clone(),
-                                scan_ret,
-                                start_time.elapsed(),
-                            ));
-                        } else {
-                            match scan_ret {
-                                Ok((_port_status, data_return, _)) => {
-                                    match data_return {
-                                        DataRecvStatus::Yes => {
-                                            // conclusions drawn from the returned data
-                                            tx.send((
-                                                dst_addr,
-                                                dst_port,
-                                                ori_target.clone(),
-                                                scan_ret,
-                                                start_time.elapsed(),
-                                            ));
-                                            break; // quit loop now
+                                src_mac,
+                                src_ipv4,
+                                src_port,
+                                zombie_mac,
+                                zombie_ipv4,
+                                zombie_port,
+                                &interface,
+                                method,
+                                timeout,
+                            );
+                            if ind == attempts - 1 {
+                                // last attempt
+                                tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    ori_target.clone(),
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                ));
+                            } else {
+                                match scan_ret {
+                                    Ok((_port_status, data_return, _)) => {
+                                        match data_return {
+                                            DataRecvStatus::Yes => {
+                                                // conclusions drawn from the returned data
+                                                tx.send((
+                                                    dst_addr,
+                                                    dst_port,
+                                                    ori_target.clone(),
+                                                    scan_ret,
+                                                    start_time.elapsed(),
+                                                ));
+                                                break; // quit loop now
+                                            }
+                                            // conclusions from the default policy
+                                            DataRecvStatus::No => (), // continue probing
                                         }
-                                        // conclusions from the default policy
-                                        DataRecvStatus::No => (), // continue probing
                                     }
-                                }
-                                Err(_) => {
-                                    // stop probe immediately if an error occurs
-                                    tx.send((
-                                        dst_addr,
-                                        dst_port,
-                                        ori_target,
-                                        scan_ret,
-                                        start_time.elapsed(),
-                                    ));
-                                    break;
+                                    Err(_) => {
+                                        // stop probe immediately if an error occurs
+                                        tx.send((
+                                            dst_addr,
+                                            dst_port,
+                                            ori_target,
+                                            scan_ret,
+                                            start_time.elapsed(),
+                                        ));
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                }
             }
-        } else if ni.addr.is_ipv6() {
-            let (dst_ipv6, src_ipv6) = ni.addr.get_ipv6_addr()?;
-            let dst_addr: IpAddr = dst_ipv6.into();
-            for &dst_port in &ni.dst_ports {
-                let src_port = match ni.src_port {
-                    Some(s) => s,
-                    None => utils::random_port(),
+            IpAddr::V6(dst_ipv6) => {
+                let src_ipv6 = match ni.src_addr {
+                    IpAddr::V6(s) => s,
+                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
-                let tx = tx.clone();
-                let ori_target = format!("{}:{}", ni.addr.ori_dst_addr, dst_port);
-                recv_size += 1;
+                for &dst_port in &ni.dst_ports {
+                    let interface = ni.interface.clone();
+                    let src_port = match ni.src_port {
+                        Some(s) => s,
+                        None => utils::random_port(),
+                    };
+                    let tx = tx.clone();
+                    let ori_target = format!("{}:{}", ni.ori_dst_addr, dst_port);
+                    recv_size += 1;
 
-                pool.execute(move || {
-                    for ind in 0..attempts {
-                        let start_time = Instant::now();
-                        let scan_ret =
-                            scan_thread6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout);
-                        if ind == attempts - 1 {
-                            tx.send((
-                                dst_addr,
-                                dst_port,
-                                ori_target.clone(),
-                                scan_ret,
-                                start_time.elapsed(),
-                            ));
-                        } else {
-                            match scan_ret {
-                                Ok((_port_status, data_return, _)) => {
-                                    match data_return {
-                                        DataRecvStatus::Yes => {
-                                            // conclusions drawn from the returned data
-                                            tx.send((
-                                                dst_addr,
-                                                dst_port,
-                                                ori_target.clone(),
-                                                scan_ret,
-                                                start_time.elapsed(),
-                                            ));
-                                            break; // quit loop now
+                    pool.execute(move || {
+                        for ind in 0..attempts {
+                            let start_time = Instant::now();
+                            let scan_ret = scan_thread6(
+                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
+                                &interface, method, timeout,
+                            );
+                            if ind == attempts - 1 {
+                                tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    ori_target.clone(),
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                ));
+                            } else {
+                                match scan_ret {
+                                    Ok((_port_status, data_return, _)) => {
+                                        match data_return {
+                                            DataRecvStatus::Yes => {
+                                                // conclusions drawn from the returned data
+                                                tx.send((
+                                                    dst_addr,
+                                                    dst_port,
+                                                    ori_target.clone(),
+                                                    scan_ret,
+                                                    start_time.elapsed(),
+                                                ));
+                                                break; // quit loop now
+                                            }
+                                            // conclusions from the default policy
+                                            DataRecvStatus::No => (), // continue probing
                                         }
-                                        // conclusions from the default policy
-                                        DataRecvStatus::No => (), // continue probing
                                     }
-                                }
-                                Err(_) => {
-                                    // stop probe immediately if an error occurs
-                                    tx.send((
-                                        dst_addr,
-                                        dst_port,
-                                        ori_target,
-                                        scan_ret,
-                                        start_time.elapsed(),
-                                    ));
-                                    break;
+                                    Err(_) => {
+                                        // stop probe immediately if an error occurs
+                                        tx.send((
+                                            dst_addr,
+                                            dst_port,
+                                            ori_target,
+                                            scan_ret,
+                                            start_time.elapsed(),
+                                        ));
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                }
             }
         }
     }
@@ -884,10 +933,11 @@ pub fn tcp_connect_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Connect,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -899,7 +949,7 @@ pub fn tcp_connect_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Connect, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Connect, timeout)
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -911,10 +961,11 @@ pub fn tcp_syn_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Syn,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -926,7 +977,7 @@ pub fn tcp_syn_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Syn, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Syn, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -938,10 +989,11 @@ pub fn tcp_fin_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Fin,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -953,7 +1005,7 @@ pub fn tcp_fin_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Fin, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Fin, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -965,10 +1017,11 @@ pub fn tcp_ack_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Ack,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -980,7 +1033,7 @@ pub fn tcp_ack_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Ack, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Ack, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -992,10 +1045,11 @@ pub fn tcp_null_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Null,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -1007,7 +1061,7 @@ pub fn tcp_null_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Null, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Null, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -1019,10 +1073,11 @@ pub fn tcp_xmas_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Xmas,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -1034,7 +1089,7 @@ pub fn tcp_xmas_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Xmas, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Xmas, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -1046,10 +1101,11 @@ pub fn tcp_window_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Window,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -1061,7 +1117,7 @@ pub fn tcp_window_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Window, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Window, timeout)
 }
 
 #[cfg(feature = "scan")]
@@ -1073,10 +1129,11 @@ pub fn tcp_maimon_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Maimon,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -1088,13 +1145,14 @@ pub fn tcp_maimon_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Maimon, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Maimon, timeout)
 }
 
 #[cfg(feature = "scan")]
 pub fn tcp_idle_scan(
     net_infos: &[NetInfo],
     threads: Option<usize>,
+    zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
@@ -1102,10 +1160,11 @@ pub fn tcp_idle_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
-        ScanMethod::Idle,
-        threads,
+        zombie_mac,
         zombie_ipv4,
         zombie_port,
+        ScanMethod::Idle,
+        threads,
         timeout,
         attempts,
     )
@@ -1115,15 +1174,17 @@ pub fn tcp_idle_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_idle_scan_raw(
     net_info: &NetInfo,
+    zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         net_info,
-        ScanMethod::Idle,
+        zombie_mac,
         zombie_ipv4,
         zombie_port,
+        ScanMethod::Idle,
         timeout,
     )
 }
@@ -1137,10 +1198,11 @@ pub fn udp_scan(
 ) -> Result<PistolPortScans, PistolError> {
     scan(
         net_infos,
+        None,
+        None,
+        None,
         ScanMethod::Udp,
         threads,
-        None,
-        None,
         timeout,
         attempts,
     )
@@ -1152,17 +1214,22 @@ pub fn udp_scan_raw(
     net_info: &NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
-    scan_raw(net_info, ScanMethod::Udp, None, None, timeout)
+    scan_raw(net_info, None, None, None, ScanMethod::Udp, timeout)
 }
 
 #[cfg(feature = "scan")]
 fn scan_raw(
     net_info: &NetInfo,
-    method: ScanMethod,
+    zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
+    method: ScanMethod,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
+    let dst_mac = net_info.dst_mac;
+    let dst_addr = net_info.dst_addr;
+    let src_mac = net_info.src_mac;
+    let interface = &net_info.interface;
     let src_port = match net_info.src_port {
         Some(s) => s,
         None => utils::random_port(),
@@ -1181,26 +1248,47 @@ fn scan_raw(
     // dst_addr may change during the processing.
     // It is only used here to determine whether the target is ipv4 or ipv6.
     // The real dst_addr is inferred from infer_addr.
-    if net_info.addr.is_ipv4() {
-        let (dst_ipv4, src_ipv4) = net_info.addr.get_ipv4_addr()?;
-        let (port_status, _data_return, rtt) = scan_thread(
-            method,
-            dst_ipv4,
-            dst_port,
-            src_ipv4,
-            src_port,
-            zombie_ipv4,
-            zombie_port,
-            timeout,
-        )?;
-        Ok((port_status, rtt))
-    } else if net_info.addr.is_ipv6() {
-        let (dst_ipv6, src_ipv6) = net_info.addr.get_ipv6_addr()?;
-        let (port_status, _data_return, rtt) =
-            scan_thread6(method, dst_ipv6, dst_port, src_ipv6, src_port, timeout)?;
-        Ok((port_status, rtt))
-    } else {
-        return Err(PistolError::IpVersionNotMatch);
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => {
+            let src_ipv4 = match net_info.src_addr {
+                IpAddr::V4(s) => s,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch {
+                        addr: net_info.src_addr,
+                    });
+                }
+            };
+            let (port_status, _data_return, rtt) = scan_thread(
+                dst_mac,
+                dst_ipv4,
+                dst_port,
+                src_mac,
+                src_ipv4,
+                src_port,
+                zombie_mac,
+                zombie_ipv4,
+                zombie_port,
+                interface,
+                method,
+                timeout,
+            )?;
+            Ok((port_status, rtt))
+        }
+        IpAddr::V6(dst_ipv6) => {
+            let src_ipv6 = match net_info.src_addr {
+                IpAddr::V6(s) => s,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch {
+                        addr: net_info.src_addr,
+                    });
+                }
+            };
+            let (port_status, _data_return, rtt) = scan_thread6(
+                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, method,
+                timeout,
+            )?;
+            Ok((port_status, rtt))
+        }
     }
 }
 
