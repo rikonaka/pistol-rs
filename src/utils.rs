@@ -1,5 +1,4 @@
 use num_cpus;
-use pnet::datalink::MacAddr;
 use rand::Rng;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
@@ -68,18 +67,6 @@ pub fn random_ipv6_addr() -> Ipv6Addr {
 pub fn random_port_range(start: u16, end: u16) -> u16 {
     let mut rng = rand::rng();
     rng.random_range(start..=end)
-}
-
-pub fn random_mac() -> MacAddr {
-    let mut rng = rand::rng();
-    let a = rng.random_range(0..=255);
-    let b = rng.random_range(0..=255);
-    let c = rng.random_range(0..=255);
-    let d = rng.random_range(0..=255);
-    let e = rng.random_range(0..=255);
-    let f = rng.random_range(0..=255);
-    let mac = MacAddr::new(a, b, c, d, e, f);
-    mac
 }
 
 /// Returns the number of CPUs in the machine

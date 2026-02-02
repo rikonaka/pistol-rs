@@ -768,7 +768,7 @@ fn scan(
                             );
                             if ind == attempts - 1 {
                                 // last attempt
-                                tx.send((
+                                let _ = tx.send((
                                     dst_addr,
                                     dst_port,
                                     ori_target.clone(),
@@ -781,7 +781,7 @@ fn scan(
                                         match data_return {
                                             DataRecvStatus::Yes => {
                                                 // conclusions drawn from the returned data
-                                                tx.send((
+                                                let _ = tx.send((
                                                     dst_addr,
                                                     dst_port,
                                                     ori_target.clone(),
@@ -796,7 +796,7 @@ fn scan(
                                     }
                                     Err(_) => {
                                         // stop probe immediately if an error occurs
-                                        tx.send((
+                                        let _ = tx.send((
                                             dst_addr,
                                             dst_port,
                                             ori_target,
@@ -834,7 +834,7 @@ fn scan(
                                 &interface, method, timeout,
                             );
                             if ind == attempts - 1 {
-                                tx.send((
+                                let _ = tx.send((
                                     dst_addr,
                                     dst_port,
                                     ori_target.clone(),
@@ -847,7 +847,7 @@ fn scan(
                                         match data_return {
                                             DataRecvStatus::Yes => {
                                                 // conclusions drawn from the returned data
-                                                tx.send((
+                                                let _ = tx.send((
                                                     dst_addr,
                                                     dst_port,
                                                     ori_target.clone(),
@@ -862,7 +862,7 @@ fn scan(
                                     }
                                     Err(_) => {
                                         // stop probe immediately if an error occurs
-                                        tx.send((
+                                        let _ = tx.send((
                                             dst_addr,
                                             dst_port,
                                             ori_target,
@@ -1151,10 +1151,10 @@ pub fn tcp_maimon_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_idle_scan(
     net_infos: &[NetInfo],
-    threads: Option<usize>,
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
+    threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {

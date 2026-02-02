@@ -808,7 +808,7 @@ fn send_ndp_rs_packet(
 
     let iface = interface.name.clone();
     let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ipv6_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -1115,56 +1115,10 @@ pub(crate) fn infer_mac(
     };
 
     // lock and wait here to send arp scan or ndp_ns scan packet only once
-    let _ = mutex
+    let _m = mutex
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
     get_data(dst_addr, src_addr, timeout)
-}
-
-/// When the target is a loopback address,
-/// we need to update not only the value of src addr,
-/// but also the value of dst addr.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct InferAddr {
-    pub(crate) dst_addr: IpAddr,
-    pub(crate) src_addr: IpAddr,
-    // save the original dst addr
-    pub(crate) ori_dst_addr: IpAddr,
-}
-
-impl InferAddr {
-    /// Returns: (dst_addr, src_addr)
-    pub(crate) fn get_ipv4_addr(&self) -> Result<(Ipv4Addr, Ipv4Addr), PistolError> {
-        if let IpAddr::V4(dst_ipv4) = self.dst_addr {
-            if let IpAddr::V4(src_ipv4) = self.src_addr {
-                Ok((dst_ipv4, src_ipv4))
-            } else {
-                Err(PistolError::CanNotFoundSrcAddress)
-            }
-        } else {
-            Err(PistolError::CanNotFoundDstAddress)
-        }
-    }
-    /// Returns: (dst_addr, src_addr)
-    pub(crate) fn get_ipv6_addr(&self) -> Result<(Ipv6Addr, Ipv6Addr), PistolError> {
-        if let IpAddr::V6(dst_ipv6) = self.dst_addr {
-            if let IpAddr::V6(src_ipv6) = self.src_addr {
-                Ok((dst_ipv6, src_ipv6))
-            } else {
-                Err(PistolError::CanNotFoundSrcAddress)
-            }
-        } else {
-            Err(PistolError::CanNotFoundDstAddress)
-        }
-    }
-    /// Judges whether the dst and src addresses are both IPv4
-    pub(crate) fn is_ipv4(&self) -> bool {
-        matches!(self.dst_addr, IpAddr::V4(_)) && matches!(self.src_addr, IpAddr::V4(_))
-    }
-    /// Judges whether the dst and src addresses are both IPv6
-    pub(crate) fn is_ipv6(&self) -> bool {
-        matches!(self.dst_addr, IpAddr::V6(_)) && matches!(self.src_addr, IpAddr::V6(_))
-    }
 }
 
 /// The source address is inferred from the target address.

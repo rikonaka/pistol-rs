@@ -16,6 +16,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 
+use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::Layer2;
@@ -570,8 +571,7 @@ fn send_seq_probes(
                     Ok(receiver) => {
                         let st = start_time.elapsed();
                         let ether_type = EtherTypes::Ipv6;
-                        let layer2 =
-                            Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+                        let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
                         let start = Instant::now();
                         if let Err(e) = layer2.send(&buff) {
                             error!("send seq_{} probe packet error: {}", i, e);
@@ -757,8 +757,7 @@ fn send_ie_probes(
                 Ok(receiver) => {
                     let st = start_time.elapsed();
                     let ether_type = EtherTypes::Ipv6;
-                    let layer2 =
-                        Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+                    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
                     let start = Instant::now();
                     if let Err(e) = layer2.send(&buff) {
                         error!("send ie_{} probe packet error: {}", i, e);
@@ -885,8 +884,7 @@ fn send_nx_probes(
                 Ok(receiver) => {
                     let st = start_time.elapsed();
                     let ether_type = EtherTypes::Ipv6;
-                    let layer2 =
-                        Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+                    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
                     let start = Instant::now();
                     if let Err(e) = layer2.send(&buff) {
                         error!("send nx_{} probe packet error: {}", i, e);
@@ -1009,7 +1007,7 @@ fn send_u1_probe(
         st = start_time.elapsed();
         let receiver = ask_runner(iface.clone(), vec![filter_1], timeout)?;
         let ether_type = EtherTypes::Ipv6;
-        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();
         layer2.send(&buff)?;
         let eth_buff = match receiver.recv_timeout(timeout) {
@@ -1077,7 +1075,7 @@ fn send_tecn_probe(
     let iface = interface.name.clone();
     let receiver = ask_runner(iface, vec![filter_1], timeout)?;
     let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -1204,8 +1202,7 @@ fn send_tx_probes(
                     Ok(receiver) => {
                         let st = start_time.elapsed();
                         let ether_type = EtherTypes::Ipv6;
-                        let layer2 =
-                            Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+                        let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
                         let start = Instant::now();
                         if let Err(e) = layer2.send(&buff) {
                             error!("send tx_{} probe packet error: {}", i, e);
@@ -1492,8 +1489,18 @@ pub fn os_probe_thread6(
     debug!("send all probes done");
 
     let good_results = true;
+    let icmp_trace_net_info = NetInfo {
+        dst_mac,
+        dst_addr: dst_ipv6.into(),
+        ori_dst_addr: dst_ipv6.into(),
+        src_mac,
+        src_addr: src_ipv6.into(),
+        interface: interface.clone(),
+        dst_ports: Vec::new(),
+        src_port: None,
+    };
+    let hops = icmp_trace(&icmp_trace_net_info, Some(timeout))?;
     // form get_scan_line function
-    let hops = icmp_trace(dst_ipv6.into(), src_ipv6.into(), Some(timeout))?;
     let scan = get_scan_line(
         dst_mac,
         dst_open_tcp_port,

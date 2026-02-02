@@ -20,6 +20,7 @@ use tracing::error;
 use tracing::warn;
 
 use crate::IpCheckMethods;
+use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::Layer2;
@@ -321,8 +322,7 @@ fn send_seq_probes(
                 match ask_runner(iface.clone(), vec![filter_1], timeout) {
                     Ok(receiver) => {
                         let ether_type = EtherTypes::Ipv4;
-                        let layer2 =
-                            Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+                        let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
                         let start = Instant::now();
                         if let Err(e) = layer2.send(&buff) {
                             error!("send seq_{} probe packet error: {}", i, e);
@@ -458,8 +458,7 @@ fn send_ie_probes(
             match ask_runner(iface.clone(), vec![filter_1], timeout) {
                 Ok(receiver) => {
                     let ether_type = EtherTypes::Ipv4;
-                    let layer2 =
-                        Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+                    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
                     let start = Instant::now();
                     if let Err(e) = layer2.send(&buff) {
                         error!("send ie_{} probe packet error: {}", i, e);
@@ -552,7 +551,7 @@ fn send_ecn_probe(
     for _ in 0..MAX_RETRY {
         let receiver = ask_runner(iface.clone(), vec![filter_1], timeout)?;
         let ether_type = EtherTypes::Ipv4;
-        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();
         layer2.send(&buff)?;
         let eth_buff = match receiver.recv_timeout(timeout) {
@@ -688,8 +687,7 @@ fn send_tx_probes(
                 match ask_runner(iface.clone(), vec![filter_1], timeout) {
                     Ok(receiver) => {
                         let ether_type = EtherTypes::Ipv4;
-                        let layer2 =
-                            Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout, true);
+                        let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
                         let start = Instant::now();
                         if let Err(e) = layer2.send(&buff) {
                             error!("send tx_{} probe packet error: {}", i, e);
@@ -807,7 +805,7 @@ fn send_u1_probe(
         let iface = interface.name.clone();
         let receiver = ask_runner(iface, vec![filter_1], timeout)?;
         let ether_type = EtherTypes::Ipv4;
-        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();
         layer2.send(&buff)?;
         let eth_buff = match receiver.recv_timeout(timeout) {
@@ -2018,7 +2016,18 @@ pub fn os_probe_thread(
     let good_results = true;
 
     debug!("send trace packet");
-    let hops = icmp_trace(dst_ipv4.into(), src_ipv4.into(), Some(timeout))?;
+
+    let icmp_trace_net_info = NetInfo {
+        dst_mac,
+        dst_addr: dst_ipv4.into(),
+        ori_dst_addr: dst_ipv4.into(),
+        src_mac,
+        src_addr: src_ipv4.into(),
+        interface: interface.clone(),
+        dst_ports: Vec::new(),
+        src_port: None,
+    };
+    let hops = icmp_trace(&icmp_trace_net_info, Some(timeout))?;
     let scan = get_scan_line(
         dst_mac,
         dst_open_tcp_port,

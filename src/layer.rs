@@ -109,6 +109,7 @@ pub(crate) fn find_interface_by_src_ip(src_addr: IpAddr) -> Option<NetworkInterf
     None
 }
 
+/*
 pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
         if name == interface.name {
@@ -117,6 +118,7 @@ pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     }
     None
 }
+*/
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Layer2Filter {
@@ -908,7 +910,6 @@ pub(crate) struct Layer2<'a> {
     interface: &'a NetworkInterface,
     ether_type: EtherType,
     timeout: Duration,
-    need_return: bool,
 }
 
 impl<'a> Layer2<'a> {
@@ -918,7 +919,6 @@ impl<'a> Layer2<'a> {
         interface: &'a NetworkInterface,
         ether_type: EtherType,
         timeout: Duration,
-        need_return: bool,
     ) -> Self {
         Self {
             dst_mac,
@@ -926,7 +926,6 @@ impl<'a> Layer2<'a> {
             interface,
             ether_type,
             timeout,
-            need_return,
         }
     }
     /// This function is used to send data in flood attack.
@@ -1046,13 +1045,6 @@ pub(crate) fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     let ip = ip.octets();
     // 33:33:FF:xx:xx:xx
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])
-}
-
-fn get_layer2_payload(buff: &[u8]) -> Vec<u8> {
-    match EthernetPacket::new(buff) {
-        Some(ethernet_packet) => ethernet_packet.payload().to_vec(),
-        None => Vec::new(),
-    }
 }
 
 #[cfg(test)]

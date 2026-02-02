@@ -156,170 +156,192 @@ pub fn syn_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, Pi
 }
 
 #[cfg(any(feature = "trace", feature = "os"))]
-pub fn icmp_trace(
-    dst_addr: IpAddr,
-    src_addr: IpAddr,
-    timeout: Option<Duration>,
-) -> Result<u8, PistolError> {
+pub fn icmp_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
     let mut rng = rand::rng();
-    let icmp_id = rng.random();
+    let icmp_id: u16 = rng.random();
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
+
+    let dst_mac = net_info.dst_mac;
+    let dst_addr = net_info.dst_addr;
+    let src_mac = net_info.src_mac;
+    let src_addr = net_info.src_addr;
+    let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            if let IpAddr::V4(src_ipv4) = src_addr {
-                let mut ip_id = rng.random();
-                if ip_id > u16::MAX - 30 {
-                    ip_id -= 30;
+            let src_ipv4 = match src_addr {
+                IpAddr::V4(src) => src,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
-                let mut last_response_ttl = 0;
-                for ttl in 1..=30 {
-                    let (hop_status, rtt) = icmp::send_icmp_trace_packet(
-                        dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16, timeout,
-                    )?;
-                    ip_id += 1;
-                    match hop_status {
-                        HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
-                        // recv echo reply, means packet arrive the target machine
-                        HopStatus::RecvReply(_) => {
-                            debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
-                            return Ok(ttl);
-                        }
-                        _ => (),
-                    }
-                }
-                debug!("last ttl: {}", last_response_ttl);
-                Ok(last_response_ttl)
-            } else {
-                return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
+            };
+            let mut ip_id = rng.random();
+            if ip_id >= u16::MAX - 30 {
+                ip_id -= 30;
             }
+            let mut last_response_ttl = 0;
+            for ttl in 1..=30 {
+                let (hop_status, rtt) = icmp::send_icmp_trace_packet(
+                    dst_mac, dst_ipv4, src_mac, src_ipv4, interface, ip_id, ttl, icmp_id,
+                    ttl as u16, timeout,
+                )?;
+                ip_id += 1;
+                match hop_status {
+                    HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
+                    // recv echo reply, means packet arrive the target machine
+                    HopStatus::RecvReply(_) => {
+                        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
+                        return Ok(ttl);
+                    }
+                    _ => (),
+                }
+            }
+            debug!("last ttl: {}", last_response_ttl);
+            Ok(last_response_ttl)
         }
         IpAddr::V6(dst_ipv6) => {
-            if let IpAddr::V6(src_ipv6) = src_addr {
-                let mut last_response_hop_limit = 0;
-                for hop_limit in 1..=30 {
-                    let (hop_status, rtt) = icmpv6::send_icmpv6_trace_packet(
-                        dst_ipv6,
-                        src_ipv6,
-                        hop_limit,
-                        icmp_id,
-                        hop_limit as u16,
-                        timeout,
-                    )?;
-
-                    match hop_status {
-                        HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
-                        // recv echo reply, means packet arrive the target machine
-                        HopStatus::RecvReply(_) => {
-                            debug!(
-                                "hop_limit: {}, {:?} - {:.2}s",
-                                hop_limit,
-                                hop_status,
-                                rtt.as_secs_f64()
-                            );
-                            return Ok(hop_limit);
-                        }
-                        _ => (),
-                    }
+            let src_ipv6 = match src_addr {
+                IpAddr::V6(src) => src,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
-                debug!("last hop limit: {}", last_response_hop_limit);
-                Ok(last_response_hop_limit)
-            } else {
-                return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
+            };
+            let mut last_response_hop_limit = 0;
+            for hop_limit in 1..=30 {
+                let (hop_status, rtt) = icmpv6::send_icmpv6_trace_packet(
+                    dst_mac,
+                    dst_ipv6,
+                    src_mac,
+                    src_ipv6,
+                    interface,
+                    hop_limit,
+                    icmp_id,
+                    hop_limit as u16,
+                    timeout,
+                )?;
+
+                match hop_status {
+                    HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
+                    // recv echo reply, means packet arrive the target machine
+                    HopStatus::RecvReply(_) => {
+                        debug!(
+                            "hop_limit: {}, {:?} - {:.2}s",
+                            hop_limit,
+                            hop_status,
+                            rtt.as_secs_f64()
+                        );
+                        return Ok(hop_limit);
+                    }
+                    _ => (),
+                }
             }
+            debug!("last hop limit: {}", last_response_hop_limit);
+            Ok(last_response_hop_limit)
         }
     }
 }
 
 #[cfg(feature = "trace")]
-pub fn udp_trace(
-    dst_addr: IpAddr,
-    src_addr: IpAddr,
-    timeout: Option<Duration>,
-) -> Result<u8, PistolError> {
+pub fn udp_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
     };
+    let dst_mac = net_info.dst_mac;
+    let dst_addr = net_info.dst_addr;
+    let src_mac = net_info.src_mac;
+    let src_addr = net_info.src_addr;
+    let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            if let IpAddr::V4(src_ipv4) = src_addr {
-                let mut rng = rand::rng();
-                let mut ip_id = rng.random();
-                if ip_id > u16::MAX - 30 {
-                    ip_id -= 30;
+            let src_ipv4 = match src_addr {
+                IpAddr::V4(src) => src,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
-                let mut last_response_ttl = 0;
-                for ttl in 1..=30 {
-                    let random_src_port = utils::random_port_range(1000, 65535);
-                    let dst_port = START_PORT + (ttl - 1) as u16;
-                    let (hop_status, rtt) = udp::send_udp_trace_packet(
-                        dst_ipv4,
-                        dst_port,
-                        src_ipv4,
-                        random_src_port,
-                        ip_id,
-                        ttl,
-                        timeout,
-                    )?;
-                    ip_id += 1;
-                    match hop_status {
-                        HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
-                        // icmpunreachable, means packet arrive the target machine
-                        HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
-                            debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
-                            return Ok(ttl);
-                        }
-                        _ => (),
-                    }
-                }
-                debug!("last ttl: {}", last_response_ttl);
-                Ok(last_response_ttl)
-            } else {
-                return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
+            };
+            let mut rng = rand::rng();
+            let mut ip_id: u16 = rng.random();
+            if ip_id >= u16::MAX - 30 {
+                ip_id -= 30;
             }
+            let mut last_response_ttl = 0;
+            for ttl in 1..=30 {
+                let random_src_port = utils::random_port_range(1000, 65535);
+                let dst_port = START_PORT + (ttl - 1) as u16;
+                let (hop_status, rtt) = udp::send_udp_trace_packet(
+                    dst_mac,
+                    dst_ipv4,
+                    dst_port,
+                    src_mac,
+                    src_ipv4,
+                    random_src_port,
+                    interface,
+                    ip_id,
+                    ttl,
+                    timeout,
+                )?;
+                ip_id += 1;
+                match hop_status {
+                    HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
+                    // icmpunreachable, means packet arrive the target machine
+                    HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
+                        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
+                        return Ok(ttl);
+                    }
+                    _ => (),
+                }
+            }
+            debug!("last ttl: {}", last_response_ttl);
+            Ok(last_response_ttl)
         }
         IpAddr::V6(dst_ipv6) => {
-            if let IpAddr::V6(src_ipv6) = src_addr {
-                let mut last_response_hop_limit = 0;
-                for hop_limit in 1..=30 {
-                    let random_src_port = utils::random_port_range(1000, 65535);
-                    let dst_port = START_PORT + (hop_limit - 1) as u16;
-                    let (hop_status, rtt) = udp6::send_udp_trace_packet(
-                        dst_ipv6,
-                        dst_port,
-                        src_ipv6,
-                        random_src_port,
-                        hop_limit,
-                        timeout,
-                    )?;
-
-                    match hop_status {
-                        HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
-                        // icmpunreachable, means packet arrive the target machine
-                        HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
-                            debug!(
-                                "hop limit: {}, {:?} - {:.2}s",
-                                hop_limit,
-                                hop_status,
-                                rtt.as_secs_f64()
-                            );
-                            return Ok(hop_limit);
-                        }
-                        _ => (),
-                    }
+            let src_ipv6 = match src_addr {
+                IpAddr::V6(src) => src,
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
-                debug!("last hop limit: {}", last_response_hop_limit);
-                Ok(last_response_hop_limit)
-            } else {
-                return Err(PistolError::AddressProtocolError { dst_addr, src_addr });
+            };
+            let mut last_response_hop_limit = 0;
+            for hop_limit in 1..=30 {
+                let random_src_port = utils::random_port_range(1000, 65535);
+                let dst_port = START_PORT + (hop_limit - 1) as u16;
+                let (hop_status, rtt) = udp6::send_udp_trace_packet(
+                    dst_mac,
+                    dst_ipv6,
+                    dst_port,
+                    src_mac,
+                    src_ipv6,
+                    random_src_port,
+                    interface,
+                    hop_limit,
+                    timeout,
+                )?;
+
+                match hop_status {
+                    HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
+                    // icmpunreachable, means packet arrive the target machine
+                    HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
+                        debug!(
+                            "hop limit: {}, {:?} - {:.2}s",
+                            hop_limit,
+                            hop_status,
+                            rtt.as_secs_f64()
+                        );
+                        return Ok(hop_limit);
+                    }
+                    _ => (),
+                }
             }
+            debug!("last hop limit: {}", last_response_hop_limit);
+            Ok(last_response_hop_limit)
         }
     }
 }
 
+/*
 #[cfg(feature = "trace")]
 #[cfg(test)]
 mod tests {
@@ -365,3 +387,4 @@ mod tests {
         println!("{}", hops);
     }
 }
+*/

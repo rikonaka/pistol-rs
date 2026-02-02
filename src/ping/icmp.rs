@@ -131,7 +131,7 @@ pub fn send_icmp_echo_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -246,7 +246,7 @@ pub fn send_icmp_timestamp_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -370,7 +370,7 @@ pub fn send_icmp_address_mask_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {

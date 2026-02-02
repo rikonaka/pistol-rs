@@ -152,7 +152,7 @@ pub fn send_syn_trace_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
 
     let start = Instant::now();
     layer2.send(&ip_buff)?;

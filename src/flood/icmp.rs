@@ -27,10 +27,8 @@ const TTL: u8 = 64;
 pub fn send_icmp_flood_packet(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
-    _: u16, // unified interface
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    _: u16, // unified interface
     interface: &NetworkInterface,
     retransmit: usize,
 ) -> Result<usize, PistolError> {
@@ -95,7 +93,7 @@ pub fn send_icmp_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
 
     // ignore the error
     let _ = layer2.send_flood(&ip_buff, retransmit);

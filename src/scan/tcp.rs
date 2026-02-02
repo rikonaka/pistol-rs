@@ -156,7 +156,7 @@ pub fn send_syn_scan_packet(
     let iface = interface.name.clone();
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -303,7 +303,7 @@ pub fn send_fin_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -451,7 +451,7 @@ pub fn send_ack_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -595,7 +595,7 @@ pub fn send_null_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -740,7 +740,7 @@ pub fn send_xmas_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -884,7 +884,7 @@ pub fn send_window_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -1033,7 +1033,7 @@ pub fn send_maimon_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -1193,7 +1193,7 @@ pub fn send_idle_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_zombie_1, filter_zombie_2], timeout)?;
-    let layer2 = Layer2::new(zombie_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(zombie_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff)?;
     let eth_buff = match receiver.recv_timeout(timeout) {
@@ -1242,7 +1242,7 @@ pub fn send_idle_scan_packet(
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = forge_syn_packet(dst_ipv4, dst_port, zombie_ipv4, zombie_port)?;
     // ignore the response
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     layer2.send(&ip_buff_2)?;
 
     // 4. probe the zombie's ip id again
@@ -1284,7 +1284,7 @@ pub fn send_idle_scan_packet(
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ip_buff_3)?;
     let eth_buff = match receiver.recv_timeout(timeout) {

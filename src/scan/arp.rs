@@ -84,7 +84,7 @@ pub fn send_arp_scan_packet(
 
     // send the filters to runner
     let receiver = ask_runner(iface, filters, timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&arp_buff)?;
     let eth_reponse = match receiver.recv_timeout(timeout) {

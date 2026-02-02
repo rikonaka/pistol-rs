@@ -79,7 +79,7 @@ pub fn send_syn_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
 
     // ignore the error
     let _ = layer2.send_flood(&ip_buff, retransmit);
@@ -145,7 +145,7 @@ pub fn send_ack_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
 
     // ignore the error
     let _ = layer2.send_flood(&ip_buff, retransmit);
@@ -211,7 +211,7 @@ pub fn send_ack_psh_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, false);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
 
     // ignore the error
     let _ = layer2.send_flood(&ip_buff, retransmit);

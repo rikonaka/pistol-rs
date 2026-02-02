@@ -165,22 +165,33 @@ fn ipv4_flood_thread(
     threads: usize,
     retransmit: usize,
 ) -> Result<(usize, usize), PistolError> {
-    let func = match method {
-        FloodMethods::Icmp => icmp::send_icmp_flood_packet,
-        FloodMethods::Syn => tcp::send_syn_flood_packet,
-        FloodMethods::Ack => tcp::send_ack_flood_packet,
-        FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet,
-        FloodMethods::Udp => udp::send_udp_flood_packet,
-    };
     let (tx, rx) = channel();
-
     for _ in 0..threads {
         let tx = tx.clone();
         let interface = interface.clone();
         thread::spawn(move || {
-            let send_buff_size = match func(
-                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface, retransmit,
-            ) {
+            let ret = match method {
+                FloodMethods::Icmp => icmp::send_icmp_flood_packet(
+                    dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, retransmit,
+                ),
+                FloodMethods::Syn => tcp::send_syn_flood_packet(
+                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                    retransmit,
+                ),
+                FloodMethods::Ack => tcp::send_ack_flood_packet(
+                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                    retransmit,
+                ),
+                FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet(
+                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                    retransmit,
+                ),
+                FloodMethods::Udp => udp::send_udp_flood_packet(
+                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                    retransmit,
+                ),
+            };
+            let send_buff_size = match ret {
                 Ok(s) => s + 14, // Ethernet frame header length.
                 Err(e) => {
                     error!("{}", e);
@@ -211,22 +222,33 @@ fn ipv6_flood_thread(
     threads: usize,
     retransmit: usize,
 ) -> Result<(usize, usize), PistolError> {
-    let func = match method {
-        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet,
-        FloodMethods::Syn => tcp6::send_syn_flood_packet,
-        FloodMethods::Ack => tcp6::send_ack_flood_packet,
-        FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet,
-        FloodMethods::Udp => udp6::send_udp_flood_packet,
-    };
     let (tx, rx) = channel();
-
     for _ in 0..threads {
         let tx = tx.clone();
         let interface = interface.clone();
         thread::spawn(move || {
-            let send_buff_size = match func(
-                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface, retransmit,
-            ) {
+            let ret = match method {
+                FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(
+                    dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, retransmit,
+                ),
+                FloodMethods::Syn => tcp6::send_syn_flood_packet(
+                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                    retransmit,
+                ),
+                FloodMethods::Ack => tcp6::send_ack_flood_packet(
+                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                    retransmit,
+                ),
+                FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet(
+                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                    retransmit,
+                ),
+                FloodMethods::Udp => udp6::send_udp_flood_packet(
+                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                    retransmit,
+                ),
+            };
+            let send_buff_size = match ret {
                 Ok(s) => s + 14, // Ethernet frame header length.
                 Err(e) => {
                     error!("{}", e);
@@ -364,21 +386,6 @@ pub fn flood_raw(
     repeat: usize,
     fake_src: bool,
 ) -> Result<usize, PistolError> {
-    let func = match method {
-        FloodMethods::Icmp => icmp::send_icmp_flood_packet,
-        FloodMethods::Syn => tcp::send_syn_flood_packet,
-        FloodMethods::Ack => tcp::send_ack_flood_packet,
-        FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet,
-        FloodMethods::Udp => udp::send_udp_flood_packet,
-    };
-    let func6 = match method {
-        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet,
-        FloodMethods::Syn => tcp6::send_syn_flood_packet,
-        FloodMethods::Ack => tcp6::send_ack_flood_packet,
-        FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet,
-        FloodMethods::Udp => udp6::send_udp_flood_packet,
-    };
-
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
     let src_mac = net_info.src_mac;
@@ -405,12 +412,33 @@ pub fn flood_raw(
                 };
 
                 for &dst_port in &net_info.dst_ports {
-                    let send_buff_size = match func(
-                        dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
-                        retransmit,
-                    ) {
+                    let ret = match method {
+                        FloodMethods::Icmp => icmp::send_icmp_flood_packet(
+                            dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, retransmit,
+                        ),
+                        FloodMethods::Syn => tcp::send_syn_flood_packet(
+                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                            retransmit,
+                        ),
+                        FloodMethods::Ack => tcp::send_ack_flood_packet(
+                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                            retransmit,
+                        ),
+                        FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet(
+                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                            retransmit,
+                        ),
+                        FloodMethods::Udp => udp::send_udp_flood_packet(
+                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
+                            retransmit,
+                        ),
+                    };
+                    let send_buff_size = match ret {
                         Ok(s) => s + 14, // Ethernet frame header length.
-                        Err(_) => 0,
+                        Err(e) => {
+                            error!("{}", e);
+                            0
+                        }
                     };
                     total_send_buff_size += send_buff_size;
                 }
@@ -436,12 +464,33 @@ pub fn flood_raw(
                 };
 
                 for &dst_port in &net_info.dst_ports {
-                    let send_buff_size = match func6(
-                        dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface,
-                        retransmit,
-                    ) {
+                    let ret = match method {
+                        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(
+                            dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, retransmit,
+                        ),
+                        FloodMethods::Syn => tcp6::send_syn_flood_packet(
+                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                            retransmit,
+                        ),
+                        FloodMethods::Ack => tcp6::send_ack_flood_packet(
+                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                            retransmit,
+                        ),
+                        FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet(
+                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                            retransmit,
+                        ),
+                        FloodMethods::Udp => udp6::send_udp_flood_packet(
+                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
+                            retransmit,
+                        ),
+                    };
+                    let send_buff_size = match ret {
                         Ok(s) => s + 14, // Ethernet frame header length.
-                        Err(_) => 0,
+                        Err(e) => {
+                            error!("{}", e);
+                            0
+                        }
                     };
                     total_send_buff_size += send_buff_size;
                 }

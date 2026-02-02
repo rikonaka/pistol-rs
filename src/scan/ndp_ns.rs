@@ -135,7 +135,7 @@ pub fn send_ndp_ns_scan_packet(
     let iface = interface.name.clone();
     let receiver = ask_runner(iface, filters, timeout)?;
     let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout, true);
+    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
     layer2.send(&ipv6_buff)?;
     let eth_response = match receiver.recv_timeout(timeout) {

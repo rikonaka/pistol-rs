@@ -612,7 +612,11 @@ pub fn ping_raw(
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match net_info.src_addr {
                 IpAddr::V4(src) => src,
-                _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch {
+                        addr: net_info.src_addr,
+                    });
+                }
             };
 
             let (s, rtt) = match method {
@@ -679,7 +683,11 @@ pub fn ping_raw(
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match net_info.src_addr {
                 IpAddr::V6(src) => src,
-                _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                _ => {
+                    return Err(PistolError::AttackAddressNotMatch {
+                        addr: net_info.src_addr,
+                    });
+                }
             };
             let (s, rtt) = match method {
                 PingMethods::Syn => {
