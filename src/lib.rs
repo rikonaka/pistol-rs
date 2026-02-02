@@ -35,6 +35,7 @@ use subnetwork::Ipv6Pool;
 use tracing::Level;
 use tracing::debug;
 use tracing::error;
+use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
 
 mod error;
@@ -557,12 +558,14 @@ impl NetInfo {
         src_port: Option<u16>,
     ) -> Result<Self, PistolError> {
         let ori_dst_addr = dst_addr;
+        debug!("infer: dst_addr({}) - src_addr({:?})", dst_addr, src_addr);
         let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
             Some(ret) => ret,
             None => return Err(PistolError::CanNotFoundSrcAddress),
         };
+        debug!("inferred: dst_addr({}) src_addr({})", dst_addr, src_addr);
 
-        let timeout = Duration::from_secs_f32(1.0);
+        let timeout = Duration::from_secs_f32(1.5);
         let (dst_mac, interface) = infer_mac(dst_addr, src_addr, timeout)?;
         match interface.mac {
             Some(src_mac) => Ok(NetInfo {
@@ -744,7 +747,16 @@ impl Pistol {
         for t in targets {
             let dst_addr = t.addr;
             let dst_ports = t.ports.clone();
-            let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
+            let net_info = match NetInfo::new(dst_addr, dst_ports, src_addr, src_port) {
+                Ok(ni) => ni,
+                Err(e) => match e {
+                    PistolError::CanNotFoundMacAddress => {
+                        warn!("can not found MAC address for target {}, skip it", dst_addr);
+                        continue;
+                    }
+                    _ => return Err(e),
+                },
+            };
             net_infos.push(net_info);
         }
 
@@ -2321,6 +2333,28 @@ mod tests {
         };
         println!("{}", top_1000_udp_ports.len());
         // println!("{:?}", top_1000_tcp_ports);
+    }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn test_tcp_syn_scan() {
+        let mut pistol = Pistol::new();
+        pistol.set_threads(8);
+        pistol.set_log_level("debug");
+        pistol.init().unwrap();
+
+        let src_ipv4 = None;
+        let src_port = None;
+        let timeout = Some(Duration::new(1, 0));
+        let targets = vec![Target::new(
+            Ipv4Addr::new(192, 168, 5, 77).into(),
+            Some(vec![22]),
+        )];
+        let attempts = 2;
+        let threads = Some(8);
+        let ret = pistol
+            .tcp_syn_scan(&targets, src_ipv4, src_port, threads, timeout, attempts)
+            .unwrap();
+        println!("{}", ret);
     }
     #[cfg(feature = "scan")]
     #[test]

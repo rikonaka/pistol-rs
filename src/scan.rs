@@ -737,10 +737,6 @@ fn scan(
                         Some(s) => s,
                         None => utils::random_port(),
                     };
-                    // debug!(
-                    //     "sending scan packet to [{}] port [{}] and src port [{}]",
-                    //     dst_addr, dst_port, src_port
-                    // );
                     let tx = tx.clone();
                     let ori_target = format!("{}:{}", ni.ori_dst_addr, dst_port);
                     recv_size += 1;
