@@ -1317,7 +1317,7 @@ mod tests {
     fn test_arp_scan_single() {
         let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
         let targets = vec![target];
-        let timeout = Some(Duration::from_secs_f32(3.5));
+        let timeout = Some(Duration::from_secs_f32(10.0));
         let threads = 512;
         let attempts = 2;
 

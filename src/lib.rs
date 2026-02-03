@@ -120,13 +120,13 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "len {}, type {}, {}:{} -> {}:{}",
-                        ethernet_packet.packet().len(),
+                        "type {}, {}:{} -> {}:{}, len {}",
                         ether_type,
                         ipv4_packet.get_source(),
                         tcp_packet.get_source(),
                         ipv4_packet.get_destination(),
-                        tcp_packet.get_destination()
+                        tcp_packet.get_destination(),
+                        ethernet_packet.packet().len(),
                     );
                 }
                 IpNextHeaderProtocols::Udp => {
@@ -135,13 +135,13 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "len {}, type {}, {}:{} -> {}:{}",
-                        ethernet_packet.packet().len(),
+                        "type {}, {}:{} -> {}:{}, len {}",
                         ether_type,
                         ipv4_packet.get_source(),
                         udp_packet.get_source(),
                         ipv4_packet.get_destination(),
-                        udp_packet.get_destination()
+                        udp_packet.get_destination(),
+                        ethernet_packet.packet().len(),
                     );
                 }
                 _ => return,
@@ -160,13 +160,13 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "len {}, type {}, {}:{} -> {}:{}",
-                        ethernet_packet.packet().len(),
+                        "type {}, {}:{} -> {}:{}, len {}",
                         ether_type,
                         ipv6_packet.get_source(),
                         tcp_packet.get_source(),
                         ipv6_packet.get_destination(),
-                        tcp_packet.get_destination()
+                        tcp_packet.get_destination(),
+                        ethernet_packet.packet().len(),
                     );
                 }
                 IpNextHeaderProtocols::Udp => {
@@ -175,22 +175,22 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "len {}, type {}, {}:{} -> {}:{}",
-                        ethernet_packet.packet().len(),
+                        "type {}, {}:{} -> {}:{}, len {}",
                         ether_type,
                         ipv6_packet.get_source(),
                         udp_packet.get_source(),
                         ipv6_packet.get_destination(),
-                        udp_packet.get_destination()
+                        udp_packet.get_destination(),
+                        ethernet_packet.packet().len(),
                     );
                 }
                 _ => return,
             }
         }
         _ => println!(
-            "len {}, type {}",
+            "type {}, len {}",
+            ether_type,
             ethernet_packet.packet().len(),
-            ether_type
         ),
     }
 }
