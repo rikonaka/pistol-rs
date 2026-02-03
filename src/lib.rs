@@ -120,8 +120,8 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "type {}, {}:{} -> {}:{}, len {}",
-                        ether_type,
+                        "{}, {}:{} -> {}:{}, len {}",
+                        ether_type.to_string().to_lowercase(),
                         ipv4_packet.get_source(),
                         tcp_packet.get_source(),
                         ipv4_packet.get_destination(),
@@ -135,8 +135,8 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "type {}, {}:{} -> {}:{}, len {}",
-                        ether_type,
+                        "{}, {}:{} -> {}:{}, len {}",
+                        ether_type.to_string().to_lowercase(),
                         ipv4_packet.get_source(),
                         udp_packet.get_source(),
                         ipv4_packet.get_destination(),
@@ -160,8 +160,8 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "type {}, {}:{} -> {}:{}, len {}",
-                        ether_type,
+                        "{}, {}:{} -> {}:{}, len {}",
+                        ether_type.to_string().to_lowercase(),
                         ipv6_packet.get_source(),
                         tcp_packet.get_source(),
                         ipv6_packet.get_destination(),
@@ -175,8 +175,8 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                         None => return,
                     };
                     println!(
-                        "type {}, {}:{} -> {}:{}, len {}",
-                        ether_type,
+                        "{}, {}:{} -> {}:{}, len {}",
+                        ether_type.to_string().to_lowercase(),
                         ipv6_packet.get_source(),
                         udp_packet.get_source(),
                         ipv6_packet.get_destination(),
@@ -187,11 +187,14 @@ fn debug_show_packet(ethernet_packet: &[u8]) {
                 _ => return,
             }
         }
-        _ => println!(
-            "type {}, len {}",
-            ether_type,
+        EtherTypes::Arp => println!(
+            "{}, {} -> {}, len {}",
+            ether_type.to_string().to_lowercase(),
+            ethernet_packet.get_source(),
+            ethernet_packet.get_destination(),
             ethernet_packet.packet().len(),
         ),
+        _ => println!("{}, len {}", ether_type, ethernet_packet.packet().len(),),
     }
 }
 
@@ -637,15 +640,10 @@ impl Pistol {
 
         Ok(())
     }
-    fn runner(iface: String, timeout: Option<Duration>) -> Result<(), PistolError> {
+    fn runner(iface: String) -> Result<(), PistolError> {
         debug!("start runner for iface: {}", iface);
         let mut cap = Capture::new(&iface)?;
-        if let Some(timeout) = timeout {
-            let sec = timeout.as_secs_f32();
-            cap.set_timeout((sec * 1000.0) as i32);
-        } else {
-            cap.set_timeout((ATTACK_DEFAULT_TIMEOUT * 1000.0) as i32);
-        }
+        cap.set_timeout(50); // set read timeout to 50ms
         cap.set_promiscuous_mode(true);
         cap.set_immediate_mode(true);
 
@@ -658,9 +656,11 @@ impl Pistol {
             match rcc.filter_receiver.recv_timeout(filter_recv_timeout) {
                 Ok(msg) => {
                     if msg.iface == iface {
+                        debug!("layer2 runner {} received new filter msg", iface);
                         runner_msgs.push(msg)
                     } else {
                         // put it back to the channel
+                        debug!("layer2 runner {} push back msg", iface);
                         let _ = rcc.filter_sender.send(msg);
                     }
                 }
@@ -674,6 +674,7 @@ impl Pistol {
             debug!("layer2 runner has {} msgs to process", runner_msgs.len());
             // libpcap version will not loss any packets
             let packets = cap.fetch_as_vec()?;
+            debug!("layer2 recv {} packets", packets.len());
             for packet in packets {
                 #[cfg(feature = "debug")]
                 debug_show_packet(packet);
@@ -715,11 +716,10 @@ impl Pistol {
     fn init_runners_without_net_infos(&mut self) -> Result<(), PistolError> {
         self.init()?;
         // spawn a runner thread for each interface we need
-        let timeout = self.timeout;
         let all_ifaces = interfaces();
         for i in all_ifaces {
             let iface = i.name;
-            let _ = thread::spawn(move || Self::runner(iface, timeout));
+            let _ = thread::spawn(move || Self::runner(iface));
         }
         Ok(())
     }
@@ -758,9 +758,8 @@ impl Pistol {
         }
 
         // spawn a runner thread for each interface we need
-        let timeout = self.timeout;
         for iface in ifaces {
-            let _ = thread::spawn(move || Self::runner(iface, timeout));
+            let _ = thread::spawn(move || Self::runner(iface));
         }
 
         Ok(net_infos)
@@ -776,8 +775,7 @@ impl Pistol {
         self.init()?;
         let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
         let iface = net_info.interface.name.clone();
-        let timeout = self.timeout;
-        let _ = thread::spawn(move || Self::runner(iface, timeout));
+        let _ = thread::spawn(move || Self::runner(iface));
         Ok(net_info)
     }
     /* Scan */
