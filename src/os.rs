@@ -355,7 +355,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
 
 #[cfg(feature = "os")]
 pub fn os_detect(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     top_k: usize,
     timeout: Option<Duration>,
@@ -381,7 +381,7 @@ pub fn os_detect(
         let dst_mac = ni.dst_mac;
         let dst_addr = ni.dst_addr;
         let src_mac = ni.src_mac;
-        let interface = ni.interface.clone();
+        let interface = ni.interface;
         let ori_dst_addr = ni.ori_dst_addr;
 
         let tx = tx.clone();

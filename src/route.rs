@@ -974,8 +974,8 @@ pub(crate) fn infer_mac(
         timeout: Duration,
     ) -> Result<(MacAddr, NetworkInterface), PistolError> {
         // search in the program cache
-        if let Some((dst_mac, src_interface)) = ProgramNetworkCache::get(dst_addr)? {
-            return Ok((dst_mac, src_interface));
+        if let Some((dst_mac, interface)) = ProgramNetworkCache::get(dst_addr)? {
+            return Ok((dst_mac, interface));
         }
 
         let (src_iface, route_via) = if src_addr == dst_addr {
@@ -1030,7 +1030,7 @@ pub(crate) fn infer_mac(
             Some(route_via) => {
                 match route_via {
                     RouteVia::IfIndex(if_index) => {
-                        let src_interface = match find_interface_by_index(if_index) {
+                        let interface = match find_interface_by_index(if_index) {
                             Some(i) => i,
                             None => {
                                 return Err(PistolError::CanNotFoundInterface {
@@ -1044,7 +1044,7 @@ pub(crate) fn infer_mac(
                             None => send_neighbor_detect_packet(
                                 dst_addr,
                                 src_addr,
-                                src_interface.clone(),
+                                interface.clone(),
                                 timeout,
                             )?,
                         };
@@ -1052,9 +1052,9 @@ pub(crate) fn infer_mac(
                             dst_addr,
                             src_addr,
                             dst_mac,
-                            src_interface.clone(),
+                            interface.clone(),
                         )?;
-                        Ok((dst_mac, src_interface))
+                        Ok((dst_mac, interface))
                     }
                     RouteVia::MacAddr(dst_mac) => {
                         ProgramNetworkCache::update(

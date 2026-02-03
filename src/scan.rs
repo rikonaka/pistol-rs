@@ -51,8 +51,12 @@ pub mod udp6;
 
 #[cfg(feature = "scan")]
 use crate::NetInfo;
+#[cfg(feature = "scan")]
+use crate::Target;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
+#[cfg(feature = "scan")]
+use crate::layer::find_interface_by_dst_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layer::multicast_mac;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -194,9 +198,10 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
 
 #[cfg(feature = "scan")]
 pub fn arp_scan_raw(
-    net_info: &NetInfo,
+    dst_ipv4: Ipv4Addr,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    debug!("start arp scan to {}", dst_ipv4);
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),
@@ -204,34 +209,42 @@ pub fn arp_scan_raw(
 
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
-    let src_mac = net_info.src_mac;
-    let dst_ipv4 = match net_info.dst_addr {
-        IpAddr::V4(dst_ipv4) => dst_ipv4,
-        _ => {
-            return Err(PistolError::AttackAddressNotMatch {
-                addr: net_info.dst_addr,
+    let interface = match find_interface_by_dst_ip(dst_ipv4.into()) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                i: format!("to {}", dst_ipv4),
             });
         }
     };
-    let src_ipv4 = match net_info.src_addr {
-        IpAddr::V4(src_ipv4) => src_ipv4,
-        _ => {
-            return Err(PistolError::AttackAddressNotMatch {
-                addr: net_info.src_addr,
-            });
-        }
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
     };
-    let interface = &net_info.interface;
-
-    match send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout) {
-        Ok((mac, rtt)) => Ok((mac, rtt)),
-        Err(e) => Err(e),
+    for ipn in &interface.ips {
+        match ipn.ip() {
+            IpAddr::V4(src_ipv4) => {
+                if src_ipv4.is_loopback() {
+                    continue;
+                }
+                debug!(
+                    "use interface {} and src ipv4 address {}",
+                    interface.name, src_ipv4
+                );
+                let ret =
+                    send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout);
+                return ret;
+            }
+            _ => debug!("skip non-ipv4 address {}", ipn.ip()),
+        }
     }
+
+    Ok((None, Duration::from_secs(0)))
 }
 
 #[cfg(feature = "scan")]
 pub fn ndp_ns_scan_raw(
-    net_info: &NetInfo,
+    dst_ipv6: Ipv6Addr,
     timeout: Option<Duration>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let timeout = match timeout {
@@ -239,37 +252,43 @@ pub fn ndp_ns_scan_raw(
         None => utils::get_attack_default_timeout(),
     };
 
-    let src_mac = net_info.src_mac;
-    let dst_ipv6 = match net_info.dst_addr {
-        IpAddr::V6(dst_ipv6) => dst_ipv6,
-        _ => {
-            return Err(PistolError::AttackAddressNotMatch {
-                addr: net_info.dst_addr,
+    let interface = match find_interface_by_dst_ip(dst_ipv6.into()) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                i: format!("to {}", dst_ipv6),
             });
         }
     };
-    let src_ipv6 = match net_info.src_addr {
-        IpAddr::V6(src_ipv6) => src_ipv6,
-        _ => {
-            return Err(PistolError::AttackAddressNotMatch {
-                addr: net_info.src_addr,
-            });
-        }
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
     };
+
     let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
     let dst_ipv6 = dst_ipv6_ext.link_multicast();
     let dst_mac = multicast_mac(dst_ipv6);
-    let interface = &net_info.interface;
 
-    match send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, interface, timeout) {
-        Ok((mac, rtt)) => Ok((mac, rtt)),
-        Err(e) => Err(e),
+    for ipn in &interface.ips {
+        match ipn.ip() {
+            IpAddr::V6(src_ipv6) => {
+                if src_ipv6.is_loopback() {
+                    continue;
+                }
+                let ret = send_ndp_ns_scan_packet(
+                    dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout,
+                );
+                return ret;
+            }
+            _ => debug!("skip non-ipv6 address {}", ipn.ip()),
+        }
     }
+    Ok((None, Duration::from_secs(0)))
 }
 
 #[cfg(feature = "scan")]
 pub fn mac_scan(
-    net_infos: Vec<NetInfo>,
+    targets: &[Target],
     timeout: Option<Duration>,
     threads: usize,
     attempts: usize,
@@ -280,16 +299,16 @@ pub fn mac_scan(
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
-    for ni in net_infos {
-        let dst_addr = ni.dst_addr;
+    for t in targets {
+        let dst_addr = t.addr;
         match dst_addr {
-            IpAddr::V4(_dst_ipv4) => {
+            IpAddr::V4(dst_ipv4) => {
                 let tx = tx.clone();
                 recv_size += 1;
                 pool.execute(move || {
                     for i in 0..attempts {
                         debug!("arp scan packets: #{}/{}", i + 1, attempts);
-                        let scan_ret = arp_scan_raw(&ni, timeout);
+                        let scan_ret = arp_scan_raw(dst_ipv4, timeout);
                         if i == attempts - 1 {
                             let _ = tx.send((dst_addr, scan_ret));
                         } else {
@@ -310,13 +329,13 @@ pub fn mac_scan(
                     }
                 });
             }
-            IpAddr::V6(_dst_ipv6) => {
+            IpAddr::V6(dst_ipv6) => {
                 let tx = tx.clone();
                 recv_size += 1;
                 pool.execute(move || {
                     for i in 0..attempts {
                         debug!("ndp_ns scan packets: #{}/{}", i + 1, attempts);
-                        let scan_ret = ndp_ns_scan_raw(&ni, timeout);
+                        let scan_ret = ndp_ns_scan_raw(dst_ipv6, timeout);
                         if i == attempts - 1 {
                             let _ = tx.send((dst_addr, scan_ret));
                         } else {
@@ -689,7 +708,7 @@ fn scan_thread6(
 /// General scan function.
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
@@ -704,7 +723,7 @@ fn scan(
         Some(t) => t,
         None => {
             let mut init_numm_threads = 0;
-            for ni in net_infos {
+            for ni in &net_infos {
                 init_numm_threads += ni.dst_ports.len();
             }
             let threads = utils::num_threads_check(init_numm_threads);
@@ -731,7 +750,7 @@ fn scan(
                     IpAddr::V4(s) => s,
                     _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
-                for &dst_port in &ni.dst_ports {
+                for dst_port in ni.dst_ports {
                     let interface = ni.interface.clone();
                     let src_port = match ni.src_port {
                         Some(s) => s,
@@ -812,7 +831,7 @@ fn scan(
                     IpAddr::V6(s) => s,
                     _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
-                for &dst_port in &ni.dst_ports {
+                for dst_port in ni.dst_ports {
                     let interface = ni.interface.clone();
                     let src_port = match ni.src_port {
                         Some(s) => s,
@@ -922,7 +941,7 @@ fn scan(
 
 #[cfg(feature = "scan")]
 pub fn tcp_connect_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -942,7 +961,7 @@ pub fn tcp_connect_scan(
 /// TCP connect() Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_connect_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Connect, timeout)
@@ -950,7 +969,7 @@ pub fn tcp_connect_scan_raw(
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub fn tcp_syn_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -970,7 +989,7 @@ pub fn tcp_syn_scan(
 /// TCP SYN Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_syn_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Syn, timeout)
@@ -978,7 +997,7 @@ pub fn tcp_syn_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_fin_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -998,7 +1017,7 @@ pub fn tcp_fin_scan(
 /// TCP FIN Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_fin_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Fin, timeout)
@@ -1006,7 +1025,7 @@ pub fn tcp_fin_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_ack_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -1026,7 +1045,7 @@ pub fn tcp_ack_scan(
 /// TCP ACK Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_ack_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Ack, timeout)
@@ -1034,7 +1053,7 @@ pub fn tcp_ack_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_null_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -1054,7 +1073,7 @@ pub fn tcp_null_scan(
 /// TCP Null Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_null_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Null, timeout)
@@ -1062,7 +1081,7 @@ pub fn tcp_null_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -1082,7 +1101,7 @@ pub fn tcp_xmas_scan(
 /// TCP Xmas Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Xmas, timeout)
@@ -1090,7 +1109,7 @@ pub fn tcp_xmas_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -1110,7 +1129,7 @@ pub fn tcp_window_scan(
 /// TCP Window Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Window, timeout)
@@ -1118,7 +1137,7 @@ pub fn tcp_window_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_maimon_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -1138,7 +1157,7 @@ pub fn tcp_maimon_scan(
 /// TCP Maimon Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_maimon_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Maimon, timeout)
@@ -1146,7 +1165,7 @@ pub fn tcp_maimon_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn tcp_idle_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
@@ -1169,7 +1188,7 @@ pub fn tcp_idle_scan(
 /// TCP Idle Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn tcp_idle_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
@@ -1187,7 +1206,7 @@ pub fn tcp_idle_scan_raw(
 
 #[cfg(feature = "scan")]
 pub fn udp_scan(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -1207,7 +1226,7 @@ pub fn udp_scan(
 /// UDP Scan, raw version.
 #[cfg(feature = "scan")]
 pub fn udp_scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Udp, timeout)
@@ -1215,7 +1234,7 @@ pub fn udp_scan_raw(
 
 #[cfg(feature = "scan")]
 fn scan_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
@@ -1288,101 +1307,99 @@ fn scan_raw(
     }
 }
 
-/*
 #[cfg(feature = "scan")]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{Pistol, Target};
-    use std::str::FromStr;
+    use std::{str::FromStr, vec};
+    #[test]
+    fn test_arp_scan_single() {
+        let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
+        let targets = vec![target];
+        let timeout = Some(Duration::from_secs_f32(3.5));
+        let threads = 512;
+        let attempts = 2;
+
+        let mut pistol = Pistol::new();
+        pistol.set_log_level("debug");
+        pistol.init_runners_without_net_infos().unwrap();
+        let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
+        println!("{}", ret);
+    }
     #[test]
     fn test_arp_scan_subnet() {
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         // println!("{}", targets.len());
-        // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 1)), None);
+        // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
         // let target2 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 2)), None);
         // let target3 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)), None);
         // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
-        // let targets = vec![target1, target2, target3, target4];q
-        let timeout = 0.5;
-        let src_ipv4 = None;
+        // let targets = vec![target1, target2, target3, target4];
+        // let targets = vec![target1];
+        let timeout = Some(Duration::from_secs_f32(1.5));
         let threads = 512;
         let attempts = 2;
 
-        let mut p = Pistol::new();
-        p.set_timeout(timeout);
-        p.set_threads(threads);
-        p.set_attempts(attempts);
-
-        let ret = p.mac_scan(&targets, src_ipv4).unwrap();
+        let mut pistol = Pistol::new();
+        pistol.set_log_level("debug");
+        pistol.init_runners_without_net_infos().unwrap();
+        let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_ndp_ns_scan_subnet() {
         let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
-        let timeout = 0.5;
-        let src_ipv6 = None;
+        let timeout = Some(Duration::from_secs_f32(1.5));
         let threads = 512;
         let attempts = 2;
 
-        let mut p = Pistol::new();
-        p.set_timeout(timeout);
-        p.set_threads(threads);
-        p.set_attempts(attempts);
-
-        let ret = p.mac_scan(&targets, src_ipv6).unwrap();
+        let mut pistol = Pistol::new();
+        pistol.set_log_level("debug");
+        pistol.init_runners_without_net_infos().unwrap();
+        let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_ndp_ns_scan_single() {
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let target = Target::new(dst_ipv6.into(), None);
-        let timeout = 0.5;
-        let src_ipv6 = None;
+        let targets = vec![target];
+        let timeout = Some(Duration::from_secs_f32(0.5));
         let threads = 512;
         let attempts = 2;
 
-        let mut p = Pistol::new();
-        p.set_timeout(timeout);
-        p.set_threads(threads);
-        p.set_attempts(attempts);
-
-        let ret = p.mac_scan(&[target], src_ipv6).unwrap();
+        let mut pistol = Pistol::new();
+        pistol.set_log_level("debug");
+        pistol.init_runners_without_net_infos().unwrap();
+        let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_connect_scan() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 77);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
+        let targets = vec![target];
         let attempts = 2;
         let threads = Some(8);
-        let ret =
-            tcp_connect_scan(&[target], threads, src_ipv4, src_port, timeout, attempts).unwrap();
-        println!("{}", ret);
 
-        let src_ipv4 = None;
-        let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
-        let dst_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
-        // let host = Host::new(TEST_IPV4_LOCAL.into(), Some(vec![22, 99]));
-        let attempts = 2;
-        let threads = Some(8);
-        let ret =
-            tcp_connect_scan(&[target], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+
+        let ret = tcp_connect_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_syn_scan() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
+        let attempts = 2;
+        let threads = None;
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -1399,16 +1416,19 @@ mod tests {
         let ports = vec![22, 80, 3389, 8080];
 
         let target1 = Target::new(addr1, Some(ports));
-        let attempts = 2;
-        let threads = None;
-        let ret = tcp_syn_scan(&[target1], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let targets = vec![target1];
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let ret = tcp_syn_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_syn_scan_performance() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = Some(37888);
         let timeout = Some(Duration::from_secs_f32(2.5));
+        let attempts = 1;
+        let threads = Some(10240);
         let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
         // let ports: Vec<u16> = (22..65535).collect();
         // let ports: Vec<u16> = (8000..9000).collect();
@@ -1416,9 +1436,11 @@ mod tests {
         let ports: Vec<u16> = (22..101).collect();
 
         let target1 = Target::new(addr, Some(ports));
-        let attempts = 1;
-        let threads = Some(10240);
-        let ret = tcp_syn_scan(&[target1], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let targets = vec![target1];
+
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let ret = tcp_syn_scan(net_infos, threads, timeout, attempts).unwrap();
         for r in ret.port_reports {
             match r.status {
                 PortStatus::Open => println!("{}:{} -> open", r.addr, r.port),
@@ -1429,51 +1451,62 @@ mod tests {
     }
     #[test]
     fn test_tcp_fin_scan() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
+        let targets = vec![target];
         let attempts = 2;
         let threads = Some(8);
-        let ret = tcp_fin_scan(&[target], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let ret = tcp_fin_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_ack_scan() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
+        let targets = vec![target];
         let attempts = 2;
         let threads = Some(8);
-        let ret = tcp_ack_scan(&[target], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let ret = tcp_ack_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_tcp_null_scan() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
+        let targets = vec![target];
         let attempts = 2;
         let threads = Some(8);
-        let ret = tcp_null_scan(&[target], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let ret = tcp_null_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_udp_scan() {
-        let src_ipv4 = None;
+        let src_addr = None;
         let src_port = None;
         let timeout = Some(Duration::new(1, 0));
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080, 8081]));
+        let targets = vec![target];
         let attempts = 2;
         let threads = Some(8);
-        let ret = udp_scan(&[target], threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let mut pistol = Pistol::new();
+        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let ret = udp_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
 }
-*/

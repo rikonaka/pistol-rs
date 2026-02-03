@@ -109,6 +109,18 @@ pub(crate) fn find_interface_by_src_ip(src_addr: IpAddr) -> Option<NetworkInterf
     None
 }
 
+pub(crate) fn find_interface_by_dst_ip(dst_addr: IpAddr) -> Option<NetworkInterface> {
+    for interface in interfaces() {
+        for ip in &interface.ips {
+            // check if dst_addr is in the same subnet as i
+            if ip.contains(dst_addr) {
+                return Some(interface);
+            }
+        }
+    }
+    None
+}
+
 /*
 pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {

@@ -89,15 +89,13 @@ pub fn send_arp_scan_packet(
     layer2.send(&arp_buff)?;
     let eth_reponse = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv arp response timeout: {}", dst_ipv4, e);
+        Err(_e) => {
+            debug!("{} recv arp response timeout", dst_ipv4);
             Vec::new()
         }
     };
     let rtt = start.elapsed();
 
-    // debug!("{} get ret from internet", dst_ipv4);
     let mac = get_mac_from_arp_response(&eth_reponse);
-    // debug!("{}: {:?}", dst_ipv4, mac);
     Ok((mac, rtt))
 }

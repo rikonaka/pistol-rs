@@ -43,7 +43,7 @@ pub enum HopStatus {
 
 /// The default target port is 80 if not specified.
 #[cfg(feature = "trace")]
-pub fn syn_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
+pub fn syn_trace(net_info: NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
     let dst_port = if net_info.dst_ports.len() > 0 {
@@ -156,7 +156,7 @@ pub fn syn_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, Pi
 }
 
 #[cfg(any(feature = "trace", feature = "os"))]
-pub fn icmp_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
+pub fn icmp_trace(net_info: NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
     let mut rng = rand::rng();
     let icmp_id: u16 = rng.random();
     let timeout = match timeout {
@@ -244,7 +244,7 @@ pub fn icmp_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, P
 }
 
 #[cfg(feature = "trace")]
-pub fn udp_trace(net_info: &NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
+pub fn udp_trace(net_info: NetInfo, timeout: Option<Duration>) -> Result<u8, PistolError> {
     let timeout = match timeout {
         Some(t) => t,
         None => utils::get_attack_default_timeout(),

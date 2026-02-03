@@ -268,7 +268,7 @@ fn ipv6_flood_thread(
 
 #[cfg(feature = "flood")]
 fn flood(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     method: FloodMethods,
     threads: usize,
     retransmit: usize,
@@ -380,7 +380,7 @@ fn flood(
 
 #[cfg(feature = "flood")]
 pub fn flood_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     method: FloodMethods,
     retransmit: usize,
     repeat: usize,
@@ -502,7 +502,7 @@ pub fn flood_raw(
 
 #[cfg(feature = "flood")]
 pub fn icmp_flood(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: usize,
     retransmit: usize,
     repeat: usize,
@@ -520,7 +520,7 @@ pub fn icmp_flood(
 
 #[cfg(feature = "flood")]
 pub fn icmp_flood_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
@@ -530,7 +530,7 @@ pub fn icmp_flood_raw(
 
 #[cfg(feature = "flood")]
 pub fn tcp_syn_flood(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: usize,
     retransmit: usize,
     repeat: usize,
@@ -548,7 +548,7 @@ pub fn tcp_syn_flood(
 
 #[cfg(feature = "flood")]
 pub fn tcp_syn_flood_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
@@ -558,7 +558,7 @@ pub fn tcp_syn_flood_raw(
 
 #[cfg(feature = "flood")]
 pub fn tcp_ack_flood(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: usize,
     retransmit: usize,
     repeat: usize,
@@ -576,7 +576,7 @@ pub fn tcp_ack_flood(
 
 #[cfg(feature = "flood")]
 pub fn tcp_ack_flood_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
@@ -586,7 +586,7 @@ pub fn tcp_ack_flood_raw(
 
 #[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: usize,
     retransmit: usize,
     repeat: usize,
@@ -604,7 +604,7 @@ pub fn tcp_ack_psh_flood(
 
 #[cfg(feature = "flood")]
 pub fn tcp_ack_psh_flood_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
@@ -614,7 +614,7 @@ pub fn tcp_ack_psh_flood_raw(
 
 #[cfg(feature = "flood")]
 pub fn udp_flood(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: usize,
     retransmit: usize,
     repeat: usize,
@@ -632,7 +632,7 @@ pub fn udp_flood(
 
 #[cfg(feature = "flood")]
 pub fn udp_flood_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,

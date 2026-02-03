@@ -342,6 +342,9 @@ fn ping_thread6(
             }
         }
         PingMethods::IcmpEcho | PingMethods::IcmpTimeStamp | PingMethods::IcmpAddressMask => {
+            warn!(
+                "run IcmpEcho/IcmpTimeStamp/IcmpAddressMask as Icmpv6Echo ping method on ipv6 target"
+            );
             return Err(PistolError::PingDetectionMethodError {
                 target: dst_ipv6.into(),
                 method: String::from("icmp"),
@@ -356,7 +359,7 @@ fn ping_thread6(
 
 #[cfg(feature = "ping")]
 fn ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     method: PingMethods,
     threads: Option<usize>,
     timeout: Option<Duration>,
@@ -383,7 +386,7 @@ fn ping(
         let ori_dst_addr = ni.ori_dst_addr;
         let src_mac = ni.src_mac;
         let src_port = ni.src_port;
-        let interface = ni.interface.clone();
+        let interface = ni.interface;
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let tx = tx.clone();
@@ -488,12 +491,8 @@ fn ping(
                         );
                         if ind == attempts - 1 {
                             // last attempt
-                            let _ = tx.send((
-                                dst_addr,
-                                ori_dst_addr.clone(),
-                                ping_ret,
-                                start_time.elapsed(),
-                            ));
+                            let _ =
+                                tx.send((dst_addr, ori_dst_addr, ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_return, _)) => {
@@ -502,7 +501,7 @@ fn ping(
                                             // conclusions drawn from the returned data
                                             let _ = tx.send((
                                                 dst_addr,
-                                                ori_dst_addr.clone(),
+                                                ori_dst_addr,
                                                 ping_ret,
                                                 start_time.elapsed(),
                                             ));
@@ -572,7 +571,7 @@ fn ping(
 
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -582,7 +581,7 @@ pub fn tcp_syn_ping(
 
 #[cfg(feature = "ping")]
 pub fn ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     method: PingMethods,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
@@ -745,7 +744,7 @@ pub fn ping_raw(
 /// Only for one target and one port.
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::Syn, timeout)
@@ -753,7 +752,7 @@ pub fn tcp_syn_ping_raw(
 
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -765,7 +764,7 @@ pub fn tcp_ack_ping(
 /// Only for one target and one port.
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::Ack, timeout)
@@ -773,7 +772,7 @@ pub fn tcp_ack_ping_raw(
 
 #[cfg(feature = "ping")]
 pub fn udp_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -784,7 +783,7 @@ pub fn udp_ping(
 /// UDP Ping, raw version.
 #[cfg(feature = "ping")]
 pub fn udp_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::Udp, timeout)
@@ -792,7 +791,7 @@ pub fn udp_ping_raw(
 
 #[cfg(feature = "ping")]
 pub fn icmp_echo_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -802,7 +801,7 @@ pub fn icmp_echo_ping(
 
 #[cfg(feature = "ping")]
 pub fn icmp_echo_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpEcho, timeout)
@@ -810,7 +809,7 @@ pub fn icmp_echo_ping_raw(
 
 #[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -826,7 +825,7 @@ pub fn icmp_timestamp_ping(
 
 #[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpTimeStamp, timeout)
@@ -834,7 +833,7 @@ pub fn icmp_timestamp_ping_raw(
 
 #[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -850,7 +849,7 @@ pub fn icmp_address_mask_ping(
 
 #[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpAddressMask, timeout)
@@ -858,7 +857,7 @@ pub fn icmp_address_mask_ping_raw(
 
 #[cfg(feature = "ping")]
 pub fn icmpv6_ping(
-    net_infos: &[NetInfo],
+    net_infos: Vec<NetInfo>,
     threads: Option<usize>,
     timeout: Option<Duration>,
     attempts: usize,
@@ -874,7 +873,7 @@ pub fn icmpv6_ping(
 
 #[cfg(feature = "ping")]
 pub fn icmp_ping_raw(
-    net_info: &NetInfo,
+    net_info: NetInfo,
     timeout: Option<Duration>,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpEcho, timeout)
