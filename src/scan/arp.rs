@@ -97,5 +97,6 @@ pub fn send_arp_scan_packet(
     let rtt = start.elapsed();
 
     let mac = get_mac_from_arp_response(&eth_reponse);
+    debug!("XXXXXXXXXXXXX");
     Ok((mac, rtt))
 }

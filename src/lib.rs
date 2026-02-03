@@ -646,6 +646,8 @@ impl Pistol {
         } else {
             cap.set_timeout((ATTACK_DEFAULT_TIMEOUT * 1000.0) as i32);
         }
+        cap.set_promiscuous_mode(true);
+        cap.set_immediate_mode(true);
 
         let mut runner_msgs = Vec::new();
 
@@ -666,6 +668,7 @@ impl Pistol {
             }
 
             if runner_msgs.is_empty() {
+                debug!("layer2 runner has no msgs to process");
                 continue;
             }
             debug!("layer2 runner has {} msgs to process", runner_msgs.len());
