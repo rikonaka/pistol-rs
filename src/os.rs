@@ -356,23 +356,10 @@ fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
 #[cfg(feature = "os")]
 pub fn os_detect(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
+    threads: usize,
+    timeout: Duration,
     top_k: usize,
-    timeout: Option<Duration>,
 ) -> Result<PistolOsDetects, PistolError> {
-    let threads = match threads {
-        Some(t) => t,
-        None => {
-            let threads = net_infos.len();
-            let threads = utils::num_threads_check(threads);
-            threads
-        }
-    };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
-
     let (tx, rx) = channel();
     let pool = utils::get_threads_pool(threads);
     let mut recv_size = 0;
@@ -544,14 +531,10 @@ pub fn os_detect_raw(
     src_mac: MacAddr,
     src_addr: IpAddr,
     interface: &NetworkInterface,
+    timeout: Duration,
     top_k: usize,
-    timeout: Option<Duration>,
 ) -> Result<OsDetect, PistolError> {
     let start_time = Instant::now();
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match src_addr {

@@ -19,7 +19,7 @@ use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpOption;
 use pnet::packet::udp;
 use pnet::packet::udp::MutableUdpPacket;
-use rand::Rng;
+use rand::RngExt;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 

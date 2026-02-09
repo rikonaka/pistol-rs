@@ -9,7 +9,7 @@ use pnet::packet::icmpv6::MutableIcmpv6Packet;
 use pnet::packet::icmpv6::echo_request::MutableEchoRequestPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
-use rand::Rng;
+use rand::RngExt;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;

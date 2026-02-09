@@ -6,7 +6,7 @@ use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
-use rand::Rng;
+use rand::RngExt;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -2027,7 +2027,7 @@ pub fn os_probe_thread(
         dst_ports: Vec::new(),
         src_port: None,
     };
-    let hops = icmp_trace(icmp_trace_net_info, Some(timeout))?;
+    let hops = icmp_trace(icmp_trace_net_info, timeout)?;
     let scan = get_scan_line(
         dst_mac,
         dst_open_tcp_port,

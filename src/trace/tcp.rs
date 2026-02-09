@@ -14,7 +14,7 @@ use pnet::packet::tcp;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpOption;
-use rand::Rng;
+use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;

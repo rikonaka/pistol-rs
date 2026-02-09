@@ -6,7 +6,7 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::ipv6_checksum;
-use rand::Rng;
+use rand::RngExt;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;

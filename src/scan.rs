@@ -199,13 +199,9 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
 #[cfg(feature = "scan")]
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     debug!("start arp scan to {}", dst_ipv4);
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
 
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
@@ -245,13 +241,8 @@ pub fn arp_scan_raw(
 #[cfg(feature = "scan")]
 pub fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
-
     let interface = match find_interface_by_dst_ip(dst_ipv6.into()) {
         Some(i) => i,
         None => {
@@ -289,7 +280,7 @@ pub fn ndp_ns_scan_raw(
 #[cfg(feature = "scan")]
 pub fn mac_scan(
     targets: &[Target],
-    timeout: Option<Duration>,
+    timeout: Duration,
     threads: usize,
     attempts: usize,
 ) -> Result<PistolMacScans, PistolError> {
@@ -713,28 +704,11 @@ fn scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     method: ScanMethod,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     let mut pistol_port_scans = PistolPortScans::new(attempts);
-
-    let threads = match threads {
-        Some(t) => t,
-        None => {
-            let mut init_numm_threads = 0;
-            for ni in &net_infos {
-                init_numm_threads += ni.dst_ports.len();
-            }
-            let threads = utils::num_threads_check(init_numm_threads);
-            threads
-        }
-    };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
-
     debug!("scan will create {} threads to do the jobs", threads);
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
@@ -942,8 +916,8 @@ fn scan(
 #[cfg(feature = "scan")]
 pub fn tcp_connect_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -962,7 +936,7 @@ pub fn tcp_connect_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_connect_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Connect, timeout)
 }
@@ -970,8 +944,8 @@ pub fn tcp_connect_scan_raw(
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub fn tcp_syn_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -990,7 +964,7 @@ pub fn tcp_syn_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_syn_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Syn, timeout)
 }
@@ -998,8 +972,8 @@ pub fn tcp_syn_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_fin_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1018,7 +992,7 @@ pub fn tcp_fin_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_fin_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Fin, timeout)
 }
@@ -1026,8 +1000,8 @@ pub fn tcp_fin_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_ack_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1046,7 +1020,7 @@ pub fn tcp_ack_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_ack_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Ack, timeout)
 }
@@ -1054,8 +1028,8 @@ pub fn tcp_ack_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_null_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1074,7 +1048,7 @@ pub fn tcp_null_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_null_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Null, timeout)
 }
@@ -1082,8 +1056,8 @@ pub fn tcp_null_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1102,7 +1076,7 @@ pub fn tcp_xmas_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Xmas, timeout)
 }
@@ -1110,8 +1084,8 @@ pub fn tcp_xmas_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1130,7 +1104,7 @@ pub fn tcp_window_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Window, timeout)
 }
@@ -1138,8 +1112,8 @@ pub fn tcp_window_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_maimon_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1158,7 +1132,7 @@ pub fn tcp_maimon_scan(
 #[cfg(feature = "scan")]
 pub fn tcp_maimon_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Maimon, timeout)
 }
@@ -1169,8 +1143,8 @@ pub fn tcp_idle_scan(
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1192,7 +1166,7 @@ pub fn tcp_idle_scan_raw(
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(
         net_info,
@@ -1207,8 +1181,8 @@ pub fn tcp_idle_scan_raw(
 #[cfg(feature = "scan")]
 pub fn udp_scan(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPortScans, PistolError> {
     scan(
@@ -1227,7 +1201,7 @@ pub fn udp_scan(
 #[cfg(feature = "scan")]
 pub fn udp_scan_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Udp, timeout)
 }
@@ -1239,7 +1213,7 @@ fn scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     method: ScanMethod,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PortStatus, Duration), PistolError> {
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
@@ -1248,10 +1222,6 @@ fn scan_raw(
     let src_port = match net_info.src_port {
         Some(s) => s,
         None => utils::random_port(),
-    };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
     };
 
     let dst_port = if net_info.dst_ports.len() > 0 {
@@ -1317,7 +1287,7 @@ mod tests {
     fn test_arp_scan_single() {
         let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
         let targets = vec![target];
-        let timeout = Some(Duration::from_secs_f32(10.0));
+        let timeout = Duration::from_secs_f32(10.0);
         let threads = 512;
         let attempts = 2;
 
@@ -1337,7 +1307,7 @@ mod tests {
         // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
         // let targets = vec![target1, target2, target3, target4];
         // let targets = vec![target1];
-        let timeout = Some(Duration::from_secs_f32(1.5));
+        let timeout = Duration::from_secs_f32(1.5);
         let threads = 512;
         let attempts = 2;
 
@@ -1350,7 +1320,7 @@ mod tests {
     #[test]
     fn test_ndp_ns_scan_subnet() {
         let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
-        let timeout = Some(Duration::from_secs_f32(1.5));
+        let timeout = Duration::from_secs_f32(1.5);
         let threads = 512;
         let attempts = 2;
 
@@ -1365,7 +1335,7 @@ mod tests {
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let target = Target::new(dst_ipv6.into(), None);
         let targets = vec![target];
-        let timeout = Some(Duration::from_secs_f32(0.5));
+        let timeout = Duration::from_secs_f32(0.5);
         let threads = 512;
         let attempts = 2;
 
@@ -1379,13 +1349,13 @@ mod tests {
     fn test_tcp_connect_scan() {
         let src_addr = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Duration::new(1, 0);
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 77);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
         let targets = vec![target];
         let attempts = 2;
-        let threads = Some(8);
+        let threads = 8;
 
         let mut pistol = Pistol::new();
         let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
@@ -1397,9 +1367,9 @@ mod tests {
     fn test_tcp_syn_scan() {
         let src_addr = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Duration::new(1, 0);
         let attempts = 2;
-        let threads = None;
+        let threads = 8;
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -1426,9 +1396,9 @@ mod tests {
     fn test_tcp_syn_scan_performance() {
         let src_addr = None;
         let src_port = Some(37888);
-        let timeout = Some(Duration::from_secs_f32(2.5));
+        let timeout = Duration::from_secs_f32(2.5);
         let attempts = 1;
-        let threads = Some(10240);
+        let threads = 10240;
         let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
         // let ports: Vec<u16> = (22..65535).collect();
         // let ports: Vec<u16> = (8000..9000).collect();
@@ -1453,12 +1423,12 @@ mod tests {
     fn test_tcp_fin_scan() {
         let src_addr = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Duration::new(1, 0);
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let targets = vec![target];
         let attempts = 2;
-        let threads = Some(8);
+        let threads = 8;
         let mut pistol = Pistol::new();
         let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
         let ret = tcp_fin_scan(net_infos, threads, timeout, attempts).unwrap();
@@ -1468,12 +1438,12 @@ mod tests {
     fn test_tcp_ack_scan() {
         let src_addr = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Duration::new(1, 0);
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let targets = vec![target];
         let attempts = 2;
-        let threads = Some(8);
+        let threads = 8;
         let mut pistol = Pistol::new();
         let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
         let ret = tcp_ack_scan(net_infos, threads, timeout, attempts).unwrap();
@@ -1483,12 +1453,12 @@ mod tests {
     fn test_tcp_null_scan() {
         let src_addr = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Duration::new(1, 0);
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let targets = vec![target];
         let attempts = 2;
-        let threads = Some(8);
+        let threads = 8;
         let mut pistol = Pistol::new();
         let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
         let ret = tcp_null_scan(net_infos, threads, timeout, attempts).unwrap();
@@ -1498,12 +1468,12 @@ mod tests {
     fn test_udp_scan() {
         let src_addr = None;
         let src_port = None;
-        let timeout = Some(Duration::new(1, 0));
+        let timeout = Duration::new(1, 0);
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080, 8081]));
         let targets = vec![target];
         let attempts = 2;
-        let threads = Some(8);
+        let threads = 8;
         let mut pistol = Pistol::new();
         let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
         let ret = udp_scan(net_infos, threads, timeout, attempts).unwrap();

@@ -17,7 +17,6 @@ use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::tcp::ipv4_checksum;
-use rand::Rng;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -28,6 +27,7 @@ use std::panic::Location;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
+use rand::RngExt;
 
 use crate::ask_runner;
 use crate::error::PistolError;

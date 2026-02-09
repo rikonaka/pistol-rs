@@ -203,12 +203,8 @@ fn ping_thread(
     src_port: u16,
     interface: &NetworkInterface,
     method: PingMethods,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
     let (ping_status, data_return, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -291,12 +287,8 @@ fn ping_thread6(
     src_port: u16,
     interface: &NetworkInterface,
     method: PingMethods,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
-    };
     let (ping_status, data_return, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -361,21 +353,11 @@ fn ping_thread6(
 fn ping(
     net_infos: Vec<NetInfo>,
     method: PingMethods,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     let mut pistol_pings = PistolPings::new(attempts);
-
-    let threads = match threads {
-        Some(t) => t,
-        None => {
-            let threads = net_infos.len();
-            let threads = utils::num_threads_check(threads);
-            threads
-        }
-    };
-
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -572,8 +554,8 @@ fn ping(
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(net_infos, PingMethods::Syn, threads, timeout, attempts)
@@ -583,7 +565,7 @@ pub fn tcp_syn_ping(
 pub fn ping_raw(
     net_info: NetInfo,
     method: PingMethods,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     let dst_mac = net_info.dst_mac;
     let dst_port = if net_info.dst_ports.len() > 0 {
@@ -600,10 +582,6 @@ pub fn ping_raw(
     let src_port = match net_info.src_port {
         Some(p) => p,
         None => utils::random_port(),
-    };
-    let timeout = match timeout {
-        Some(t) => t,
-        None => utils::get_attack_default_timeout(),
     };
     let interface = &net_info.interface;
 
@@ -745,7 +723,7 @@ pub fn ping_raw(
 #[cfg(feature = "ping")]
 pub fn tcp_syn_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::Syn, timeout)
 }
@@ -753,8 +731,8 @@ pub fn tcp_syn_ping_raw(
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(net_infos, PingMethods::Ack, threads, timeout, attempts)
@@ -765,7 +743,7 @@ pub fn tcp_ack_ping(
 #[cfg(feature = "ping")]
 pub fn tcp_ack_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::Ack, timeout)
 }
@@ -773,8 +751,8 @@ pub fn tcp_ack_ping_raw(
 #[cfg(feature = "ping")]
 pub fn udp_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(net_infos, PingMethods::Udp, threads, timeout, attempts)
@@ -784,7 +762,7 @@ pub fn udp_ping(
 #[cfg(feature = "ping")]
 pub fn udp_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::Udp, timeout)
 }
@@ -792,8 +770,8 @@ pub fn udp_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmp_echo_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(net_infos, PingMethods::IcmpEcho, threads, timeout, attempts)
@@ -802,7 +780,7 @@ pub fn icmp_echo_ping(
 #[cfg(feature = "ping")]
 pub fn icmp_echo_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpEcho, timeout)
 }
@@ -810,8 +788,8 @@ pub fn icmp_echo_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
@@ -826,7 +804,7 @@ pub fn icmp_timestamp_ping(
 #[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpTimeStamp, timeout)
 }
@@ -834,8 +812,8 @@ pub fn icmp_timestamp_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
@@ -850,7 +828,7 @@ pub fn icmp_address_mask_ping(
 #[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpAddressMask, timeout)
 }
@@ -858,8 +836,8 @@ pub fn icmp_address_mask_ping_raw(
 #[cfg(feature = "ping")]
 pub fn icmpv6_ping(
     net_infos: Vec<NetInfo>,
-    threads: Option<usize>,
-    timeout: Option<Duration>,
+    threads: usize,
+    timeout: Duration,
     attempts: usize,
 ) -> Result<PistolPings, PistolError> {
     ping(
@@ -874,7 +852,7 @@ pub fn icmpv6_ping(
 #[cfg(feature = "ping")]
 pub fn icmp_ping_raw(
     net_info: NetInfo,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<(PingStatus, Duration), PistolError> {
     ping_raw(net_info, PingMethods::IcmpEcho, timeout)
 }

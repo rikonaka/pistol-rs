@@ -26,6 +26,7 @@ use std::net::IpAddr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
+use tracing::debug;
 
 use crate::error::PistolError;
 
@@ -1045,8 +1046,20 @@ impl<'a> Layer2<'a> {
 
         match sender.send_to(&buff, Some(self.interface.clone())) {
             Some(r) => match r {
-                Err(e) => return Err(e.into()),
-                _ => Ok(()),
+                Ok(_) => {
+                    debug!(
+                        "send packet success: dst_mac: {}, src_mac: {}, ether_type: {:?}, payload_len: {}",
+                        self.dst_mac,
+                        self.src_mac,
+                        self.ether_type,
+                        payload.len()
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    debug!("send packet error: {}", e);
+                    Err(e.into())
+                }
             },
             None => Ok(()),
         }

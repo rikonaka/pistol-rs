@@ -8,7 +8,7 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::ipv4_checksum;
-use rand::Rng;
+use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;

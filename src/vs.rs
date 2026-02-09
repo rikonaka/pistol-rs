@@ -38,11 +38,7 @@ use crate::Target;
 #[cfg(feature = "vs")]
 use crate::error::PistolError;
 #[cfg(feature = "vs")]
-use crate::utils::get_attack_default_timeout;
-#[cfg(feature = "vs")]
 use crate::utils::get_threads_pool;
-#[cfg(feature = "vs")]
-use crate::utils::num_threads_check;
 #[cfg(feature = "vs")]
 use crate::utils::time_sec_to_string;
 #[cfg(feature = "vs")]
@@ -180,27 +176,14 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 #[cfg(feature = "vs")]
 pub fn vs_scan(
     targets: &[Target],
-    threads: Option<usize>,
+    threads: usize,
     only_null_probe: bool,
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
     intensity: usize,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<PistolVsScans, PistolError> {
     let mut ret = PistolVsScans::new();
-    let threads = match threads {
-        Some(t) => t,
-        None => {
-            let threads = targets.len();
-            let threads = num_threads_check(threads);
-            threads
-        }
-    };
-
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_attack_default_timeout(),
-    };
 
     let pool = get_threads_pool(threads);
     let (tx, rx) = channel();
@@ -263,7 +246,7 @@ pub fn vs_scan_raw(
     only_tcp_recommended: bool,
     only_udp_recommended: bool,
     intensity: usize,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<PortService, PistolError> {
     let nsp_str = include_str!("./db/nmap-service-probes");
     let mut nsp_lines = Vec::new();
@@ -274,11 +257,6 @@ pub fn vs_scan_raw(
 
     let service_probes = nmap_service_probes_parser(nsp_lines)?;
     debug!("nmap service db parse finish");
-
-    let timeout = match timeout {
-        Some(t) => t,
-        None => get_attack_default_timeout(),
-    };
 
     let start_time = Instant::now();
     match vs_scan_thread(
@@ -316,10 +294,10 @@ mod tests {
     fn test_vs_detect() {
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 8080]));
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Duration::from_secs_f64(0.5);
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
-        let threads = Some(8);
+        let threads = 8;
         let ret = vs_scan(
             &[target],
             threads,

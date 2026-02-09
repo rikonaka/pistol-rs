@@ -1,5 +1,5 @@
 use num_cpus;
-use rand::Rng;
+use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
@@ -7,31 +7,9 @@ use threadpool::ThreadPool;
 use tracing::debug;
 use tracing::warn;
 
-use crate::ATTACK_DEFAULT_TIMEOUT;
 use crate::error::PistolError;
 
 const MAX_THREADS: usize = 40960;
-
-pub fn time_sec_to_string(cost: Duration) -> String {
-    if cost.as_secs_f64() > 1.0 {
-        format!("{:.3}s", cost.as_secs_f64())
-    } else {
-        format!("{:.3} ms", cost.as_secs_f64() * 1000.0)
-    }
-}
-
-pub fn num_threads_check(threads: usize) -> usize {
-    let mut threads = threads;
-    if threads > MAX_THREADS {
-        warn!(
-            "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
-            threads, MAX_THREADS
-        );
-        threads = MAX_THREADS;
-    }
-    debug!("the number of create threads: {}", threads);
-    threads
-}
 
 /// Returns the random port from 10000 to 65535.
 pub fn random_port() -> u16 {
@@ -69,23 +47,41 @@ pub fn random_port_range(start: u16, end: u16) -> u16 {
     rng.random_range(start..=end)
 }
 
+pub(crate) fn time_sec_to_string(cost: Duration) -> String {
+    if cost.as_secs_f64() > 1.0 {
+        format!("{:.3}s", cost.as_secs_f64())
+    } else {
+        format!("{:.3} ms", cost.as_secs_f64() * 1000.0)
+    }
+}
+
+pub(crate) fn num_threads_check(threads: usize) -> usize {
+    let mut threads = threads;
+    if threads > MAX_THREADS {
+        warn!(
+            "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
+            threads, MAX_THREADS
+        );
+        threads = MAX_THREADS;
+    }
+    debug!("the number of create threads: {}", threads);
+    threads
+}
+
 /// Returns the number of CPUs in the machine
-pub fn get_cpu_num() -> usize {
+pub(crate) fn get_cpu_num() -> usize {
     num_cpus::get()
 }
 
 pub(crate) fn get_threads_pool(threads: usize) -> ThreadPool {
     let pool = if threads > 0 {
+        let threads = num_threads_check(threads);
         ThreadPool::new(threads)
     } else {
         let cpus = get_cpu_num();
         ThreadPool::new(cpus)
     };
     pool
-}
-
-pub(crate) fn get_attack_default_timeout() -> Duration {
-    Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT)
 }
 
 pub(crate) struct PistolHex {

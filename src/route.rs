@@ -852,7 +852,7 @@ fn send_neighbor_detect_packet(
             // use the arp or ndp_ns to ask the mac address
             let src_mac = match interface.mac {
                 Some(m) => m,
-                None => return Err(PistolError::CanNotFoundMacAddress),
+                None => return Err(PistolError::CanNotFoundSrcMacAddress),
             };
 
             match dst_addr {
