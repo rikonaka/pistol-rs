@@ -9,15 +9,23 @@ use pcapture::Capture;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
+#[cfg(feature = "debug")]
 use pnet::packet::Packet;
 #[cfg(feature = "debug")]
 use pnet::packet::ethernet::EtherType;
+#[cfg(feature = "debug")]
 use pnet::packet::ethernet::EtherTypes;
+#[cfg(feature = "debug")]
 use pnet::packet::ethernet::EthernetPacket;
+#[cfg(feature = "debug")]
 use pnet::packet::ip::IpNextHeaderProtocols;
+#[cfg(feature = "debug")]
 use pnet::packet::ipv4::Ipv4Packet;
+#[cfg(feature = "debug")]
 use pnet::packet::ipv6::Ipv6Packet;
+#[cfg(feature = "debug")]
 use pnet::packet::tcp::TcpPacket;
+#[cfg(feature = "debug")]
 use pnet::packet::udp::UdpPacket;
 use std::collections::HashMap;
 use std::fmt;
@@ -721,10 +729,10 @@ impl Pistol {
             );
 
             for packet in packets {
-                #[cfg(feature = "debug")]
-                debug_show_packet(packet, None);
                 // #[cfg(feature = "debug")]
-                // debug_show_packet(packet, Some(EtherTypes::Arp));
+                // debug_show_packet(packet, None);
+                #[cfg(feature = "debug")]
+                debug_show_packet(packet, Some(EtherTypes::Arp));
                 history_packets.push(Arc::from(packet));
                 if history_packets.len() > MAX_HISTORY_PACKETS {
                     // remove old packets to avoid memory overflow, keep the latest MAX_HISTORY_PACKETS packets
@@ -864,33 +872,33 @@ impl Pistol {
     /// Compare the speed with arp-scan.
     /// pistol:
     /// ```
-    /// +--------+---------------+-------------------+--------+---------+
-    /// |                Mac Scan Results (attempts:2)                 |
-    /// +--------+---------------+-------------------+--------+---------+
-    /// |  seq   |     addr      |        mac        |  oui   |   rtt   |
-    /// +--------+---------------+-------------------+--------+---------+
-    /// |   1    |  192.168.5.2  | 00:50:56:ff:a6:97 | VMware | 0.84ms  |
-    /// +--------+---------------+-------------------+--------+---------+
-    /// |   2    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 19.50ms |
-    /// +--------+---------------+-------------------+--------+---------+
-    /// |   3    | 192.168.5.254 | 00:50:56:f8:c4:8f | VMware | 9.89ms  |
-    /// +--------+---------------+-------------------+--------+---------+
-    /// | total cost: 1.13s                                             |
-    /// | avg cost: 0.376s                                              |
-    /// | alive hosts: 3                                                |
-    /// +--------+---------------+-------------------+--------+---------+
+    /// running 1 test
+    /// +--------+-------------+-------------------+--------+-----------+
+    /// |                 Mac Scan Results (attempts:2)                 |
+    /// +--------+-------------+-------------------+--------+-----------+
+    /// |  seq   |    addr     |        mac        |  oui   |    rtt    |
+    /// +--------+-------------+-------------------+--------+-----------+
+    /// |   1    | 192.168.5.1 | 00:50:56:c0:00:08 | VMware | 94.231 ms |
+    /// +--------+-------------+-------------------+--------+-----------+
+    /// |   2    | 192.168.5.2 | 00:50:56:e6:2f:9d | VMware | 38.450 ms |
+    /// +--------+-------------+-------------------+--------+-----------+
+    /// | total cost: 1.208s                                            |
+    /// | avg cost: 0.005s                                              |
+    /// | alive hosts: 254                                              |
+    /// +--------+-------------+-------------------+--------+-----------+
     /// ```
     /// arp-scan:
     /// ```
     /// ➜  pistol-rs git:(main) ✗ sudo arp-scan 192.168.5.0/24
-    /// Interface: ens33, type: EN10MB, MAC: 00:0c:29:5b:bd:5c, IPv4: 192.168.5.3
+    /// Interface: ens33, type: EN10MB, MAC: 00:0c:29:ec:d0:37, IPv4: 192.168.5.3
     /// Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
     /// 192.168.5.1     00:50:56:c0:00:08       VMware, Inc.
-    /// 192.168.5.2     00:50:56:ff:a6:97       VMware, Inc.
-    /// 192.168.5.254   00:50:56:f8:c4:8f       VMware, Inc.
+    /// 192.168.5.2     00:50:56:e6:2f:9d       VMware, Inc.
+    /// 192.168.5.77    00:0c:29:c5:f6:99       VMware, Inc.
+    /// 192.168.5.254   00:50:56:e0:d3:bb       VMware, Inc.
     ///
-    /// 3 packets received by filter, 0 packets dropped by kernel
-    /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.001 seconds (127.94 hosts/sec). 3 responded
+    /// 8 packets received by filter, 0 packets dropped by kernel
+    /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.071 seconds (123.61 hosts/sec). 4 responded
     /// ```
     #[cfg(feature = "scan")]
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<PistolMacScans, PistolError> {
@@ -2363,6 +2371,19 @@ mod tests {
             Some(vec![22]),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        println!("{}", ret);
+    }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn example_mac_scan() {
+        let mut pistol = Pistol::new();
+        pistol.set_threads(512);
+        // set the timeout same as `arp-scan`
+        pistol.set_timeout(0.5);
+        pistol.set_attempts(2);
+
+        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
     #[cfg(feature = "scan")]
