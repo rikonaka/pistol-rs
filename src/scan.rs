@@ -1373,7 +1373,7 @@ mod tests {
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77));
         #[cfg(target_os = "linux")]
         let ports = vec![22, 80, 5432, 8080];
         #[cfg(target_os = "windows")]
@@ -1388,6 +1388,7 @@ mod tests {
         let target1 = Target::new(addr1, Some(ports));
         let targets = vec![target1];
         let mut pistol = Pistol::new();
+        pistol.set_log_level("debug");
         let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);

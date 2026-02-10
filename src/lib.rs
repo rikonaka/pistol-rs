@@ -102,13 +102,23 @@ static SYSTEM_NETWORK_CACHE: LazyLock<Arc<Mutex<SystemNetCache>>> = LazyLock::ne
 
 /// debug code
 #[cfg(feature = "debug")]
-fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: EtherType) {
+fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>) {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
         Some(ethernet_packet) => ethernet_packet,
         None => return,
     };
     let ether_type = ethernet_packet.get_ethertype();
-    if ether_type == show_ether_type {
+    let show_flag = match show_ether_type {
+        Some(t) => {
+            if t == ether_type {
+                true
+            } else {
+                false
+            }
+        }
+        None => true,
+    };
+    if show_flag {
         match ether_type {
             EtherTypes::Ipv4 => {
                 let ipv4_packet = match Ipv4Packet::new(ethernet_packet.payload()) {
@@ -122,8 +132,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: EtherType) {
                             Some(tcp_packet) => tcp_packet,
                             None => return,
                         };
-                        debug!(
-                            "{}, {}:{} -> {}:{}, len {}",
+                        println!(
+                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
                             ether_type.to_string().to_lowercase(),
                             ipv4_packet.get_source(),
                             tcp_packet.get_source(),
@@ -137,8 +147,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: EtherType) {
                             Some(udp_packet) => udp_packet,
                             None => return,
                         };
-                        debug!(
-                            "{}, {}:{} -> {}:{}, len {}",
+                        println!(
+                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
                             ether_type.to_string().to_lowercase(),
                             ipv4_packet.get_source(),
                             udp_packet.get_source(),
@@ -162,8 +172,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: EtherType) {
                             Some(tcp_packet) => tcp_packet,
                             None => return,
                         };
-                        debug!(
-                            "{}, {}:{} -> {}:{}, len {}",
+                        println!(
+                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
                             ether_type.to_string().to_lowercase(),
                             ipv6_packet.get_source(),
                             tcp_packet.get_source(),
@@ -177,8 +187,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: EtherType) {
                             Some(udp_packet) => udp_packet,
                             None => return,
                         };
-                        debug!(
-                            "{}, {}:{} -> {}:{}, len {}",
+                        println!(
+                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
                             ether_type.to_string().to_lowercase(),
                             ipv6_packet.get_source(),
                             udp_packet.get_source(),
@@ -190,14 +200,18 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: EtherType) {
                     _ => return,
                 }
             }
-            EtherTypes::Arp => debug!(
-                "{}, {} -> {}, len {}",
+            EtherTypes::Arp => println!(
+                "[PACKET] {}, {} -> {}, len {}",
                 ether_type.to_string().to_lowercase(),
                 ethernet_packet.get_source(),
                 ethernet_packet.get_destination(),
                 ethernet_packet.packet().len(),
             ),
-            _ => debug!("{}, len {}", ether_type, ethernet_packet.packet().len(),),
+            _ => println!(
+                "[PACKET] {}, len {}",
+                ether_type,
+                ethernet_packet.packet().len(),
+            ),
         }
     }
 }
@@ -433,23 +447,12 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
-pub(crate) static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Arc<CommunicationChannel>> =
-    LazyLock::new(|| {
-        let (filter_sender, filter_receiver) = unbounded::<RunnerMsg>();
-        let cc = CommunicationChannel {
-            filter_sender,
-            filter_receiver,
-        };
-        Arc::new(cc)
-    });
-
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerMsg {
-    pub iface: String,              // runner listen interface
-    pub filters: Vec<PacketFilter>, // runner receive filters to match
-    pub sender: Sender<Vec<u8>>,    // then send matched packets back to threads
-    pub start: Instant,             // start time, used to drop if exceed timeout
-    pub elapsed: Duration,          // elapsed
+    pub filters: Vec<PacketFilter>,     // runner receive filters to match
+    pub packet_sender: Sender<Vec<u8>>, // then send matched packets back to threads
+    pub start_time: Instant,            // start time, used to drop if exceed timeout
+    pub elapsed: Duration,              // elapsed
 }
 
 impl RunnerMsg {
@@ -463,11 +466,30 @@ impl RunnerMsg {
         false
     }
     pub fn send_packet_back(&self, packet: &[u8]) {
-        if let Err(e) = self.sender.send(packet.to_vec()) {
+        if let Err(e) = self.packet_sender.send(packet.to_vec()) {
             error!("failed to send matched packet: {}", e);
         }
     }
 }
+
+pub(crate) static RUNNER_COMMUNICATION_CHANNEL: LazyLock<
+    Arc<HashMap<String, CommunicationChannel>>,
+> = LazyLock::new(|| {
+    let ifaces: Vec<String> = interfaces()
+        .iter()
+        .map(|iface| iface.name.clone())
+        .collect();
+    let mut hm = HashMap::new();
+    for iface in ifaces {
+        let (filter_sender, filter_receiver) = unbounded::<RunnerMsg>();
+        let cc = CommunicationChannel {
+            filter_sender,
+            filter_receiver,
+        };
+        hm.insert(iface, cc);
+    }
+    Arc::new(hm)
+});
 
 #[derive(Debug, Clone)]
 pub(crate) struct CommunicationChannel {
@@ -479,16 +501,14 @@ impl CommunicationChannel {
     /// Returns a receiver to get matched packets from the runner.
     pub(crate) fn send_filters(
         &self,
-        iface: String,
         filters: Vec<PacketFilter>,
         elapsed: Duration,
     ) -> Receiver<Vec<u8>> {
         let (packet_sender, packet_receiver) = unbounded::<Vec<u8>>();
         let runner_msg = RunnerMsg {
-            iface,
             filters,
-            sender: packet_sender,
-            start: Instant::now(),
+            packet_sender,
+            start_time: Instant::now(),
             elapsed,
         };
         let _ = self.filter_sender.send(runner_msg);
@@ -501,8 +521,13 @@ pub(crate) fn ask_runner(
     filters: Vec<PacketFilter>,
     elapsed: Duration,
 ) -> Result<Receiver<Vec<u8>>, PistolError> {
-    let rcc = RUNNER_COMMUNICATION_CHANNEL.clone();
-    let packet_receiver = rcc.send_filters(iface, filters, elapsed);
+    let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
+    let rcc = match hm.get(&iface) {
+        Some(rcc) => rcc,
+        None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: iface }),
+    };
+
+    let packet_receiver = rcc.send_filters(filters, elapsed);
     Ok(packet_receiver)
 }
 
@@ -651,13 +676,17 @@ impl Pistol {
         let mut cap = Capture::new(&iface)?;
         cap.set_timeout(50); // set read timeout to 50ms
         cap.set_promiscuous_mode(true);
-        cap.set_immediate_mode(true);
+        // cap.set_immediate_mode(true);
 
         let mut runner_msgs = Vec::new();
 
-        let rcc = RUNNER_COMMUNICATION_CHANNEL.clone();
+        let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
+        let rcc = match hm.get(&iface) {
+            Some(rcc) => rcc,
+            None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: iface }),
+        };
         // very small timeout to check new filters
-        let filter_recv_timeout = Duration::from_millis(50); // set recv_timeout to 50ms
+        let filter_recv_timeout = Duration::from_millis(5); // set recv_timeout to 5ms
 
         // The history_packets is used to store recently received packets,
         // which will be matched with new filters when they arrive.
@@ -666,16 +695,16 @@ impl Pistol {
         // we can store all received packets in memory and match them with new filters when they arrive.
         let mut history_packets = Vec::new();
         loop {
+            // libpcap version will not loss any packets.
+            // Fetch packets first, then check if there are new filters to match,
+            // this can avoid missing packets that arrive before filters.
+            let packets = cap.fetch_as_vec()?;
+            debug!("layer2 recv {} packets", packets.len());
+
             match rcc.filter_receiver.recv_timeout(filter_recv_timeout) {
                 Ok(msg) => {
-                    if msg.iface == iface {
-                        debug!("layer2 runner {} received new filter msg", iface);
-                        runner_msgs.push(msg)
-                    } else {
-                        // put it back to the channel
-                        debug!("layer2 runner {} push back msg", iface);
-                        let _ = rcc.filter_sender.send(msg);
-                    }
+                    debug!("layer2 runner {} received new filter msg", iface);
+                    runner_msgs.push(msg)
                 }
                 Err(e) => {
                     debug!(
@@ -690,13 +719,12 @@ impl Pistol {
                 iface,
                 runner_msgs.len()
             );
-            // libpcap version will not loss any packets
-            let packets = cap.fetch_as_vec()?;
-            debug!("layer2 recv {} packets", packets.len());
 
             for packet in packets {
                 #[cfg(feature = "debug")]
-                debug_show_packet(packet, EtherTypes::Arp);
+                debug_show_packet(packet, None);
+                // #[cfg(feature = "debug")]
+                // debug_show_packet(packet, Some(EtherTypes::Arp));
                 history_packets.push(Arc::from(packet));
                 if history_packets.len() > MAX_HISTORY_PACKETS {
                     // remove old packets to avoid memory overflow, keep the latest MAX_HISTORY_PACKETS packets
@@ -726,7 +754,7 @@ impl Pistol {
             let mut drop_idxs = Vec::new();
             let mut need_drop = false;
             for (i, msg) in runner_msgs.iter().enumerate() {
-                if msg.start.elapsed() > msg.elapsed {
+                if msg.start_time.elapsed() > msg.elapsed {
                     // timeout, remove this msg
                     drop_idxs.push(i);
                     need_drop = true;
@@ -2303,6 +2331,20 @@ mod tests {
         };
         println!("{}", top_1000_udp_ports.len());
         // println!("{:?}", top_1000_tcp_ports);
+    }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn test_mac_scan() {
+        let mut pistol = Pistol::new();
+        pistol.set_threads(8);
+        // pistol.set_log_level("debug");
+        pistol.set_attempts(2);
+        pistol.set_threads(8);
+        pistol.set_timeout(2.5);
+
+        let targets = vec![Target::new(Ipv4Addr::new(192, 168, 5, 77).into(), None)];
+        let ret = pistol.mac_scan(&targets).unwrap();
+        println!("{}", ret);
     }
     #[cfg(feature = "scan")]
     #[test]
