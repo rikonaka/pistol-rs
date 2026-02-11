@@ -101,14 +101,14 @@ pub fn send_syn_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 syn scan layer3",
+        name: "tcp6 syn scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 syn scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 syn scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -124,7 +124,7 @@ pub fn send_syn_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 syn scan icmpv6",
+        name: "tcp6 syn scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -243,14 +243,14 @@ pub fn send_fin_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 fin scan layer3",
+        name: "tcp6 fin scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 fin scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 fin scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -266,7 +266,7 @@ pub fn send_fin_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 fin scan icmpv6",
+        name: "tcp6 fin scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -385,14 +385,14 @@ pub fn send_ack_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 ack scan layer3",
+        name: "tcp6 ack scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 ack scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 ack scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -408,7 +408,7 @@ pub fn send_ack_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 ack scan icmpv6",
+        name: "tcp6 ack scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -524,14 +524,14 @@ pub fn send_null_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 null scan layer3",
+        name: "tcp6 null scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 null scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 null scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -547,7 +547,7 @@ pub fn send_null_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 null scan icmpv6",
+        name: "tcp6 null scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -663,14 +663,14 @@ pub fn send_xmas_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 xmas scan layer3",
+        name: "tcp6 xmas scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 xmas scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 xmas scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -686,7 +686,7 @@ pub fn send_xmas_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 xmas scan icmpv6",
+        name: "tcp6 xmas scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -802,14 +802,14 @@ pub fn send_window_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 windows scan layer3",
+        name: "tcp6 windows scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 windows scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 windows scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -825,7 +825,7 @@ pub fn send_window_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 windows scan icmpv6",
+        name: "tcp6 windows scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -946,14 +946,14 @@ pub fn send_maimon_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp6 maimon scan layer3",
+        name: "tcp6 maimon scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp6 maimon scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp6 maimon scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -969,7 +969,7 @@ pub fn send_maimon_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "tcp6 maimon scan icmpv6",
+        name: "tcp6 maimon scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,

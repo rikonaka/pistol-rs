@@ -89,7 +89,7 @@ pub fn send_udp_trace_packet(
 
     // generally speaking, the target random UDP port will not return any data.
     let layer3 = Layer3Filter {
-        name: "udp trace reply layer3 1",
+        name: "udp trace reply layer3 1".to_string(),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
@@ -106,7 +106,7 @@ pub fn send_udp_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "udp trace icmp 1",
+        name: "udp trace icmp 1".to_string(),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
@@ -116,13 +116,13 @@ pub fn send_udp_trace_packet(
 
     // finally, the UDP packet arrives at the target machine.
     let layer3 = Layer3Filter {
-        name: "udp trace layer3 2",
+        name: "udp trace layer3 2".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4FilterIcmp {
-        name: "udp trace icmp 2",
+        name: "udp trace icmp 2".to_string(),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::DestinationUnreachable),
         icmp_code: Some(IcmpCode(3)),
@@ -132,13 +132,13 @@ pub fn send_udp_trace_packet(
 
     // there is a small chance that the target's UDP port will be open.
     let layer3 = Layer3Filter {
-        name: "udp trace layer3 3",
+        name: "udp trace layer3 3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4 = Layer4FilterTcpUdp {
-        name: "udp trace tcp_udp",
+        name: "udp trace tcp_udp".to_string(),
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),

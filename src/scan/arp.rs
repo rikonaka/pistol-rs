@@ -69,13 +69,14 @@ pub fn send_arp_scan_packet(
 
     let ether_type = EtherTypes::Arp;
     let layer2 = Layer2Filter {
-        name: "arp scan layer2",
+        name: "arp scan layer2".to_string(),
         src_mac: None,
         dst_mac: Some(src_mac),
         ether_type: Some(ether_type),
     };
+    let name = format!("arp scan layer3 {}", dst_ipv4);
     let layer3 = Layer3Filter {
-        name: "arp scan layer3",
+        name,
         layer2: Some(layer2),
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),

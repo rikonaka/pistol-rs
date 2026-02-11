@@ -544,16 +544,14 @@ fn send_seq_probes(
     let start = Instant::now();
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
-        let name_string = format!("os scan6 seq {} layer3", i + 1);
-        let name = Box::leak(name_string.into_boxed_str());
+        let name = format!("os scan6 seq {} layer3", i + 1);
         let layer3 = Layer3Filter {
             name,
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
-        let name_string = format!("os scan6 seq {} tcp_udp", i + 1);
-        let name = Box::leak(name_string.into_boxed_str());
+        let name = format!("os scan6 seq {} tcp_udp", i + 1);
         let layer4_tcp_udp = Layer4FilterTcpUdp {
             name,
             layer3: Some(layer3),
@@ -567,7 +565,7 @@ fn send_seq_probes(
         let interface = interface.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(iface.clone(), vec![filter_1], timeout) {
+                match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
                     Ok(receiver) => {
                         let st = start_time.elapsed();
                         let ether_type = EtherTypes::Ipv6;
@@ -703,35 +701,35 @@ fn send_ie_probes(
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
     let buffs = vec![buff_1, buff_2];
     let layer3 = Layer3Filter {
-        name: "os scan6 ie layer3",
+        name: "os scan6 ie layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     // They do, however, respond with different ICMPv6 errors with icmpv6 types 1, 2, 3, 4.
     let layer4_icmpv6_1 = Layer4FilterIcmpv6 {
-        name: "os scan6 ie icmpv6 type 1",
-        layer3: Some(layer3),
+        name: "os scan6 ie icmpv6 type 1".to_string(),
+        layer3: Some(layer3.clone()),
         icmpv6_type: Some(Icmpv6Type(1)),
         icmpv6_code: None,
         payload: None,
     };
     let layer4_icmpv6_2 = Layer4FilterIcmpv6 {
-        name: "os scan6 ie icmpv6 type 2",
-        layer3: Some(layer3),
+        name: "os scan6 ie icmpv6 type 2".to_string(),
+        layer3: Some(layer3.clone()),
         icmpv6_type: Some(Icmpv6Type(2)),
         icmpv6_code: None,
         payload: None,
     };
     let layer4_icmpv6_3 = Layer4FilterIcmpv6 {
-        name: "os scan6 ie icmpv6 type 3",
-        layer3: Some(layer3),
+        name: "os scan6 ie icmpv6 type 3".to_string(),
+        layer3: Some(layer3.clone()),
         icmpv6_type: Some(Icmpv6Type(3)),
         icmpv6_code: None,
         payload: None,
     };
     let layer4_icmpv6_4 = Layer4FilterIcmpv6 {
-        name: "os scan6 ie icmpv6 type 4",
+        name: "os scan6 ie icmpv6 type 4".to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Type(4)),
         icmpv6_code: None,
@@ -751,7 +749,12 @@ fn send_ie_probes(
         for retry_time in 0..MAX_RETRY {
             match ask_runner(
                 iface.clone(),
-                vec![filter_1, filter_2, filter_3, filter_4],
+                vec![
+                    filter_1.clone(),
+                    filter_2.clone(),
+                    filter_3.clone(),
+                    filter_4.clone(),
+                ],
                 timeout,
             ) {
                 Ok(receiver) => {
@@ -859,13 +862,13 @@ fn send_nx_probes(
     // let buffs = vec![buff_1];
     // let buffs = vec![buff_2];
     let layer3 = Layer3Filter {
-        name: "os scan6 nx layer3",
+        name: "os scan6 nx layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "os scan6 nx icmpv6",
+        name: "os scan6 nx icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -880,7 +883,7 @@ fn send_nx_probes(
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         let iface = interface.name.clone();
         for retry_time in 0..MAX_RETRY {
-            match ask_runner(iface.clone(), vec![filter_1], timeout) {
+            match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
                 Ok(receiver) => {
                     let st = start_time.elapsed();
                     let ether_type = EtherTypes::Ipv6;
@@ -982,13 +985,13 @@ fn send_u1_probe(
     let src_port = random_port();
     let buff = packet6::udp_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_port)?;
     let layer3 = Layer3Filter {
-        name: "os scan6 u1 layer3",
+        name: "os scan6 u1 layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "os scan6 u1 icmpv6",
+        name: "os scan6 u1 icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -1005,7 +1008,7 @@ fn send_u1_probe(
     let iface = interface.name.clone();
     for _retry_time in 0..MAX_RETRY {
         st = start_time.elapsed();
-        let receiver = ask_runner(iface.clone(), vec![filter_1], timeout)?;
+        let receiver = ask_runner(iface.clone(), vec![filter_1.clone()], timeout)?;
         let ether_type = EtherTypes::Ipv6;
         let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();
@@ -1054,13 +1057,13 @@ fn send_tecn_probe(
     let src_port = random_port();
 
     let layer3 = Layer3Filter {
-        name: "os scan6 tecn layer3",
+        name: "os scan6 tecn layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "os scan6 tecn tcp_udp",
+        name: "os scan6 tecn tcp_udp".to_string(),
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
@@ -1126,44 +1129,44 @@ fn send_tx_probes(
     }
 
     let layer3 = Layer3Filter {
-        name: "os scan6 tx layer3",
+        name: "os scan6 tx layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
 
     let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
-        name: "os scan6 tx tcp_udp 2",
-        layer3: Some(layer3),
+        name: "os scan6 tx tcp_udp 2".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
     let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
-        name: "os scan6 tx tcp_udp 3",
-        layer3: Some(layer3),
+        name: "os scan6 tx tcp_udp 3".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
     let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
-        name: "os scan6 tx tcp_udp 4",
-        layer3: Some(layer3),
+        name: "os scan6 tx tcp_udp 4".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
     let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
-        name: "os scan6 tx tcp_udp 5",
-        layer3: Some(layer3),
+        name: "os scan6 tx tcp_udp 5".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
     let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
-        name: "os scan6 tx tcp_udp 6",
-        layer3: Some(layer3),
+        name: "os scan6 tx tcp_udp 6".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
     let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
-        name: "os scan6 tx tcp_udp 7",
+        name: "os scan6 tx tcp_udp 7".to_string(),
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
@@ -1198,7 +1201,7 @@ fn send_tx_probes(
         let interface = interface.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(iface.clone(), vec![filter_1], timeout) {
+                match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
                     Ok(receiver) => {
                         let st = start_time.elapsed();
                         let ether_type = EtherTypes::Ipv6;
@@ -1756,44 +1759,44 @@ mod tests {
         println!("src_ports: {:?}", src_ports);
 
         let layer3 = Layer3Filter {
-            name: "test layer3",
+            name: "test layer3".to_string(),
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
 
         let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
-            name: "test tcp_udp 2",
+            name: "test tcp_udp 2".to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[0]),
         };
         let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
-            name: "test tcp_udp 3",
+            name: "test tcp_udp 3".to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[1]),
         };
         let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
-            name: "test tcp_udp 4",
+            name: "test tcp_udp 4".to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_ports[2]),
         };
         let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
-            name: "test tcp_udp 5",
+            name: "test tcp_udp 5".to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[3]),
         };
         let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
-            name: "test tcp_udp 6",
+            name: "test tcp_udp 6".to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[4]),
         };
         let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
-            name: "test tcp_udp 7",
+            name: "test tcp_udp 7".to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_closed_port),
             dst_port: Some(src_ports[5]),

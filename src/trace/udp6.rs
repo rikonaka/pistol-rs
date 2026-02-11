@@ -85,7 +85,7 @@ pub fn send_udp_trace_packet(
 
     // generally speaking, the target random UDP port will not return any data.
     let layer3 = Layer3Filter {
-        name: "udp6 trace layer3 1",
+        name: "udp6 trace layer3 1".to_string(),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
@@ -101,7 +101,7 @@ pub fn send_udp_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "udp6 trace icmpv6 1",
+        name: "udp6 trace icmpv6 1".to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::TimeExceeded),
         icmpv6_code: None,
@@ -111,13 +111,13 @@ pub fn send_udp_trace_packet(
 
     // finally, the UDP packet arrives at the target machine.
     let layer3 = Layer3Filter {
-        name: "udp6 trace layer3 2",
+        name: "udp6 trace layer3 2".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "udp6 trace icmpv6",
+        name: "udp6 trace icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::DestinationUnreachable),
         icmpv6_code: Some(Icmpv6Code(4)), // port unreachable
@@ -127,13 +127,13 @@ pub fn send_udp_trace_packet(
 
     // there is a small chance that the target's UDP port will be open.
     let layer3 = Layer3Filter {
-        name: "udp6 trace layer3 3",
+        name: "udp6 trace layer3 3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4 = Layer4FilterTcpUdp {
-        name: "udp6 trace tcp_udp",
+        name: "udp6 trace tcp_udp".to_string(),
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),

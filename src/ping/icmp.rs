@@ -113,14 +113,14 @@ pub fn send_icmp_echo_packet(
     ];
 
     let layer3 = Layer3Filter {
-        name: "ping echo layer3",
+        name: "ping echo layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     // match all icmp reply
     let layer4_icmp = Layer4FilterIcmp {
-        name: "ping echo icmp",
+        name: "ping echo icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -228,14 +228,14 @@ pub fn send_icmp_timestamp_packet(
     icmp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "ping timestamp layer3",
+        name: "ping timestamp layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     // match all icmp reply
     let layer4_icmp = Layer4FilterIcmp {
-        name: "ping timestamp icmp",
+        name: "ping timestamp icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -352,14 +352,14 @@ pub fn send_icmp_address_mask_packet(
     ];
 
     let layer3 = Layer3Filter {
-        name: "ping address mask layer3",
+        name: "ping address mask layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     // match all icmp reply
     let layer4_icmp = Layer4FilterIcmp {
-        name: "ping address mask icmp",
+        name: "ping address mask icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,

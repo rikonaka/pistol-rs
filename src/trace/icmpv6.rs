@@ -95,7 +95,7 @@ pub fn send_icmpv6_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Filter {
-        name: "icmpv6 trace time exceeded layer3",
+        name: "icmpv6 trace time exceeded layer3".to_string(),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
@@ -111,7 +111,7 @@ pub fn send_icmpv6_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmp);
     let layer4_icmp = Layer4FilterIcmpv6 {
-        name: "icmpv6 trace time exceeded icmpv6",
+        name: "icmpv6 trace time exceeded icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::TimeExceeded),
         icmpv6_code: None,
@@ -121,13 +121,13 @@ pub fn send_icmpv6_trace_packet(
 
     // icmp reply
     let layer3 = Layer3Filter {
-        name: "icmpv6 trace reply layer3",
+        name: "icmpv6 trace reply layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "icmpv6 trace reply icmpv6",
+        name: "icmpv6 trace reply icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,

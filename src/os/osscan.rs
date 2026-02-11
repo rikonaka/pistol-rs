@@ -296,16 +296,14 @@ fn send_seq_probes(
     let start = Instant::now();
     for (i, buff) in buffs.into_iter().enumerate() {
         let src_port = src_ports[i];
-        let name_string = format!("os scan seq {} layer3", i + 1);
-        let name = Box::leak(name_string.into_boxed_str());
+        let name = format!("os scan seq {} layer3", i + 1);
         let layer3 = Layer3Filter {
             name,
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
-        let name_string = format!("os scan seq {} tcp_udp", i + 1);
-        let name = Box::leak(name_string.into_boxed_str());
+        let name = format!("os scan seq {} tcp_udp", i + 1);
         let layer4_tcp_udp = Layer4FilterTcpUdp {
             name,
             layer3: Some(layer3),
@@ -319,7 +317,7 @@ fn send_seq_probes(
         let interface = interface.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(iface.clone(), vec![filter_1], timeout) {
+                match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
                     Ok(receiver) => {
                         let ether_type = EtherTypes::Ipv4;
                         let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
@@ -433,13 +431,13 @@ fn send_ie_probes(
     let buffs = vec![buff_1, buff_2];
 
     let layer3 = Layer3Filter {
-        name: "os scan ie layer3",
+        name: "os scan ie layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4FilterIcmp {
-        name: "os scan ie icmp",
+        name: "os scan ie icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -455,7 +453,7 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         for retry_time in 0..MAX_RETRY {
-            match ask_runner(iface.clone(), vec![filter_1], timeout) {
+            match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
                 Ok(receiver) => {
                     let ether_type = EtherTypes::Ipv4;
                     let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
@@ -530,13 +528,13 @@ fn send_ecn_probe(
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
-        name: "os scan ecn layer3",
+        name: "os scan ecn layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp",
+        name: "os scan ecn tcp_udp".to_string(),
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
@@ -549,7 +547,7 @@ fn send_ecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
-        let receiver = ask_runner(iface.clone(), vec![filter_1], timeout)?;
+        let receiver = ask_runner(iface.clone(), vec![filter_1.clone()], timeout)?;
         let ether_type = EtherTypes::Ipv4;
         let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();
@@ -606,43 +604,43 @@ fn send_tx_probes(
     }
 
     let layer3 = Layer3Filter {
-        name: "os scan tx layer3",
+        name: "os scan tx layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp_1 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 1",
-        layer3: Some(layer3),
+        name: "os scan ecn tcp_udp 1".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
     let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 2",
-        layer3: Some(layer3),
+        name: "os scan ecn tcp_udp 2".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
     let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 3",
-        layer3: Some(layer3),
+        name: "os scan ecn tcp_udp 3".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
     let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 4",
-        layer3: Some(layer3),
+        name: "os scan ecn tcp_udp 4".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
     let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 5",
-        layer3: Some(layer3),
+        name: "os scan ecn tcp_udp 5".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
     let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 6",
+        name: "os scan ecn tcp_udp 6".to_string(),
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
@@ -684,7 +682,7 @@ fn send_tx_probes(
         let interface = interface.clone();
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(iface.clone(), vec![filter_1], timeout) {
+                match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
                     Ok(receiver) => {
                         let ether_type = EtherTypes::Ipv4;
                         let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
@@ -783,13 +781,13 @@ fn send_u1_probe(
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
-        name: "os scan u1 layer3",
+        name: "os scan u1 layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4FilterIcmp {
-        name: "os scan u1 icmp",
+        name: "os scan u1 icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -803,7 +801,7 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     for _ in 0..MAX_RETRY {
         let iface = interface.name.clone();
-        let receiver = ask_runner(iface, vec![filter_1], timeout)?;
+        let receiver = ask_runner(iface, vec![filter_1.clone()], timeout)?;
         let ether_type = EtherTypes::Ipv4;
         let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();

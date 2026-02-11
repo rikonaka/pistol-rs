@@ -137,6 +137,7 @@ impl fmt::Display for PistolMacScans {
             btm_addr.insert(report.addr, report.clone());
         }
 
+        let mut alive_hosts = 0;
         let mut i = 1;
         for (_addr, report) in btm_addr {
             let rtt_str = utils::time_sec_to_string(report.rtt);
@@ -146,6 +147,7 @@ impl fmt::Display for PistolMacScans {
                         row![c -> i, c -> report.addr, c -> mac, c -> report.ouis, c -> rtt_str],
                     );
                     i += 1;
+                    alive_hosts += 1;
                 }
                 None => (),
             }
@@ -154,9 +156,7 @@ impl fmt::Display for PistolMacScans {
         let avg_cost = total_cost.as_seconds_f64() / self.mac_reports.len() as f64;
         let summary = format!(
             "total cost: {}\navg cost: {:.3}s\nalive hosts: {}",
-            total_cost_str,
-            avg_cost,
-            self.mac_reports.len(),
+            total_cost_str, avg_cost, alive_hosts
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
 
@@ -469,14 +469,51 @@ pub struct PortReport {
     pub port: u16,
     pub ori_target: Option<String>,
     pub status: PortStatus,
-    pub cost: Duration, // from layer2
+    /// The cost of each target, not all.
+    pub cost: Duration,
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone)]
-pub struct PistolPortScans {
-    // The order of this Vec is the same as the order in which the data packets are received.
-    // The detection that receives the data first is in the front.
+pub struct PortScan {
+    /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
+    /// so we record the time cost seconds of layer2 here.
+    pub layer2_cost: f32,
+    pub port_report: Option<PortReport>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
+    pub attempts: usize,
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
+impl PortScan {
+    pub(crate) fn new(attempts: usize) -> Self {
+        let now = Local::now();
+        PortScan {
+            layer2_cost: 0.0,
+            port_report: None,
+            start_time: now,
+            end_time: now,
+            attempts,
+        }
+    }
+    pub(crate) fn value(&self) -> Option<PortReport> {
+        self.port_report.clone()
+    }
+    pub(crate) fn finish(&mut self, port_reports: Option<PortReport>) {
+        self.end_time = Local::now();
+        self.port_report = port_reports;
+    }
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
+#[derive(Debug, Clone)]
+pub struct PortScans {
+    /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
+    /// so we record the time cost seconds of layer2 here.
+    pub layer2_cost: f32,
+    /// The order of this Vec is the same as the order in which the data packets are received,
+    /// the detection that receives the data first is in the front.
     pub port_reports: Vec<PortReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
@@ -484,29 +521,29 @@ pub struct PistolPortScans {
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-impl PistolPortScans {
-    pub fn new(attempts: usize) -> PistolPortScans {
-        PistolPortScans {
+impl PortScans {
+    pub(crate) fn new(attempts: usize) -> Self {
+        let now = Local::now();
+        PortScans {
+            layer2_cost: 0.0,
             port_reports: Vec::new(),
-            start_time: Local::now(),
-            end_time: Local::now(),
+            start_time: now,
+            end_time: now,
             attempts,
         }
     }
-    pub fn value(&self) -> Vec<PortReport> {
+    pub(crate) fn reports(&self) -> Vec<PortReport> {
         self.port_reports.clone()
     }
-    pub fn finish(&mut self, port_reports: Vec<PortReport>) {
+    pub(crate) fn finish(&mut self, port_reports: Vec<PortReport>) {
         self.end_time = Local::now();
         self.port_reports = port_reports;
     }
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-impl fmt::Display for PistolPortScans {
+impl fmt::Display for PortScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let total_cost = self.end_time - self.start_time;
-
         let mut table = Table::new();
         table.add_row(Row::new(vec![
             Cell::new(&format!("Port Scan Results (attempts:{})", self.attempts,))
@@ -554,12 +591,12 @@ impl fmt::Display for PistolPortScans {
         // );
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(5)]));
 
-        let avg_cost = total_cost.as_seconds_f64() / self.port_reports.len() as f64;
+        let total_cost = self.end_time - self.start_time;
+        let total_cost = total_cost.as_seconds_f32();
+        let avg_cost = total_cost / self.port_reports.len() as f32;
         let summary = format!(
             "total cost: {:.3}s, avg cost: {:.3}s, open ports: {}",
-            total_cost.as_seconds_f64(),
-            avg_cost,
-            open_ports_num,
+            total_cost, avg_cost, open_ports_num,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
@@ -707,8 +744,9 @@ fn scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
-    let mut pistol_port_scans = PistolPortScans::new(attempts);
+) -> Result<PortScans, PistolError> {
+    let mut pistol_port_scans = PortScans::new(attempts);
+    println!("PN: {}", pistol_port_scans.start_time);
     debug!("scan will create {} threads to do the jobs", threads);
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
@@ -910,6 +948,7 @@ fn scan(
         }
     }
     pistol_port_scans.finish(reports);
+    println!("PN: {}", pistol_port_scans.end_time);
     Ok(pistol_port_scans)
 }
 
@@ -919,7 +958,7 @@ pub fn tcp_connect_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -934,10 +973,7 @@ pub fn tcp_connect_scan(
 
 /// TCP connect() Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_connect_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_connect_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Connect, timeout)
 }
 
@@ -947,7 +983,7 @@ pub fn tcp_syn_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -962,10 +998,7 @@ pub fn tcp_syn_scan(
 
 /// TCP SYN Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_syn_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_syn_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Syn, timeout)
 }
 
@@ -975,7 +1008,7 @@ pub fn tcp_fin_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -990,10 +1023,7 @@ pub fn tcp_fin_scan(
 
 /// TCP FIN Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_fin_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_fin_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Fin, timeout)
 }
 
@@ -1003,7 +1033,7 @@ pub fn tcp_ack_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -1018,10 +1048,7 @@ pub fn tcp_ack_scan(
 
 /// TCP ACK Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_ack_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_ack_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Ack, timeout)
 }
 
@@ -1031,7 +1058,7 @@ pub fn tcp_null_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -1046,10 +1073,7 @@ pub fn tcp_null_scan(
 
 /// TCP Null Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_null_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_null_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Null, timeout)
 }
 
@@ -1059,7 +1083,7 @@ pub fn tcp_xmas_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -1074,10 +1098,7 @@ pub fn tcp_xmas_scan(
 
 /// TCP Xmas Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_xmas_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_xmas_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Xmas, timeout)
 }
 
@@ -1087,7 +1108,7 @@ pub fn tcp_window_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -1102,10 +1123,7 @@ pub fn tcp_window_scan(
 
 /// TCP Window Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_window_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_window_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Window, timeout)
 }
 
@@ -1115,7 +1133,7 @@ pub fn tcp_maimon_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -1130,10 +1148,7 @@ pub fn tcp_maimon_scan(
 
 /// TCP Maimon Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_maimon_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn tcp_maimon_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Maimon, timeout)
 }
 
@@ -1146,7 +1161,7 @@ pub fn tcp_idle_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         zombie_mac,
@@ -1167,7 +1182,7 @@ pub fn tcp_idle_scan_raw(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+) -> Result<PortScan, PistolError> {
     scan_raw(
         net_info,
         zombie_mac,
@@ -1184,7 +1199,7 @@ pub fn udp_scan(
     threads: usize,
     timeout: Duration,
     attempts: usize,
-) -> Result<PistolPortScans, PistolError> {
+) -> Result<PortScans, PistolError> {
     scan(
         net_infos,
         None,
@@ -1199,10 +1214,7 @@ pub fn udp_scan(
 
 /// UDP Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn udp_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+pub fn udp_scan_raw(net_info: NetInfo, timeout: Duration) -> Result<PortScan, PistolError> {
     scan_raw(net_info, None, None, None, ScanMethod::Udp, timeout)
 }
 
@@ -1214,7 +1226,9 @@ fn scan_raw(
     zombie_port: Option<u16>,
     method: ScanMethod,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
+    attempts: usize,
+) -> Result<PortScan, PistolError> {
+    let mut ret = PortScan::new(attempts);
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
     let src_mac = net_info.src_mac;
@@ -1233,7 +1247,7 @@ fn scan_raw(
     // dst_addr may change during the processing.
     // It is only used here to determine whether the target is ipv4 or ipv6.
     // The real dst_addr is inferred from infer_addr.
-    match dst_addr {
+    let ret = match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match net_info.src_addr {
                 IpAddr::V4(s) => s,
@@ -1257,7 +1271,13 @@ fn scan_raw(
                 method,
                 timeout,
             )?;
-            Ok((port_status, rtt))
+            let port_report = PortReport {
+                addr: dst_addr,
+                port: dst_port,
+                ori_target: Some(String::from("raw")),
+                status: port_status,
+                cost: rtt,
+            };
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match net_info.src_addr {
@@ -1293,7 +1313,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
+        pistol.init_recvers_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1313,7 +1333,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
+        pistol.init_recvers_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1326,7 +1346,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
+        pistol.init_recvers_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1341,7 +1361,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
+        pistol.init_recvers_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1358,7 +1378,7 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
 
         let ret = tcp_connect_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
@@ -1389,7 +1409,7 @@ mod tests {
         let targets = vec![target1];
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1410,7 +1430,7 @@ mod tests {
         let targets = vec![target1];
 
         let mut pistol = Pistol::new();
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, attempts).unwrap();
         for r in ret.port_reports {
             match r.status {
@@ -1431,7 +1451,7 @@ mod tests {
         let attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
         let ret = tcp_fin_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1446,7 +1466,7 @@ mod tests {
         let attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
         let ret = tcp_ack_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1461,7 +1481,7 @@ mod tests {
         let attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
         let ret = tcp_null_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }
@@ -1476,7 +1496,7 @@ mod tests {
         let attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let net_infos = pistol.init_runners(&targets, src_addr, src_port).unwrap();
+        let net_infos = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
         let ret = udp_scan(net_infos, threads, timeout, attempts).unwrap();
         println!("{}", ret);
     }

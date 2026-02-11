@@ -36,7 +36,7 @@ pcapture = { version = "^0", features = ["pcapng", "libpcap"] }
 
 [features]
 default = ["scan", "ping", "flood", "os", "vs", "trace"]
-dev = ["scan", "ping", "flood", "os", "vs", "trace", "debug"]
+dev = ["scan", "ping", "flood", "os", "vs", "trace"]
 scan = []
 ping = []
 flood = []

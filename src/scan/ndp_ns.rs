@@ -118,13 +118,13 @@ pub fn send_ndp_ns_scan_packet(
     icmpv6_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "ndp_ns scan layer3",
+        name: "ndp_ns scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "ndp_ns scan icmpv6",
+        name: "ndp_ns scan icmpv6".to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
         icmpv6_code: None,

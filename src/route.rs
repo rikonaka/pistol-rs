@@ -778,7 +778,7 @@ fn send_ndp_rs_packet(
     //     dst_addr: Some(route_addr_1.into()),
     // };
     let layer3 = Layer3Filter {
-        name: "ndp_ns layer3",
+        name: "ndp_ns layer3".to_string().to_string(),
         layer2: None,
         src_addr: None,
         dst_addr: None,
@@ -795,7 +795,7 @@ fn send_ndp_rs_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "ndp_ns icmpv6",
+        name: "ndp_ns icmpv6".to_string().to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::RouterAdvert), // Type: Router Advertisement (134)
         icmpv6_code: None,

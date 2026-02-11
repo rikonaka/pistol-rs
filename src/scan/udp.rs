@@ -89,14 +89,14 @@ pub fn send_udp_scan_packet(
     udp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "udp scan layer3",
+        name: "udp scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "udp scan tcp_udp",
-        layer3: Some(layer3),
+        name: "udp scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -112,7 +112,7 @@ pub fn send_udp_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "udp scan icmp",
+        name: "udp scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,

@@ -112,14 +112,14 @@ pub fn send_syn_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp syn scan layer3",
+        name: "tcp syn scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp syn scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp syn scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -135,7 +135,7 @@ pub fn send_syn_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp syn scan icmp",
+        name: "tcp syn scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -259,14 +259,14 @@ pub fn send_fin_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp fin scan layer3",
+        name: "tcp fin scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp fin scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp fin scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -282,7 +282,7 @@ pub fn send_fin_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp fin scan icmp",
+        name: "tcp fin scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -407,14 +407,14 @@ pub fn send_ack_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp ack scan layer3",
+        name: "tcp ack scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp ack scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp ack scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -430,7 +430,7 @@ pub fn send_ack_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp ack scan icmp",
+        name: "tcp ack scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -551,14 +551,14 @@ pub fn send_null_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp null scan layer3",
+        name: "tcp null scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp null scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp null scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -574,7 +574,7 @@ pub fn send_null_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp null scan icmp",
+        name: "tcp null scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -696,14 +696,14 @@ pub fn send_xmas_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp xmas scan icmp",
+        name: "tcp xmas scan icmp".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp xmas scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp xmas scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -719,7 +719,7 @@ pub fn send_xmas_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp xmas scan icmp",
+        name: "tcp xmas scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -840,14 +840,14 @@ pub fn send_window_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp window scan layer3",
+        name: "tcp window scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp window scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp window scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -863,7 +863,7 @@ pub fn send_window_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp window scan icmp",
+        name: "tcp window scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -989,14 +989,14 @@ pub fn send_maimon_scan_packet(
     tcp_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "tcp maimon scan layer3",
+        name: "tcp maimon scan layer3".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp maimon scan tcp_udp",
-        layer3: Some(layer3),
+        name: "tcp maimon scan tcp_udp".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -1012,7 +1012,7 @@ pub fn send_maimon_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp maimon scan icmp",
+        name: "tcp maimon scan icmp".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -1146,13 +1146,13 @@ pub fn send_idle_scan_packet(
 
     // 1. probe the zombie's ip id
     let layer3_zombie = Layer3Filter {
-        name: "tcp zombie scan layer3 1",
+        name: "tcp zombie scan layer3 1".to_string(),
         layer2: None,
         src_addr: Some(zombie_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp_zombie = Layer4FilterTcpUdp {
-        name: "tcp zombie scan tcp_udp 1",
+        name: "tcp zombie scan tcp_udp 1".to_string(),
         layer3: Some(layer3_zombie.clone()),
         src_port: Some(zombie_port),
         dst_port: Some(src_port),
@@ -1169,7 +1169,7 @@ pub fn send_idle_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp_zombie = Layer4FilterIcmp {
-        name: "tcp zombie scan icmp 1",
+        name: "tcp zombie scan icmp 1".to_string(),
         layer3: Some(layer3_zombie.clone()),
         icmp_type: None,
         icmp_code: None,
@@ -1247,14 +1247,14 @@ pub fn send_idle_scan_packet(
 
     // 4. probe the zombie's ip id again
     let layer3 = Layer3Filter {
-        name: "tcp zombie scan layer 2",
+        name: "tcp zombie scan layer 2".to_string(),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp zombie scan tcp_udp 2",
-        layer3: Some(layer3),
+        name: "tcp zombie scan tcp_udp 2".to_string(),
+        layer3: Some(layer3.clone()),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
     };
@@ -1270,7 +1270,7 @@ pub fn send_idle_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp zombie scan icmp 2",
+        name: "tcp zombie scan icmp 2".to_string(),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
