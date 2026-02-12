@@ -198,7 +198,9 @@ fn ipv4_flood_thread(
                     0
                 }
             };
-            let _ = tx.send(send_buff_size);
+            if let Err(e) = tx.send(send_buff_size) {
+                error!("failed to send to tx on func ipv4_flood_thread: {}", e);
+            }
         });
     }
     let iter = rx.into_iter().take(threads);
@@ -255,7 +257,9 @@ fn ipv6_flood_thread(
                     0
                 }
             };
-            let _ = tx.send(send_buff_size);
+            if let Err(e) = tx.send(send_buff_size) {
+                error!("failed to send to tx on func ipv6_flood_thread: {}", e);
+            }
         });
     }
     let iter = rx.into_iter().take(threads);
@@ -311,7 +315,9 @@ fn flood(
                                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
                                 &interface, method, threads, retransmit,
                             );
-                            let _ = tx.send((dst_addr, ori_dst_addr, ret, start_time));
+                            if let Err(e) = tx.send((dst_addr, ori_dst_addr, ret, start_time)) {
+                                error!("failed to send to tx on func flood: {}", e);
+                            }
                         });
                         recv_size += 1;
                     }
@@ -347,7 +353,9 @@ fn flood(
                                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
                                 &interface, method, threads, retransmit,
                             );
-                            let _ = tx.send((dst_addr, ori_dst_addr, ret, start_time));
+                            if let Err(e) = tx.send((dst_addr, ori_dst_addr, ret, start_time)) {
+                                error!("failed to send to tx on func flood: {}", e);
+                            }
                         });
                         recv_size += 1;
                     }

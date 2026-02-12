@@ -21,6 +21,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
 
+use crate::GLOBAL_NET_CACHES;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
@@ -145,9 +146,30 @@ pub fn send_ndp_ns_scan_packet(
             Vec::new()
         }
     };
-    let rtt = start.elapsed();
 
+    let rtt = start.elapsed();
     let mac = get_mac_from_ndp_ns(&eth_response);
+    match mac {
+        Some(mac) => {
+            let mut gncs = GLOBAL_NET_CACHES
+                .lock()
+                .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+            let _ = gncs
+                .system_network_cache
+                .update_neighbor_cache(dst_ipv6.into(), mac);
+        }
+        None => {
+            // this case may happen when the target host is down or the arp response packet is lost,
+            // we just set the mac to 00:00:00:00:00:00 to indicate the host is down.
+            let mut gncs = GLOBAL_NET_CACHES
+                .lock()
+                .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+            let _ = gncs
+                .system_network_cache
+                .update_neighbor_cache(dst_ipv6.into(), MacAddr::zero());
+        }
+    }
+
     Ok((mac, rtt))
 }
 

@@ -31,6 +31,8 @@ use std::time::Instant;
 #[cfg(feature = "vs")]
 use tracing::debug;
 #[cfg(feature = "vs")]
+use tracing::error;
+#[cfg(feature = "vs")]
 use zip::ZipArchive;
 
 #[cfg(feature = "vs")]
@@ -211,7 +213,9 @@ pub fn vs_scan(
                     service_probes,
                     timeout,
                 );
-                let _ = tx.send((dst_addr, dst_port, origin, probe_ret, start_time));
+                if let Err(e) = tx.send((dst_addr, dst_port, origin, probe_ret, start_time)) {
+                    error!("failed to send to tx on func vs_scan: {}", e);
+                }
             });
             recv_size += 1;
         }

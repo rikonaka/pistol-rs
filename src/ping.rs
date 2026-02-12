@@ -90,47 +90,80 @@ impl fmt::Display for PingStatus {
 #[derive(Debug, Clone)]
 pub struct PingReport {
     pub addr: IpAddr,
-    pub origin: IpAddr,
     pub status: PingStatus,
     pub cost: Duration,
 }
 
 #[cfg(feature = "ping")]
 #[derive(Debug, Clone)]
-pub struct PistolPings {
+pub struct HostPing {
+    pub layer2_cost: Duration,
+    pub ping_report: Option<PingReport>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
+    pub max_attempts: usize,
+}
+
+#[cfg(feature = "ping")]
+impl HostPing {
+    pub(crate) fn new(max_attempts: usize) -> Self {
+        Self {
+            layer2_cost: Duration::ZERO,
+            ping_report: None,
+            start_time: Local::now(),
+            end_time: Local::now(),
+            max_attempts,
+        }
+    }
+    pub(crate) fn finish(&mut self, ping_report: Option<PingReport>) {
+        self.end_time = Local::now();
+        self.ping_report = ping_report;
+    }
+    pub fn report(&self) -> Option<PingReport> {
+        self.ping_report.clone()
+    }
+}
+
+#[cfg(feature = "ping")]
+#[derive(Debug, Clone)]
+pub struct HostPings {
+    /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
+    /// so we record the cost seconds of layer2 here.
+    pub layer2_cost: Duration,
     pub ping_reports: Vec<PingReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
-    attempts: usize,
+    pub max_attempts: usize,
 }
 
 #[cfg(feature = "ping")]
-impl PistolPings {
-    pub fn new(attempts: usize) -> PistolPings {
-        PistolPings {
+impl HostPings {
+    pub(crate) fn new(max_attempts: usize) -> HostPings {
+        HostPings {
+            layer2_cost: Duration::ZERO,
             ping_reports: Vec::new(),
             start_time: Local::now(),
             end_time: Local::now(),
-            attempts,
+            max_attempts,
         }
     }
-    pub fn value(&self) -> Vec<PingReport> {
-        self.ping_reports.clone()
-    }
-    pub fn finish(&mut self, ping_reports: Vec<PingReport>) {
+    pub(crate) fn finish(&mut self, ping_reports: Vec<PingReport>) {
         self.end_time = Local::now();
         self.ping_reports = ping_reports;
+    }
+    pub fn reports(&self) -> Vec<PingReport> {
+        self.ping_reports.clone()
     }
 }
 
 #[cfg(feature = "ping")]
-impl fmt::Display for PistolPings {
+impl fmt::Display for HostPings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.end_time - self.start_time;
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Ping Results (attempts:{})", self.attempts))
+            Cell::new(&format!("Pings (max_attempts:{})", self.max_attempts))
                 .style_spec("c")
                 .with_hspan(4),
         ]));
@@ -155,11 +188,7 @@ impl fmt::Display for PistolPings {
                 PingStatus::Up => alive_hosts += 1,
                 _ => (),
             }
-            let addr_str = if report.origin != report.addr {
-                format!("{}({})", report.origin, report.addr)
-            } else {
-                format!("{}", report.addr)
-            };
+            let addr_str = format!("{}", report.addr);
             let status_str = format!("{}", report.status);
             let rtt_str = utils::time_sec_to_string(report.cost);
             table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> rtt_str]);
@@ -205,19 +234,19 @@ fn ping_thread(
     method: PingMethods,
     timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    let (ping_status, data_return, rtt) = match method {
+    let (ping_status, data_recv_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let (port_status, data_return, rtt) = tcp::send_syn_scan_packet(
+            let (port_status, data_recv_status, rtt) = tcp::send_syn_scan_packet(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
             )?;
             match port_status {
-                PortStatus::Open => (PingStatus::Up, data_return, rtt),
-                _ => (PingStatus::Down, data_return, rtt),
+                PortStatus::Open => (PingStatus::Up, data_recv_status, rtt),
+                _ => (PingStatus::Down, data_recv_status, rtt),
             }
         }
         PingMethods::Ack => {
@@ -226,12 +255,12 @@ fn ping_thread(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let (ret, data_return, rtt) = tcp::send_ack_scan_packet(
+            let (ret, data_recv_status, rtt) = tcp::send_ack_scan_packet(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
             )?;
             match ret {
-                PortStatus::Unfiltered => (PingStatus::Up, data_return, rtt),
-                _ => (PingStatus::Down, data_return, rtt),
+                PortStatus::Unfiltered => (PingStatus::Up, data_recv_status, rtt),
+                _ => (PingStatus::Down, data_recv_status, rtt),
             }
         }
         PingMethods::Udp => {
@@ -240,32 +269,32 @@ fn ping_thread(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let (ret, data_return, rtt) = udp::send_udp_scan_packet(
+            let (ret, data_recv_status, rtt) = udp::send_udp_scan_packet(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
             )?;
             match ret {
-                PortStatus::Open => (PingStatus::Up, data_return, rtt),
+                PortStatus::Open => (PingStatus::Up, data_recv_status, rtt),
                 // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
-                _ => (PingStatus::Down, data_return, rtt),
+                _ => (PingStatus::Down, data_recv_status, rtt),
             }
         }
         PingMethods::IcmpEcho => {
-            let (ret, data_return, rtt) = icmp::send_icmp_echo_packet(
+            let (ret, data_recv_status, rtt) = icmp::send_icmp_echo_packet(
                 dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
             )?;
-            (ret, data_return, rtt)
+            (ret, data_recv_status, rtt)
         }
         PingMethods::IcmpTimeStamp => {
-            let (ret, data_return, rtt) = icmp::send_icmp_timestamp_packet(
+            let (ret, data_recv_status, rtt) = icmp::send_icmp_timestamp_packet(
                 dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
             )?;
-            (ret, data_return, rtt)
+            (ret, data_recv_status, rtt)
         }
         PingMethods::IcmpAddressMask => {
-            let (ret, data_return, rtt) = icmp::send_icmp_address_mask_packet(
+            let (ret, data_recv_status, rtt) = icmp::send_icmp_address_mask_packet(
                 dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
             )?;
-            (ret, data_return, rtt)
+            (ret, data_recv_status, rtt)
         }
         PingMethods::Icmpv6Echo => {
             return Err(PistolError::PingDetectionMethodError {
@@ -274,7 +303,7 @@ fn ping_thread(
             });
         }
     };
-    Ok((ping_status, data_return, rtt))
+    Ok((ping_status, data_recv_status, rtt))
 }
 
 #[cfg(feature = "ping")]
@@ -289,19 +318,19 @@ fn ping_thread6(
     method: PingMethods,
     timeout: Duration,
 ) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
-    let (ping_status, data_return, rtt) = match method {
+    let (ping_status, data_recv_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
 
-            let (ret, data_return, rtt) = tcp6::send_syn_scan_packet(
+            let (ret, data_recv_status, rtt) = tcp6::send_syn_scan_packet(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
             )?;
             match ret {
-                PortStatus::Open => (PingStatus::Up, data_return, rtt),
-                _ => (PingStatus::Down, data_return, rtt),
+                PortStatus::Open => (PingStatus::Up, data_recv_status, rtt),
+                _ => (PingStatus::Down, data_recv_status, rtt),
             }
         }
         PingMethods::Ack => {
@@ -310,12 +339,12 @@ fn ping_thread6(
                 None => ACK_PING_DEFAULT_PORT,
             };
 
-            let (ret, data_return, rtt) = tcp6::send_ack_scan_packet(
+            let (ret, data_recv_status, rtt) = tcp6::send_ack_scan_packet(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
             )?;
             match ret {
-                PortStatus::Unfiltered => (PingStatus::Up, data_return, rtt),
-                _ => (PingStatus::Down, data_return, rtt),
+                PortStatus::Unfiltered => (PingStatus::Up, data_recv_status, rtt),
+                _ => (PingStatus::Down, data_recv_status, rtt),
             }
         }
         PingMethods::Udp => {
@@ -324,13 +353,13 @@ fn ping_thread6(
                 None => UDP_PING_DEFAULT_PORT,
             };
 
-            let (ret, data_return, rtt) = udp6::send_udp_scan_packet(
+            let (ret, data_recv_status, rtt) = udp6::send_udp_scan_packet(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
             )?;
             match ret {
-                PortStatus::Open => (PingStatus::Up, data_return, rtt),
-                PortStatus::OpenOrFiltered => (PingStatus::Up, data_return, rtt),
-                _ => (PingStatus::Down, data_return, rtt),
+                PortStatus::Open => (PingStatus::Up, data_recv_status, rtt),
+                PortStatus::OpenOrFiltered => (PingStatus::Up, data_recv_status, rtt),
+                _ => (PingStatus::Down, data_recv_status, rtt),
             }
         }
         PingMethods::IcmpEcho | PingMethods::IcmpTimeStamp | PingMethods::IcmpAddressMask => {
@@ -346,7 +375,7 @@ fn ping_thread6(
             dst_mac, dst_ipv6, src_mac, src_ipv6, interface, timeout,
         )?,
     };
-    Ok((ping_status, data_return, rtt))
+    Ok((ping_status, data_recv_status, rtt))
 }
 
 #[cfg(feature = "ping")]
@@ -355,9 +384,9 @@ fn ping(
     method: PingMethods,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
-    let mut pistol_pings = PistolPings::new(attempts);
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
+    let mut pistol_pings = HostPings::new(max_attempts);
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -365,10 +394,9 @@ fn ping(
     for ni in net_infos {
         let dst_mac = ni.dst_mac;
         let dst_addr = ni.dst_addr;
-        let ori_dst_addr = ni.ori_dst_addr;
         let src_mac = ni.src_mac;
         let src_port = ni.src_port;
-        let interface = ni.interface;
+        let interface = ni.interface.clone();
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let tx = tx.clone();
@@ -399,28 +427,26 @@ fn ping(
                 };
                 recv_size += 1;
                 pool.execute(move || {
-                    for ind in 0..attempts {
+                    for ind in 0..max_attempts {
                         let start_time = Instant::now();
                         let ping_ret = ping_thread(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             method, timeout,
                         );
-                        if ind == attempts - 1 {
+                        if ind == max_attempts - 1 {
                             // last attempt
-                            let _ =
-                                tx.send((dst_addr, ori_dst_addr, ping_ret, start_time.elapsed()));
+                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
-                                Ok((_port_status, data_return, _)) => {
-                                    match data_return {
+                                Ok((_port_status, data_recv_status, _)) => {
+                                    match data_recv_status {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            let _ = tx.send((
-                                                dst_addr,
-                                                ori_dst_addr,
-                                                ping_ret,
-                                                start_time.elapsed(),
-                                            ));
+                                            if let Err(e) =
+                                                tx.send((dst_addr, ping_ret, start_time.elapsed()))
+                                            {
+                                                error!("failed to send to tx on func ping: {}", e);
+                                            }
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
@@ -429,12 +455,11 @@ fn ping(
                                 }
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
-                                    let _ = tx.send((
-                                        dst_addr,
-                                        ori_dst_addr,
-                                        ping_ret,
-                                        start_time.elapsed(),
-                                    ));
+                                    if let Err(e) =
+                                        tx.send((dst_addr, ping_ret, start_time.elapsed()))
+                                    {
+                                        error!("failed to send to tx on func ping: {}", e);
+                                    }
                                     break;
                                 }
                             }
@@ -465,28 +490,26 @@ fn ping(
                     };
                 recv_size += 1;
                 pool.execute(move || {
-                    for ind in 0..attempts {
+                    for ind in 0..max_attempts {
                         let start_time = Instant::now();
                         let ping_ret = ping_thread6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             method, timeout,
                         );
-                        if ind == attempts - 1 {
+                        if ind == max_attempts - 1 {
                             // last attempt
-                            let _ =
-                                tx.send((dst_addr, ori_dst_addr, ping_ret, start_time.elapsed()));
+                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
                         } else {
                             match ping_ret {
-                                Ok((_port_status, data_return, _)) => {
-                                    match data_return {
+                                Ok((_port_status, data_recv_status, _)) => {
+                                    match data_recv_status {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            let _ = tx.send((
-                                                dst_addr,
-                                                ori_dst_addr,
-                                                ping_ret,
-                                                start_time.elapsed(),
-                                            ));
+                                            if let Err(e) =
+                                                tx.send((dst_addr, ping_ret, start_time.elapsed()))
+                                            {
+                                                error!("failed to send to tx on func ping: {}", e);
+                                            }
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
@@ -495,12 +518,11 @@ fn ping(
                                 }
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
-                                    let _ = tx.send((
-                                        dst_addr,
-                                        ori_dst_addr.clone(),
-                                        ping_ret,
-                                        start_time.elapsed(),
-                                    ));
+                                    if let Err(e) =
+                                        tx.send((dst_addr, ping_ret, start_time.elapsed()))
+                                    {
+                                        error!("failed to send to tx on func ping: {}", e);
+                                    }
                                     break;
                                 }
                             }
@@ -513,22 +535,20 @@ fn ping(
 
     let iter = rx.into_iter().take(recv_size);
     let mut reports = Vec::new();
-    for (dst_addr, origin, v, elapsed) in iter {
-        match v {
-            Ok((status, _data_return, rtt)) => {
+    for (dst_addr, ret, elapsed) in iter {
+        match ret {
+            Ok((status, _data_recv_status, rtt)) => {
                 let ping_report = PingReport {
                     addr: dst_addr,
-                    origin,
                     status,
                     cost: rtt,
                 };
                 reports.push(ping_report);
             }
             Err(e) => match e {
-                PistolError::CanNotFoundMacAddress => {
+                PistolError::CanNotFoundDstMacAddress => {
                     let scan_report = PingReport {
                         addr: dst_addr,
-                        origin,
                         status: PingStatus::Down,
                         cost: elapsed,
                     };
@@ -538,7 +558,6 @@ fn ping(
                     error!("ping error: {}", e);
                     let scan_report = PingReport {
                         addr: dst_addr,
-                        origin,
                         status: PingStatus::Error,
                         cost: elapsed,
                     };
@@ -556,9 +575,9 @@ pub fn tcp_syn_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
-    ping(net_infos, PingMethods::Syn, threads, timeout, attempts)
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
+    ping(net_infos, PingMethods::Syn, threads, timeout, max_attempts)
 }
 
 #[cfg(feature = "ping")]
@@ -598,7 +617,7 @@ pub fn ping_raw(
 
             let (s, rtt) = match method {
                 PingMethods::Syn => {
-                    let (ret, _data_return, rtt) = tcp::send_syn_scan_packet(
+                    let (ret, data_recv_status, rtt) = tcp::send_syn_scan_packet(
                         dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
                         timeout,
                     )?;
@@ -608,7 +627,7 @@ pub fn ping_raw(
                     }
                 }
                 PingMethods::Ack => {
-                    let (ret, _data_return, rtt) = tcp::send_ack_scan_packet(
+                    let (ret, data_recv_status, rtt) = tcp::send_ack_scan_packet(
                         dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
                         timeout,
                     )?;
@@ -618,7 +637,7 @@ pub fn ping_raw(
                     }
                 }
                 PingMethods::Udp => {
-                    let (ret, _data_return, rtt) = udp::send_udp_scan_packet(
+                    let (ret, data_recv_status, rtt) = udp::send_udp_scan_packet(
                         dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
                         timeout,
                     )?;
@@ -629,19 +648,19 @@ pub fn ping_raw(
                     }
                 }
                 PingMethods::IcmpEcho => {
-                    let (ret, _data_return, rtt) = icmp::send_icmp_echo_packet(
+                    let (ret, data_recv_status, rtt) = icmp::send_icmp_echo_packet(
                         dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
                     )?;
                     (ret, rtt)
                 }
                 PingMethods::IcmpTimeStamp => {
-                    let (ret, _data_return, rtt) = icmp::send_icmp_timestamp_packet(
+                    let (ret, data_recv_status, rtt) = icmp::send_icmp_timestamp_packet(
                         dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
                     )?;
                     (ret, rtt)
                 }
                 PingMethods::IcmpAddressMask => {
-                    let (ret, _data_return, rtt) = icmp::send_icmp_address_mask_packet(
+                    let (ret, data_recv_status, rtt) = icmp::send_icmp_address_mask_packet(
                         dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
                     )?;
                     (ret, rtt)
@@ -668,7 +687,7 @@ pub fn ping_raw(
             };
             let (s, rtt) = match method {
                 PingMethods::Syn => {
-                    let (ret, _data_return, rtt) = tcp6::send_syn_scan_packet(
+                    let (ret, data_recv_status, rtt) = tcp6::send_syn_scan_packet(
                         dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                         timeout,
                     )?;
@@ -678,7 +697,7 @@ pub fn ping_raw(
                     }
                 }
                 PingMethods::Ack => {
-                    let (ret, _data_return, rtt) = tcp6::send_ack_scan_packet(
+                    let (ret, data_recv_status, rtt) = tcp6::send_ack_scan_packet(
                         dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                         timeout,
                     )?;
@@ -688,7 +707,7 @@ pub fn ping_raw(
                     }
                 }
                 PingMethods::Udp => {
-                    let (ret, _data_return, rtt) = udp6::send_udp_scan_packet(
+                    let (ret, data_recv_status, rtt) = udp6::send_udp_scan_packet(
                         dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                         timeout,
                     )?;
@@ -706,7 +725,7 @@ pub fn ping_raw(
                     });
                 }
                 _ => {
-                    let (ret, _data_return, rtt) = icmpv6::send_icmpv6_ping_packet(
+                    let (ret, data_recv_status, rtt) = icmpv6::send_icmpv6_ping_packet(
                         dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout,
                     )?;
                     (ret, rtt)
@@ -733,9 +752,9 @@ pub fn tcp_ack_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
-    ping(net_infos, PingMethods::Ack, threads, timeout, attempts)
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
+    ping(net_infos, PingMethods::Ack, threads, timeout, max_attempts)
 }
 
 /// TCP ACK Ping, raw version.
@@ -753,9 +772,9 @@ pub fn udp_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
-    ping(net_infos, PingMethods::Udp, threads, timeout, attempts)
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
+    ping(net_infos, PingMethods::Udp, threads, timeout, max_attempts)
 }
 
 /// UDP Ping, raw version.
@@ -772,9 +791,15 @@ pub fn icmp_echo_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
-    ping(net_infos, PingMethods::IcmpEcho, threads, timeout, attempts)
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
+    ping(
+        net_infos,
+        PingMethods::IcmpEcho,
+        threads,
+        timeout,
+        max_attempts,
+    )
 }
 
 #[cfg(feature = "ping")]
@@ -790,14 +815,14 @@ pub fn icmp_timestamp_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::IcmpTimeStamp,
         threads,
         timeout,
-        attempts,
+        max_attempts,
     )
 }
 
@@ -814,14 +839,14 @@ pub fn icmp_address_mask_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::IcmpAddressMask,
         threads,
         timeout,
-        attempts,
+        max_attempts,
     )
 }
 
@@ -838,14 +863,14 @@ pub fn icmpv6_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    attempts: usize,
-) -> Result<PistolPings, PistolError> {
+    max_attempts: usize,
+) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::Icmpv6Echo,
         threads,
         timeout,
-        attempts,
+        max_attempts,
     )
 }
 
@@ -860,7 +885,7 @@ pub fn icmp_ping_raw(
 /*
 #[cfg(feature = "ping")]
 #[cfg(test)]
-mod attempts {
+mod max_attempts {
     use super::*;
     use crate::Target;
     use std::str::FromStr;
@@ -875,7 +900,7 @@ mod attempts {
         let target1 = Target::new(addr1, Some(vec![80]));
         let target2 = Target::new(addr2, Some(vec![80]));
         let target3 = Target::new(addr3, Some(vec![80]));
-        let attempts = 2;
+        let max_attempts = 2;
         let threads = Some(8);
         let ret = tcp_syn_ping(
             &[target1, target2, target3],
@@ -884,7 +909,7 @@ mod attempts {
             src_ipv4,
             src_port,
             timeout,
-            attempts,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -910,7 +935,7 @@ mod attempts {
         let target1 = Target::new(addr1.into(), Some(vec![80]));
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
-        let attempts = 4;
+        let max_attempts = 4;
         let threads = Some(8);
         let ret = tcp_syn_ping(
             &[target1, target2, target3],
@@ -918,7 +943,7 @@ mod attempts {
             src_ipv4,
             src_port,
             timeout,
-            attempts,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -936,7 +961,7 @@ mod attempts {
         // let target2 = Target::new(addr2.into(), Some(vec![]));
         // let target3 = Target::new(addr3.into(), Some(vec![]));
         // let target4 = Target::new(addr4.into(), Some(vec![]));
-        let attempts = 4;
+        let max_attempts = 4;
         let threads = Some(8);
         let ret = icmp_echo_ping(
             // &[target1, target2, target3, target4],
@@ -945,7 +970,7 @@ mod attempts {
             src_ipv4,
             src_port,
             timeout,
-            attempts,
+            max_attempts,
         )
         .unwrap();
 
@@ -964,7 +989,7 @@ mod attempts {
         // let target2 = Target::new(addr2.into(), Some(vec![]));
         // let target3 = Target::new(addr3.into(), Some(vec![]));
         // let target4 = Target::new(addr4.into(), Some(vec![]));
-        let attempts = 4;
+        let max_attempts = 4;
         let threads = Some(8);
         let ret = icmp_timestamp_ping(
             // &[target1, target2, target3, target4],
@@ -973,7 +998,7 @@ mod attempts {
             src_ipv4,
             src_port,
             timeout,
-            attempts,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);
@@ -985,9 +1010,9 @@ mod attempts {
         let timeout = Some(Duration::new(1, 0));
         let targets = Target::from_domain("scanme.nmap.org", None).unwrap();
 
-        let attempts = 4;
+        let max_attempts = 4;
         let threads = Some(8);
-        let ret = icmp_echo_ping(&targets, threads, src_ipv4, src_port, timeout, attempts).unwrap();
+        let ret = icmp_echo_ping(&targets, threads, src_ipv4, src_port, timeout, max_attempts).unwrap();
         println!("{}", ret.ping_reports.len());
         println!("{}", ret);
     }
@@ -1001,7 +1026,7 @@ mod attempts {
         let target1 = Target::new(addr1.into(), Some(vec![80]));
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
-        let attempts = 4;
+        let max_attempts = 4;
         let threads = Some(8);
         let timeout = Some(Duration::new(1, 0));
         let ret = icmpv6_ping(
@@ -1010,7 +1035,7 @@ mod attempts {
             src_addr,
             src_port,
             timeout,
-            attempts,
+            max_attempts,
         )
         .unwrap();
         println!("{}", ret);

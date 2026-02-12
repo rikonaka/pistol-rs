@@ -16,6 +16,8 @@ use pnet::packet::icmpv6::ndp::NdpOptionTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use regex::Regex;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -32,10 +34,9 @@ use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 use tracing::warn;
 
+use crate::GLOBAL_NET_CACHES;
 use crate::NEIGHBOR_DETECT_MUTEX;
-use crate::PROGRAM_NETWORK_CACHE;
 use crate::PacketFilter;
-use crate::SYSTEM_NETWORK_CACHE;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_RS_HEADER_SIZE;
@@ -70,11 +71,11 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 
 fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
     // release the lock when leaving the function
-    let mut snc = SYSTEM_NETWORK_CACHE
+    let mut gncs = GLOBAL_NET_CACHES
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    let _ = snc.update_neighbor_cache(addr, mac);
-    debug!("update neighbor cache finish: {:?}", (*snc));
+    let _ = gncs.system_network_cache.update_neighbor_cache(addr, mac);
+    debug!("update neighbor cache finish: {:?}", (*gncs));
     Ok(())
 }
 
@@ -105,7 +106,7 @@ fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultRoute {
     pub via: IpAddr,           // Next hop gateway address
     pub dev: NetworkInterface, // Device interface name
@@ -121,7 +122,7 @@ impl fmt::Display for DefaultRoute {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RouteAddr {
     IpNetwork(IpNetwork),
     IpAddr(IpAddr),
@@ -560,74 +561,6 @@ impl InnerRouteTable {
     }
 }
 
-/// Destination mac address and interface cache.
-#[derive(Debug, Clone)]
-pub(crate) struct ProgramNetworkCache {
-    pub dst_addr: IpAddr,
-    pub src_addr: IpAddr,
-    pub dst_mac: MacAddr,
-    pub interface: NetworkInterface,
-}
-
-#[cfg(feature = "flood")]
-impl fmt::Display for ProgramNetworkCache {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if let Some(src_mac) = self.interface.mac {
-            format!(
-                "dst_addr: {}, src_addr {}, dst_mac: {}, src_mac: {:?}, interface: {}",
-                self.dst_addr, self.src_addr, self.dst_mac, src_mac, self.interface.name
-            )
-        } else {
-            format!(
-                "dst_addr: {}, src_addr {}, dst_mac: {}, interface: {}",
-                self.dst_addr, self.src_addr, self.dst_mac, self.interface.name
-            )
-        };
-        write!(f, "{}", output.to_string())
-    }
-}
-
-impl ProgramNetworkCache {
-    // the same target address does not need to be searched again
-    pub(crate) fn update(
-        dst_addr: IpAddr,
-        src_addr: IpAddr,
-        dst_mac: MacAddr,
-        interface: NetworkInterface,
-    ) -> Result<(), PistolError> {
-        let mut pnc = PROGRAM_NETWORK_CACHE
-            .lock()
-            .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-
-        if !pnc.contains_key(&dst_addr) {
-            let dc = ProgramNetworkCache {
-                dst_addr,
-                src_addr,
-                dst_mac,
-                interface,
-            };
-            let _ = (*pnc).insert(dst_addr, dc);
-            debug!("PROGRAM_NETWORK_CACHE updated: {:?}", (*pnc));
-        }
-        Ok(())
-    }
-    pub(crate) fn get(
-        dst_addr: IpAddr,
-    ) -> Result<Option<(MacAddr, NetworkInterface)>, PistolError> {
-        let pnc = PROGRAM_NETWORK_CACHE
-            .lock()
-            .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-
-        if let Some(dc) = pnc.get(&dst_addr) {
-            debug!("dst {} found in PROGRAM_NETWORK_CACHE", dst_addr);
-            Ok(Some((dc.dst_mac, dc.interface.clone())))
-        } else {
-            debug!("dst {} not found in PROGRAM_NETWORK_CACHE", dst_addr);
-            Ok(None)
-        }
-    }
-}
-
 fn find_loopback_interface() -> Option<NetworkInterface> {
     for interface in interfaces() {
         if interface.is_loopback() {
@@ -667,27 +600,27 @@ fn dst_addr_in_local_net(ip: IpAddr) -> bool {
 /// Get the default route info from the system route table.
 pub(crate) fn get_default_route()
 -> Result<(Option<DefaultRoute>, Option<DefaultRoute>), PistolError> {
-    let snc = SYSTEM_NETWORK_CACHE
+    let gncs = GLOBAL_NET_CACHES
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    let snc = snc.clone();
+    let snc = gncs.system_network_cache.clone();
     Ok((snc.default_route, snc.default_route6))
 }
 
 /// Get the send route info from the system route table.
 pub(crate) fn search_route_table(dst_addr: IpAddr) -> Result<Option<RouteInfo>, PistolError> {
-    let snc = SYSTEM_NETWORK_CACHE
+    let gncs = GLOBAL_NET_CACHES
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    Ok(snc.search_route_table(dst_addr))
+    Ok(gncs.system_network_cache.search_route_table(dst_addr))
 }
 
 /// Get the target mac address through arp table.
 pub(crate) fn search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
-    let snc = SYSTEM_NETWORK_CACHE
+    let gncs = GLOBAL_NET_CACHES
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    Ok(snc.search_mac(dst_addr))
+    Ok(gncs.system_network_cache.search_mac(dst_addr))
 }
 
 fn send_ndp_rs_packet(
@@ -718,7 +651,7 @@ fn send_ndp_rs_packet(
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(PistolError::CanNotFoundMacAddress),
+        None => return Err(PistolError::CanNotFoundDstMacAddress),
     };
 
     // ipv6
@@ -840,7 +773,7 @@ fn send_neighbor_detect_packet(
         if let Some(dst_mac) = interface.mac {
             Ok(dst_mac)
         } else {
-            Err(PistolError::CanNotFoundMacAddress)
+            Err(PistolError::CanNotFoundDstMacAddress)
         }
     } else if dst_addr_in_local_net(dst_addr) {
         if let Some(dst_mac) = search_mac(dst_addr)? {
@@ -872,7 +805,7 @@ fn send_neighbor_detect_packet(
                             neigh_cache_update(dst_ipv4.into(), dst_mac)?;
                             Ok(dst_mac)
                         }
-                        None => Err(PistolError::CanNotFoundMacAddress),
+                        None => Err(PistolError::CanNotFoundDstMacAddress),
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
@@ -891,7 +824,7 @@ fn send_neighbor_detect_packet(
                             neigh_cache_update(dst_ipv6.into(), dst_mac)?;
                             Ok(dst_mac)
                         }
-                        None => Err(PistolError::CanNotFoundMacAddress),
+                        None => Err(PistolError::CanNotFoundDstMacAddress),
                     }
                 }
             }
@@ -917,7 +850,7 @@ fn send_neighbor_detect_packet(
                 let dst_mac = MacAddr::broadcast();
                 let src_mac = match interface.mac {
                     Some(m) => m,
-                    None => return Err(PistolError::CanNotFoundMacAddress),
+                    None => return Err(PistolError::CanNotFoundDstMacAddress),
                 };
                 match dr.via {
                     IpAddr::V4(dr_ipv4) => {
@@ -968,16 +901,11 @@ pub(crate) fn infer_mac(
     src_addr: IpAddr,
     timeout: Duration,
 ) -> Result<(MacAddr, NetworkInterface), PistolError> {
-    fn get_data(
+    fn get_mac(
         dst_addr: IpAddr,
         src_addr: IpAddr,
         timeout: Duration,
     ) -> Result<(MacAddr, NetworkInterface), PistolError> {
-        // search in the program cache
-        if let Some((dst_mac, interface)) = ProgramNetworkCache::get(dst_addr)? {
-            return Ok((dst_mac, interface));
-        }
-
         let (src_iface, route_via) = if src_addr == dst_addr {
             let src_iface = match find_loopback_interface() {
                 Some(i) => i,
@@ -1048,23 +976,9 @@ pub(crate) fn infer_mac(
                                 timeout,
                             )?,
                         };
-                        ProgramNetworkCache::update(
-                            dst_addr,
-                            src_addr,
-                            dst_mac,
-                            interface.clone(),
-                        )?;
                         Ok((dst_mac, interface))
                     }
-                    RouteVia::MacAddr(dst_mac) => {
-                        ProgramNetworkCache::update(
-                            dst_addr,
-                            src_addr,
-                            dst_mac,
-                            src_iface.clone(),
-                        )?;
-                        Ok((dst_mac, src_iface))
-                    }
+                    RouteVia::MacAddr(dst_mac) => Ok((dst_mac, src_iface)),
                     RouteVia::IpAddr(via_addr) => {
                         // we need to fix 0.0.0.0
                         let via_addr = if via_addr.is_unspecified() {
@@ -1081,12 +995,6 @@ pub(crate) fn infer_mac(
                                 timeout,
                             )?,
                         };
-                        ProgramNetworkCache::update(
-                            dst_addr,
-                            src_addr,
-                            dst_mac,
-                            src_iface.clone(),
-                        )?;
                         Ok((dst_mac, src_iface))
                     }
                 }
@@ -1096,7 +1004,6 @@ pub(crate) fn infer_mac(
                 let dst_mac =
                     send_neighbor_detect_packet(dst_addr, src_addr, src_iface.clone(), timeout)?;
                 debug!("route_via is none and found dst_mac: {}", dst_mac);
-                ProgramNetworkCache::update(dst_addr, src_addr, dst_mac, src_iface.clone())?;
                 Ok((dst_mac, src_iface))
             }
         }
@@ -1118,7 +1025,7 @@ pub(crate) fn infer_mac(
     let _m = mutex
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    get_data(dst_addr, src_addr, timeout)
+    get_mac(dst_addr, src_addr, timeout)
 }
 
 /// The source address is inferred from the target address.
@@ -1214,7 +1121,7 @@ pub(crate) fn infer_addr(
     Ok(None)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum RouteVia {
     // linux
     IpAddr(IpAddr),
@@ -1323,7 +1230,7 @@ impl RouteVia {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteInfo {
     pub dev: NetworkInterface,
     pub via: Option<RouteVia>,
@@ -1766,7 +1673,7 @@ impl NeighborCache {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemNetCache {
     pub default_route: Option<DefaultRoute>,
     pub default_route6: Option<DefaultRoute>,
@@ -1775,7 +1682,7 @@ pub struct SystemNetCache {
 }
 
 impl SystemNetCache {
-    pub fn init() -> Result<SystemNetCache, PistolError> {
+    pub(crate) fn init() -> Result<SystemNetCache, PistolError> {
         let route_table = RouteTable::init()?;
         debug!("route table: {}", route_table);
         let neighbor_cache = NeighborCache::init()?;
@@ -1788,19 +1695,19 @@ impl SystemNetCache {
         };
         Ok(snc)
     }
-    pub fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
+    pub(crate) fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
         match self.neighbor.get(&ip) {
             Some(&m) => Some(m),
             None => None,
         }
     }
-    pub fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
+    pub(crate) fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
         self.neighbor.insert(ip, mac);
         debug!("update the neigh cache done: {:?}", self.neighbor);
     }
-    pub fn search_route_table(&self, ip: IpAddr) -> Option<RouteInfo> {
+    pub(crate) fn search_route_table(&self, dst_addr: IpAddr) -> Option<RouteInfo> {
         for (dst, route_info) in &self.routes {
-            if !dst.is_unspecified() && dst.contains(ip) {
+            if !dst.is_unspecified() && dst.contains(dst_addr) {
                 // debug!(
                 //     "route table {} contains target ip, route info dev: {}, via: {:?}",
                 //     dst, route_info.dev.name, route_info.via

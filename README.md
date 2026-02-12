@@ -282,7 +282,7 @@ fn main() {
         targets.push(host);
     }
     // Number of max attempts, it can also be understood as the maximum number of unsuccessful retries.
-    let attempts = 2;
+    let max_attempts = 2;
     let threads = Some(8);
     let ret = tcp_syn_scan(
         &targets,
@@ -290,7 +290,7 @@ fn main() {
         src_ipv4,
         src_port,
         timeout,
-        attempts,
+        max_attempts,
     )
     .unwrap();
     println!("{}", ret);
@@ -303,7 +303,7 @@ The local machine address I used for testing is `192.168.5.3`. This address's re
 
 ```
 +------------+--------------+------------+------------+------------+
-|                Port Scan Results (attempts:2)                |
+|                Port Scan Results (max_attempts:2)                |
 +------------+--------------+------------+------------+------------+
 |     id     |     addr     |    port    |   status   | time cost  |
 +------------+--------------+------------+------------+------------+

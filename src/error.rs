@@ -79,10 +79,10 @@ pub enum PistolError {
     /* LAYERS ERROR */
     #[error("create datalink channel failed")]
     CreateDatalinkChannelFailed,
-    #[error("can not found the target mac address, please check your network connection")]
+    #[error("can not found the src mac address, please check your network connection")]
     CanNotFoundSrcMacAddress,
-    #[error("can not found the target mac address, please make sure the target is alive")]
-    CanNotFoundMacAddress,
+    #[error("can not found the dst mac address, please make sure the target is alive")]
+    CanNotFoundDstMacAddress,
     #[error("can not found the route's mac address")]
     CanNotFoundRouteMacAddress,
     #[error("can not found the interface {i}")]

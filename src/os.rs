@@ -38,6 +38,8 @@ use std::time::Instant;
 #[cfg(feature = "os")]
 use tracing::debug;
 #[cfg(feature = "os")]
+use tracing::error;
+#[cfg(feature = "os")]
 use tracing::warn;
 #[cfg(feature = "os")]
 use zip::ZipArchive;
@@ -421,7 +423,9 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    let _ = tx.send((dst_addr, ori_dst_addr.clone(), od, start_time));
+                    if let Err(e) = tx.send((dst_addr, ori_dst_addr.clone(), od, start_time)) {
+                        error!("failed to send to tx on func os_detect: {}", e);
+                    }
                 });
             }
             IpAddr::V6(dst_ipv6) => {
@@ -472,7 +476,9 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    let _ = tx.send((dst_addr, ori_dst_addr, od, start_time));
+                    if let Err(e) = tx.send((dst_addr, ori_dst_addr, od, start_time)) {
+                        error!("failed to send to tx on func os_detect: {}", e);
+                    }
                 });
             }
         }

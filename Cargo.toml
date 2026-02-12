@@ -11,28 +11,29 @@ readme = "README.md"
 keywords = ["pentest", "cyber", "nmap", "scan", "security"]
 
 [dependencies]
-hex = "^0"
-zip = "^4"
-rand = "^0"
-gcdx = "^0"
-regex = "^1"
-chrono = "^0"
-tracing = "^0"
-num_cpus = "^1"
-crc32fast = "^1"
-thiserror = "^2"
-crossbeam = "^0"
-serde_json = "^1"
-dns-lookup = "^3"
-subnetwork = "^0"
-threadpool = "^1"
-fancy-regex = "^0"
-escape-bytes = "^0"
-prettytable-rs = "^0"
-tracing-subscriber = "^0"
-pnet = { version = "^0", features = ["serde"] }
-serde = { version = "^1", features = ["derive"] }
-pcapture = { version = "^0", features = ["pcapng", "libpcap"] }
+hex = "0.4.3"
+zip = "7.4.0"
+rand = "0.10.0"
+gcdx = "0.2.3"
+regex = "1.12.3"
+tracing = "0.1.44"
+num_cpus = "1.17.0"
+crc32fast = "1.5.0"
+thiserror = "2.0.18"
+crossbeam = "0.8.4"
+serde_json = "1.0.149"
+dns-lookup = "3.0.1"
+subnetwork = "0.6.6"
+threadpool = "1.8.1"
+fancy-regex = "0.17.0"
+escape-bytes = "0.1.1"
+prettytable-rs = "0.10.0"
+tracing-subscriber = "0.3.22"
+pnet = { version = "0.35.0", features = ["serde"] }
+chrono = { version = "0.4.43", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+bitcode = { version = "0.6.9", features = ["serde"] }
+pcapture = { version = "0.3.18", features = ["pcapng", "libpcap"] }
 
 [features]
 default = ["scan", "ping", "flood", "os", "vs", "trace"]
