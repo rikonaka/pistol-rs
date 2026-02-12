@@ -435,7 +435,9 @@ fn ping(
                         );
                         if ind == max_attempts - 1 {
                             // last attempt
-                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                            if let Err(e) = tx.send((dst_addr, ping_ret, start_time.elapsed())) {
+                                error!("failed to send to tx on func ping: {}", e);
+                            }
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_recv_status, _)) => {
@@ -498,7 +500,9 @@ fn ping(
                         );
                         if ind == max_attempts - 1 {
                             // last attempt
-                            let _ = tx.send((dst_addr, ping_ret, start_time.elapsed()));
+                            if let Err(e) = tx.send((dst_addr, ping_ret, start_time.elapsed())) {
+                                error!("failed to send to tx on func ping: {}", e);
+                            }
                         } else {
                             match ping_ret {
                                 Ok((_port_status, data_recv_status, _)) => {
