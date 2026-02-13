@@ -43,11 +43,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
+use threadpool::ThreadPool;
 use tracing::Level;
 use tracing::debug;
 use tracing::error;
@@ -607,11 +609,9 @@ pub(crate) fn ask_runner(
 }
 
 #[derive(Debug, Clone)]
-pub struct NetInfo {
+pub(crate) struct NetInfo {
     pub dst_mac: MacAddr,
     pub src_mac: MacAddr,
-    /// User input destination IP address.
-    pub ori_dst_addr: IpAddr,
     /// Inferred destination IP address.
     pub dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
@@ -621,16 +621,44 @@ pub struct NetInfo {
     /// User input source port.
     pub src_port: Option<u16>,
     pub interface: NetworkInterface,
+    /// Whether the network information is cached or inferred.
+    pub cached: bool,
+    pub cost: Duration,
+    pub valid: bool,
+}
+
+impl Default for NetInfo {
+    fn default() -> Self {
+        let fake_interface = NetworkInterface {
+            name: String::new(),
+            index: 0,
+            mac: None,
+            ips: Vec::new(),
+            flags: 0,
+            description: String::new(),
+        };
+        NetInfo {
+            dst_mac: MacAddr::zero(),
+            src_mac: MacAddr::zero(),
+            dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            dst_ports: Vec::new(),
+            src_port: None,
+            interface: fake_interface,
+            cached: true,
+            cost: Duration::ZERO,
+            valid: false,
+        }
+    }
 }
 
 impl NetInfo {
-    pub fn new(
+    pub(crate) fn new(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<Self, PistolError> {
-        let ori_dst_addr = dst_addr;
         debug!("infer: dst_addr({}) - src_addr({:?})", dst_addr, src_addr);
         let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
             Some(ret) => ret,
@@ -642,24 +670,51 @@ impl NetInfo {
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
         let infer_mac_timeout = Duration::from_secs_f32(0.5);
-        let (dst_mac, interface) = infer_mac(dst_addr, src_addr, infer_mac_timeout)?;
+        let (dst_mac, interface, cached) = infer_mac(dst_addr, src_addr, infer_mac_timeout)?;
         if dst_mac == MacAddr::zero() {
-            return Err(PistolError::CanNotFoundDstMacAddress);
+            // Create a new NetInfo instance with invalid data,
+            // indicated this target is down or unreachable.
+            let mut fake_net_info = NetInfo::default();
+            fake_net_info.dst_addr = dst_addr;
+            fake_net_info.dst_ports = dst_ports;
+            Ok(fake_net_info)
         } else {
             match interface.mac {
-                Some(src_mac) => Ok(NetInfo {
+                Some(src_mac) => Ok(Self {
                     dst_mac,
                     src_mac,
-                    ori_dst_addr,
                     dst_addr,
                     src_addr,
                     dst_ports,
                     src_port,
                     interface,
+                    cached,
+                    cost: Duration::ZERO,
+                    valid: true,
                 }),
                 None => Err(PistolError::CanNotFoundSrcMacAddress),
             }
         }
+    }
+}
+
+#[cfg(feature = "ping")]
+impl fmt::Display for NetInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = if self.valid {
+            format!(
+                "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
+                self.dst_mac,
+                self.src_mac,
+                self.dst_addr,
+                self.src_addr,
+                self.dst_ports,
+                self.interface.name
+            )
+        } else {
+            format!("unvalid target: dst_addr: {}", self.dst_addr)
+        };
+        write!(f, "{}", output)
     }
 }
 
@@ -907,21 +962,50 @@ impl Pistol {
             let _ = thread::spawn(move || Self::recver(ni.name));
         }
 
-        let mut net_infos = Vec::new();
+        // we can not spawn too many threads, otherwise it may cause performance degradation,
+        let threads = if targets.len() < 64 {
+            targets.len()
+        } else {
+            64
+        };
+        let thread_pool = ThreadPool::new(threads);
+        let recv_size = targets.len();
+        let (tx, rx) = mpsc::channel();
+
         for t in targets {
             let dst_addr = t.addr;
             let dst_ports = t.ports.clone();
-            let net_info = match NetInfo::new(dst_addr, dst_ports, src_addr, src_port) {
-                Ok(ni) => ni,
-                Err(e) => match e {
-                    PistolError::CanNotFoundDstMacAddress => {
-                        warn!("can not found MAC address for target {}, skip it", dst_addr);
-                        continue;
+            let tx = tx.clone();
+            thread_pool.execute(move || {
+                let net_info_now = Instant::now();
+                let net_info = match NetInfo::new(dst_addr, dst_ports, src_addr, src_port) {
+                    Ok(mut ni) => {
+                        ni.cost = net_info_now.elapsed();
+                        Ok(ni)
                     }
-                    _ => return Err(e),
-                },
-            };
-            net_infos.push(net_info);
+                    Err(e) => match e {
+                        PistolError::CanNotFoundDstMacAddress => {
+                            warn!("can not found dst mac address for target {}, this target may be down or unreachable, set it to unvalid net_info now", dst_addr);
+                            let mut ni = NetInfo::default();
+                            ni.dst_addr = dst_addr;
+                            #[cfg(feature = "debug")]
+                            println!("now cost: {:.3}s", net_info_now.elapsed().as_secs_f64());
+                            ni.cost = net_info_now.elapsed();
+                            Ok(ni)
+                        }
+                        _ => Err(e),
+                    },
+                };
+                if let Err(e) = tx.send(net_info) {
+                    error!("failed to send net_info: {}", e);
+                }
+            });
+        }
+
+        let mut net_infos = Vec::new();
+        let iter = rx.into_iter().take(recv_size);
+        for net_info in iter {
+            net_infos.push(net_info?);
         }
 
         Ok((net_infos, now.elapsed()))
@@ -2605,7 +2689,7 @@ mod tests {
         // If the value of `source port` is `None`, the program will generate the source port randomly.
         let src_port = None;
         let start = Ipv4Addr::new(192, 168, 5, 1);
-        let end = Ipv4Addr::new(192, 168, 5, 10);
+        let end = Ipv4Addr::new(192, 168, 5, 100);
         // The destination address is from 192.168.5.1 to 192.168.5.10.
         let subnet = CrossIpv4Pool::new(start, end).unwrap();
         let mut targets = vec![];

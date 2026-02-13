@@ -99,7 +99,6 @@ pub struct OsInfo6 {
 #[derive(Debug, Clone)]
 pub struct Detect {
     pub addr: IpAddr,
-    pub origin: IpAddr,
     pub alive: bool,
     pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
@@ -107,15 +106,41 @@ pub struct Detect {
     pub layer2_cost: Duration,
 }
 
+impl Detect {
+    fn new_down_host(dst_addr: IpAddr) -> Self {
+        Self {
+            addr: dst_addr,
+            alive: false,
+            fingerprint: Fingerprint::empty(),
+            detects: Vec::new(),
+            cost: Duration::ZERO,
+            layer2_cost: Duration::ZERO,
+        }
+    }
+}
+
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub struct Detect6 {
     pub addr: IpAddr,
-    pub origin: IpAddr,
     pub alive: bool,
     pub fingerprint: Fingerprint6,
     pub detects: Vec<OsInfo6>,
     pub cost: Duration,
+    pub layer2_cost: Duration,
+}
+
+impl Detect6 {
+    fn new_down_host(dst_addr: IpAddr) -> Self {
+        Self {
+            addr: dst_addr,
+            alive: false,
+            fingerprint: Fingerprint6::empty(),
+            detects: Vec::new(),
+            cost: Duration::ZERO,
+            layer2_cost: Duration::ZERO,
+        }
+    }
 }
 
 #[cfg(feature = "os")]
@@ -133,6 +158,12 @@ impl DetectReport {
             DetectReport::V6(ipv6) => ipv6.addr,
         }
     }
+    fn down_host(addr: IpAddr) -> Self {
+        match addr {
+            IpAddr::V4(_) => DetectReport::V4(Detect::new_down_host(addr)),
+            IpAddr::V6(_) => DetectReport::V6(Detect6::new_down_host(addr)),
+        }
+    }
 }
 
 #[cfg(feature = "os")]
@@ -141,7 +172,7 @@ pub struct OsDetect {
     pub layer2_cost: Duration,
     pub detect_report: Option<DetectReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
 }
 
 #[cfg(feature = "os")]
@@ -151,11 +182,11 @@ impl OsDetect {
             layer2_cost: Duration::ZERO,
             detect_report: None,
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
         }
     }
     fn finish(&mut self, os_detect: Option<DetectReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.detect_report = os_detect;
     }
 }
@@ -166,7 +197,7 @@ pub struct OsDetects {
     pub layer2_cost: Duration,
     pub detect_reports: Vec<DetectReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
 }
 
 #[cfg(feature = "os")]
@@ -176,11 +207,11 @@ impl OsDetects {
             layer2_cost: Duration::ZERO,
             detect_reports: Vec::new(),
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
         }
     }
     fn finish(&mut self, os_detects: Vec<DetectReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.detect_reports = os_detects;
     }
 }
@@ -209,11 +240,7 @@ impl fmt::Display for OsDetects {
             match detect {
                 DetectReport::V4(o) => {
                     let time_cost_str = utils::time_sec_to_string(o.cost);
-                    let addr_str = if o.origin != addr {
-                        format!("{}({})", o.origin, addr)
-                    } else {
-                        format!("{}", addr)
-                    };
+                    let addr_str = format!("{}", addr);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         if o.detects.len() > 0 {
@@ -238,7 +265,7 @@ impl fmt::Display for OsDetects {
                 }
                 DetectReport::V6(o) => {
                     let time_cost_str = utils::time_sec_to_string(o.cost);
-                    let addr_str = format!("{}({})", o.origin, addr);
+                    let addr_str = format!("{}", addr);
                     total_cost += o.cost.as_secs_f64();
                     if o.alive {
                         if o.detects.len() > 0 {
@@ -387,12 +414,19 @@ pub fn os_detect(
     let pool = utils::get_threads_pool(threads);
     let mut recv_size = 0;
     let mut ret = OsDetects::new();
+    let mut os_detects = Vec::new();
+
     for ni in net_infos {
+        if !ni.valid {
+            let od = DetectReport::down_host(ni.dst_addr);
+            os_detects.push(od);
+            continue;
+        }
+
         let dst_mac = ni.dst_mac;
         let dst_addr = ni.dst_addr;
         let src_mac = ni.src_mac;
         let interface = ni.interface;
-        let ori_dst_addr = ni.ori_dst_addr;
 
         let tx = tx.clone();
         recv_size += 1;
@@ -433,7 +467,6 @@ pub fn os_detect(
                         Ok((fingerprint, detects)) => {
                             let o = Detect {
                                 addr: dst_addr,
-                                origin: ori_dst_addr,
                                 alive: true,
                                 fingerprint,
                                 detects,
@@ -445,7 +478,7 @@ pub fn os_detect(
                         }
                         Err(e) => Err(e),
                     };
-                    if let Err(e) = tx.send((dst_addr, ori_dst_addr.clone(), od, start_time)) {
+                    if let Err(e) = tx.send((dst_addr, od, start_time)) {
                         error!("failed to send to tx on func os_detect: {}", e);
                     }
                 });
@@ -487,18 +520,18 @@ pub fn os_detect(
                         Ok((fingerprint, detects)) => {
                             let o = Detect6 {
                                 addr: dst_addr,
-                                origin: ori_dst_addr,
                                 alive: true,
                                 fingerprint,
                                 detects,
                                 cost: start_time.elapsed(),
+                                layer2_cost: Duration::ZERO,
                             };
                             let od = DetectReport::V6(o);
                             Ok(od)
                         }
                         Err(e) => Err(e),
                     };
-                    if let Err(e) = tx.send((dst_addr, ori_dst_addr, od, start_time)) {
+                    if let Err(e) = tx.send((dst_addr, od, start_time)) {
                         error!("failed to send to tx on func os_detect: {}", e);
                     }
                 });
@@ -507,8 +540,7 @@ pub fn os_detect(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut os_detects = Vec::new();
-    for (addr, origin, r, start_time) in iter {
+    for (addr, r, start_time) in iter {
         match r {
             Ok(od) => {
                 os_detects.push(od);
@@ -519,7 +551,6 @@ pub fn os_detect(
                     IpAddr::V4(_) => {
                         let o = Detect {
                             addr,
-                            origin,
                             alive: false,
                             fingerprint: Fingerprint::empty(),
                             detects: Vec::new(),
@@ -532,11 +563,11 @@ pub fn os_detect(
                     IpAddr::V6(_) => {
                         let o = Detect6 {
                             addr,
-                            origin,
                             alive: false,
                             fingerprint: Fingerprint6::empty(),
                             detects: Vec::new(),
                             cost: start_time.elapsed(),
+                            layer2_cost: Duration::ZERO,
                         };
                         let od = DetectReport::V6(o);
                         os_detects.push(od);
@@ -556,10 +587,13 @@ pub fn os_detect_raw(
     top_k: usize,
 ) -> Result<OsDetect, PistolError> {
     let mut os_detect = OsDetect::new();
+    if !net_info.valid {
+        os_detect.finish(Some(DetectReport::down_host(net_info.dst_addr)));
+        return Ok(os_detect);
+    }
     let start_time = Instant::now();
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
-    let ori_dst_addr = dst_addr;
     let src_mac = net_info.src_mac;
     let src_addr = net_info.src_addr;
     let interface = &net_info.interface;
@@ -593,7 +627,6 @@ pub fn os_detect_raw(
                 Ok((fingerprint, detects)) => {
                     let o = Detect {
                         addr: dst_addr,
-                        origin: ori_dst_addr,
                         alive: true,
                         fingerprint,
                         detects,
@@ -608,7 +641,6 @@ pub fn os_detect_raw(
                     warn!("os probe error: {}", e);
                     let o = Detect {
                         addr: dst_addr,
-                        origin: ori_dst_addr,
                         alive: false,
                         fingerprint: Fingerprint::empty(),
                         detects: Vec::new(),
@@ -644,11 +676,11 @@ pub fn os_detect_raw(
                 Ok((fingerprint, detects)) => {
                     let o = Detect6 {
                         addr: dst_addr,
-                        origin: ori_dst_addr,
                         alive: true,
                         fingerprint,
                         detects,
                         cost: start_time.elapsed(),
+                        layer2_cost: Duration::ZERO,
                     };
                     let dr = DetectReport::V6(o);
                     os_detect.finish(Some(dr));
@@ -658,11 +690,11 @@ pub fn os_detect_raw(
                     warn!("os probe error: {}", e);
                     let o = Detect6 {
                         addr: dst_addr,
-                        origin: ori_dst_addr,
                         alive: false,
                         fingerprint: Fingerprint6::empty(),
                         detects: Vec::new(),
                         cost: start_time.elapsed(),
+                        layer2_cost: Duration::ZERO,
                     };
                     let dr = DetectReport::V6(o);
                     os_detect.finish(Some(dr));

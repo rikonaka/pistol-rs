@@ -31,6 +31,8 @@ use std::time::Duration;
 #[cfg(feature = "ping")]
 use std::time::Instant;
 #[cfg(feature = "ping")]
+use tracing::debug;
+#[cfg(feature = "ping")]
 use tracing::error;
 #[cfg(feature = "ping")]
 use tracing::warn;
@@ -92,6 +94,21 @@ pub struct PingReport {
     pub addr: IpAddr,
     pub status: PingStatus,
     pub cost: Duration,
+    cached: bool,
+}
+
+impl PingReport {
+    pub fn is_up(&self) -> bool {
+        self.status == PingStatus::Up
+    }
+    fn new_down_ping_report(addr: IpAddr, cost: Duration, cached: bool) -> Self {
+        Self {
+            addr,
+            status: PingStatus::Down,
+            cost,
+            cached,
+        }
+    }
 }
 
 #[cfg(feature = "ping")]
@@ -100,7 +117,7 @@ pub struct HostPing {
     pub layer2_cost: Duration,
     pub ping_report: Option<PingReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
     pub max_attempts: usize,
 }
 
@@ -111,16 +128,68 @@ impl HostPing {
             layer2_cost: Duration::ZERO,
             ping_report: None,
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
             max_attempts,
         }
     }
     pub(crate) fn finish(&mut self, ping_report: Option<PingReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.ping_report = ping_report;
     }
     pub fn report(&self) -> Option<PingReport> {
         self.ping_report.clone()
+    }
+}
+
+#[cfg(feature = "ping")]
+impl fmt::Display for HostPing {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let total_cost = self.finish_time - self.start_time;
+
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![
+            Cell::new("Pings").style_spec("c").with_hspan(3),
+        ]));
+
+        table.add_row(row![
+            c -> "addr",
+            c -> "status",
+            c -> "time cost"
+        ]);
+
+        match self.ping_report {
+            Some(report) => {
+                let addr_str = format!("{}", report.addr);
+                let status_str = format!("{}", report.status);
+                let time_cost_str = if report.cached {
+                    utils::time_sec_to_string(report.cost)
+                } else {
+                    let time_cost_str = utils::time_sec_to_string(report.cost);
+                    format!("{}(cached)", time_cost_str)
+                };
+                table.add_row(row![c -> addr_str, c -> status_str, c -> time_cost_str]);
+            }
+            None => (),
+        }
+
+        // let help_info = "NOTE:\nThe target host is considered alive\nas long as one of the packets returns\na result that is considered to be alive.";
+        // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
+
+        let summary1 = format!(
+            "start at: {}, finish at: {}, max_attempts: {}",
+            self.start_time.format("%Y-%m-%d %H:%M:%S"),
+            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
+            self.max_attempts,
+        );
+        let layer2_cost = self.layer2_cost.as_secs_f32();
+        let summary2 = format!(
+            "layer2 cost: {:.3}s, total cost: {:.3}s",
+            layer2_cost,
+            total_cost.as_seconds_f64(),
+        );
+        let summary = format!("{}\n{}", summary1, summary2);
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
+        write!(f, "{}", table)
     }
 }
 
@@ -132,7 +201,7 @@ pub struct HostPings {
     pub layer2_cost: Duration,
     pub ping_reports: Vec<PingReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
     pub max_attempts: usize,
 }
 
@@ -143,12 +212,12 @@ impl HostPings {
             layer2_cost: Duration::ZERO,
             ping_reports: Vec::new(),
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
             max_attempts,
         }
     }
     pub(crate) fn finish(&mut self, ping_reports: Vec<PingReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.ping_reports = ping_reports;
     }
 }
@@ -156,13 +225,11 @@ impl HostPings {
 #[cfg(feature = "ping")]
 impl fmt::Display for HostPings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let total_cost = self.end_time - self.start_time;
+        let total_cost = self.finish_time - self.start_time;
 
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Pings (max_attempts:{})", self.max_attempts))
-                .style_spec("c")
-                .with_hspan(4),
+            Cell::new("Pings").style_spec("c").with_hspan(4),
         ]));
 
         table.add_row(row![
@@ -187,8 +254,13 @@ impl fmt::Display for HostPings {
             }
             let addr_str = format!("{}", report.addr);
             let status_str = format!("{}", report.status);
-            let rtt_str = utils::time_sec_to_string(report.cost);
-            table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> rtt_str]);
+            let time_cost_str = if report.cached {
+                utils::time_sec_to_string(report.cost)
+            } else {
+                let time_cost_str = utils::time_sec_to_string(report.cost);
+                format!("{}(cached)", time_cost_str)
+            };
+            table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> time_cost_str]);
             i += 1;
         }
 
@@ -196,9 +268,9 @@ impl fmt::Display for HostPings {
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
         let summary1 = format!(
-            "start: {}, end: {}, max_attempts: {}",
+            "start at: {}, finish at: {}, max_attempts: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
-            self.end_time.format("%Y-%m-%d %H:%M:%S"),
+            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
             self.max_attempts,
         );
         let layer2_cost = self.layer2_cost.as_secs_f32();
@@ -396,8 +468,18 @@ fn ping(
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
+    let mut reports = Vec::new();
 
     for ni in net_infos {
+        if !ni.valid {
+            // If the net_info is invalid, we consider the target is down or unreachable, and skip pinging it.
+            reports.push(PingReport::new_down_ping_report(
+                ni.dst_addr,
+                ni.cost,
+                ni.cached,
+            ));
+            continue;
+        }
         let dst_mac = ni.dst_mac;
         let dst_addr = ni.dst_addr;
         let src_mac = ni.src_mac;
@@ -419,6 +501,7 @@ fn ping(
                     IpAddr::V4(src) => src,
                     _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
                 };
+                let cached = ni.cached;
 
                 let no_port_vec = vec![
                     PingMethods::IcmpEcho,
@@ -439,9 +522,12 @@ fn ping(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             method, timeout,
                         );
+                        debug!("pinging {}, attempt {}/{}", dst_ipv4, ind + 1, max_attempts);
                         if ind == max_attempts - 1 {
                             // last attempt
-                            if let Err(e) = tx.send((dst_addr, ping_ret, start_time.elapsed())) {
+                            if let Err(e) =
+                                tx.send((dst_addr, ping_ret, start_time.elapsed(), cached))
+                            {
                                 error!("failed to send to tx on func ping: {}", e);
                             }
                         } else {
@@ -450,9 +536,12 @@ fn ping(
                                     match data_recv_status {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            if let Err(e) =
-                                                tx.send((dst_addr, ping_ret, start_time.elapsed()))
-                                            {
+                                            if let Err(e) = tx.send((
+                                                dst_addr,
+                                                ping_ret,
+                                                start_time.elapsed(),
+                                                cached,
+                                            )) {
                                                 error!("failed to send to tx on func ping: {}", e);
                                             }
                                             break; // quit loop now
@@ -464,7 +553,7 @@ fn ping(
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
                                     if let Err(e) =
-                                        tx.send((dst_addr, ping_ret, start_time.elapsed()))
+                                        tx.send((dst_addr, ping_ret, start_time.elapsed(), cached))
                                     {
                                         error!("failed to send to tx on func ping: {}", e);
                                     }
@@ -484,6 +573,7 @@ fn ping(
                     Some(p) => p,
                     None => utils::random_port(),
                 };
+                let cached = ni.cached;
                 let tx = tx.clone();
                 let dst_port = if ni.dst_ports.len() > 0 {
                     Some(ni.dst_ports[0])
@@ -506,7 +596,9 @@ fn ping(
                         );
                         if ind == max_attempts - 1 {
                             // last attempt
-                            if let Err(e) = tx.send((dst_addr, ping_ret, start_time.elapsed())) {
+                            if let Err(e) =
+                                tx.send((dst_addr, ping_ret, start_time.elapsed(), cached))
+                            {
                                 error!("failed to send to tx on func ping: {}", e);
                             }
                         } else {
@@ -515,9 +607,12 @@ fn ping(
                                     match data_recv_status {
                                         DataRecvStatus::Yes => {
                                             // conclusions drawn from the returned data
-                                            if let Err(e) =
-                                                tx.send((dst_addr, ping_ret, start_time.elapsed()))
-                                            {
+                                            if let Err(e) = tx.send((
+                                                dst_addr,
+                                                ping_ret,
+                                                start_time.elapsed(),
+                                                cached,
+                                            )) {
                                                 error!("failed to send to tx on func ping: {}", e);
                                             }
                                             break; // quit loop now
@@ -529,7 +624,7 @@ fn ping(
                                 Err(_) => {
                                     // stop probe immediately if an error occurs
                                     if let Err(e) =
-                                        tx.send((dst_addr, ping_ret, start_time.elapsed()))
+                                        tx.send((dst_addr, ping_ret, start_time.elapsed(), cached))
                                     {
                                         error!("failed to send to tx on func ping: {}", e);
                                     }
@@ -544,14 +639,14 @@ fn ping(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut reports = Vec::new();
-    for (dst_addr, ret, elapsed) in iter {
+    for (dst_addr, ret, elapsed, cached) in iter {
         match ret {
             Ok((status, _data_recv_status, rtt)) => {
                 let ping_report = PingReport {
                     addr: dst_addr,
                     status,
                     cost: rtt,
+                    cached,
                 };
                 reports.push(ping_report);
             }
@@ -561,6 +656,7 @@ fn ping(
                         addr: dst_addr,
                         status: PingStatus::Down,
                         cost: elapsed,
+                        cached,
                     };
                     reports.push(scan_report);
                 }
@@ -570,6 +666,7 @@ fn ping(
                         addr: dst_addr,
                         status: PingStatus::Error,
                         cost: elapsed,
+                        cached,
                     };
                     reports.push(scan_report);
                 }
@@ -598,6 +695,13 @@ pub fn ping_raw(
     max_attempts: usize,
 ) -> Result<HostPing, PistolError> {
     let mut host_ping = HostPing::new(max_attempts);
+    if !net_info.valid {
+        let ping_report =
+            PingReport::new_down_ping_report(net_info.dst_addr, net_info.cost, net_info.cached);
+        host_ping.finish(Some(ping_report));
+        return Ok(host_ping);
+    }
+
     let dst_mac = net_info.dst_mac;
     let dst_port = if net_info.dst_ports.len() > 0 {
         net_info.dst_ports[0]
@@ -707,6 +811,7 @@ pub fn ping_raw(
                 addr: net_info.dst_addr,
                 status: status_x,
                 cost: rtt_x,
+                cached: net_info.cached,
             };
             host_ping.finish(Some(ping_report));
             Ok(host_ping)
@@ -789,6 +894,7 @@ pub fn ping_raw(
                 addr: net_info.dst_addr,
                 status: status_x,
                 cost: rtt_x,
+                cached: net_info.cached,
             };
             host_ping.finish(Some(ping_report));
             Ok(host_ping)
@@ -978,6 +1084,7 @@ mod max_attempts {
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        println!("net_infos: {}", net_infos.len());
         let ret = tcp_syn_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }

@@ -70,7 +70,7 @@ pub struct PortService {
 pub struct PistolVsScans {
     pub port_services: Vec<PortService>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
 }
 
 #[cfg(feature = "vs")]
@@ -79,11 +79,11 @@ impl PistolVsScans {
         PistolVsScans {
             port_services: Vec::new(),
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
         }
     }
     pub fn finish(&mut self, port_services: Vec<PortService>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.port_services = port_services;
     }
 }

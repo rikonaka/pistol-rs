@@ -63,7 +63,7 @@ pub struct Trace {
     pub cost: Duration,
     pub layer2_cost: Duration,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
 }
 
 impl Trace {
@@ -75,12 +75,12 @@ impl Trace {
             cost: Duration::ZERO,
             layer2_cost: Duration::ZERO,
             start_time: now,
-            end_time: now,
+            finish_time: now,
         }
     }
     pub(crate) fn finish(&mut self, hops: u8) {
         self.hops = hops;
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
     }
 }
 
@@ -104,9 +104,9 @@ impl fmt::Display for Trace {
         table.add_row(row![c -> addr_str, c -> hops_str, c -> rtt_str]);
 
         let summary1 = format!(
-            "start: {}, end: {}",
+            "start at: {}, finish at: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
-            self.end_time.format("%Y-%m-%d %H:%M:%S"),
+            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
         );
         let layer2_cost = self.layer2_cost.as_secs_f32();
         let summary2 = format!("layer2 cost: {:.3}s", layer2_cost);

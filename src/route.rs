@@ -900,12 +900,12 @@ pub(crate) fn infer_mac(
     dst_addr: IpAddr,
     src_addr: IpAddr,
     timeout: Duration,
-) -> Result<(MacAddr, NetworkInterface), PistolError> {
+) -> Result<(MacAddr, NetworkInterface, bool), PistolError> {
     fn get_mac(
         dst_addr: IpAddr,
         src_addr: IpAddr,
         timeout: Duration,
-    ) -> Result<(MacAddr, NetworkInterface), PistolError> {
+    ) -> Result<(MacAddr, NetworkInterface, bool), PistolError> {
         let (src_iface, route_via) = if src_addr == dst_addr {
             let src_iface = match find_loopback_interface() {
                 Some(i) => i,
@@ -967,18 +967,21 @@ pub(crate) fn infer_mac(
                             }
                         };
                         // no via_addr, use dst_addr here
-                        let dst_mac = match search_mac(dst_addr)? {
-                            Some(dst_mac) => dst_mac,
-                            None => send_neighbor_detect_packet(
-                                dst_addr,
-                                src_addr,
-                                interface.clone(),
-                                timeout,
-                            )?,
+                        let (dst_mac, cached) = match search_mac(dst_addr)? {
+                            Some(dst_mac) => (dst_mac, true),
+                            None => (
+                                send_neighbor_detect_packet(
+                                    dst_addr,
+                                    src_addr,
+                                    interface.clone(),
+                                    timeout,
+                                )?,
+                                false,
+                            ),
                         };
-                        Ok((dst_mac, interface))
+                        Ok((dst_mac, interface, cached))
                     }
-                    RouteVia::MacAddr(dst_mac) => Ok((dst_mac, src_iface)),
+                    RouteVia::MacAddr(dst_mac) => Ok((dst_mac, src_iface, true)),
                     RouteVia::IpAddr(via_addr) => {
                         // we need to fix 0.0.0.0
                         let via_addr = if via_addr.is_unspecified() {
@@ -986,16 +989,19 @@ pub(crate) fn infer_mac(
                         } else {
                             via_addr
                         };
-                        let dst_mac = match search_mac(via_addr)? {
-                            Some(m) => m,
-                            None => send_neighbor_detect_packet(
-                                via_addr,
-                                src_addr,
-                                src_iface.clone(),
-                                timeout,
-                            )?,
+                        let (dst_mac, cached) = match search_mac(via_addr)? {
+                            Some(m) => (m, true),
+                            None => (
+                                send_neighbor_detect_packet(
+                                    via_addr,
+                                    src_addr,
+                                    src_iface.clone(),
+                                    timeout,
+                                )?,
+                                false,
+                            ),
                         };
-                        Ok((dst_mac, src_iface))
+                        Ok((dst_mac, src_iface, cached))
                     }
                 }
             }
@@ -1004,7 +1010,7 @@ pub(crate) fn infer_mac(
                 let dst_mac =
                     send_neighbor_detect_packet(dst_addr, src_addr, src_iface.clone(), timeout)?;
                 debug!("route_via is none and found dst_mac: {}", dst_mac);
-                Ok((dst_mac, src_iface))
+                Ok((dst_mac, src_iface, false))
             }
         }
     }

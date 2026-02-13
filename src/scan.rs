@@ -91,7 +91,7 @@ pub struct MacReport {
 pub struct MacScans {
     pub mac_reports: Vec<MacReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
     max_attempts: usize,
 }
 
@@ -101,7 +101,7 @@ impl MacScans {
         MacScans {
             mac_reports: Vec::new(),
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
             max_attempts,
         }
     }
@@ -109,7 +109,7 @@ impl MacScans {
         self.mac_reports.clone()
     }
     pub fn finish(&mut self, mac_reports: Vec<MacReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.mac_reports = mac_reports;
     }
 }
@@ -117,7 +117,7 @@ impl MacScans {
 #[cfg(feature = "scan")]
 impl fmt::Display for MacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let total_cost = self.end_time - self.start_time;
+        let total_cost = self.finish_time - self.start_time;
         let total_cost_str =
             utils::time_sec_to_string(Duration::from_secs_f64(total_cost.as_seconds_f64()));
         let mut table = Table::new();
@@ -487,6 +487,19 @@ pub struct PortReport {
     pub status: PortStatus,
     /// The cost of each target, not all.
     pub cost: Duration,
+    cached: bool,
+}
+
+impl PortReport {
+    pub fn new_closed_port_report(addr: IpAddr, port: u16, cost: Duration, cached: bool) -> Self {
+        Self {
+            addr,
+            port,
+            status: PortStatus::Closed,
+            cost,
+            cached,
+        }
+    }
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -497,7 +510,7 @@ pub struct PortScan {
     pub layer2_cost: Duration,
     pub port_report: Option<PortReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
     pub max_attempts: usize,
 }
 
@@ -509,13 +522,60 @@ impl PortScan {
             layer2_cost: Duration::ZERO,
             port_report: None,
             start_time: now,
-            end_time: now,
+            finish_time: now,
             max_attempts,
         }
     }
     pub(crate) fn finish(&mut self, port_report: Option<PortReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.port_report = port_report;
+    }
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
+impl fmt::Display for PortScan {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut table = Table::new();
+        table.add_row(Row::new(vec![
+            Cell::new("Port Scan").style_spec("c").with_hspan(4),
+        ]));
+
+        table.add_row(row![c -> "addr", c -> "port", c-> "status", c -> "time cost"]);
+
+        match self.port_report {
+            Some(report) => {
+                let addr_str = format!("{}", report.addr);
+                let status_str = format!("{}", report.status);
+                let time_cost_str = if report.cached {
+                    utils::time_sec_to_string(report.cost)
+                } else {
+                    let time_cost_str = utils::time_sec_to_string(report.cost);
+                    format!("{}(cached)", time_cost_str)
+                };
+
+                table.add_row(
+                    row![c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
+                );
+            }
+            None => (),
+        }
+
+        let summary1 = format!(
+            "start at: {}, finish at: {}, max_attempts: {}",
+            self.start_time.format("%Y-%m-%d %H:%M:%S"),
+            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
+            self.max_attempts,
+        );
+        let total_cost = self.finish_time - self.start_time;
+        let total_cost = total_cost.as_seconds_f32();
+        let layer2_cost = self.layer2_cost.as_secs_f32();
+        let summary2 = format!(
+            "layer2 cost: {:.3}s, total cost: {:.3}s",
+            layer2_cost, total_cost
+        );
+        let summary = format!("{}\n{}", summary1, summary2);
+        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
+        write!(f, "{}", table)
     }
 }
 
@@ -529,7 +589,7 @@ pub struct PortScans {
     /// the detection that receives the data first is in the front.
     pub port_reports: Vec<PortReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
     pub max_attempts: usize,
 }
 
@@ -541,12 +601,12 @@ impl PortScans {
             layer2_cost: Duration::ZERO,
             port_reports: Vec::new(),
             start_time: now,
-            end_time: now,
+            finish_time: now,
             max_attempts,
         }
     }
     pub(crate) fn finish(&mut self, port_reports: Vec<PortReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.port_reports = port_reports;
     }
     pub fn reports(&self) -> Vec<PortReport> {
@@ -586,7 +646,12 @@ impl fmt::Display for PortScans {
                 }
                 let addr_str = format!("{}", report.addr);
                 let status_str = format!("{}", report.status);
-                let time_cost_str = utils::time_sec_to_string(report.cost);
+                let time_cost_str = if report.cached {
+                    utils::time_sec_to_string(report.cost)
+                } else {
+                    let time_cost_str = utils::time_sec_to_string(report.cost);
+                    format!("{}(cached)", time_cost_str)
+                };
                 table.add_row(
                     row![c -> i, c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
                 );
@@ -595,12 +660,12 @@ impl fmt::Display for PortScans {
         }
 
         let summary1 = format!(
-            "start: {}, end: {}, max_attempts: {}",
+            "start at: {}, finish at: {}, max_attempts: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
-            self.end_time.format("%Y-%m-%d %H:%M:%S"),
+            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
             self.max_attempts,
         );
-        let total_cost = self.end_time - self.start_time;
+        let total_cost = self.finish_time - self.start_time;
         let total_cost = total_cost.as_seconds_f32();
         let avg_cost = total_cost / self.port_reports.len() as f32;
         let layer2_cost = self.layer2_cost.as_secs_f32();
@@ -761,8 +826,17 @@ fn scan(
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
+    let mut reports = Vec::new();
 
     for ni in net_infos {
+        if !ni.valid {
+            for &dst_port in &ni.dst_ports {
+                let pr =
+                    PortReport::new_closed_port_report(ni.dst_addr, dst_port, ni.cost, ni.cached);
+                reports.push(pr);
+            }
+            continue;
+        }
         let dst_mac = ni.dst_mac;
         let dst_addr = ni.dst_addr;
         let src_mac = ni.src_mac;
@@ -778,6 +852,7 @@ fn scan(
                         Some(s) => s,
                         None => utils::random_port(),
                     };
+                    let cached = ni.cached;
                     let tx = tx.clone();
                     recv_size += 1;
 
@@ -804,9 +879,13 @@ fn scan(
                             );
                             if ind == max_attempts - 1 {
                                 // last attempt
-                                if let Err(e) =
-                                    tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()))
-                                {
+                                if let Err(e) = tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                    cached,
+                                )) {
                                     error!("failed to send to tx on func scan: {}", e);
                                 }
                             } else {
@@ -820,6 +899,7 @@ fn scan(
                                                     dst_port,
                                                     scan_ret,
                                                     start_time.elapsed(),
+                                                    cached,
                                                 )) {
                                                     error!(
                                                         "failed to send to tx on func scan: {}",
@@ -839,6 +919,7 @@ fn scan(
                                             dst_port,
                                             scan_ret,
                                             start_time.elapsed(),
+                                            cached,
                                         )) {
                                             error!("failed to send to tx on func scan: {}", e);
                                         }
@@ -861,6 +942,7 @@ fn scan(
                         Some(s) => s,
                         None => utils::random_port(),
                     };
+                    let cached = ni.cached;
                     let tx = tx.clone();
                     recv_size += 1;
 
@@ -872,9 +954,13 @@ fn scan(
                                 &interface, method, timeout,
                             );
                             if ind == max_attempts - 1 {
-                                if let Err(e) =
-                                    tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed()))
-                                {
+                                if let Err(e) = tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                    cached,
+                                )) {
                                     error!("failed to send to tx on func scan: {}", e);
                                 }
                             } else {
@@ -888,6 +974,7 @@ fn scan(
                                                     dst_port,
                                                     scan_ret,
                                                     start_time.elapsed(),
+                                                    cached,
                                                 )) {
                                                     error!(
                                                         "failed to send to tx on func scan: {}",
@@ -912,6 +999,7 @@ fn scan(
                                             dst_port,
                                             scan_ret,
                                             start_time.elapsed(),
+                                            cached,
                                         )) {
                                             error!("failed to send to tx on func scan: {}", e);
                                         }
@@ -927,8 +1015,7 @@ fn scan(
     }
 
     let iter = rx.into_iter().take(recv_size);
-    let mut reports = Vec::new();
-    for (dst_addr, dst_port, ret, elapsed) in iter {
+    for (dst_addr, dst_port, ret, elapsed, cached) in iter {
         match ret {
             Ok((port_status, _data_recv_status, rtt)) => {
                 // println!("rtt: {:.3}", rtt.as_secs_f64());
@@ -937,6 +1024,7 @@ fn scan(
                     port: dst_port,
                     status: port_status,
                     cost: rtt,
+                    cached,
                 };
                 reports.push(scan_report);
             }
@@ -947,6 +1035,7 @@ fn scan(
                         port: dst_port,
                         status: PortStatus::Offline,
                         cost: elapsed,
+                        cached,
                     };
                     reports.push(scan_report);
                 }
@@ -957,6 +1046,7 @@ fn scan(
                         port: dst_port,
                         status: PortStatus::Error,
                         cost: elapsed,
+                        cached,
                     };
                     reports.push(scan_report);
                 }
@@ -1354,6 +1444,17 @@ fn scan_raw(
     max_attempts: usize,
 ) -> Result<PortScan, PistolError> {
     let mut ret = PortScan::new(max_attempts);
+    if !net_info.valid {
+        let dst_port = net_info.dst_ports[0];
+        let pr = PortReport::new_closed_port_report(
+            net_info.dst_addr,
+            dst_port,
+            net_info.cost,
+            net_info.cached,
+        );
+        ret.finish(Some(pr));
+    }
+
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
     let src_mac = net_info.src_mac;
@@ -1373,6 +1474,7 @@ fn scan_raw(
     // It is only used here to determine whether the target is ipv4 or ipv6.
     // The real dst_addr is inferred from infer_addr.
     let mut port_report = None;
+    let cached = net_info.cached;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match net_info.src_addr {
@@ -1404,6 +1506,7 @@ fn scan_raw(
                         port: dst_port,
                         status: port_status,
                         cost: rtt,
+                        cached,
                     });
                 } else {
                     match data_recv_status {
@@ -1413,6 +1516,7 @@ fn scan_raw(
                                 port: dst_port,
                                 status: port_status,
                                 cost: rtt,
+                                cached,
                             });
                             break;
                         }
@@ -1441,6 +1545,7 @@ fn scan_raw(
                         port: dst_port,
                         status: port_status,
                         cost: rtt,
+                        cached,
                     });
                 } else {
                     match data_recv_status {
@@ -1450,6 +1555,7 @@ fn scan_raw(
                                 port: dst_port,
                                 status: port_status,
                                 cost: rtt,
+                                cached,
                             });
                             break;
                         }

@@ -90,8 +90,6 @@ pub enum PistolError {
     CanNotFoundInterface { i: String },
     #[error("can not found the source address, please set the source address manually")]
     CanNotFoundSrcAddress,
-    #[error("can not found the destination address, please check your destination address again")]
-    CanNotFoundDstAddress,
     #[error("can not found router address")]
     CanNotFoundRouterAddress,
     #[error("build packet error occurret at [{location}]")]

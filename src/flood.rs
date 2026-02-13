@@ -70,7 +70,7 @@ pub struct Flood {
     pub layer2_cost: Duration,
     pub flood_report: Option<FloodReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
 }
 
 #[cfg(feature = "flood")]
@@ -80,11 +80,11 @@ impl Flood {
             layer2_cost: Duration::ZERO,
             flood_report: None,
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
         }
     }
     pub(crate) fn finish(&mut self, flood_report: Option<FloodReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.flood_report = flood_report;
     }
 }
@@ -95,7 +95,7 @@ pub struct Floods {
     pub layer2_cost: Duration,
     pub flood_reports: Vec<FloodReport>,
     pub start_time: DateTime<Local>,
-    pub end_time: DateTime<Local>,
+    pub finish_time: DateTime<Local>,
 }
 
 #[cfg(feature = "flood")]
@@ -105,11 +105,11 @@ impl Floods {
             layer2_cost: Duration::ZERO,
             flood_reports: Vec::new(),
             start_time: Local::now(),
-            end_time: Local::now(),
+            finish_time: Local::now(),
         }
     }
     pub(crate) fn finish(&mut self, flood_reports: Vec<FloodReport>) {
-        self.end_time = Local::now();
+        self.finish_time = Local::now();
         self.flood_reports = flood_reports;
     }
 }
@@ -160,9 +160,9 @@ impl fmt::Display for Floods {
         }
 
         let summary = format!(
-            "start: {}, end: {}",
+            "start at: {}, finish at: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
-            self.end_time.format("%Y-%m-%d %H:%M:%S"),
+            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
         write!(f, "{}", table.to_string())

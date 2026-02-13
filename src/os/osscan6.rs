@@ -1494,13 +1494,15 @@ pub fn os_probe_thread6(
     let good_results = true;
     let icmp_trace_net_info = NetInfo {
         dst_mac,
-        dst_addr: dst_ipv6.into(),
-        ori_dst_addr: dst_ipv6.into(),
         src_mac,
+        dst_addr: dst_ipv6.into(),
         src_addr: src_ipv6.into(),
-        interface: interface.clone(),
         dst_ports: Vec::new(),
         src_port: None,
+        interface: interface.clone(),
+        cached: true,
+        cost: Duration::ZERO,
+        valid: true,
     };
     let trace = icmp_trace(icmp_trace_net_info, timeout)?;
     let hops = trace.hops;
