@@ -1,7 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-use bitcode::Decode;
-use bitcode::Encode;
 use chrono::DateTime;
 use chrono::Local;
 use crossbeam::channel::Receiver;
@@ -69,18 +67,20 @@ mod vs;
 
 use crate::error::PistolError;
 #[cfg(feature = "flood")]
-use crate::flood::PistolFloods;
+use crate::flood::Flood;
+#[cfg(feature = "flood")]
+use crate::flood::Floods;
 use crate::layer::PacketFilter;
 #[cfg(feature = "os")]
 use crate::os::OsDetect;
 #[cfg(feature = "os")]
-use crate::os::PistolOsDetects;
+use crate::os::OsDetects;
 #[cfg(feature = "os")]
 use crate::os::dbparser::NmapOsDb;
 #[cfg(feature = "ping")]
-use crate::ping::HostPings;
+use crate::ping::HostPing;
 #[cfg(feature = "ping")]
-use crate::ping::PingStatus;
+use crate::ping::HostPings;
 use crate::route::SystemNetCache;
 use crate::route::infer_addr;
 use crate::route::infer_mac;
@@ -90,6 +90,8 @@ use crate::scan::MacScans;
 use crate::scan::PortScan;
 #[cfg(feature = "scan")]
 use crate::scan::PortScans;
+#[cfg(feature = "trace")]
+use crate::trace::Trace;
 #[cfg(feature = "vs")]
 use crate::vs::PistolVsScans;
 #[cfg(feature = "vs")]
@@ -890,7 +892,7 @@ impl Pistol {
         Ok(())
     }
     /// Initialize multiple runners for multiple targets.
-    fn init_recvers(
+    fn init_recver(
         &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
@@ -925,7 +927,7 @@ impl Pistol {
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
-    fn init_recver(
+    fn init_recver_raw(
         &mut self,
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
@@ -1049,7 +1051,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_ack_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1067,7 +1069,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_ack_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1095,7 +1097,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret =
             scan::tcp_connect_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
@@ -1114,7 +1116,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_connect_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1142,7 +1144,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1159,7 +1161,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1187,7 +1189,7 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let zommbie_net_info =
             NetInfo::new(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
         let zombie_mac = zommbie_net_info.dst_mac;
@@ -1222,7 +1224,7 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let zombie_net_info =
             NetInfo::new(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
         let zombie_mac = zombie_net_info.dst_mac;
@@ -1251,7 +1253,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret =
             scan::tcp_maimon_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
@@ -1269,7 +1271,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1289,7 +1291,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret =
             scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
@@ -1307,7 +1309,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1333,7 +1335,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1350,7 +1352,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1371,7 +1373,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret =
             scan::tcp_window_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
@@ -1389,7 +1391,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1408,7 +1410,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret =
             scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
@@ -1426,7 +1428,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1450,7 +1452,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
         let mut ret = scan::udp_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1468,7 +1470,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::udp_scan_raw(net_info, self.timeout, self.max_attempts)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1500,8 +1502,11 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::icmp_address_mask_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret =
+            ping::icmp_address_mask_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of icmp_address_mask_ping function.
     /// It sends an ICMP Address Mask Request to the target IP address
@@ -1512,14 +1517,16 @@ impl Pistol {
         &mut self,
         dst_ipv4: Ipv4Addr,
         src_ipv4: Option<Ipv4Addr>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
+    ) -> Result<HostPing, PistolError> {
         let dst_addr = IpAddr::V4(dst_ipv4);
         let src_addr = match src_ipv4 {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        ping::icmp_address_mask_ping_raw(net_info, self.timeout)
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = ping::icmp_address_mask_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// ICMP Ping (Standard Echo Request).
     /// In addition to the unusual TCP and UDP host discovery types discussed previously,
@@ -1538,8 +1545,11 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::icmp_echo_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret =
+            ping::icmp_echo_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of icmp_echo_ping function.
     /// It sends an ICMP Echo Request to the target IP address
@@ -1550,9 +1560,11 @@ impl Pistol {
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        ping::icmp_echo_ping_raw(net_info, self.timeout)
+    ) -> Result<HostPing, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = ping::icmp_echo_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// ICMP Ping (Timestamp Request).
     /// While echo request is the standard ICMP ping query, Nmap does not stop there.
@@ -1578,8 +1590,11 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::icmp_timestamp_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret =
+            ping::icmp_timestamp_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of icmp_timestamp_ping function.
     /// It sends an ICMP Timestamp Request to the target IP address
@@ -1590,14 +1605,16 @@ impl Pistol {
         &mut self,
         dst_ipv4: Ipv4Addr,
         src_ipv4: Option<Ipv4Addr>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
+    ) -> Result<HostPing, PistolError> {
         let dst_addr = IpAddr::V4(dst_ipv4);
         let src_addr = match src_ipv4 {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        ping::icmp_timestamp_ping_raw(net_info, self.timeout)
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = ping::icmp_timestamp_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of icmp ping.
     /// It sends an ICMP Echo Request to the target IP address
@@ -1609,9 +1626,11 @@ impl Pistol {
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        ping::icmp_ping_raw(net_info, self.timeout)
+    ) -> Result<HostPing, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = ping::icmp_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// ICMPv6 Ping (Standard Echo Request).
     /// Sends an ICMPv6 type 128 (echo request) packet (IPv6).
@@ -1635,8 +1654,10 @@ impl Pistol {
             Some(ipv6) => Some(IpAddr::V6(ipv6)),
             None => None,
         };
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::icmpv6_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = ping::icmpv6_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// TCP ACK Ping.
     /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
@@ -1649,8 +1670,10 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::tcp_ack_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = ping::tcp_ack_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of tcp_ack_ping function.
     /// It sends a TCP ACK packet to the target IP address and port, and waits for a response.
@@ -1664,9 +1687,11 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        ping::tcp_ack_ping_raw(net_info, self.timeout)
+    ) -> Result<HostPing, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = ping::tcp_ack_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// TCP SYN Ping.
     /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
@@ -1679,8 +1704,10 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::tcp_syn_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = ping::tcp_syn_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of tcp_syn_ping function.
     /// It sends a TCP SYN packet to the target IP address and port, and waits for a response.
@@ -1694,9 +1721,11 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        ping::tcp_syn_ping_raw(net_info, self.timeout)
+    ) -> Result<HostPing, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = ping::tcp_syn_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// UDP Ping.
     /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
@@ -1709,8 +1738,10 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        ping::udp_ping(net_infos, self.threads, self.timeout, self.max_attempts)
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = ping::udp_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of udp_ping function.
     /// It sends a UDP packet to the target IP address and port, and waits for a response.
@@ -1724,9 +1755,11 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<(PingStatus, Duration), PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        ping::udp_ping_raw(net_info, self.timeout)
+    ) -> Result<HostPing, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = ping::udp_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /* Trace */
     /// ICMP Trace.
@@ -1739,9 +1772,11 @@ impl Pistol {
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
-    ) -> Result<u8, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        trace::icmp_trace(net_info, self.timeout)
+    ) -> Result<Trace, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = trace::icmp_trace(net_info, self.timeout)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// TCP SYN Trace.
     /// Sends TCP SYN packets with incrementally increasing TTL values
@@ -1755,10 +1790,12 @@ impl Pistol {
         dst_port: Option<u16>, // default is 80
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<u8, PistolError> {
+    ) -> Result<Trace, PistolError> {
         let dst_port = dst_port.unwrap_or(80);
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        trace::syn_trace(net_info, self.timeout)
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = trace::syn_trace(net_info, self.timeout)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// UDP Trace.
     /// Sends UDP packets with incrementally increasing TTL values
@@ -1770,9 +1807,11 @@ impl Pistol {
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
-    ) -> Result<u8, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        trace::udp_trace(net_info, self.timeout)
+    ) -> Result<Trace, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = trace::udp_trace(net_info, self.timeout)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /* Flood */
     /// Perform an ICMP flood DDoS attack on the specified targets.
@@ -1796,9 +1835,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<PistolFloods, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        flood::icmp_flood(net_infos, self.threads, retransmit, repeat, fake_src)
+    ) -> Result<Floods, PistolError> {
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = flood::icmp_flood(net_infos, self.threads, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of icmp_flood function.
     /// It performs an ICMP flood attack on the specified destination address.
@@ -1810,9 +1851,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<usize, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], src_addr, None)?;
-        flood::icmp_flood_raw(net_info, retransmit, repeat, fake_src)
+    ) -> Result<Flood, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![], src_addr, None)?;
+        let mut ret = flood::icmp_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// TCP ACK flood, or 'ACK Flood' for short, is a network DDoS attack comprising TCP ACK packets.
     /// The packets will not contain a payload but may have the PSH flag enabled.
@@ -1836,9 +1879,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<PistolFloods, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        flood::tcp_ack_flood(net_infos, threads, retransmit, repeat, fake_src)
+    ) -> Result<Floods, PistolError> {
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = flood::tcp_ack_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of tcp_ack_flood function.
     /// It performs a TCP ACK flood attack on the specified destination address and port.
@@ -1852,9 +1897,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<usize, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        flood::tcp_ack_flood_raw(net_info, retransmit, repeat, fake_src)
+    ) -> Result<Flood, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = flood::tcp_ack_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// TCP ACK flood with PSH flag set.
     /// Perform a TCP ACK flood with PSH flag set DDoS attack on the specified targets.
@@ -1879,9 +1926,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<PistolFloods, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        flood::tcp_ack_psh_flood(net_infos, threads, retransmit, repeat, fake_src)
+    ) -> Result<Floods, PistolError> {
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = flood::tcp_ack_psh_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of tcp_ack_psh_flood function.
     /// It performs a TCP ACK flood with PSH flag set attack
@@ -1896,9 +1945,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<usize, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        flood::tcp_ack_psh_flood_raw(net_info, retransmit, repeat, fake_src)
+    ) -> Result<Flood, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = flood::tcp_ack_psh_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// In a TCP SYN Flood attack, the malicious entity sends a barrage of
     /// SYN requests to a target server but intentionally avoids sending the final ACK.
@@ -1915,9 +1966,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<PistolFloods, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        flood::tcp_syn_flood(net_infos, threads, retransmit, repeat, fake_src)
+    ) -> Result<Floods, PistolError> {
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = flood::tcp_syn_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of tcp_syn_flood function.
     /// It performs a TCP SYN flood attack on the specified destination address and port.
@@ -1931,9 +1984,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<usize, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        flood::tcp_syn_flood_raw(net_info, retransmit, repeat, fake_src)
+    ) -> Result<Flood, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = flood::tcp_syn_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// In a UDP Flood attack,
     /// the attacker sends a massive number of UDP packets to random ports on the target host.
@@ -1951,9 +2006,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<PistolFloods, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, src_addr, src_port)?;
-        flood::udp_flood(net_infos, threads, retransmit, repeat, fake_src)
+    ) -> Result<Floods, PistolError> {
+        let (net_infos, dur) = self.init_recver(targets, src_addr, src_port)?;
+        let mut ret = flood::udp_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of udp_flood function.
     /// It performs a UDP flood attack on the specified destination address and port.
@@ -1967,9 +2024,11 @@ impl Pistol {
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
-    ) -> Result<usize, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![dst_port], src_addr, src_port)?;
-        flood::udp_flood_raw(net_info, retransmit, repeat, fake_src)
+    ) -> Result<Flood, PistolError> {
+        let (net_info, dur) = self.init_recver_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = flood::udp_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /* OS Detect */
     /// Parse Nmap OS database file lines.
@@ -1991,9 +2050,11 @@ impl Pistol {
         &mut self,
         targets: &[Target],
         top_k: usize,
-    ) -> Result<PistolOsDetects, PistolError> {
-        let (net_infos, dur) = self.init_recvers(targets, None, None)?;
-        os::os_detect(net_infos, self.threads, self.timeout, top_k)
+    ) -> Result<OsDetects, PistolError> {
+        let (net_infos, dur) = self.init_recver(targets, None, None)?;
+        let mut ret = os::os_detect(net_infos, self.threads, self.timeout, top_k)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /// The raw version of os_detect function.
     /// It sends a series of TCP, UDP, and ICMP probes to the target IP address
@@ -2009,26 +2070,15 @@ impl Pistol {
         dst_closed_udp_port: u16,
         top_k: usize,
     ) -> Result<OsDetect, PistolError> {
-        let (net_info, dur) = self.init_recver(dst_addr, vec![], None, None)?;
-        let dst_mac = net_info.dst_mac;
-        let dst_addr = net_info.dst_addr;
-        let ori_dst_addr = dst_addr;
-        let src_mac = net_info.src_mac;
-        let src_addr = net_info.src_addr;
-        let interface = &net_info.interface;
-        os::os_detect_raw(
-            dst_mac,
+        let (net_info, dur) = self.init_recver_raw(
             dst_addr,
-            ori_dst_addr,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            dst_closed_udp_port,
-            src_mac,
-            src_addr,
-            interface,
-            self.timeout,
-            top_k,
-        )
+            vec![dst_open_tcp_port, dst_closed_tcp_port, dst_closed_udp_port],
+            None,
+            None,
+        )?;
+        let mut ret = os::os_detect_raw(net_info, self.timeout, top_k)?;
+        ret.layer2_cost = dur;
+        Ok(ret)
     }
     /* Service Detect */
     /// Detect target port service.
@@ -2388,8 +2438,6 @@ impl fmt::Display for Target {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "scan")]
-    use chrono::Local;
     #[cfg(any(feature = "scan", feature = "os", feature = "vs"))]
     use std::net::Ipv4Addr;
     #[cfg(feature = "scan")]

@@ -4,10 +4,6 @@ use chrono::DateTime;
 #[cfg(feature = "os")]
 use chrono::Local;
 #[cfg(feature = "os")]
-use pnet::datalink::MacAddr;
-#[cfg(feature = "os")]
-use pnet::datalink::NetworkInterface;
-#[cfg(feature = "os")]
 use prettytable::Cell;
 #[cfg(feature = "os")]
 use prettytable::Row;
@@ -101,18 +97,19 @@ pub struct OsInfo6 {
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct OsDetect4 {
+pub struct Detect {
     pub addr: IpAddr,
     pub origin: IpAddr,
     pub alive: bool,
     pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
     pub cost: Duration,
+    pub layer2_cost: Duration,
 }
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct OsDetect6 {
+pub struct Detect6 {
     pub addr: IpAddr,
     pub origin: IpAddr,
     pub alive: bool,
@@ -123,49 +120,73 @@ pub struct OsDetect6 {
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub enum OsDetect {
-    V4(OsDetect4),
-    V6(OsDetect6),
+pub enum DetectReport {
+    V4(Detect),
+    V6(Detect6),
 }
 
 #[cfg(feature = "os")]
-impl OsDetect {
+impl DetectReport {
     pub fn addr(&self) -> IpAddr {
         match self {
-            OsDetect::V4(ipv4) => ipv4.addr,
-            OsDetect::V6(ipv6) => ipv6.addr,
+            DetectReport::V4(ipv4) => ipv4.addr,
+            DetectReport::V6(ipv6) => ipv6.addr,
         }
     }
 }
 
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
-pub struct PistolOsDetects {
-    pub os_detects: Vec<OsDetect>,
+pub struct OsDetect {
+    pub layer2_cost: Duration,
+    pub detect_report: Option<DetectReport>,
     pub start_time: DateTime<Local>,
     pub end_time: DateTime<Local>,
 }
 
 #[cfg(feature = "os")]
-impl PistolOsDetects {
-    pub fn new() -> PistolOsDetects {
-        PistolOsDetects {
-            os_detects: Vec::new(),
+impl OsDetect {
+    fn new() -> Self {
+        Self {
+            layer2_cost: Duration::ZERO,
+            detect_report: None,
             start_time: Local::now(),
             end_time: Local::now(),
         }
     }
-    pub fn value(&self) -> Vec<OsDetect> {
-        self.os_detects.clone()
-    }
-    pub fn finish(&mut self, os_detects: Vec<OsDetect>) {
+    fn finish(&mut self, os_detect: Option<DetectReport>) {
         self.end_time = Local::now();
-        self.os_detects = os_detects;
+        self.detect_report = os_detect;
     }
 }
 
 #[cfg(feature = "os")]
-impl fmt::Display for PistolOsDetects {
+#[derive(Debug, Clone)]
+pub struct OsDetects {
+    pub layer2_cost: Duration,
+    pub detect_reports: Vec<DetectReport>,
+    pub start_time: DateTime<Local>,
+    pub end_time: DateTime<Local>,
+}
+
+#[cfg(feature = "os")]
+impl OsDetects {
+    fn new() -> Self {
+        Self {
+            layer2_cost: Duration::ZERO,
+            detect_reports: Vec::new(),
+            start_time: Local::now(),
+            end_time: Local::now(),
+        }
+    }
+    fn finish(&mut self, os_detects: Vec<DetectReport>) {
+        self.end_time = Local::now();
+        self.detect_reports = os_detects;
+    }
+}
+
+#[cfg(feature = "os")]
+impl fmt::Display for OsDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
@@ -177,8 +198,8 @@ impl fmt::Display for PistolOsDetects {
         );
 
         // sorted
-        let mut btm_addr: BTreeMap<IpAddr, OsDetect> = BTreeMap::new();
-        for detect in &self.os_detects {
+        let mut btm_addr: BTreeMap<IpAddr, DetectReport> = BTreeMap::new();
+        for detect in &self.detect_reports {
             btm_addr.insert(detect.addr(), detect.clone());
         }
 
@@ -186,7 +207,7 @@ impl fmt::Display for PistolOsDetects {
         let mut id = 1;
         for (addr, detect) in btm_addr {
             match detect {
-                OsDetect::V4(o) => {
+                DetectReport::V4(o) => {
                     let time_cost_str = utils::time_sec_to_string(o.cost);
                     let addr_str = if o.origin != addr {
                         format!("{}({})", o.origin, addr)
@@ -215,7 +236,7 @@ impl fmt::Display for PistolOsDetects {
                         id += 1;
                     }
                 }
-                OsDetect::V6(o) => {
+                DetectReport::V6(o) => {
                     let time_cost_str = utils::time_sec_to_string(o.cost);
                     let addr_str = format!("{}({})", o.origin, addr);
                     total_cost += o.cost.as_secs_f64();
@@ -243,7 +264,7 @@ impl fmt::Display for PistolOsDetects {
                 }
             }
         }
-        let avg_cost = total_cost / self.os_detects.len() as f64;
+        let avg_cost = total_cost / self.detect_reports.len() as f64;
         let summary = format!(
             "total used time: {:.3}s, avg time cost: {:.3}s",
             total_cost, avg_cost,
@@ -361,11 +382,11 @@ pub fn os_detect(
     threads: usize,
     timeout: Duration,
     top_k: usize,
-) -> Result<PistolOsDetects, PistolError> {
+) -> Result<OsDetects, PistolError> {
     let (tx, rx) = channel();
     let pool = utils::get_threads_pool(threads);
     let mut recv_size = 0;
-    let mut ret = PistolOsDetects::new();
+    let mut ret = OsDetects::new();
     for ni in net_infos {
         let dst_mac = ni.dst_mac;
         let dst_addr = ni.dst_addr;
@@ -410,15 +431,16 @@ pub fn os_detect(
                     };
                     let od = match detect_rets {
                         Ok((fingerprint, detects)) => {
-                            let o = OsDetect4 {
+                            let o = Detect {
                                 addr: dst_addr,
                                 origin: ori_dst_addr,
                                 alive: true,
                                 fingerprint,
                                 detects,
                                 cost: start_time.elapsed(),
+                                layer2_cost: Duration::ZERO,
                             };
-                            let od = OsDetect::V4(o);
+                            let od = DetectReport::V4(o);
                             Ok(od)
                         }
                         Err(e) => Err(e),
@@ -463,7 +485,7 @@ pub fn os_detect(
                     };
                     let od = match detect_rets {
                         Ok((fingerprint, detects)) => {
-                            let o = OsDetect6 {
+                            let o = Detect6 {
                                 addr: dst_addr,
                                 origin: ori_dst_addr,
                                 alive: true,
@@ -471,7 +493,7 @@ pub fn os_detect(
                                 detects,
                                 cost: start_time.elapsed(),
                             };
-                            let od = OsDetect::V6(o);
+                            let od = DetectReport::V6(o);
                             Ok(od)
                         }
                         Err(e) => Err(e),
@@ -495,19 +517,20 @@ pub fn os_detect(
                 warn!("os probe error: {}", e);
                 match addr {
                     IpAddr::V4(_) => {
-                        let o = OsDetect4 {
+                        let o = Detect {
                             addr,
                             origin,
                             alive: false,
                             fingerprint: Fingerprint::empty(),
                             detects: Vec::new(),
                             cost: start_time.elapsed(),
+                            layer2_cost: Duration::ZERO,
                         };
-                        let od = OsDetect::V4(o);
+                        let od = DetectReport::V4(o);
                         os_detects.push(od);
                     }
                     IpAddr::V6(_) => {
-                        let o = OsDetect6 {
+                        let o = Detect6 {
                             addr,
                             origin,
                             alive: false,
@@ -515,7 +538,7 @@ pub fn os_detect(
                             detects: Vec::new(),
                             cost: start_time.elapsed(),
                         };
-                        let od = OsDetect::V6(o);
+                        let od = DetectReport::V6(o);
                         os_detects.push(od);
                     }
                 }
@@ -528,19 +551,23 @@ pub fn os_detect(
 
 #[cfg(feature = "os")]
 pub fn os_detect_raw(
-    dst_mac: MacAddr,
-    dst_addr: IpAddr,
-    ori_dst_addr: IpAddr,
-    dst_open_tcp_port: u16,
-    dst_closed_tcp_port: u16,
-    dst_closed_udp_port: u16,
-    src_mac: MacAddr,
-    src_addr: IpAddr,
-    interface: &NetworkInterface,
+    net_info: NetInfo,
     timeout: Duration,
     top_k: usize,
 ) -> Result<OsDetect, PistolError> {
+    let mut os_detect = OsDetect::new();
     let start_time = Instant::now();
+    let dst_mac = net_info.dst_mac;
+    let dst_addr = net_info.dst_addr;
+    let ori_dst_addr = dst_addr;
+    let src_mac = net_info.src_mac;
+    let src_addr = net_info.src_addr;
+    let interface = &net_info.interface;
+
+    let dst_open_tcp_port = net_info.dst_ports[0];
+    let dst_closed_tcp_port = net_info.dst_ports[1];
+    let dst_closed_udp_port = net_info.dst_ports[2];
+
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match src_addr {
@@ -564,29 +591,33 @@ pub fn os_detect_raw(
                 timeout,
             ) {
                 Ok((fingerprint, detects)) => {
-                    let o = OsDetect4 {
+                    let o = Detect {
                         addr: dst_addr,
                         origin: ori_dst_addr,
                         alive: true,
                         fingerprint,
                         detects,
                         cost: start_time.elapsed(),
+                        layer2_cost: Duration::ZERO,
                     };
-                    let od = OsDetect::V4(o);
-                    Ok(od)
+                    let dr = DetectReport::V4(o);
+                    os_detect.finish(Some(dr));
+                    Ok(os_detect)
                 }
                 Err(e) => {
                     warn!("os probe error: {}", e);
-                    let o = OsDetect4 {
+                    let o = Detect {
                         addr: dst_addr,
                         origin: ori_dst_addr,
                         alive: false,
                         fingerprint: Fingerprint::empty(),
                         detects: Vec::new(),
                         cost: start_time.elapsed(),
+                        layer2_cost: Duration::ZERO,
                     };
-                    let od = OsDetect::V4(o);
-                    Ok(od)
+                    let dr = DetectReport::V4(o);
+                    os_detect.finish(Some(dr));
+                    Ok(os_detect)
                 }
             }
         }
@@ -611,7 +642,7 @@ pub fn os_detect_raw(
                 timeout,
             ) {
                 Ok((fingerprint, detects)) => {
-                    let o = OsDetect6 {
+                    let o = Detect6 {
                         addr: dst_addr,
                         origin: ori_dst_addr,
                         alive: true,
@@ -619,12 +650,13 @@ pub fn os_detect_raw(
                         detects,
                         cost: start_time.elapsed(),
                     };
-                    let od = OsDetect::V6(o);
-                    Ok(od)
+                    let dr = DetectReport::V6(o);
+                    os_detect.finish(Some(dr));
+                    Ok(os_detect)
                 }
                 Err(e) => {
                     warn!("os probe error: {}", e);
-                    let o = OsDetect6 {
+                    let o = Detect6 {
                         addr: dst_addr,
                         origin: ori_dst_addr,
                         alive: false,
@@ -632,23 +664,25 @@ pub fn os_detect_raw(
                         detects: Vec::new(),
                         cost: start_time.elapsed(),
                     };
-                    let od = OsDetect::V6(o);
-                    Ok(od)
+                    let dr = DetectReport::V6(o);
+                    os_detect.finish(Some(dr));
+                    Ok(os_detect)
                 }
             }
         }
     }
 }
 
-/*
 #[cfg(feature = "os")]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Pistol;
     use crate::Target;
     use std::net::Ipv4Addr;
     use std::net::Ipv6Addr;
     use std::str::FromStr;
+    use std::vec;
     #[test]
     fn test_os_detect_windows_server_2025() {
         /*
@@ -683,6 +717,7 @@ mod tests {
         */
 
         let src_addr = None;
+        let src_port = None;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
@@ -700,17 +735,21 @@ mod tests {
                 dst_closed_udp_port,
             ]),
         );
+        let targets = vec![target1];
 
-        let timeout = Some(Duration::from_secs_f64(1.0));
+        let timeout = Duration::from_secs_f32(1.0);
         let top_k = 3;
-        let threads = Some(8);
-        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
-        println!("{}", ret);
+        let threads = 8;
 
-        let detects = ret.value();
-        for od in detects {
-            match od {
-                OsDetect::V4(r) => {
+        let mut pistol = Pistol::new();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+
+        let reports = ret.detect_reports;
+        for dr in reports {
+            match dr {
+                DetectReport::V4(r) => {
                     println!("{}", r.fingerprint);
                 }
                 _ => (),
@@ -753,6 +792,7 @@ mod tests {
         */
 
         let src_addr = None;
+        let src_port = None;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
 
@@ -766,17 +806,21 @@ mod tests {
                 dst_closed_udp_port,
             ]),
         );
+        let targets = vec![target1];
 
-        let timeout = Some(Duration::from_secs_f64(1.0));
+        let timeout = Duration::from_secs_f32(1.0);
         let top_k = 3;
-        let threads = Some(8);
-        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
-        println!("{}", ret);
+        let threads = 8;
 
-        let detects = ret.value();
-        for od in detects {
-            match od {
-                OsDetect::V4(r) => {
+        let mut pistol = Pistol::new();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+
+        let reports = ret.detect_reports;
+        for dr in reports {
+            match dr {
+                DetectReport::V4(r) => {
                     println!("{}", r.fingerprint);
                 }
                 _ => (),
@@ -819,6 +863,7 @@ mod tests {
         */
 
         let src_addr = None;
+        let src_port = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -831,12 +876,16 @@ mod tests {
                 dst_closed_udp_port,
             ]),
         );
+        let targets = vec![target1];
 
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Duration::from_secs_f64(0.5);
         let top_k = 3;
-        let threads = Some(8);
-        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
-        println!("{}", ret);
+        let threads = 8;
+
+        let mut pistol = Pistol::new();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
         // let fingerprint = ret.
     }
 
@@ -869,6 +918,7 @@ mod tests {
         */
 
         let src_addr = None;
+        let src_port = None;
         let dst_open_tcp_port = 3389;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
@@ -881,57 +931,57 @@ mod tests {
                 dst_closed_udp_port,
             ]),
         );
+        let targets = vec![target1];
 
-        let timeout = Some(Duration::from_secs_f64(0.5));
+        let timeout = Duration::from_secs_f32(0.5);
         let top_k = 3;
-        let threads = Some(8);
-        let ret = os_detect(&[target1], threads, src_addr, top_k, timeout).unwrap();
-        println!("{}", ret);
+        let threads = 8;
+
+        let mut pistol = Pistol::new();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
         // let fingerprint = ret.
     }
     #[test]
     fn test_os_detect_raw() {
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let timeout = Some(Duration::new(1, 0));
+        let dst_ports = vec![dst_open_tcp_port, dst_closed_tcp_port, dst_closed_udp_port];
+        let src_port = None;
+        let timeout = Duration::new(1, 0);
         let top_k = 3;
-        let ret = os_detect_raw(
-            addr1,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            dst_closed_udp_port,
-            src_addr,
-            top_k,
-            timeout,
-        )
-        .unwrap();
-        println!("{:?}", ret);
+
+        let mut pistol = Pistol::new();
+        let (net_info, dur) = pistol
+            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .unwrap();
+        let ret = os_detect_raw(net_info, timeout, top_k).unwrap();
+        println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_os_detect6_raw() {
-        let addr1 = IpAddr::V6(Ipv6Addr::new(
+        let dst_addr = IpAddr::V6(Ipv6Addr::new(
             0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4,
         ));
         let src_addr = None;
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let timeout = Some(Duration::new(1, 0));
+        let dst_ports = vec![dst_open_tcp_port, dst_closed_tcp_port, dst_closed_udp_port];
+        let src_port = None;
+        let timeout = Duration::new(1, 0);
         let top_k = 3;
-        let ret = os_detect_raw(
-            addr1,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            dst_closed_udp_port,
-            src_addr,
-            top_k,
-            timeout,
-        )
-        .unwrap();
-        println!("{:?}", ret);
+
+        let mut pistol = Pistol::new();
+        let (net_info, dur) = pistol
+            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .unwrap();
+        let ret = os_detect_raw(net_info, timeout, top_k).unwrap();
+        println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_compare_with_nmap() {
@@ -958,4 +1008,3 @@ OS:=N%T=40%CD=S)";
         println!("{}", p);
     }
 }
-*/

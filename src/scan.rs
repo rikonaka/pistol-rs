@@ -480,7 +480,7 @@ impl fmt::Display for PortStatus {
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PortReport {
     pub addr: IpAddr,
     pub port: u16,
@@ -490,7 +490,7 @@ pub struct PortReport {
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PortScan {
     /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
     /// so we record the time cost seconds of layer2 here.
@@ -516,9 +516,6 @@ impl PortScan {
     pub(crate) fn finish(&mut self, port_report: Option<PortReport>) {
         self.end_time = Local::now();
         self.port_report = port_report;
-    }
-    pub fn report(&self) -> Option<PortReport> {
-        self.port_report.clone()
     }
 }
 
@@ -562,9 +559,7 @@ impl fmt::Display for PortScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Port Scans (max_attempts:{})", self.max_attempts,))
-                .style_spec("c")
-                .with_hspan(5),
+            Cell::new("Port Scans").style_spec("c").with_hspan(5),
         ]));
 
         table.add_row(row![c -> "id", c -> "addr", c -> "port", c-> "status", c -> "time cost"]);
@@ -599,14 +594,21 @@ impl fmt::Display for PortScans {
             }
         }
 
+        let summary1 = format!(
+            "start: {}, end: {}, max_attempts: {}",
+            self.start_time.format("%Y-%m-%d %H:%M:%S"),
+            self.end_time.format("%Y-%m-%d %H:%M:%S"),
+            self.max_attempts,
+        );
         let total_cost = self.end_time - self.start_time;
         let total_cost = total_cost.as_seconds_f32();
         let avg_cost = total_cost / self.port_reports.len() as f32;
         let layer2_cost = self.layer2_cost.as_secs_f32();
-        let summary = format!(
+        let summary2 = format!(
             "layer2 cost: {:.3}s, total cost: {:.3}s, avg cost: {:.3}s, open ports: {}",
-            layer2_cost, total_cost, avg_cost, open_ports_num,
+            layer2_cost, total_cost, avg_cost, open_ports_num
         );
+        let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
     }
@@ -1542,10 +1544,10 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
 
         let ret = tcp_connect_scan(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("{}", ret);
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_tcp_syn_scan() {
@@ -1573,9 +1575,9 @@ mod tests {
         let targets = vec![target1];
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("{}", ret);
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_tcp_syn_scan_performance() {
@@ -1594,7 +1596,7 @@ mod tests {
         let targets = vec![target1];
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, max_attempts).unwrap();
         for r in ret.port_reports {
             match r.status {
@@ -1602,7 +1604,7 @@ mod tests {
                 _ => (),
             }
         }
-        // println!("{}", ret);
+        println!("layer2: {:.3}s", dur.as_secs_f32());
     }
     #[test]
     fn test_tcp_fin_scan() {
@@ -1615,9 +1617,9 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
         let ret = tcp_fin_scan(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("{}", ret);
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_tcp_ack_scan() {
@@ -1630,9 +1632,9 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
         let ret = tcp_ack_scan(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("{}", ret);
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_tcp_null_scan() {
@@ -1645,9 +1647,9 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
         let ret = tcp_null_scan(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("{}", ret);
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_udp_scan() {
@@ -1660,8 +1662,8 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recvers(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
         let ret = udp_scan(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("{}", ret);
+        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
 }

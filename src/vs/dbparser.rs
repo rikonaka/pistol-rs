@@ -1,5 +1,6 @@
+/// Thanks to github user https://github.com/chi11321 for the share of his solution to this module!
 use escape_bytes;
-use fancy_regex::Regex as FancyRegex;
+use pcre2::bytes::Regex as Pcre2Regex;
 use regex::Captures;
 use regex::Regex;
 use serde::Deserialize;
@@ -144,88 +145,9 @@ pub struct ServiceProbe {
 }
 
 impl ServiceProbe {
-    fn pattern_fix(&self, pattern: &str) -> String {
-        // This code convert C style regex format to Rust style regex format.
-        let pattern = pattern.replace(r"[\xfb-\xfe]", r"(\xfb|\xfc|\xfd|\xfe)");
-        let pattern = pattern.replace(r"[\x0a-\x0b]", r"(\x0a|\x0b)");
-        let pattern = pattern.replace(r"[\x5e-\x60]", r"(\x5e|\x5f|\x60)");
-        let pattern = pattern.replace(r"[\x60-\x62]", r"(\x60|\x61|\x62)");
-        let pattern = pattern.replace(r"[\x03-\x05]", r"(\x03|\x04|\x05)");
-        let pattern = pattern.replace(r"[\x8b-\x8f]", r"(\x8b|\x8c|\x8d|\x8e|\x8f)");
-        let pattern = pattern.replace(r"[\x17-\x1a]", r"(\x17|\x18|\x19|\x1a)");
-        let pattern = pattern.replace(r"[\x6d-\x6f]", r"(\x6d|\x6f)");
-        let pattern = pattern.replace(r"[\x6b-\x6d]", r"(\x6b|\x6c|\x6d)");
-        let pattern = pattern.replace(r"[\x69-\x6b]", r"(\x69|\x6a|\x6b)");
-        let pattern = pattern.replace(r"[\x4a-\x4c]", r"(\x4a|\x4b|\x4c)");
-        let pattern = pattern.replace(r"[\x48-\x4a]", r"(\x48|\x49|\x4a)");
-        let pattern = pattern.replace(r"[\x46-\x48]", r"(\x46|\x47|\x48)");
-        // destructive match, too much values if I replace it to below format
-        let pattern = pattern.replace(r"[\x40-\x90]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x3e-\x8e]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x3c-\x8c]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x50-\x90]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x4e-\x8e]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x4c-\x8c]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x90-\xdb]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x90-\xdb]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\x90-\xd8]", r"\x[a-f0-9]{2}");
-        let pattern = pattern.replace(r"[\xad-\xd8]", r"\x[a-f0-9]{2}");
-        // The stupid developer wrote a bunch of ambiguous regular expressions,
-        // and now I have to fix them one by one.
-        let pattern = pattern.replace(r"[][\w._ ]+", r"[\]\[\w._\s]+");
-        let pattern = pattern.replace(r"[][\w:.]+", r"[\]\[\w:.]+");
-        let pattern = pattern.replace(
-            r"([^[]+) \[[^]]+ ([\d.]+)\]",
-            r"([^\[]+) \[[^\]]+ ([\d.]+)\]",
-        );
-        let pattern = pattern.replace(r"[][\w._:-]+", r"[\]\[\w._:-]+");
-        let pattern = pattern.replace(r"[][\w.:]+", r"[\]\[\w.:]+");
-        let pattern = pattern.replace(r"[^[]", r"[^\[]");
-
-        let pattern = match FancyRegex::new(r"(?<!\\)\\x") {
-            Ok(regex) => regex.replace_all(&pattern, r"\\x").to_string(),
-            Err(e) => {
-                error!("special regex failed: {}", e);
-                pattern
-            }
-        };
-        let pattern = match FancyRegex::new(r"(?<!\\)\\0") {
-            Ok(regex) => regex.replace_all(&pattern, r"\\0").to_string(),
-            Err(e) => {
-                error!("special regex failed: {}", e);
-                pattern
-            }
-        };
-        // leave this codes here
-        // let pattern = match FancyRegex::new(r"(?<!\\)\\r") {
-        //     Ok(regex) => regex.replace_all(&pattern, r"\\r").to_string(),
-        //     Err(e) => {
-        //         error!("special regex failed: {}", e);
-        //         pattern
-        //     }
-        // };
-        // let pattern = match FancyRegex::new(r"(?<!\\)\\n") {
-        //     Ok(regex) => regex.replace_all(&pattern, r"\\n").to_string(),
-        //     Err(e) => {
-        //         error!("special regex failed: {}", e);
-        //         pattern
-        //     }
-        // };
-        // let pattern = match FancyRegex::new(r"(?<!\\)\\t") {
-        //     Ok(regex) => regex.replace_all(&pattern, r"\\t").to_string(),
-        //     Err(e) => {
-        //         error!("special regex failed: {}", e);
-        //         pattern
-        //     }
-        // };
-
-        pattern
-    }
-    fn match_pattern(&self, m: &Match, recv_str: &str) -> Result<Match, PistolError> {
-        let new_pattern = self.pattern_fix(&m.pattern);
-
-        let re = FancyRegex::new(&new_pattern)?;
-        let captures_group = re.captures(recv_str)?;
+    fn match_pattern(&self, m: &Match, recv_buff: &[u8]) -> Result<Match, PistolError> {
+        let re = Pcre2Regex::new(&m.pattern)?;
+        let captures_group = re.captures(recv_buff)?;
         match captures_group {
             Some(v) => {
                 let mut versioninfo_fix = m.versioninfo.to_string();
@@ -234,7 +156,8 @@ impl ServiceProbe {
                         Some(v) => v,
                         None => continue,
                     };
-                    versioninfo_fix = versioninfo_fix.replace(&format!("${}", i), value.as_str());
+                    let value = String::from_utf8_lossy(value.as_bytes());
+                    versioninfo_fix = versioninfo_fix.replace(&format!("${}", i), &value);
                 }
                 let mut new_m = m.clone();
                 new_m.versioninfo.fix = versioninfo_fix;
@@ -249,22 +172,25 @@ impl ServiceProbe {
             }
         }
     }
-    fn softmatch_function(&self, sm: &SoftMatch, recv_str: &str) -> Result<SoftMatch, PistolError> {
-        let new_pattern = self.pattern_fix(&sm.pattern);
-        let re = FancyRegex::new(&new_pattern)?;
-        if re.is_match(recv_str)? {
+    fn softmatch_function(
+        &self,
+        sm: &SoftMatch,
+        recv_buff: &[u8],
+    ) -> Result<SoftMatch, PistolError> {
+        let re = Pcre2Regex::new(&sm.pattern)?;
+        if re.is_match(recv_buff)? {
             Ok(sm.clone())
         } else {
             Err(PistolError::NoMatchFound)
         }
     }
-    pub fn check(&self, recv_str: &str) -> Option<MatchX> {
+    pub fn check(&self, recv_buff: &[u8]) -> Option<MatchX> {
         let mut match_ret = Vec::new();
         let mut softmatch_ret = Vec::new();
 
         // match
         for m in &self.matchs {
-            match self.match_pattern(&m, recv_str) {
+            match self.match_pattern(&m, recv_buff) {
                 Ok(m) => {
                     match_ret.push(m);
                     break;
@@ -282,7 +208,7 @@ impl ServiceProbe {
         if match_ret.len() == 0 {
             // softmatch
             for sm in &self.softmatchs {
-                match self.softmatch_function(&sm, recv_str) {
+                match self.softmatch_function(&sm, recv_buff) {
                     Ok(sm) => {
                         softmatch_ret.push(sm);
                         break;
@@ -661,7 +587,6 @@ pub fn nmap_service_probes_parser(lines: Vec<String>) -> Result<Vec<ServiceProbe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fancy_regex::Regex as FancyRegex;
     use std::fs::File;
     use std::io::Write;
     #[test]
@@ -703,13 +628,6 @@ mod tests {
         ret_string.pop();
         ret_string += ")";
         println!("{}", ret_string);
-    }
-    #[test]
-    fn test_new_method() {
-        let text = r"abc\xdef\\xghi\xjkl";
-        let re = FancyRegex::new(r"(?<!\\)\\x").unwrap();
-        let result = re.replace_all(text, r"\\x");
-        println!("{}", result);
     }
     #[test]
     fn test_unescape() {

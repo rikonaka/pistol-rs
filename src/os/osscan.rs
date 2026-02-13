@@ -2025,14 +2025,15 @@ pub fn os_probe_thread(
         dst_ports: Vec::new(),
         src_port: None,
     };
-    let hops = icmp_trace(icmp_trace_net_info, timeout)?;
+    let trace = icmp_trace(icmp_trace_net_info, timeout)?;
+    let htops = trace.hops;
     let scan = get_scan_line(
         dst_mac,
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
         dst_ipv4.into(),
-        hops,
+        htops,
         good_results,
     );
 

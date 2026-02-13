@@ -1502,7 +1502,8 @@ pub fn os_probe_thread6(
         dst_ports: Vec::new(),
         src_port: None,
     };
-    let hops = icmp_trace(icmp_trace_net_info, timeout)?;
+    let trace = icmp_trace(icmp_trace_net_info, timeout)?;
+    let hops = trace.hops;
     // form get_scan_line function
     let scan = get_scan_line(
         dst_mac,

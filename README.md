@@ -128,42 +128,6 @@ Furthermore, for the current mainstream operating systems, ipv6 fingerprint supp
 | [x] IPv4 Service Scan | [nmap reference](https://nmap.org/book/vscan-technique.html) |
 | [x] IPv6 Service Scan | [nmap reference](https://nmap.org/book/vscan-technique.html) |
 
-When implementing this module, I found that the biggest problem was that Rust's `Regex` library (including `FancyRegex`) could not perfectly adapt to nmap's regular expressions. The `PCRE` regular expression engine is used in the original C++ code of nmap, so that it can match non-ASCII printable characters like `\0` (the value is `0u8`). 
-
-```c
-#include <stdio.h>
-#include <pcre.h>
-
-int main() {
-    const char *pattern = "\x00";
-    const char *subject = "abc\0def";
-
-    pcre *re = pcre_compile(pattern, 0, NULL, NULL, NULL);
-    if (re == NULL) {
-        printf("Regex compile failed\n");
-        return 1;
-    }
-
-    int ovector[30];
-    int rc = pcre_exec(re, NULL, subject, strlen(subject) + 1, 0, 0, ovector, 30);
-    if (rc >= 0) {
-        printf("Match found at position %d\n", ovector[0]);
-    } else {
-        printf("No match found\n");
-    }
-
-    pcre_free(re);
-    return 0;
-}
-
-```
-
-But in Rust, it is impossible to include any special characters like `\0` in `&str` or `String`, and the existing regular expression engine is based on `&str` matching (not `&[u8]`), so I can only make some trade-offs and changes to build a bridge between nmap's original regular expression and the Rust regular expression engine.
-
-I replaced the `\0` in the nmap regular expression with `\\0`, and then replaced the `0u8` in the received buff with the `\\0` string. Although this can perfectly solve the above problems in most cases, I found some unsolvable [problems](https://github.com/fancy-regex/fancy-regex/issues/149) in the process of replacing `\r` and `\n`, so the processing of `\r` and `\n` is to keep their original values ​​unchanged.
-
-The existing method can only keep the regular expressions of nmap basically usable to a certain extent. Because there are many regular expressions of nmap, it is difficult to check them one by one. Therefore, when matching some services, the results may be different from the original nmap results. If so, please submit these services to issues for subsequent improvements.
-
 ## Debugs
 
 ### Show Logging Infomations and Capture All Pistol Traffic

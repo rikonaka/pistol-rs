@@ -22,35 +22,6 @@ use crate::vs::dbparser::SoftMatch;
 const TCP_BUFF_SIZE: usize = 40960;
 const UDP_BUFF_SIZE: usize = 40960;
 
-fn vs_probe_data_to_string(input: &[u8]) -> String {
-    let mut ret = String::new();
-    for &i in input {
-        match i {
-            0 => {
-                ret += "\\0";
-            }
-            9 => {
-                ret += "\t";
-            }
-            10 => {
-                ret += "\n";
-            }
-            13 => {
-                ret += "\r";
-            }
-            32..=126 => {
-                let s = (i as char).to_string();
-                ret += &s;
-            }
-            _ => {
-                let s = format!("\\x{:02x}", i);
-                ret += &s;
-            }
-        }
-    }
-    ret
-}
-
 #[derive(Debug, Clone)]
 pub enum MatchX {
     Match(Match),
@@ -61,16 +32,16 @@ fn tcp_null_probe(
     stream: &mut TcpStream,
     service_probes: &[ServiceProbe],
 ) -> Result<Vec<MatchX>, PistolError> {
-    let mut total_recv_buff = Vec::new();
+    let mut recv_buff = Vec::new();
     loop {
-        let mut recv_buff = [0u8; TCP_BUFF_SIZE];
-        match stream.read(&mut recv_buff) {
+        let mut buff = [0u8; TCP_BUFF_SIZE];
+        match stream.read(&mut buff) {
             Ok(n) => {
                 debug!("tcp null probe n: {}", n);
                 if n == 0 {
                     break;
                 } else {
-                    total_recv_buff.extend(recv_buff);
+                    recv_buff.extend(buff);
                 }
             }
             Err(e) => {
@@ -81,12 +52,11 @@ fn tcp_null_probe(
     }
 
     let mut ret = Vec::new();
-    debug!("null probe recv buff len: {}", total_recv_buff.len());
-    if total_recv_buff.len() > 0 {
-        let recv_str = vs_probe_data_to_string(&total_recv_buff);
+    debug!("null probe recv buff len: {}", recv_buff.len());
+    if recv_buff.len() > 0 {
         for sp in service_probes {
             if sp.probe.probename == "NULL" {
-                match sp.check(&recv_str) {
+                match sp.check(&recv_buff) {
                     Some(mx) => ret.push(mx),
                     None => (),
                 }
@@ -103,19 +73,19 @@ fn tcp_continue_probe(
     intensity: usize,
     service_probes: &[ServiceProbe],
 ) -> Result<Vec<MatchX>, PistolError> {
-    fn run_probe(stream: &mut TcpStream, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolError> {
+    fn run_probe(stream: &mut TcpStream, sp: &ServiceProbe) -> Result<Option<MatchX>, PistolError> {
         let probestring = &sp.probe.probestring;
         stream.write(probestring)?;
-        let mut total_recv_buff = Vec::new();
+        let mut recv_buff = Vec::new();
         loop {
-            let mut recv_buff = [0u8; TCP_BUFF_SIZE];
-            match stream.read(&mut recv_buff) {
+            let mut buff = [0u8; TCP_BUFF_SIZE];
+            match stream.read(&mut buff) {
                 Ok(n) => {
                     debug!("tcp continue probe n: {}", n);
                     if n == 0 {
                         break;
                     } else {
-                        total_recv_buff.extend(recv_buff);
+                        recv_buff.extend(buff);
                     }
                 }
                 Err(e) => {
@@ -125,20 +95,14 @@ fn tcp_continue_probe(
             };
         }
 
-        debug!(
-            "tcp continue probe recv buff len: {}",
-            total_recv_buff.len()
-        );
-        if total_recv_buff.len() > 0 {
-            let recv_str = vs_probe_data_to_string(&total_recv_buff);
-            let mut ret = Vec::new();
-            match sp.check(&recv_str) {
-                Some(mx) => ret.push(mx),
-                None => (),
+        debug!("tcp continue probe recv buff len: {}", recv_buff.len());
+        if recv_buff.len() > 0 {
+            match sp.check(&recv_buff) {
+                Some(mx) => Ok(Some(mx)),
+                None => Ok(None),
             }
-            Ok(ret)
         } else {
-            Ok(vec![])
+            Ok(None)
         }
     }
 
@@ -174,21 +138,20 @@ fn udp_probe(
     service_probes: &[ServiceProbe],
     timeout: Duration,
 ) -> Result<Vec<MatchX>, PistolError> {
-    fn run_probe(socket: &UdpSocket, sp: &ServiceProbe) -> Result<Vec<MatchX>, PistolError> {
-        let mut ret = Vec::new();
+    fn run_probe(socket: &UdpSocket, sp: &ServiceProbe) -> Result<Option<MatchX>, PistolError> {
         let probestring = &sp.probe.probestring;
         socket.send(probestring)?;
 
-        let mut total_recv_buff = Vec::new();
+        let mut recv_buff = Vec::new();
         loop {
-            let mut recv_buff = [0u8; UDP_BUFF_SIZE];
-            match socket.recv(&mut recv_buff) {
+            let mut buff = [0u8; UDP_BUFF_SIZE];
+            match socket.recv(&mut buff) {
                 Ok(n) => {
                     debug!("udp probe n: {}", n);
                     if n == 0 {
                         break;
                     } else {
-                        total_recv_buff.extend(recv_buff);
+                        recv_buff.extend(buff);
                     }
                 }
                 Err(e) => {
@@ -198,14 +161,14 @@ fn udp_probe(
             }
         }
 
-        if total_recv_buff.len() > 0 {
-            let recv_str = vs_probe_data_to_string(&total_recv_buff);
-            match sp.check(&recv_str) {
-                Some(mx) => ret.push(mx),
-                None => (),
+        if recv_buff.len() > 0 {
+            match sp.check(&recv_buff) {
+                Some(mx) => Ok(Some(mx)),
+                None => Ok(None),
             }
+        } else {
+            Ok(None)
         }
-        Ok(ret)
     }
 
     let random_port = random_port();
@@ -339,30 +302,14 @@ pub fn vs_scan_thread(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use fancy_regex::Regex as FancyRegex;
-    use regex::bytes::Regex;
-    #[test]
-    fn test_vs_probe_to_string() {
-        let regex = FancyRegex::new(r"\\0\\0\\xae\\xae").unwrap();
-        let data = vec![0, 0, 0xae, 0xae];
-        let data_str = vs_probe_data_to_string(&data);
-        let ret = regex.is_match(&data_str).unwrap();
-        println!("{}", data_str);
-        println!("{}", ret);
-        // let data_str = String::from_utf8_lossy(&data);
-        // let ret = regex.is_match(&data_str).unwrap();
-        // println!("{}", data_str);
-        // println!("{}", ret);
-    }
+    use pcre2::bytes::Regex;
     #[test]
     fn test_xx() {
         let data: &[u8] = &[72, 101, 108, 108, 111, 0, 87, 111, 114, 108, 100]; // "Hello\0World"
         let regex = Regex::new(r"\x00").unwrap();
 
-        if regex.is_match(data) {
+        if regex.is_match(data).unwrap() {
             println!("XXX");
-        } else {
         }
     }
 }

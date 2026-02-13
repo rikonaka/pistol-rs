@@ -1,4 +1,5 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -69,8 +70,8 @@ pub enum PistolError {
     /* SERVICE DETECT ERROR */
     #[error("parse int error")]
     ParseIntError(#[from] std::num::ParseIntError),
-    #[error("fancy_regex error")]
-    FancyRegexError(#[from] fancy_regex::Error),
+    #[error("pcre2 regex error")]
+    Pcre2RegexError(#[from] pcre2::Error),
     #[error("no match found")]
     NoMatchFound,
     #[error("can not unescape string [{s}]: {e}")]
