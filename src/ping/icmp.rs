@@ -19,6 +19,7 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
@@ -27,7 +28,6 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::PacketFilter;
@@ -130,15 +130,22 @@ pub fn send_icmp_echo_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv icmp echo ping response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -245,10 +252,17 @@ pub fn send_icmp_timestamp_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -256,7 +270,7 @@ pub fn send_icmp_timestamp_packet(
                 "{} recv icmp timestamp ping response timeout: {}",
                 dst_ipv4, e
             );
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -369,10 +383,17 @@ pub fn send_icmp_address_mask_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -380,7 +401,7 @@ pub fn send_icmp_address_mask_packet(
                 "{} recv icmp address ping response timeout: {}",
                 dst_ipv4, e
             );
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();

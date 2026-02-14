@@ -1,7 +1,3 @@
-use pnet::datalink;
-use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::ChannelType;
-use pnet::datalink::Config;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
@@ -10,7 +6,6 @@ use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
-use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpType;
@@ -24,11 +19,6 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use std::net::IpAddr;
 use std::net::Ipv6Addr;
-use std::panic::Location;
-use std::time::Duration;
-use tracing::debug;
-
-use crate::error::PistolError;
 
 pub(crate) const ETHERNET_HEADER_SIZE: usize = 14;
 pub(crate) const ARP_HEADER_SIZE: usize = 28;
@@ -122,7 +112,6 @@ pub(crate) fn find_interface_by_dst_ip(dst_addr: IpAddr) -> Option<NetworkInterf
     None
 }
 
-/*
 pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
         if name == interface.name {
@@ -131,7 +120,6 @@ pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     }
     None
 }
-*/
 
 #[derive(Debug, Clone)]
 pub(crate) struct Layer2Filter {
@@ -916,156 +904,6 @@ impl PacketFilter {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct Layer2<'a> {
-    dst_mac: MacAddr,
-    src_mac: MacAddr,
-    interface: &'a NetworkInterface,
-    ether_type: EtherType,
-    timeout: Duration,
-}
-
-impl<'a> Layer2<'a> {
-    pub(crate) fn new(
-        dst_mac: MacAddr,
-        src_mac: MacAddr,
-        interface: &'a NetworkInterface,
-        ether_type: EtherType,
-        timeout: Duration,
-    ) -> Self {
-        Self {
-            dst_mac,
-            src_mac,
-            interface,
-            ether_type,
-            timeout,
-        }
-    }
-    /// This function is used to send data in flood attack.
-    pub(crate) fn send_flood(&self, payload: &[u8], retransmit: usize) -> Result<(), PistolError> {
-        let config = Config {
-            write_buffer_size: ETHERNET_BUFF_SIZE,
-            read_buffer_size: ETHERNET_BUFF_SIZE,
-            read_timeout: Some(self.timeout),
-            write_timeout: Some(self.timeout),
-            channel_type: ChannelType::Layer2,
-            bpf_fd_attempts: 1000,
-            linux_fanout: None,
-            promiscuous: false,
-            socket_fd: None,
-        };
-
-        let (mut sender, _) = match datalink::channel(&self.interface, config) {
-            Ok(Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
-            Err(e) => return Err(e.into()),
-        };
-
-        let payload_len = payload.len();
-        let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
-        // According to the document, the minimum length of an Ethernet data packet is 64 bytes
-        // (14 bytes of header and at least 46 bytes of data and 4 bytes of FCS),
-        // but I found through packet capture that nmap did not follow this convention,
-        // so this padding is also cancelled here.
-        // let ethernet_buff_len = if ethernet_buff_len < 60 {
-        //     // padding before FCS
-        //     60
-        // } else {
-        //     ethernet_buff_len
-        // };
-        let mut buff = vec![0u8; ethernet_buff_len];
-        let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
-            Some(p) => p,
-            None => {
-                return Err(PistolError::BuildPacketError {
-                    location: format!("{}", Location::caller()),
-                });
-            }
-        };
-        ethernet_packet.set_destination(self.dst_mac);
-        ethernet_packet.set_source(self.src_mac);
-        ethernet_packet.set_ethertype(self.ether_type);
-        ethernet_packet.set_payload(payload);
-
-        if retransmit > 0 {
-            for _ in 0..retransmit {
-                let _ = sender.send_to(&buff, None);
-            }
-        } else {
-            loop {
-                let _ = sender.send_to(&buff, None);
-            }
-        }
-        Ok(())
-    }
-    /// This function only send data on normal probe.
-    pub(crate) fn send(&self, payload: &[u8]) -> Result<(), PistolError> {
-        let config = Config {
-            write_buffer_size: ETHERNET_BUFF_SIZE,
-            read_buffer_size: ETHERNET_BUFF_SIZE,
-            read_timeout: Some(self.timeout),
-            write_timeout: Some(self.timeout),
-            channel_type: ChannelType::Layer2,
-            bpf_fd_attempts: 1000,
-            linux_fanout: None,
-            promiscuous: false,
-            socket_fd: None,
-        };
-
-        let (mut sender, _) = match datalink::channel(&self.interface, config) {
-            Ok(Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
-            Err(e) => return Err(e.into()),
-        };
-
-        let payload_len = payload.len();
-        let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
-        // According to the document, the minimum length of an Ethernet data packet is 64 bytes
-        // (14 bytes of header and at least 46 bytes of data and 4 bytes of FCS),
-        // but I found through packet capture that nmap did not follow this convention,
-        // so this padding is also cancelled here.
-        // let ethernet_buff_len = if ethernet_buff_len < 60 {
-        //     // padding before FCS
-        //     60
-        // } else {
-        //     ethernet_buff_len
-        // };
-        let mut buff = vec![0u8; ethernet_buff_len];
-        let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
-            Some(p) => p,
-            None => {
-                return Err(PistolError::BuildPacketError {
-                    location: format!("{}", Location::caller()),
-                });
-            }
-        };
-        ethernet_packet.set_destination(self.dst_mac);
-        ethernet_packet.set_source(self.src_mac);
-        ethernet_packet.set_ethertype(self.ether_type);
-        ethernet_packet.set_payload(payload);
-
-        match sender.send_to(&buff, Some(self.interface.clone())) {
-            Some(r) => match r {
-                Ok(_) => {
-                    debug!(
-                        "send packet success: dst_mac: {}, src_mac: {}, ether_type: {:?}, payload_len: {}",
-                        self.dst_mac,
-                        self.src_mac,
-                        self.ether_type,
-                        payload.len()
-                    );
-                    Ok(())
-                }
-                Err(e) => {
-                    debug!("send packet error: {}", e);
-                    Err(e.into())
-                }
-            },
-            None => Ok(()),
-        }
-    }
-}
-
 pub(crate) fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
     let ip = ip.octets();
     // 33:33:FF:xx:xx:xx
@@ -1075,10 +913,12 @@ pub(crate) fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pnet::datalink;
     use pnet::packet::icmp::IcmpTypes;
     use pnet::packet::icmpv6::Icmpv6Types;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
+    use std::time::Duration;
     #[test]
     fn test_layer_match() {
         let data: Vec<u8> = vec![
@@ -1271,12 +1111,12 @@ mod tests {
     }
     #[test]
     fn test_layer2_send() {
-        let config = Config {
+        let config = datalink::Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
             read_timeout: Some(Duration::new(1, 0)),
             write_timeout: Some(Duration::new(1, 0)),
-            channel_type: ChannelType::Layer2,
+            channel_type: datalink::ChannelType::Layer2,
             bpf_fd_attempts: 1000,
             linux_fanout: None,
             promiscuous: false,
@@ -1288,7 +1128,7 @@ mod tests {
         let interface = find_interface_by_src_ip(src_ipv4.into()).unwrap();
 
         let (mut sender, _) = match datalink::channel(&interface, config) {
-            Ok(Ethernet(tx, rx)) => (tx, rx),
+            Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
             _ => panic!("create datalink channel failed"),
         };
 
@@ -1305,6 +1145,6 @@ mod tests {
             0xa8, 0x5, 0x5, 0xc7, 0xec, 0x0, 0x50, 0x0, 0x0, 0x0, 0x0, 0x99, 0xb7, 0x60, 0xf6,
             0x50, 0x10, 0x4, 0x0, 0x5d, 0x91, 0x0, 0x0,
         ];
-        let _ = sender.send_to(&data, Some(interface)).unwrap();
+        let _ = sender.send_to(&data, None).unwrap();
     }
 }

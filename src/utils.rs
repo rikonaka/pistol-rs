@@ -64,7 +64,7 @@ pub(crate) fn num_threads_check(threads: usize) -> usize {
         );
         threads = MAX_THREADS;
     }
-    debug!("the number of create threads: {}", threads);
+    debug!("program will create {} threads", threads);
     threads
 }
 

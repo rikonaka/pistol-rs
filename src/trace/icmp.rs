@@ -15,6 +15,7 @@ use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Instant;
 use tracing::debug;
 
@@ -25,7 +26,6 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::PacketFilter;
@@ -141,16 +141,23 @@ pub fn send_icmp_trace_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
-
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
+
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv icmp trace response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();

@@ -101,14 +101,6 @@ impl PingReport {
     pub fn is_up(&self) -> bool {
         self.status == PingStatus::Up
     }
-    fn new_down_ping_report(addr: IpAddr, cost: Duration, cached: bool) -> Self {
-        Self {
-            addr,
-            status: PingStatus::Down,
-            cost,
-            cached,
-        }
-    }
 }
 
 #[cfg(feature = "ping")]
@@ -472,12 +464,6 @@ fn ping(
 
     for ni in net_infos {
         if !ni.valid {
-            // If the net_info is invalid, we consider the target is down or unreachable, and skip pinging it.
-            reports.push(PingReport::new_down_ping_report(
-                ni.dst_addr,
-                ni.cost,
-                ni.cached,
-            ));
             continue;
         }
         let dst_mac = ni.dst_mac;
@@ -696,9 +682,7 @@ pub fn ping_raw(
 ) -> Result<HostPing, PistolError> {
     let mut host_ping = HostPing::new(max_attempts);
     if !net_info.valid {
-        let ping_report =
-            PingReport::new_down_ping_report(net_info.dst_addr, net_info.cost, net_info.cached);
-        host_ping.finish(Some(ping_report));
+        host_ping.finish(None);
         return Ok(host_ping);
     }
 
@@ -1061,7 +1045,7 @@ pub fn icmp_ping_raw(
 
 #[cfg(feature = "ping")]
 #[cfg(test)]
-mod max_attempts {
+mod tests {
     use super::*;
     use crate::Pistol;
     use crate::Target;
@@ -1083,7 +1067,7 @@ mod max_attempts {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         println!("net_infos: {}", net_infos.len());
         let ret = tcp_syn_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
@@ -1099,7 +1083,7 @@ mod max_attempts {
 
         let mut pistol = Pistol::new();
         let (net_info, dur) = pistol
-            .init_recver_raw(addr1, dst_ports, src_addr, src_port)
+            .init_runner_raw(addr1, dst_ports, src_addr, src_port)
             .unwrap();
         let ret = tcp_syn_ping_raw(net_info, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
@@ -1120,7 +1104,7 @@ mod max_attempts {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1142,7 +1126,7 @@ mod max_attempts {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = icmp_echo_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1164,7 +1148,7 @@ mod max_attempts {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = icmp_timestamp_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1178,7 +1162,7 @@ mod max_attempts {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = icmp_echo_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1198,7 +1182,7 @@ mod max_attempts {
         let timeout = Duration::new(1, 0);
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = icmpv6_ping(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1215,7 +1199,7 @@ mod max_attempts {
         let max_attempts = 1;
 
         let mut pistol = Pistol::new();
-        let (net_infos, _dur) = pistol.init_recver(&targets, None, None).unwrap();
+        let (net_infos, _dur) = pistol.init_runner(&targets, None, None).unwrap();
         for i in 0..10_000 {
             let c2 = Command::new("bash")
                 .arg("-c")

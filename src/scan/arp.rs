@@ -9,6 +9,7 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use std::net::Ipv4Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
@@ -17,7 +18,6 @@ use crate::GLOBAL_NET_CACHES;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ARP_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer2Filter;
 use crate::layer::Layer3Filter;
 use crate::layer::PacketFilter;
@@ -82,23 +82,29 @@ pub fn send_arp_scan_packet(
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let filters = vec![PacketFilter::Layer3Filter(layer3)];
+    let filter_1 = PacketFilter::Layer3Filter(layer3);
 
-    // send the filters to runner
-    let receiver = ask_runner(iface, filters, timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&arp_buff)?;
-    // println!("ARP timeout: {}s", timeout.as_secs_f32());
+    // send the filters to runner
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &arp_buff,
+        ether_type,
+        vec![filter_1],
+        timeout,
+        0,
+    )?;
     let eth_reponse = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv arp response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
-
     let rtt = start.elapsed();
+
     let mac = get_mac_from_arp_response(&eth_reponse);
     match mac {
         Some(mac) => {

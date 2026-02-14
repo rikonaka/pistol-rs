@@ -705,7 +705,7 @@ mod tests {
         let repeat = 4; // The number of times each thread repeats the attack.
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, None, None).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, None, None).unwrap();
         let ret = tcp_syn_flood(net_infos, threads, retransmit, repeat, true).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }

@@ -439,7 +439,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_info, _dur) = pistol
-            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let trace = syn_trace(net_info, timeout).unwrap();
         println!("{}", trace);
@@ -456,7 +456,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_info, _dur) = pistol
-            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let trace = icmp_trace(net_info, timeout).unwrap();
         println!("{}", trace);
@@ -472,7 +472,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_info, _dur) = pistol
-            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let trace = udp_trace(net_info, timeout).unwrap();
         println!("{}", trace);
@@ -489,7 +489,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_info, _dur) = pistol
-            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let trace = udp_trace(net_info, timeout).unwrap();
         println!("{}", trace);

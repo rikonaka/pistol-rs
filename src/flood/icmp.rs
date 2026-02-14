@@ -16,10 +16,10 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::time::Duration;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer2;
 
 const ICMP_DATA_SIZE: usize = 16;
 const TTL: u8 = 64;
@@ -93,10 +93,17 @@ pub fn send_icmp_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
-
-    // ignore the error
-    let _ = layer2.send_flood(&ip_buff, retransmit);
-
+    let iface = interface.name.clone();
+    // ignore receiver, because we don't care about the response in flood attack
+    let _receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        Vec::new(),
+        timeout,
+        retransmit,
+    )?;
     Ok(ip_buff.len() * retransmit)
 }

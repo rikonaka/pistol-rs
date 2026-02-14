@@ -14,6 +14,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
@@ -22,7 +23,6 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
@@ -137,16 +137,23 @@ pub fn send_icmpv6_trace_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
-
     let start = Instant::now();
-    layer2.send(&ipv6_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ipv6_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
+
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv icmpv6 trace response timeout: {}", dst_ipv6, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();

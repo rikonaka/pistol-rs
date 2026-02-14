@@ -17,6 +17,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
@@ -26,7 +27,6 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
@@ -131,19 +131,26 @@ pub fn send_ndp_ns_scan_packet(
         icmpv6_code: None,
         payload: None,
     };
-    let filters = vec![PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6.clone())];
+    let filter_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6.clone());
 
-    let iface = interface.name.clone();
-    let receiver = ask_runner(iface, filters, timeout)?;
     let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
+    let iface = interface.name.clone();
     let start = Instant::now();
-    layer2.send(&ipv6_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ipv6_buff,
+        ether_type,
+        vec![filter_1],
+        timeout,
+        0,
+    )?;
     let eth_response = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
-            Vec::new()
+            Arc::new([])
         }
     };
 

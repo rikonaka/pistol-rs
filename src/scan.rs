@@ -221,10 +221,7 @@ pub fn arp_scan_raw(
                 if src_ipv4.is_loopback() {
                     continue;
                 }
-                debug!(
-                    "use interface {} and src ipv4 address {}",
-                    interface.name, src_ipv4
-                );
+                debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
                 let ret =
                     send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout);
                 return ret;
@@ -491,14 +488,8 @@ pub struct PortReport {
 }
 
 impl PortReport {
-    pub fn new_closed_port_report(addr: IpAddr, port: u16, cost: Duration, cached: bool) -> Self {
-        Self {
-            addr,
-            port,
-            status: PortStatus::Closed,
-            cost,
-            cached,
-        }
+    pub fn is_open(&self) -> bool {
+        self.status == PortStatus::Open
     }
 }
 
@@ -830,11 +821,6 @@ fn scan(
 
     for ni in net_infos {
         if !ni.valid {
-            for &dst_port in &ni.dst_ports {
-                let pr =
-                    PortReport::new_closed_port_report(ni.dst_addr, dst_port, ni.cost, ni.cached);
-                reports.push(pr);
-            }
             continue;
         }
         let dst_mac = ni.dst_mac;
@@ -1445,14 +1431,8 @@ fn scan_raw(
 ) -> Result<PortScan, PistolError> {
     let mut ret = PortScan::new(max_attempts);
     if !net_info.valid {
-        let dst_port = net_info.dst_ports[0];
-        let pr = PortReport::new_closed_port_report(
-            net_info.dst_addr,
-            dst_port,
-            net_info.cost,
-            net_info.cached,
-        );
-        ret.finish(Some(pr));
+        ret.finish(None);
+        return Ok(ret);
     }
 
     let dst_mac = net_info.dst_mac;
@@ -1585,7 +1565,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_recvers_without_net_infos().unwrap();
+        pistol.init_runners_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, max_attempts).unwrap();
         println!("{}", ret);
     }
@@ -1605,7 +1585,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_recvers_without_net_infos().unwrap();
+        pistol.init_runners_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, max_attempts).unwrap();
         println!("{}", ret);
     }
@@ -1618,7 +1598,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_recvers_without_net_infos().unwrap();
+        pistol.init_runners_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, max_attempts).unwrap();
         println!("{}", ret);
     }
@@ -1633,7 +1613,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        pistol.init_recvers_without_net_infos().unwrap();
+        pistol.init_runners_without_net_infos().unwrap();
         let ret = mac_scan(&targets, timeout, threads, max_attempts).unwrap();
         println!("{}", ret);
     }
@@ -1650,7 +1630,7 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
 
         let ret = tcp_connect_scan(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
@@ -1681,7 +1661,7 @@ mod tests {
         let targets = vec![target1];
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1702,7 +1682,7 @@ mod tests {
         let targets = vec![target1];
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = tcp_syn_scan(net_infos, threads, timeout, max_attempts).unwrap();
         for r in ret.port_reports {
             match r.status {
@@ -1723,7 +1703,7 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = tcp_fin_scan(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1738,7 +1718,7 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = tcp_ack_scan(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1753,7 +1733,7 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = tcp_null_scan(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }
@@ -1768,7 +1748,7 @@ mod tests {
         let max_attempts = 2;
         let threads = 8;
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = udp_scan(net_infos, threads, timeout, max_attempts).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
     }

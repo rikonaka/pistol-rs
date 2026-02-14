@@ -25,6 +25,7 @@ use std::net::SocketAddrV4;
 use std::net::SocketAddrV6;
 use std::net::TcpStream;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
@@ -32,7 +33,6 @@ use tracing::debug;
 use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -154,16 +154,23 @@ pub fn send_syn_scan_packet(
     ];
 
     let iface = interface.name.clone();
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
     let ether_type = EtherTypes::Ipv4;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp syn scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -302,15 +309,22 @@ pub fn send_fin_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp fin scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -450,15 +464,22 @@ pub fn send_ack_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp ack scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -594,15 +615,22 @@ pub fn send_null_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp null scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -739,15 +767,22 @@ pub fn send_xmas_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp xmas scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -883,15 +918,22 @@ pub fn send_window_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp windows scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -1032,15 +1074,22 @@ pub fn send_maimon_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv tcp maimon scan response timeout: {}", dst_ipv4, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -1192,10 +1241,17 @@ pub fn send_idle_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_zombie_1, filter_zombie_2], timeout)?;
-    let layer2 = Layer2::new(zombie_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff)?;
+    let receiver = ask_runner(
+        iface,
+        zombie_mac,
+        src_mac,
+        &ip_buff,
+        ether_type,
+        vec![filter_zombie_1, filter_zombie_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -1203,7 +1259,7 @@ pub fn send_idle_scan_packet(
                 "{} recv tcp zombie 1 scan response timeout: {}",
                 dst_ipv4, e
             );
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt_1 = start.elapsed();
@@ -1241,9 +1297,18 @@ pub fn send_idle_scan_packet(
 
     // 3. forge a syn packet from the zombie to the target
     let ip_buff_2 = forge_syn_packet(dst_ipv4, dst_port, zombie_ipv4, zombie_port)?;
+    let iface = interface.name.clone();
     // ignore the response
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
-    layer2.send(&ip_buff_2)?;
+    let _receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff_2,
+        ether_type,
+        Vec::new(),
+        timeout,
+        0,
+    )?;
 
     // 4. probe the zombie's ip id again
     let layer3 = Layer3Filter {
@@ -1283,10 +1348,17 @@ pub fn send_idle_scan_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(iface, vec![filter_1, filter_2], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&ip_buff_3)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ip_buff_3,
+        ether_type,
+        vec![filter_1, filter_2],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
@@ -1294,7 +1366,7 @@ pub fn send_idle_scan_packet(
                 "{} recv tcp zombie 2 scan response timeout: {}",
                 dst_ipv4, e
             );
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt_2 = start.elapsed();

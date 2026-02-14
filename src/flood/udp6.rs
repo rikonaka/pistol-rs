@@ -9,9 +9,9 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::time::Duration;
 
+use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::UDP_HEADER_SIZE;
 
 const UDP_DATA_SIZE: usize = 0;
@@ -66,10 +66,16 @@ pub fn send_udp_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
-
-    // ignore the error
-    let _ = layer2.send_flood(&ipv6_buff, retransmit);
-
+    let iface = interface.name.clone();
+    let _receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ipv6_buff,
+        ether_type,
+        Vec::new(),
+        timeout,
+        retransmit,
+    )?;
     Ok(ipv6_buff.len() * retransmit)
 }

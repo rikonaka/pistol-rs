@@ -21,7 +21,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
-use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::process::Command;
@@ -41,7 +40,6 @@ use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_RS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PayloadMatch;
@@ -107,9 +105,9 @@ fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DefaultRoute {
-    pub via: IpAddr,           // Next hop gateway address
-    pub dev: NetworkInterface, // Device interface name
+pub(crate) struct DefaultRoute {
+    pub(crate) via: IpAddr,           // Next hop gateway address
+    pub(crate) dev: NetworkInterface, // Device interface name
 }
 
 impl fmt::Display for DefaultRoute {
@@ -123,7 +121,7 @@ impl fmt::Display for DefaultRoute {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum RouteAddr {
+pub(crate) enum RouteAddr {
     IpNetwork(IpNetwork),
     IpAddr(IpAddr),
 }
@@ -139,7 +137,7 @@ impl fmt::Display for RouteAddr {
 }
 
 impl RouteAddr {
-    pub fn contains(&self, ip: IpAddr) -> bool {
+    pub(crate) fn contains(&self, ip: IpAddr) -> bool {
         match self {
             RouteAddr::IpNetwork(ip_network) => ip_network.contains(ip),
             RouteAddr::IpAddr(ip_addr) => {
@@ -151,7 +149,7 @@ impl RouteAddr {
             }
         }
     }
-    pub fn is_unspecified(&self) -> bool {
+    pub(crate) fn is_unspecified(&self) -> bool {
         match self {
             RouteAddr::IpNetwork(ip_network) => ip_network.ip().is_unspecified(),
             RouteAddr::IpAddr(ip_addr) => ip_addr.is_unspecified(),
@@ -561,6 +559,7 @@ impl InnerRouteTable {
     }
 }
 
+/*
 fn find_loopback_interface() -> Option<NetworkInterface> {
     for interface in interfaces() {
         if interface.is_loopback() {
@@ -569,6 +568,7 @@ fn find_loopback_interface() -> Option<NetworkInterface> {
     }
     None
 }
+*/
 
 /// Check if the target IP address is one of the system IP address.
 fn addr_is_my_ip(ip: IpAddr) -> bool {
@@ -739,16 +739,23 @@ fn send_ndp_rs_packet(
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ether_type = EtherTypes::Ipv6;
 
-    let iface = interface.name.clone();
-    let receiver = ask_runner(iface, vec![filter_1], timeout)?;
-    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
+    let iface = interface.name;
     let start = Instant::now();
-    layer2.send(&ipv6_buff)?;
+    let receiver = ask_runner(
+        iface,
+        dst_mac,
+        src_mac,
+        &ipv6_buff,
+        ether_type,
+        vec![filter_1],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv ndp_rs response timeout: {}", dst_mac, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let rtt = start.elapsed();
@@ -907,21 +914,18 @@ pub(crate) fn infer_mac(
         timeout: Duration,
     ) -> Result<(MacAddr, NetworkInterface, bool), PistolError> {
         let (src_iface, route_via) = if src_addr == dst_addr {
-            let src_iface = match find_loopback_interface() {
+            // if the source address is the same as the destination address,
+            // it means that the target is your own machine.
+            let src_interface = match find_interface_by_src_ip(src_addr.into()) {
                 Some(i) => i,
                 None => {
                     return Err(PistolError::CanNotFoundInterface {
-                        i: String::from("loopback"),
+                        i: format!("src interface from {}", src_addr),
                     });
                 }
             };
-            if dst_addr.is_ipv4() {
-                let via = Some(RouteVia::IpAddr(IpAddr::V4(Ipv4Addr::LOCALHOST)));
-                (src_iface, via)
-            } else {
-                let via = Some(RouteVia::IpAddr(IpAddr::V6(Ipv6Addr::LOCALHOST)));
-                (src_iface, via)
-            }
+            let via = Some(RouteVia::IpAddr(src_addr));
+            (src_interface, via)
         } else {
             let route_info = match search_route_table(dst_addr)? {
                 Some(route_info) => route_info,
@@ -1128,7 +1132,7 @@ pub(crate) fn infer_addr(
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum RouteVia {
+pub(crate) enum RouteVia {
     // linux
     IpAddr(IpAddr),
     // windows and unix
@@ -1149,7 +1153,7 @@ impl fmt::Display for RouteVia {
 }
 
 impl RouteVia {
-    pub fn parser(via_str: &str) -> Result<Option<RouteVia>, PistolError> {
+    pub(crate) fn parser(via_str: &str) -> Result<Option<RouteVia>, PistolError> {
         if !via_str.contains("link") {
             let ipv6_re = Regex::new(r"^[\w\d:]+(\/\d+)?")?;
             let ipv4_re = Regex::new(r"^[\d\.]+(\/\d+)?")?;
@@ -1237,16 +1241,16 @@ impl RouteVia {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RouteInfo {
-    pub dev: NetworkInterface,
-    pub via: Option<RouteVia>,
+pub(crate) struct RouteInfo {
+    pub(crate) dev: NetworkInterface,
+    pub(crate) via: Option<RouteVia>,
 }
 
 #[derive(Debug, Clone)]
-pub struct RouteTable {
-    pub default_route: Option<DefaultRoute>,
-    pub default_route6: Option<DefaultRoute>,
-    pub routes: HashMap<RouteAddr, RouteInfo>,
+pub(crate) struct RouteTable {
+    pub(crate) default_route: Option<DefaultRoute>,
+    pub(crate) default_route6: Option<DefaultRoute>,
+    pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
 }
 
 impl fmt::Display for RouteTable {
@@ -1324,7 +1328,7 @@ impl RouteTable {
             .collect();
         Ok(system_route_lines)
     }
-    pub fn init() -> Result<RouteTable, PistolError> {
+    pub(crate) fn init() -> Result<RouteTable, PistolError> {
         let system_route_lines = Self::exec_system_command()?;
         let inner_route_table = InnerRouteTable::parser(&system_route_lines)?;
         debug!("inner route table: {}", inner_route_table);
@@ -1474,11 +1478,26 @@ impl RouteTable {
 }
 
 #[derive(Debug, Clone)]
-pub struct NeighborCache {}
+pub(crate) struct NeighborCache;
 
 impl NeighborCache {
+    fn get_local_mac() -> HashMap<IpAddr, MacAddr> {
+        let mut neigh = HashMap::new();
+        for interface in interfaces() {
+            if let Some(mac) = interface.mac {
+                for ipn in interface.ips {
+                    let addr = ipn.ip();
+                    if !addr.is_loopback() && !addr.is_unspecified() {
+                        neigh.insert(addr, mac);
+                    }
+                }
+            }
+        }
+        debug!("get local machine neigh: {:?}", neigh);
+        neigh
+    }
     #[cfg(target_os = "linux")]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+    pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // Debian 12:
         // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
         // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
@@ -1501,7 +1520,7 @@ impl NeighborCache {
         let neighbor_re =
             Regex::new(r"(?P<addr>[\d\w\.:]+)\s+dev[\w\s]+lladdr\s+(?P<mac>[\d\w:]+).+")?;
 
-        let mut ret = HashMap::new();
+        let mut neigh = Self::get_local_mac();
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
@@ -1522,13 +1541,13 @@ impl NeighborCache {
                         }
                     };
                     if !mac.is_zero() {
-                        ret.insert(addr, mac);
+                        neigh.insert(addr, mac);
                     }
                 }
                 None => warn!("line: [{}] neighbor_re no match", line),
             }
         }
-        Ok(ret)
+        Ok(neigh)
     }
     #[cfg(any(
         target_os = "freebsd",
@@ -1536,7 +1555,7 @@ impl NeighborCache {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+    pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // Examples:
         // # arp -a
         // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
@@ -1563,7 +1582,7 @@ impl NeighborCache {
         let neighbor_re = Regex::new(r"\?\s+\((?P<addr>[^\s]+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
         let neighbor_re6 = Regex::new(r"(?P<addr>[^\s]+)\s+(?P<mac>[^\s]+).+")?;
 
-        let mut ret = HashMap::new();
+        let mut ret = Self::get_local_mac();
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
@@ -1620,7 +1639,7 @@ impl NeighborCache {
         Ok(ret)
     }
     #[cfg(target_os = "windows")]
-    pub fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+    pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // Examples:
         // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
         // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
@@ -1639,7 +1658,7 @@ impl NeighborCache {
         let neighbor_re =
             Regex::new(r"^\d+\s+(?P<addr>[\w\d\.:]+)\s+((?P<mac>[\w\d-]+)\s+)?\w+\s+\w+")?;
 
-        let mut ret = HashMap::new();
+        let mut ret = Self::get_local_mac();
         for line in lines {
             match neighbor_re.captures(line) {
                 Some(caps) => {
@@ -1680,11 +1699,11 @@ impl NeighborCache {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SystemNetCache {
-    pub default_route: Option<DefaultRoute>,
-    pub default_route6: Option<DefaultRoute>,
-    pub routes: HashMap<RouteAddr, RouteInfo>,
-    pub neighbor: HashMap<IpAddr, MacAddr>,
+pub(crate) struct SystemNetCache {
+    pub(crate) default_route: Option<DefaultRoute>,
+    pub(crate) default_route6: Option<DefaultRoute>,
+    pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
+    pub(crate) neighbor: HashMap<IpAddr, MacAddr>,
 }
 
 impl SystemNetCache {

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::iter::zip;
 use std::net::Ipv6Addr;
+use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
@@ -19,7 +20,6 @@ use tracing::warn;
 use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
-use crate::layer::Layer2;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
@@ -562,24 +562,27 @@ fn send_seq_probes(
 
         let tx = tx.clone();
         let iface = interface.name.clone();
-        let interface = interface.clone();
+        let ether_type = EtherTypes::Ipv6;
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
+                let start = Instant::now();
+                match ask_runner(
+                    iface.clone(),
+                    dst_mac,
+                    src_mac,
+                    &buff,
+                    ether_type,
+                    vec![filter_1.clone()],
+                    timeout,
+                    0,
+                ) {
                     Ok(receiver) => {
                         let st = start_time.elapsed();
-                        let ether_type = EtherTypes::Ipv6;
-                        let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
-                        let start = Instant::now();
-                        if let Err(e) = layer2.send(&buff) {
-                            error!("send seq_{} probe packet error: {}", i, e);
-                            continue;
-                        }
                         let eth_buff = match receiver.recv_timeout(timeout) {
                             Ok(b) => b,
                             Err(e) => {
                                 debug!("{} recv seq_{} probe response timeout: {}", dst_ipv6, i, e);
-                                Vec::new()
+                                Arc::new([])
                             }
                         };
                         let rtt = start.elapsed();
@@ -746,9 +749,15 @@ fn send_ie_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         let iface = interface.name.clone();
+        let ether_type = EtherTypes::Ipv6;
         for retry_time in 0..MAX_RETRY {
+            let start = Instant::now();
             match ask_runner(
                 iface.clone(),
+                dst_mac,
+                src_mac,
+                &buff,
+                ether_type,
                 vec![
                     filter_1.clone(),
                     filter_2.clone(),
@@ -756,21 +765,15 @@ fn send_ie_probes(
                     filter_4.clone(),
                 ],
                 timeout,
+                0,
             ) {
                 Ok(receiver) => {
                     let st = start_time.elapsed();
-                    let ether_type = EtherTypes::Ipv6;
-                    let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
-                    let start = Instant::now();
-                    if let Err(e) = layer2.send(&buff) {
-                        error!("send ie_{} probe packet error: {}", i, e);
-                        continue;
-                    }
                     let eth_buff = match receiver.recv_timeout(timeout) {
                         Ok(b) => b,
                         Err(e) => {
                             debug!("{} recv ie_{} probe response timeout: {}", dst_ipv6, i, e);
-                            Vec::new()
+                            Arc::new([])
                         }
                     };
                     let rtt = start.elapsed();
@@ -882,22 +885,26 @@ fn send_nx_probes(
         // Prevent the previous request from receiving response from the later request.
         // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
         let iface = interface.name.clone();
+        let ether_type = EtherTypes::Ipv6;
         for retry_time in 0..MAX_RETRY {
-            match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
+            let start = Instant::now();
+            match ask_runner(
+                iface.clone(),
+                dst_mac,
+                src_mac,
+                &buff,
+                ether_type,
+                vec![filter_1.clone()],
+                timeout,
+                0,
+            ) {
                 Ok(receiver) => {
                     let st = start_time.elapsed();
-                    let ether_type = EtherTypes::Ipv6;
-                    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
-                    let start = Instant::now();
-                    if let Err(e) = layer2.send(&buff) {
-                        error!("send nx_{} probe packet error: {}", i, e);
-                        continue;
-                    }
                     let eth_buff = match receiver.recv_timeout(timeout) {
                         Ok(b) => b,
                         Err(e) => {
                             debug!("{} recv nx_{} probe response timeout: {}", dst_ipv6, i, e);
-                            Vec::new()
+                            Arc::new([])
                         }
                     };
                     let rtt = start.elapsed();
@@ -1006,18 +1013,25 @@ fn send_u1_probe(
     let mut rt = start_time.elapsed();
 
     let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv6;
     for _retry_time in 0..MAX_RETRY {
         st = start_time.elapsed();
-        let receiver = ask_runner(iface.clone(), vec![filter_1.clone()], timeout)?;
-        let ether_type = EtherTypes::Ipv6;
-        let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
         let start = Instant::now();
-        layer2.send(&buff)?;
+        let receiver = ask_runner(
+            iface.clone(),
+            dst_mac,
+            src_mac,
+            &buff,
+            ether_type,
+            vec![filter_1.clone()],
+            timeout,
+            0,
+        )?;
         let eth_buff = match receiver.recv_timeout(timeout) {
             Ok(b) => b,
             Err(e) => {
                 debug!("{} recv u1 probe response timeout: {}", dst_ipv6, e);
-                Vec::new()
+                Arc::new([])
             }
         };
         let _rtt = start.elapsed();
@@ -1076,16 +1090,23 @@ fn send_tecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
     let iface = interface.name.clone();
-    let receiver = ask_runner(iface, vec![filter_1], timeout)?;
     let ether_type = EtherTypes::Ipv6;
-    let layer2 = Layer2::new(dst_mac, src_mac, interface, ether_type, timeout);
     let start = Instant::now();
-    layer2.send(&buff)?;
+    let receiver = ask_runner(
+        iface.clone(),
+        dst_mac,
+        src_mac,
+        &buff,
+        ether_type,
+        vec![filter_1.clone()],
+        timeout,
+        0,
+    )?;
     let eth_buff = match receiver.recv_timeout(timeout) {
         Ok(b) => b,
         Err(e) => {
             debug!("{} recv u1 probe response timeout: {}", dst_ipv6, e);
-            Vec::new()
+            Arc::new([])
         }
     };
     let _rtt = start.elapsed();
@@ -1198,24 +1219,27 @@ fn send_tx_probes(
         let tx = tx.clone();
         let filter_1 = filters[i].clone();
         let iface = interface.name.clone();
-        let interface = interface.clone();
+        let ether_type = EtherTypes::Ipv6;
         pool.execute(move || {
             for retry_time in 0..MAX_RETRY {
-                match ask_runner(iface.clone(), vec![filter_1.clone()], timeout) {
+                let start = Instant::now();
+                match ask_runner(
+                    iface.clone(),
+                    dst_mac,
+                    src_mac,
+                    &buff,
+                    ether_type,
+                    vec![filter_1.clone()],
+                    timeout,
+                    0,
+                ) {
                     Ok(receiver) => {
                         let st = start_time.elapsed();
-                        let ether_type = EtherTypes::Ipv6;
-                        let layer2 = Layer2::new(dst_mac, src_mac, &interface, ether_type, timeout);
-                        let start = Instant::now();
-                        if let Err(e) = layer2.send(&buff) {
-                            error!("send tx_{} probe packet error: {}", i, e);
-                            continue;
-                        }
                         let eth_buff = match receiver.recv_timeout(timeout) {
                             Ok(b) => b,
                             Err(e) => {
                                 debug!("{} recv tx_{} probe response timeout: {}", dst_ipv6, i, e);
-                                Vec::new()
+                                Arc::new([])
                             }
                         };
                         let rtt = start.elapsed();

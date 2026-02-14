@@ -774,7 +774,7 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
 
@@ -845,7 +845,7 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
 
@@ -915,7 +915,7 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
         // let fingerprint = ret.
@@ -970,7 +970,7 @@ mod tests {
         let threads = 8;
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_recver(&targets, src_addr, src_port).unwrap();
+        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
         println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
         // let fingerprint = ret.
@@ -989,7 +989,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_info, dur) = pistol
-            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let ret = os_detect_raw(net_info, timeout, top_k).unwrap();
         println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
@@ -1010,7 +1010,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_info, dur) = pistol
-            .init_recver_raw(dst_addr, dst_ports, src_addr, src_port)
+            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let ret = os_detect_raw(net_info, timeout, top_k).unwrap();
         println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
