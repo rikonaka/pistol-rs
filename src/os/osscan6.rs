@@ -145,11 +145,11 @@ pub struct SEQX6 {
     pub rt: Duration,
 }
 
-impl SEQX6 {
-    pub fn empty() -> SEQX6 {
-        SEQX6 {
+impl Default for SEQX6 {
+    fn default() -> Self {
+        Self {
             name: String::new(),
-            rr: RequestResponse::empty(),
+            rr: RequestResponse::default(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -182,11 +182,11 @@ pub struct IEX6 {
     pub rt: Duration,
 }
 
-impl IEX6 {
-    pub fn empty() -> IEX6 {
-        IEX6 {
+impl Default for IEX6 {
+    fn default() -> Self {
+        Self {
             name: String::new(),
-            rr: RequestResponse::empty(),
+            rr: RequestResponse::default(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -219,11 +219,11 @@ pub struct NX6 {
     pub rt: Duration,
 }
 
-impl NX6 {
-    pub fn empty() -> NX6 {
-        NX6 {
+impl Default for NX6 {
+    fn default() -> Self {
+        Self {
             name: String::new(),
-            rr: RequestResponse::empty(),
+            rr: RequestResponse::default(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -255,10 +255,10 @@ pub struct U1X6 {
     pub rt: Duration,
 }
 
-impl U1X6 {
-    pub fn empty() -> U1X6 {
-        U1X6 {
-            rr: RequestResponse::empty(),
+impl Default for U1X6 {
+    fn default() -> Self {
+        Self {
+            rr: RequestResponse::default(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -289,10 +289,10 @@ pub struct TECNX6 {
     pub rt: Duration,
 }
 
-impl TECNX6 {
-    pub fn empty() -> TECNX6 {
-        TECNX6 {
-            rr: RequestResponse::empty(),
+impl Default for TECNX6 {
+    fn default() -> Self {
+        Self {
+            rr: RequestResponse::default(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -324,11 +324,11 @@ pub struct TX6 {
     pub rt: Duration,
 }
 
-impl TX6 {
-    pub fn empty() -> TX6 {
-        TX6 {
+impl Default for TX6 {
+    fn default() -> Self {
+        Self {
             name: String::new(),
-            rr: RequestResponse::empty(),
+            rr: RequestResponse::default(),
             st: Duration::new(0, 0),
             rt: Duration::new(0, 0),
         }
@@ -380,28 +380,28 @@ pub struct Fingerprint6 {
     pub status: bool,
 }
 
-impl Fingerprint6 {
-    pub fn empty() -> Fingerprint6 {
-        Fingerprint6 {
+impl Default for Fingerprint6 {
+    fn default() -> Self {
+        Self {
             scan: String::new(),
-            s1x: SEQX6::empty(),
-            s2x: SEQX6::empty(),
-            s3x: SEQX6::empty(),
-            s4x: SEQX6::empty(),
-            s5x: SEQX6::empty(),
-            s6x: SEQX6::empty(),
-            ie1x: IEX6::empty(),
-            ie2x: IEX6::empty(),
-            ni: NX6::empty(),
-            ns: NX6::empty(),
-            u1x: U1X6::empty(),
-            tecnx: TECNX6::empty(),
-            t2x: TX6::empty(),
-            t3x: TX6::empty(),
-            t4x: TX6::empty(),
-            t5x: TX6::empty(),
-            t6x: TX6::empty(),
-            t7x: TX6::empty(),
+            s1x: SEQX6::default(),
+            s2x: SEQX6::default(),
+            s3x: SEQX6::default(),
+            s4x: SEQX6::default(),
+            s5x: SEQX6::default(),
+            s6x: SEQX6::default(),
+            ie1x: IEX6::default(),
+            ie2x: IEX6::default(),
+            ni: NX6::default(),
+            ns: NX6::default(),
+            u1x: U1X6::default(),
+            tecnx: TECNX6::default(),
+            t2x: TX6::default(),
+            t3x: TX6::default(),
+            t4x: TX6::default(),
+            t5x: TX6::default(),
+            t6x: TX6::default(),
+            t7x: TX6::default(),
             extra: String::new(),
             novelty: 0.0,
             status: false,
@@ -643,12 +643,24 @@ fn send_seq_probes(
     }
     let elapsed = start.elapsed().as_secs_f64();
 
-    let seq1: RequestResponse = seqs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
-    let seq2 = seqs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
-    let seq3 = seqs.get(&2).map_or(RequestResponse::empty(), |x| x.clone());
-    let seq4 = seqs.get(&3).map_or(RequestResponse::empty(), |x| x.clone());
-    let seq5 = seqs.get(&4).map_or(RequestResponse::empty(), |x| x.clone());
-    let seq6 = seqs.get(&5).map_or(RequestResponse::empty(), |x| x.clone());
+    let seq1: RequestResponse = seqs
+        .get(&0)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let seq2 = seqs
+        .get(&1)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let seq3 = seqs
+        .get(&2)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let seq4 = seqs
+        .get(&3)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let seq5 = seqs
+        .get(&4)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let seq6 = seqs
+        .get(&5)
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let st1 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let st2 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
@@ -828,8 +840,12 @@ fn send_ie_probes(
         rts.insert(i, rt);
     }
 
-    let ie1 = ies.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
-    let ie2 = ies.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
+    let ie1 = ies
+        .get(&0)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let ie2 = ies
+        .get(&1)
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let st1 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let st2 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
@@ -959,8 +975,12 @@ fn send_nx_probes(
         rts.insert(i, rt);
     }
 
-    let ni = nxs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
-    let ns = nxs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
+    let ni = nxs
+        .get(&0)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let ns = nxs
+        .get(&1)
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let sti = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let sts = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);
@@ -1298,12 +1318,24 @@ fn send_tx_probes(
         rts.insert(i, rt);
     }
 
-    let t2 = txs.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
-    let t3 = txs.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
-    let t4 = txs.get(&2).map_or(RequestResponse::empty(), |x| x.clone());
-    let t5 = txs.get(&3).map_or(RequestResponse::empty(), |x| x.clone());
-    let t6 = txs.get(&4).map_or(RequestResponse::empty(), |x| x.clone());
-    let t7 = txs.get(&5).map_or(RequestResponse::empty(), |x| x.clone());
+    let t2 = txs
+        .get(&0)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t3 = txs
+        .get(&1)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t4 = txs
+        .get(&2)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t5 = txs
+        .get(&3)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t6 = txs
+        .get(&4)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t7 = txs
+        .get(&5)
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let st2 = sts.get(&0).map_or(Duration::new(0, 0), |x| *x);
     let st3 = sts.get(&1).map_or(Duration::new(0, 0), |x| *x);

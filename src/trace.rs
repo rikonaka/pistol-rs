@@ -66,24 +66,6 @@ pub struct Trace {
     pub finish_time: DateTime<Local>,
 }
 
-impl Trace {
-    pub(crate) fn new(addr: IpAddr) -> Self {
-        let now = Local::now();
-        Trace {
-            addr,
-            hops: 0,
-            cost: Duration::ZERO,
-            layer2_cost: Duration::ZERO,
-            start_time: now,
-            finish_time: now,
-        }
-    }
-    pub(crate) fn finish(&mut self, hops: u8) {
-        self.hops = hops;
-        self.finish_time = Local::now();
-    }
-}
-
 #[cfg(feature = "ping")]
 impl fmt::Display for Trace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -100,7 +82,7 @@ impl fmt::Display for Trace {
 
         let addr_str = format!("{}", self.addr);
         let hops_str = format!("{}", self.hops);
-        let rtt_str = utils::time_sec_to_string(self.cost);
+        let rtt_str = utils::time_to_string(self.cost);
         table.add_row(row![c -> addr_str, c -> hops_str, c -> rtt_str]);
 
         let summary1 = format!(
@@ -109,10 +91,28 @@ impl fmt::Display for Trace {
             self.finish_time.format("%Y-%m-%d %H:%M:%S"),
         );
         let layer2_cost = self.layer2_cost.as_secs_f32();
-        let summary2 = format!("layer2 cost: {:.3}s", layer2_cost);
+        let summary2 = format!("layer2 cost: {:.2}s", layer2_cost);
         let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
         write!(f, "{}", table)
+    }
+}
+
+impl Trace {
+    pub(crate) fn new(addr: IpAddr) -> Self {
+        let now = Local::now();
+        Trace {
+            addr,
+            hops: 0,
+            cost: Duration::ZERO,
+            layer2_cost: Duration::ZERO,
+            start_time: now,
+            finish_time: now,
+        }
+    }
+    pub(crate) fn finish(&mut self, hops: u8) {
+        self.hops = hops;
+        self.finish_time = Local::now();
     }
 }
 

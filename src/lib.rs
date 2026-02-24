@@ -115,7 +115,7 @@ static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
     debug!("create global network cache");
     let nc = match NetCache::load() {
         Some(nc) => {
-            debug!("load network cache from file: {:?}", nc);
+            debug!("load network cache from file:\n{}", nc);
             nc
         }
         None => {
@@ -140,6 +140,16 @@ const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 struct NetCache {
     system_network_cache: SystemNetCache,
     created_at: DateTime<Local>,
+}
+
+impl fmt::Display for NetCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let output = format!(
+            "NetCache:\nsystem_network_cache: {}\ncreated_at: {}",
+            self.system_network_cache, self.created_at
+        );
+        write!(f, "{}", output)
+    }
 }
 
 impl NetCache {
@@ -167,7 +177,6 @@ impl NetCache {
         let now = Local::now();
         let duration = now - nc.created_at;
         if duration.num_hours() < NETWORK_CACHE_EXPIRE_HOURS {
-            debug!("load network cache from file: {:?}", nc);
             Some(nc)
         } else {
             debug!("network cache is expired, delete it");
@@ -701,6 +710,26 @@ impl Default for NetInfo {
     }
 }
 
+#[cfg(feature = "ping")]
+impl fmt::Display for NetInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = if self.valid {
+            format!(
+                "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
+                self.dst_mac,
+                self.src_mac,
+                self.dst_addr,
+                self.src_addr,
+                self.dst_ports,
+                self.interface.name
+            )
+        } else {
+            format!("unvalid target: dst_addr: {}", self.dst_addr)
+        };
+        write!(f, "{}", output)
+    }
+}
+
 impl NetInfo {
     pub(crate) fn new(
         dst_addr: IpAddr,
@@ -715,7 +744,7 @@ impl NetInfo {
         };
         debug!("inferred: dst_addr({}) src_addr({})", dst_addr, src_addr);
 
-        // use a small timeout to infer mac address,
+        // Use a small timeout to infer mac address,
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
         let infer_mac_timeout = Duration::from_secs_f32(0.5);
@@ -747,35 +776,15 @@ impl NetInfo {
     }
 }
 
-#[cfg(feature = "ping")]
-impl fmt::Display for NetInfo {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.valid {
-            format!(
-                "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
-                self.dst_mac,
-                self.src_mac,
-                self.dst_addr,
-                self.src_addr,
-                self.dst_ports,
-                self.interface.name
-            )
-        } else {
-            format!("unvalid target: dst_addr: {}", self.dst_addr)
-        };
-        write!(f, "{}", output)
-    }
-}
-
-const MAX_HISTORY_PACKETS: usize = 10_000_000;
+const MAX_HISTORY_PACKETS: usize = 10_000;
 
 #[derive(Debug, Clone)]
 pub struct Pistol {
     if_name: Option<String>,
-    log_level: Option<String>,
+    log_level: Option<Level>,
     timeout: Duration,
     threads: usize,
-    max_attempts: usize,
+    max_retries: usize,
 }
 
 impl Default for Pistol {
@@ -785,7 +794,7 @@ impl Default for Pistol {
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
             threads: 8,      // default 8 threads
-            max_attempts: 2, // default 2 max_attempts
+            max_retries: 2, // default 2 max_retries
         }
     }
 }
@@ -813,20 +822,30 @@ impl Pistol {
     }
     /// Set the interface name for sending and receiving data.
     /// If not set, the program will try to automatically select an appropriate interface.
-    pub fn set_if_name(&mut self, if_name: &str) {
+    pub fn set_interface(&mut self, if_name: &str) {
         self.if_name = Some(if_name.to_string());
     }
     /// Get the interface name for sending and receiving data.
-    pub fn get_if_name(&self) -> Option<String> {
+    pub fn get_interface(&self) -> Option<String> {
         self.if_name.clone()
     }
     /// Set log level for tracing.
     pub fn set_log_level(&mut self, log_level: &str) {
-        self.log_level = Some(log_level.to_string());
+        let log_level = match log_level.to_lowercase().as_str() {
+            "debug" => Some(Level::DEBUG),
+            "warn" => Some(Level::WARN),
+            "info" => Some(Level::INFO),
+            "none" => None,
+            _ => {
+                warn!("unknown log_level: {}, set it to None now", log_level);
+                None
+            }
+        };
+        self.log_level = log_level;
     }
     /// Get log level for tracing.      
-    pub fn get_log_level(&self) -> Option<String> {
-        self.log_level.clone()
+    pub fn get_log_level(&self) -> Option<Level> {
+        self.log_level
     }
     /// Set the timeout (sec) value for receiving and sending packets.
     pub fn set_timeout(&mut self, timeout: f32) {
@@ -844,40 +863,28 @@ impl Pistol {
     pub fn get_threads(&self) -> usize {
         self.threads
     }
-    /// Set the maximum number of max_attempts to send packets to each target.
-    pub fn set_max_attempts(&mut self, max_attempts: usize) {
-        if max_attempts > 0 {
-            self.max_attempts = max_attempts;
+    /// Set the maximum number of max_retries to send packets to each target.
+    pub fn set_max_retries(&mut self, max_retries: usize) {
+        if max_retries > 0 {
+            self.max_retries = max_retries;
         } else {
-            warn!("max_attempts must be greater than 0, set it to default value 2 now");
-            self.max_attempts = 2;
+            warn!("max_retries must be greater than 0, set it to default value 2 now");
+            self.max_retries = 2;
         }
     }
-    /// Get the maximum number of max_attempts to send packets to each target.
-    pub fn get_max_attempts(&self) -> usize {
-        self.max_attempts
+    /// Get the maximum number of max_retries to send packets to each target.
+    pub fn get_max_retries(&self) -> usize {
+        self.max_retries
     }
     /// Initialize the Pistol instance with the given parameters.
-    fn init(&mut self) -> Result<(), PistolError> {
-        fn set_logger(level: Level) -> Result<(), PistolError> {
+    fn init_logger(&mut self) -> Result<(), PistolError> {
+        if let Some(log_level) = self.log_level {
             let subscriber = FmtSubscriber::builder()
                 .with_ansi(false)
                 .compact()
-                .with_max_level(level)
+                .with_max_level(log_level)
                 .finish();
             let _ = tracing::subscriber::set_global_default(subscriber)?;
-            Ok(())
-        }
-
-        if let Some(log_level) = &self.log_level {
-            let log_level = log_level.to_lowercase();
-            match log_level.as_str() {
-                "debug" => set_logger(Level::DEBUG)?,
-                "warn" => set_logger(Level::WARN)?,
-                "info" => set_logger(Level::INFO)?,
-                "none" => (),
-                _ => eprintln!("unknown log_level: {}, set it to 'none' now", log_level),
-            }
         }
 
         Ok(())
@@ -1065,7 +1072,7 @@ impl Pistol {
 
             #[cfg(feature = "debug")]
             println!(
-                "runner loop cost: {:.3} ms",
+                "runner loop cost: {:.2}ms",
                 loop_start.elapsed().as_secs_f64() * 1000.0
             );
         }
@@ -1106,7 +1113,7 @@ impl Pistol {
     /// Initialize multiple runners for multiple targets without source address info.
     /// For mac scan like function which does not need mac info.
     fn init_runners_without_net_infos(&mut self) -> Result<(), PistolError> {
-        self.init()?;
+        self.init_logger()?;
         // spawn a runner thread for each interface we need
         for ni in interfaces() {
             let timeout = self.timeout;
@@ -1121,8 +1128,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<(Vec<NetInfo>, Duration), PistolError> {
+        self.init_logger()?;
         let now = Instant::now();
-        self.init()?;
         // start runners and listen on all interfaces,
         // since we don't know which interface will be used for each target,
         // we need to listen on all interfaces.
@@ -1132,11 +1139,7 @@ impl Pistol {
         }
 
         // we can not spawn too many threads, otherwise it may cause performance degradation,
-        let threads = if targets.len() < 1024 {
-            targets.len()
-        } else {
-            1024
-        };
+        let threads = utils::threads_check(self.threads);
         let thread_pool = ThreadPool::new(threads);
         let recv_size = targets.len();
         let (tx, rx) = mpsc::channel();
@@ -1158,7 +1161,7 @@ impl Pistol {
                             let mut ni = NetInfo::default();
                             ni.dst_addr = dst_addr;
                             #[cfg(feature = "debug")]
-                            println!("now cost: {:.3}s", net_info_now.elapsed().as_secs_f64());
+                            println!("now cost: {:.2}s", net_info_now.elapsed().as_secs_f64());
                             ni.cost = net_info_now.elapsed();
                             Ok(ni)
                         }
@@ -1173,8 +1176,9 @@ impl Pistol {
 
         let mut net_infos = Vec::new();
         let iter = rx.into_iter().take(recv_size);
-        for net_info in iter {
-            net_infos.push(net_info?);
+        for ni in iter {
+            let ni = ni?;
+            net_infos.push(ni);
         }
 
         Ok((net_infos, now.elapsed()))
@@ -1187,8 +1191,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<(NetInfo, Duration), PistolError> {
+        self.init_logger()?;
         let now = Instant::now();
-        self.init()?;
         // start runners and listen on all interfaces,
         // since we don't know which interface will be used for each target,
         // we need to listen on all interfaces.
@@ -1204,28 +1208,18 @@ impl Pistol {
     /// This will sends ARP packet or NDP NS packet to hosts on the local network and displays any responses that are received.
     /// It is similar to the `arp-scan` tool.
     /// ```rust
-    /// use pistol::PistolRunner;
-    /// use pistol::PistolLogger;
+    /// use pistol::Pistol;
     /// use pistol::Target;
     ///
     /// fn main() {
     ///     let mut pistol = Pistol::new();
-    ///     pistol.set_threads(8);
-    ///     pistol.init().unwrap();
-    ///
-    ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+    ///     pistol.set_threads(512);
     ///     // set the timeout same as `arp-scan`
-    ///     let timeout = Some(Duration::from_secs_f64(0.5));
-    ///     let src_ipv4 = None;
-    ///     let threads = Some(512);
-    ///     let max_attempts = 2;
-    ///
-    ///     let mut p = Pistol::new();
-    ///     p.set_timeout(self.timeout);
-    ///     p.set_threads(threads);
-    ///     p.set_max_attempts(max_attempts);
-    ///
-    ///     let ret = p.mac_scan(&targets, src_ipv4).unwrap();
+    ///     pistol.set_timeout(0.5);
+    ///     pistol.set_max_retries(2);
+    ///     // pistol.set_log_level("debug");
+    ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+    ///     let ret = pistol.mac_scan(&targets).unwrap();
     ///     println!("{}", ret);
     /// }
     /// ```
@@ -1233,7 +1227,7 @@ impl Pistol {
     /// pistol:
     /// ```
     /// +--------+---------------+-------------------+--------+-----------+
-    /// |                    Mac Scans (max_attempts:2)                   |
+    /// |                    Mac Scans (max_retries:2)                   |
     /// +--------+---------------+-------------------+--------+-----------+
     /// |  seq   |     addr      |        mac        |  oui   |    rtt    |
     /// +--------+---------------+-------------------+--------+-----------+
@@ -1264,7 +1258,7 @@ impl Pistol {
     #[cfg(feature = "scan")]
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
         self.init_runners_without_net_infos()?;
-        scan::mac_scan(targets, self.timeout, self.threads, self.max_attempts)
+        scan::mac_scan(targets, self.timeout, self.threads, self.max_retries)
     }
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
@@ -1306,7 +1300,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_ack_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1324,7 +1318,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_ack_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1353,12 +1347,12 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            scan::tcp_connect_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            scan::tcp_connect_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
     /// The raw version of tcp_connect_scan function.
-    /// It max_attempts to establish a TCP connection to the specified destination address and port.
+    /// It max_retries to establish a TCP connection to the specified destination address and port.
     /// If the connection is successful, it indicates that the port is open.
     /// If the connection is refused, it indicates that the port is closed.
     /// If there is no response within the specified timeout, it indicates that the port is filtered
@@ -1371,7 +1365,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_connect_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_connect_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1399,7 +1393,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_fin_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_fin_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1416,7 +1410,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_fin_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_fin_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1454,7 +1448,7 @@ impl Pistol {
             Some(zombie_port),
             self.threads,
             self.timeout,
-            self.max_attempts,
+            self.max_retries,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1488,7 +1482,7 @@ impl Pistol {
             Some(zombie_ipv4),
             Some(zombie_port),
             self.timeout,
-            self.max_attempts,
+            self.max_retries,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1509,7 +1503,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            scan::tcp_maimon_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            scan::tcp_maimon_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1526,7 +1520,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_maimon_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_maimon_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1547,7 +1541,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1564,7 +1558,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_null_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_null_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1590,7 +1584,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_syn_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_syn_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1607,7 +1601,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_syn_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_syn_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1629,7 +1623,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            scan::tcp_window_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            scan::tcp_window_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1646,7 +1640,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_window_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_window_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1666,7 +1660,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1683,7 +1677,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_xmas_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::tcp_xmas_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1707,7 +1701,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::udp_scan(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = scan::udp_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1725,7 +1719,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::udp_scan_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = scan::udp_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1758,7 +1752,7 @@ impl Pistol {
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            ping::icmp_address_mask_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            ping::icmp_address_mask_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1778,7 +1772,7 @@ impl Pistol {
             None => None,
         };
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_address_mask_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::icmp_address_mask_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1801,7 +1795,7 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            ping::icmp_echo_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            ping::icmp_echo_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1816,7 +1810,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_echo_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::icmp_echo_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1846,7 +1840,7 @@ impl Pistol {
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let mut ret =
-            ping::icmp_timestamp_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+            ping::icmp_timestamp_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1866,7 +1860,7 @@ impl Pistol {
             None => None,
         };
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_timestamp_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::icmp_timestamp_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1882,7 +1876,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::icmp_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1909,7 +1903,7 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::icmpv6_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = ping::icmpv6_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1925,7 +1919,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = ping::tcp_ack_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1943,7 +1937,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::tcp_ack_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1959,7 +1953,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = ping::tcp_syn_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1977,7 +1971,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::tcp_syn_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1993,7 +1987,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::udp_ping(net_infos, self.threads, self.timeout, self.max_attempts)?;
+        let mut ret = ping::udp_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2011,7 +2005,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::udp_ping_raw(net_info, self.timeout, self.max_attempts)?;
+        let mut ret = ping::udp_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2072,7 +2066,7 @@ impl Pistol {
     /// An Internet Control Message Protocol (ICMP) flood DDoS attack,
     /// also known as a Ping flood attack,
     /// is a common Denial-of-Service (DoS) attack in
-    /// which an attacker max_attempts to overwhelm a targeted device with ICMP echo-requests (pings).
+    /// which an attacker max_retries to overwhelm a targeted device with ICMP echo-requests (pings).
     /// Normally, ICMP echo-request and echo-reply messages are used to ping a network device
     /// in order to diagnose the health and connectivity of the device and the connection
     /// between the sender and the device.
@@ -2162,7 +2156,7 @@ impl Pistol {
     /// An Internet Control Message Protocol (ICMP) flood DDoS attack,
     /// also known as a Ping flood attack,
     /// is a common Denial-of-Service (DoS) attack in
-    /// which an attacker max_attempts to overwhelm a targeted device with ICMP echo-requests (pings).
+    /// which an attacker max_retries to overwhelm a targeted device with ICMP echo-requests (pings).
     /// Normally, ICMP echo-request and echo-reply messages are used to ping a network device
     /// in order to diagnose the health and connectivity of the device and the connection
     /// between the sender and the device.
@@ -2298,7 +2292,7 @@ impl Pistol {
     /// This function uses a combination of TCP, UDP, and ICMP probes
     /// to gather information about the target system's network stack behavior.
     /// By analyzing the responses to these probes,
-    /// it max_attempts to identify the operating system running on the target machine.
+    /// it max_retries to identify the operating system running on the target machine.
     #[cfg(feature = "os")]
     pub fn os_detect(
         &mut self,
@@ -2314,7 +2308,7 @@ impl Pistol {
     /// It sends a series of TCP, UDP, and ICMP probes to the target IP address
     /// using the specified open and closed ports.
     /// By analyzing the responses to these probes,
-    /// it max_attempts to identify the operating system running on the target machine.
+    /// it max_retries to identify the operating system running on the target machine.
     #[cfg(feature = "os")]
     pub fn os_detect_raw(
         &mut self,
@@ -2339,7 +2333,7 @@ impl Pistol {
     /// This function sends various probes to the target ports
     /// to identify the services running on them.
     /// By analyzing the responses to these probes,
-    /// it max_attempts to determine the service type and version.
+    /// it max_retries to determine the service type and version.
     #[cfg(feature = "vs")]
     pub fn vs_scan(
         &self,
@@ -2363,7 +2357,7 @@ impl Pistol {
     /// It sends various probes to the target IP address and port
     /// to identify the service running on that port.
     /// By analyzing the responses to these probes,
-    /// it max_attempts to determine the service type and version.
+    /// it max_retries to determine the service type and version.
     #[cfg(feature = "vs")]
     pub fn vs_scan_raw(
         &self,
@@ -2570,6 +2564,17 @@ pub struct Target {
     origin: Option<String>,
 }
 
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut ports = Vec::new();
+        for p in &self.ports {
+            ports.push(p.to_string());
+        }
+        let output_str = format!("addr: {}, ports: [{}]", self.addr, ports.join(","));
+        write!(f, "{}", output_str)
+    }
+}
+
 impl Target {
     pub fn new(addr: IpAddr, ports: Option<Vec<u16>>) -> Target {
         let h = match ports {
@@ -2682,13 +2687,6 @@ impl Target {
     }
 }
 
-impl fmt::Display for Target {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output_str = format!("{} {:?}", self.addr, self.ports);
-        write!(f, "{}", output_str)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2791,7 +2789,7 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_threads(8);
         // pistol.set_log_level("debug");
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         pistol.set_threads(8);
         pistol.set_timeout(2.5);
         // pistol.set_log_level("debug");
@@ -2806,7 +2804,7 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_threads(8);
         pistol.set_log_level("debug");
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         pistol.set_threads(8);
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
@@ -2825,17 +2823,16 @@ mod tests {
     fn test_tcp_syn_scan_local() {
         let mut pistol = Pistol::new();
         pistol.set_threads(8);
-        pistol.set_log_level("debug");
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         pistol.set_threads(8);
         pistol.set_timeout(0.5);
-        // pistol.set_log_level("debug");
+        pistol.set_log_level("debug");
 
         let src_ipv4 = None;
         let src_port = None;
         let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 3).into(),
-            Some(vec![22]),
+            Ipv4Addr::new(192, 168, 5, 77).into(),
+            Some(vec![22, 80, 443]),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
@@ -2856,7 +2853,7 @@ mod tests {
         pistol.set_threads(512);
         // set the timeout same as `arp-scan`
         pistol.set_timeout(0.5);
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         // pistol.set_log_level("debug");
 
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
@@ -2869,9 +2866,9 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_threads(512);
         pistol.set_timeout(0.5);
-        // Number of max_attempts, it can also be understood as the maximum number of unsuccessful retries.
+        // Number of max_retries, it can also be understood as the maximum number of unsuccessful retries.
         // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         pistol.set_log_level("debug");
 
         // When using scanning, please use a real local address to get the return packet.
@@ -2899,7 +2896,7 @@ mod tests {
     fn example_os_detect() {
         let mut pistol = Pistol::new();
         pistol.set_threads(8);
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
 
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
@@ -2953,7 +2950,7 @@ mod tests {
     fn example_vs_scan() {
         let mut pistol = Pistol::new();
         pistol.set_threads(8);
-        pistol.set_max_attempts(2);
+        pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
 
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);

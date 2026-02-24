@@ -110,27 +110,7 @@ pub struct HostPing {
     pub ping_report: Option<PingReport>,
     pub start_time: DateTime<Local>,
     pub finish_time: DateTime<Local>,
-    pub max_attempts: usize,
-}
-
-#[cfg(feature = "ping")]
-impl HostPing {
-    pub(crate) fn new(max_attempts: usize) -> Self {
-        Self {
-            layer2_cost: Duration::ZERO,
-            ping_report: None,
-            start_time: Local::now(),
-            finish_time: Local::now(),
-            max_attempts,
-        }
-    }
-    pub(crate) fn finish(&mut self, ping_report: Option<PingReport>) {
-        self.finish_time = Local::now();
-        self.ping_report = ping_report;
-    }
-    pub fn report(&self) -> Option<PingReport> {
-        self.ping_report.clone()
-    }
+    pub max_retries: usize,
 }
 
 #[cfg(feature = "ping")]
@@ -154,9 +134,9 @@ impl fmt::Display for HostPing {
                 let addr_str = format!("{}", report.addr);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
-                    utils::time_sec_to_string(report.cost)
+                    utils::time_to_string(report.cost)
                 } else {
-                    let time_cost_str = utils::time_sec_to_string(report.cost);
+                    let time_cost_str = utils::time_to_string(report.cost);
                     format!("{}(cached)", time_cost_str)
                 };
                 table.add_row(row![c -> addr_str, c -> status_str, c -> time_cost_str]);
@@ -168,20 +148,40 @@ impl fmt::Display for HostPing {
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
         let summary1 = format!(
-            "start at: {}, finish at: {}, max_attempts: {}",
+            "start at: {}, finish at: {}, max_retries: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
             self.finish_time.format("%Y-%m-%d %H:%M:%S"),
-            self.max_attempts,
+            self.max_retries,
         );
         let layer2_cost = self.layer2_cost.as_secs_f32();
         let summary2 = format!(
-            "layer2 cost: {:.3}s, total cost: {:.3}s",
+            "layer2 cost: {:.2}s, total cost: {:.2}s",
             layer2_cost,
             total_cost.as_seconds_f64(),
         );
         let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
         write!(f, "{}", table)
+    }
+}
+
+#[cfg(feature = "ping")]
+impl HostPing {
+    pub(crate) fn new(max_retries: usize) -> Self {
+        Self {
+            layer2_cost: Duration::ZERO,
+            ping_report: None,
+            start_time: Local::now(),
+            finish_time: Local::now(),
+            max_retries,
+        }
+    }
+    pub(crate) fn finish(&mut self, ping_report: Option<PingReport>) {
+        self.finish_time = Local::now();
+        self.ping_report = ping_report;
+    }
+    pub fn report(&self) -> Option<PingReport> {
+        self.ping_report.clone()
     }
 }
 
@@ -194,24 +194,7 @@ pub struct HostPings {
     pub ping_reports: Vec<PingReport>,
     pub start_time: DateTime<Local>,
     pub finish_time: DateTime<Local>,
-    pub max_attempts: usize,
-}
-
-#[cfg(feature = "ping")]
-impl HostPings {
-    pub(crate) fn new(max_attempts: usize) -> HostPings {
-        HostPings {
-            layer2_cost: Duration::ZERO,
-            ping_reports: Vec::new(),
-            start_time: Local::now(),
-            finish_time: Local::now(),
-            max_attempts,
-        }
-    }
-    pub(crate) fn finish(&mut self, ping_reports: Vec<PingReport>) {
-        self.finish_time = Local::now();
-        self.ping_reports = ping_reports;
-    }
+    pub max_retries: usize,
 }
 
 #[cfg(feature = "ping")]
@@ -247,9 +230,9 @@ impl fmt::Display for HostPings {
             let addr_str = format!("{}", report.addr);
             let status_str = format!("{}", report.status);
             let time_cost_str = if report.cached {
-                utils::time_sec_to_string(report.cost)
+                utils::time_to_string(report.cost)
             } else {
-                let time_cost_str = utils::time_sec_to_string(report.cost);
+                let time_cost_str = utils::time_to_string(report.cost);
                 format!("{}(cached)", time_cost_str)
             };
             table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> time_cost_str]);
@@ -260,15 +243,15 @@ impl fmt::Display for HostPings {
         // table.add_row(Row::new(vec![Cell::new(&help_info).with_hspan(4)]));
 
         let summary1 = format!(
-            "start at: {}, finish at: {}, max_attempts: {}",
+            "start at: {}, finish at: {}, max_retries: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
             self.finish_time.format("%Y-%m-%d %H:%M:%S"),
-            self.max_attempts,
+            self.max_retries,
         );
         let layer2_cost = self.layer2_cost.as_secs_f32();
         let avg_cost = total_cost.as_seconds_f64() / self.ping_reports.len() as f64;
         let summary2 = format!(
-            "layer2 cost: {:.3}s, total cost: {:.3}s, avg cost: {:.3}s, alive hosts: {}",
+            "layer2 cost: {:.2}s, total cost: {:.2}s, avg cost: {:.2}s, alive hosts: {}",
             layer2_cost,
             total_cost.as_seconds_f64(),
             avg_cost,
@@ -277,6 +260,23 @@ impl fmt::Display for HostPings {
         let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
         write!(f, "{}", table)
+    }
+}
+
+#[cfg(feature = "ping")]
+impl HostPings {
+    pub(crate) fn new(max_retries: usize) -> HostPings {
+        HostPings {
+            layer2_cost: Duration::ZERO,
+            ping_reports: Vec::new(),
+            start_time: Local::now(),
+            finish_time: Local::now(),
+            max_retries,
+        }
+    }
+    pub(crate) fn finish(&mut self, ping_reports: Vec<PingReport>) {
+        self.finish_time = Local::now();
+        self.ping_reports = ping_reports;
     }
 }
 
@@ -454,9 +454,9 @@ fn ping(
     method: PingMethods,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
-    let mut pistol_pings = HostPings::new(max_attempts);
+    let mut pistol_pings = HostPings::new(max_retries);
     let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
@@ -502,14 +502,14 @@ fn ping(
                 };
                 recv_size += 1;
                 pool.execute(move || {
-                    for ind in 0..max_attempts {
+                    for ind in 0..max_retries {
                         let start_time = Instant::now();
                         let ping_ret = ping_thread(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             method, timeout,
                         );
-                        debug!("pinging {}, attempt {}/{}", dst_ipv4, ind + 1, max_attempts);
-                        if ind == max_attempts - 1 {
+                        debug!("pinging {}, attempt {}/{}", dst_ipv4, ind + 1, max_retries);
+                        if ind == max_retries - 1 {
                             // last attempt
                             if let Err(e) =
                                 tx.send((dst_addr, ping_ret, start_time.elapsed(), cached))
@@ -574,13 +574,13 @@ fn ping(
                     };
                 recv_size += 1;
                 pool.execute(move || {
-                    for ind in 0..max_attempts {
+                    for ind in 0..max_retries {
                         let start_time = Instant::now();
                         let ping_ret = ping_thread6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             method, timeout,
                         );
-                        if ind == max_attempts - 1 {
+                        if ind == max_retries - 1 {
                             // last attempt
                             if let Err(e) =
                                 tx.send((dst_addr, ping_ret, start_time.elapsed(), cached))
@@ -668,9 +668,9 @@ pub fn tcp_syn_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
-    ping(net_infos, PingMethods::Syn, threads, timeout, max_attempts)
+    ping(net_infos, PingMethods::Syn, threads, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -678,9 +678,9 @@ pub fn ping_raw(
     net_info: NetInfo,
     method: PingMethods,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    let mut host_ping = HostPing::new(max_attempts);
+    let mut host_ping = HostPing::new(max_retries);
     if !net_info.valid {
         host_ping.finish(None);
         return Ok(host_ping);
@@ -716,7 +716,7 @@ pub fn ping_raw(
             };
             let mut status_x = PingStatus::Down;
             let mut rtt_x = Duration::ZERO;
-            for i in 0..max_attempts {
+            for i in 0..max_retries {
                 let (status, rtt) = match method {
                     PingMethods::Syn => {
                         let (ret, _data_recv_status, rtt) = tcp::send_syn_scan_packet(
@@ -784,7 +784,7 @@ pub fn ping_raw(
                     _ => (),
                 }
 
-                if i == max_attempts - 1 {
+                if i == max_retries - 1 {
                     // last attempt
                     status_x = status;
                     rtt_x = rtt;
@@ -811,7 +811,7 @@ pub fn ping_raw(
             };
             let mut status_x = PingStatus::Down;
             let mut rtt_x = Duration::ZERO;
-            for i in 0..max_attempts {
+            for i in 0..max_retries {
                 let (status, rtt) = match method {
                     PingMethods::Syn => {
                         let (ret, _data_recv_status, rtt) = tcp6::send_syn_scan_packet(
@@ -867,7 +867,7 @@ pub fn ping_raw(
                     _ => (),
                 }
 
-                if i == max_attempts - 1 {
+                if i == max_retries - 1 {
                     // last attempt
                     status_x = status;
                     rtt_x = rtt;
@@ -892,9 +892,9 @@ pub fn ping_raw(
 pub fn tcp_syn_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::Syn, timeout, max_attempts)
+    ping_raw(net_info, PingMethods::Syn, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -902,9 +902,9 @@ pub fn tcp_ack_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
-    ping(net_infos, PingMethods::Ack, threads, timeout, max_attempts)
+    ping(net_infos, PingMethods::Ack, threads, timeout, max_retries)
 }
 
 /// TCP ACK Ping, raw version.
@@ -913,9 +913,9 @@ pub fn tcp_ack_ping(
 pub fn tcp_ack_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::Ack, timeout, max_attempts)
+    ping_raw(net_info, PingMethods::Ack, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -923,9 +923,9 @@ pub fn udp_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
-    ping(net_infos, PingMethods::Udp, threads, timeout, max_attempts)
+    ping(net_infos, PingMethods::Udp, threads, timeout, max_retries)
 }
 
 /// UDP Ping, raw version.
@@ -933,9 +933,9 @@ pub fn udp_ping(
 pub fn udp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::Udp, timeout, max_attempts)
+    ping_raw(net_info, PingMethods::Udp, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -943,14 +943,14 @@ pub fn icmp_echo_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::IcmpEcho,
         threads,
         timeout,
-        max_attempts,
+        max_retries,
     )
 }
 
@@ -958,9 +958,9 @@ pub fn icmp_echo_ping(
 pub fn icmp_echo_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_attempts)
+    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -968,14 +968,14 @@ pub fn icmp_timestamp_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::IcmpTimeStamp,
         threads,
         timeout,
-        max_attempts,
+        max_retries,
     )
 }
 
@@ -983,9 +983,9 @@ pub fn icmp_timestamp_ping(
 pub fn icmp_timestamp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpTimeStamp, timeout, max_attempts)
+    ping_raw(net_info, PingMethods::IcmpTimeStamp, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -993,14 +993,14 @@ pub fn icmp_address_mask_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::IcmpAddressMask,
         threads,
         timeout,
-        max_attempts,
+        max_retries,
     )
 }
 
@@ -1008,13 +1008,13 @@ pub fn icmp_address_mask_ping(
 pub fn icmp_address_mask_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
     ping_raw(
         net_info,
         PingMethods::IcmpAddressMask,
         timeout,
-        max_attempts,
+        max_retries,
     )
 }
 
@@ -1023,14 +1023,14 @@ pub fn icmpv6_ping(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::Icmpv6Echo,
         threads,
         timeout,
-        max_attempts,
+        max_retries,
     )
 }
 
@@ -1038,9 +1038,9 @@ pub fn icmpv6_ping(
 pub fn icmp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
-    max_attempts: usize,
+    max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_attempts)
+    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_retries)
 }
 
 #[cfg(feature = "ping")]
@@ -1063,14 +1063,14 @@ mod tests {
         let target2 = Target::new(addr2, Some(vec![80]));
         let target3 = Target::new(addr3, Some(vec![80]));
         let targets = vec![target1, target2, target3];
-        let max_attempts = 2;
+        let max_retries = 2;
         let threads = 8;
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         println!("net_infos: {}", net_infos.len());
-        let ret = tcp_syn_ping(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        let ret = tcp_syn_ping(net_infos, threads, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_tcp_syn_ping_raw() {
@@ -1079,14 +1079,14 @@ mod tests {
         let timeout = Duration::new(3, 0);
         let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
         let dst_ports = vec![80];
-        let max_attempts = 2;
+        let max_retries = 2;
 
         let mut pistol = Pistol::new();
         let (net_info, dur) = pistol
             .init_runner_raw(addr1, dst_ports, src_addr, src_port)
             .unwrap();
-        let ret = tcp_syn_ping_raw(net_info, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
+        let ret = tcp_syn_ping_raw(net_info, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {:?}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_tcp_syn_ping6() {
@@ -1100,13 +1100,13 @@ mod tests {
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
         let targets = vec![target1, target2, target3];
-        let max_attempts = 4;
+        let max_retries = 4;
         let threads = 8;
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_syn_ping(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        let ret = tcp_syn_ping(net_infos, threads, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_icmp_echo_ping() {
@@ -1122,13 +1122,13 @@ mod tests {
         // let target3 = Target::new(addr3.into(), Some(vec![]));
         // let target4 = Target::new(addr4.into(), Some(vec![]));
         let targets = vec![target1];
-        let max_attempts = 4;
+        let max_retries = 4;
         let threads = 8;
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = icmp_echo_ping(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        let ret = icmp_echo_ping(net_infos, threads, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_icmp_timestamp_ping() {
@@ -1144,13 +1144,13 @@ mod tests {
         // let target3 = Target::new(addr3.into(), Some(vec![]));
         // let target4 = Target::new(addr4.into(), Some(vec![]));
         let targets = vec![target1];
-        let max_attempts = 4;
+        let max_retries = 4;
         let threads = 8;
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = icmp_timestamp_ping(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        let ret = icmp_timestamp_ping(net_infos, threads, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_icmp_ping_debug() {
@@ -1158,13 +1158,13 @@ mod tests {
         let src_port: Option<u16> = None;
         let timeout = Duration::new(1, 0);
         let targets = Target::from_domain("scanme.nmap.org", None).unwrap();
-        let max_attempts = 4;
+        let max_retries = 4;
         let threads = 8;
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = icmp_echo_ping(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        let ret = icmp_echo_ping(net_infos, threads, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_icmpv6_ping() {
@@ -1177,14 +1177,14 @@ mod tests {
         let target2 = Target::new(addr2.into(), Some(vec![80]));
         let target3 = Target::new(addr3.into(), Some(vec![80]));
         let targets = vec![target1, target2, target3];
-        let max_attempts = 4;
+        let max_retries = 4;
         let threads = 8;
         let timeout = Duration::new(1, 0);
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = icmpv6_ping(net_infos, threads, timeout, max_attempts).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        let ret = icmpv6_ping(net_infos, threads, timeout, max_retries).unwrap();
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
     #[ignore]
@@ -1196,7 +1196,7 @@ mod tests {
         let target = Target::new(addr1, None);
         let targets = vec![target];
         let timeout = Duration::new(1, 0);
-        let max_attempts = 1;
+        let max_retries = 1;
 
         let mut pistol = Pistol::new();
         let (net_infos, _dur) = pistol.init_runner(&targets, None, None).unwrap();
@@ -1212,7 +1212,7 @@ mod tests {
                 String::from_utf8_lossy(&c2.stdout)
             );
 
-            let _ret = icmp_echo_ping(net_infos.clone(), threads, timeout, max_attempts).unwrap();
+            let _ret = icmp_echo_ping(net_infos.clone(), threads, timeout, max_retries).unwrap();
             println!("id: {}", i);
             // std::thread::sleep(Duration::new(1, 0));
         }

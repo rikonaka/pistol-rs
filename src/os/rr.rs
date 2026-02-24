@@ -8,9 +8,9 @@ pub struct RequestResponse {
     pub response: Vec<u8>, // layer3, if no response: response.len() == 0
 }
 
-impl RequestResponse {
-    pub fn empty() -> RequestResponse {
-        RequestResponse {
+impl Default for RequestResponse {
+    fn default() -> Self {
+        Self {
             request: Vec::new(),
             response: Vec::new(),
         }

@@ -9,8 +9,6 @@ use tracing::warn;
 
 use crate::error::PistolError;
 
-const MAX_THREADS: usize = 40960;
-
 /// Returns the random port from 10000 to 65535.
 pub fn random_port() -> u16 {
     let mut rng = rand::rng();
@@ -47,22 +45,23 @@ pub fn random_port_range(start: u16, end: u16) -> u16 {
     rng.random_range(start..=end)
 }
 
-pub(crate) fn time_sec_to_string(cost: Duration) -> String {
+pub(crate) fn time_to_string(cost: Duration) -> String {
     if cost.as_secs_f64() > 1.0 {
-        format!("{:.3}s", cost.as_secs_f64())
+        format!("{:.2}s", cost.as_secs_f64())
     } else {
-        format!("{:.3} ms", cost.as_secs_f64() * 1000.0)
+        format!("{:.2}ms", cost.as_secs_f64() * 1000.0)
     }
 }
 
-pub(crate) fn num_threads_check(threads: usize) -> usize {
+pub(crate) fn threads_check(threads: usize) -> usize {
     let mut threads = threads;
-    if threads > MAX_THREADS {
+    let max_threads = 1024;
+    if threads > max_threads {
         warn!(
             "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
-            threads, MAX_THREADS
+            threads, max_threads
         );
-        threads = MAX_THREADS;
+        threads = max_threads;
     }
     debug!("program will create {} threads", threads);
     threads
@@ -75,7 +74,7 @@ pub(crate) fn get_cpu_num() -> usize {
 
 pub(crate) fn get_threads_pool(threads: usize) -> ThreadPool {
     let pool = if threads > 0 {
-        let threads = num_threads_check(threads);
+        let threads = threads_check(threads);
         ThreadPool::new(threads)
     } else {
         let cpus = get_cpu_num();

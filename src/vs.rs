@@ -42,7 +42,7 @@ use crate::error::PistolError;
 #[cfg(feature = "vs")]
 use crate::utils::get_threads_pool;
 #[cfg(feature = "vs")]
-use crate::utils::time_sec_to_string;
+use crate::utils::time_to_string;
 #[cfg(feature = "vs")]
 use crate::vs::dbparser::nmap_service_probes_parser;
 #[cfg(feature = "vs")]
@@ -71,21 +71,6 @@ pub struct PistolVsScans {
     pub port_services: Vec<PortService>,
     pub start_time: DateTime<Local>,
     pub finish_time: DateTime<Local>,
-}
-
-#[cfg(feature = "vs")]
-impl PistolVsScans {
-    pub fn new() -> PistolVsScans {
-        PistolVsScans {
-            port_services: Vec::new(),
-            start_time: Local::now(),
-            finish_time: Local::now(),
-        }
-    }
-    pub fn finish(&mut self, port_services: Vec<PortService>) {
-        self.finish_time = Local::now();
-        self.port_services = port_services;
-    }
 }
 
 #[cfg(feature = "vs")]
@@ -140,7 +125,7 @@ impl fmt::Display for PistolVsScans {
                     None => format!("{}", service.addr),
                 };
                 total_cost += service.time_cost.as_secs_f64();
-                let time_cost_str = time_sec_to_string(service.time_cost);
+                let time_cost_str = time_to_string(service.time_cost);
                 table.add_row(
                     row![c -> i, c -> addr_str, c -> service.port, c -> services_str, c -> versioninfo_str, c -> time_cost_str],
                 );
@@ -150,11 +135,26 @@ impl fmt::Display for PistolVsScans {
 
         let avg_cost = total_cost / self.port_services.len() as f64;
         let summary = format!(
-            "total used time: {:.3}s, avg time cost: {:.3}s",
+            "total used time: {:.2}s, avg time cost: {:.2}s",
             total_cost, avg_cost,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
         write!(f, "{}", table)
+    }
+}
+
+#[cfg(feature = "vs")]
+impl PistolVsScans {
+    pub fn new() -> PistolVsScans {
+        PistolVsScans {
+            port_services: Vec::new(),
+            start_time: Local::now(),
+            finish_time: Local::now(),
+        }
+    }
+    pub fn finish(&mut self, port_services: Vec<PortService>) {
+        self.finish_time = Local::now();
+        self.port_services = port_services;
     }
 }
 

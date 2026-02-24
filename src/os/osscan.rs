@@ -108,23 +108,23 @@ pub struct Fingerprint {
     pub iex: IEX,
 }
 
-impl Fingerprint {
-    pub fn empty() -> Fingerprint {
-        Fingerprint {
+impl Default for Fingerprint {
+    fn default() -> Self {
+        Self {
             scan: String::new(),
-            seqx: SEQX::empty(),
-            opsx: OPSX::empty(),
-            winx: WINX::empty(),
-            ecnx: ECNX::empty(),
-            t1x: TXX::empty(),
-            t2x: TXX::empty(),
-            t3x: TXX::empty(),
-            t4x: TXX::empty(),
-            t5x: TXX::empty(),
-            t6x: TXX::empty(),
-            t7x: TXX::empty(),
-            u1x: U1X::empty(),
-            iex: IEX::empty(),
+            seqx: SEQX::default(),
+            opsx: OPSX::default(),
+            winx: WINX::default(),
+            ecnx: ECNX::default(),
+            t1x: TXX::default(),
+            t2x: TXX::default(),
+            t3x: TXX::default(),
+            t4x: TXX::default(),
+            t5x: TXX::default(),
+            t6x: TXX::default(),
+            t7x: TXX::default(),
+            u1x: U1X::default(),
+            iex: IEX::default(),
         }
     }
 }
@@ -385,22 +385,22 @@ fn send_seq_probes(
 
     let seq1 = seq_hm
         .get(&0)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let seq2 = seq_hm
         .get(&1)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let seq3 = seq_hm
         .get(&2)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let seq4 = seq_hm
         .get(&3)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let seq5 = seq_hm
         .get(&4)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let seq6 = seq_hm
         .get(&5)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let seqrr = SEQRR {
         seq1,
@@ -516,8 +516,8 @@ fn send_ie_probes(
         ies.insert(i, rr);
     }
 
-    let ie1 = ies.get(&0).map_or(RequestResponse::empty(), |x| x.clone());
-    let ie2 = ies.get(&1).map_or(RequestResponse::empty(), |x| x.clone());
+    let ie1 = ies.get(&0).map_or(RequestResponse::default(), |x| x.clone());
+    let ie2 = ies.get(&1).map_or(RequestResponse::default(), |x| x.clone());
 
     let ie = IERR { ie1, ie2 };
     Ok(ie)
@@ -757,22 +757,22 @@ fn send_tx_probes(
 
     let t2 = tx_hm
         .get(&0)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let t3 = tx_hm
         .get(&1)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let t4 = tx_hm
         .get(&2)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let t5 = tx_hm
         .get(&3)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let t6 = tx_hm
         .get(&4)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
     let t7 = tx_hm
         .get(&5)
-        .map_or(RequestResponse::empty(), |x| x.clone());
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let txrr = TXRR {
         t2,
@@ -940,9 +940,9 @@ pub struct SEQX {
     pub r: String,
 }
 
-impl SEQX {
-    pub fn empty() -> SEQX {
-        SEQX {
+impl Default for SEQX {
+    fn default() -> Self {
+        Self {
             sp: 0,
             gcd: 0,
             isr: 0,
@@ -994,7 +994,7 @@ impl fmt::Display for SEQX {
     }
 }
 
-pub fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
+fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
     let rynum = |rvec: Vec<String>| -> usize {
         let mut num = 0;
         for r in rvec {
@@ -1061,9 +1061,9 @@ pub struct OPSX {
     pub r: String,
 }
 
-impl OPSX {
-    pub fn empty() -> OPSX {
-        OPSX {
+impl Default for OPSX {
+    fn default() -> Self {
+        Self {
             o1: String::new(),
             o2: String::new(),
             o3: String::new(),
@@ -1196,9 +1196,9 @@ pub struct WINX {
     pub r: String,
 }
 
-impl WINX {
-    pub fn empty() -> WINX {
-        WINX {
+impl Default for WINX {
+    fn default() -> Self {
+        Self {
             w1: 0,
             w2: 0,
             w3: 0,
@@ -1330,9 +1330,9 @@ pub struct ECNX {
     pub q: String,
 }
 
-impl ECNX {
-    pub fn empty() -> ECNX {
-        ECNX {
+impl Default for ECNX {
+    fn default() -> Self {
+        Self {
             r: String::new(),
             df: String::new(),
             t: None,
@@ -1488,9 +1488,9 @@ pub struct TXX {
     pub q: String,
 }
 
-impl TXX {
-    pub fn empty() -> TXX {
-        TXX {
+impl Default for TXX {
+    fn default() -> Self {
+        Self {
             name: String::new(),
             r: String::new(),
             df: String::new(),
@@ -1699,9 +1699,9 @@ pub struct U1X {
     pub rud: String,
 }
 
-impl U1X {
-    pub fn empty() -> U1X {
-        U1X {
+impl Default for U1X {
+    fn default() -> Self {
+        Self {
             r: String::new(),
             df: String::new(),
             t: None,
@@ -1881,9 +1881,9 @@ pub struct IEX {
     pub cd: String,
 }
 
-impl IEX {
-    pub fn empty() -> IEX {
-        IEX {
+impl Default for IEX {
+    fn default() -> Self {
+        Self {
             r: String::new(),
             dfi: String::new(),
             t: None,

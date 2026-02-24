@@ -15606,7 +15606,7 @@ match crossmatchverifier m|^Settings\r\nGain\x20(\d+)\r\nContrast\x20(\d+)\r\nTi
 
 # The following probe is designed to check the status of a SOCKS5 implementation.
 #
-# It max_attempts to create a TCP connection to google.com:80 assuming the SOCKS server
+# It max_retries to create a TCP connection to google.com:80 assuming the SOCKS server
 # allows unauthenticated connections. The probe also tells the SOCKS server
 # that we support all major types of authentication so we can determine which
 # authentication method the server requires.
@@ -15654,7 +15654,7 @@ softmatch socks5 m|^\x05|
 
 # The following probe is designed to check the status of a SOCKS4 implementation.
 #
-# It max_attempts to create a TCP connection to 127.0.0.1:22. We supply a username root
+# It max_retries to create a TCP connection to 127.0.0.1:22. We supply a username root
 # in the user id string field. We don't try to establish TCP port bindings on
 # the SOCKS server though this could easily be added to a new probe.
 

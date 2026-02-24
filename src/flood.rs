@@ -99,22 +99,6 @@ pub struct Floods {
 }
 
 #[cfg(feature = "flood")]
-impl Floods {
-    pub(crate) fn new() -> Floods {
-        Floods {
-            layer2_cost: Duration::ZERO,
-            flood_reports: Vec::new(),
-            start_time: Local::now(),
-            finish_time: Local::now(),
-        }
-    }
-    pub(crate) fn finish(&mut self, flood_reports: Vec<FloodReport>) {
-        self.finish_time = Local::now();
-        self.flood_reports = flood_reports;
-    }
-}
-
-#[cfg(feature = "flood")]
 impl fmt::Display for Floods {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         const BYTES_PER_MB: u64 = 1024;
@@ -134,20 +118,20 @@ impl fmt::Display for Floods {
         let mut i = 1;
         for (addr, report) in btm_addr {
             let time_cost = report.cost;
-            let time_cost_str = utils::time_sec_to_string(time_cost);
+            let time_cost_str = utils::time_to_string(time_cost);
             let time_cost = time_cost.as_secs_f64();
             let (size_str, traffic_str) = if report.send_size as f64 / BYTES_PER_GB as f64 > 1.0 {
                 let v = report.send_size as f64 / BYTES_PER_GB as f64;
                 let k = v / time_cost;
-                (format!("{:.3}GB", v), format!("{:.3}GB/s", k))
+                (format!("{:.2}GB", v), format!("{:.2}GB/s", k))
             } else if report.send_size as f64 / BYTES_PER_MB as f64 > 1.0 {
                 let v = report.send_size as f64 / BYTES_PER_MB as f64;
                 let k = v / time_cost;
-                (format!("{:.3}MB", v), format!("{:.3}MB/s", k))
+                (format!("{:.2}MB", v), format!("{:.2}MB/s", k))
             } else {
                 let v = report.send_size;
                 let k = v as f64 / time_cost;
-                (format!("{}Bytes", v), format!("{:.3}B/s", k))
+                (format!("{}Bytes", v), format!("{:.2}B/s", k))
             };
             let traffic_str = format!(
                 "packets sent: {}({}), time cost: {}({})",
@@ -166,6 +150,22 @@ impl fmt::Display for Floods {
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(3)]));
         write!(f, "{}", table.to_string())
+    }
+}
+
+#[cfg(feature = "flood")]
+impl Floods {
+    pub(crate) fn new() -> Floods {
+        Floods {
+            layer2_cost: Duration::ZERO,
+            flood_reports: Vec::new(),
+            start_time: Local::now(),
+            finish_time: Local::now(),
+        }
+    }
+    pub(crate) fn finish(&mut self, flood_reports: Vec<FloodReport>) {
+        self.finish_time = Local::now();
+        self.flood_reports = flood_reports;
     }
 }
 
@@ -707,6 +707,6 @@ mod tests {
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, None, None).unwrap();
         let ret = tcp_syn_flood(net_infos, threads, retransmit, repeat, true).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
 }

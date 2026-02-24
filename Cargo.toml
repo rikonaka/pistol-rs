@@ -12,7 +12,7 @@ keywords = ["pentest", "cyber", "nmap", "scan", "security"]
 
 [dependencies]
 hex = "0.4.3"
-zip = "7.4.0"
+zip = "8.1.0"
 rand = "0.10.0"
 gcdx = "0.2.3"
 pcre2 = "0.2.11"

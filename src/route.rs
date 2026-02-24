@@ -973,15 +973,15 @@ pub(crate) fn infer_mac(
                         // no via_addr, use dst_addr here
                         let (dst_mac, cached) = match search_mac(dst_addr)? {
                             Some(dst_mac) => (dst_mac, true),
-                            None => (
-                                send_neighbor_detect_packet(
+                            None => {
+                                let dst_mac = send_neighbor_detect_packet(
                                     dst_addr,
                                     src_addr,
                                     interface.clone(),
                                     timeout,
-                                )?,
-                                false,
-                            ),
+                                )?;
+                                (dst_mac, false)
+                            }
                         };
                         Ok((dst_mac, interface, cached))
                     }
@@ -1011,10 +1011,20 @@ pub(crate) fn infer_mac(
             }
             None => {
                 debug!("route_via is none");
-                let dst_mac =
-                    send_neighbor_detect_packet(dst_addr, src_addr, src_iface.clone(), timeout)?;
+                let (dst_mac, cached) = match search_mac(dst_addr)? {
+                    Some(m) => (m, true),
+                    None => {
+                        let dst_mac = send_neighbor_detect_packet(
+                            dst_addr,
+                            src_addr,
+                            src_iface.clone(),
+                            timeout,
+                        )?;
+                        (dst_mac, false)
+                    }
+                };
                 debug!("route_via is none and found dst_mac: {}", dst_mac);
-                Ok((dst_mac, src_iface, false))
+                Ok((dst_mac, src_iface, cached))
             }
         }
     }
@@ -1706,6 +1716,38 @@ pub(crate) struct SystemNetCache {
     pub(crate) neighbor: HashMap<IpAddr, MacAddr>,
 }
 
+impl fmt::Display for SystemNetCache {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = Vec::new();
+        match &self.default_route {
+            Some(r) => {
+                output.push(r.to_string());
+            }
+            None => (),
+        }
+        match &self.default_route6 {
+            Some(r) => {
+                output.push(r.to_string());
+            }
+            None => (),
+        }
+        let mut routes = Vec::new();
+        for (k, v) in &self.routes {
+            routes.push(format!("{}({})", k, v.dev.name));
+        }
+        let routes_string = format!("routes: {}", routes.join(","));
+        output.push(routes_string);
+
+        let mut neighbor = Vec::new();
+        for (k, v) in &self.neighbor {
+            neighbor.push(format!("{}({})", k, v));
+        }
+        let neighbor_string = format!("neighbor cache: {}", neighbor.join(","));
+        output.push(neighbor_string);
+        write!(f, "{}", output.join("\n"))
+    }
+}
+
 impl SystemNetCache {
     pub(crate) fn init() -> Result<SystemNetCache, PistolError> {
         let route_table = RouteTable::init()?;
@@ -1731,12 +1773,12 @@ impl SystemNetCache {
         debug!("update the neigh cache done: {:?}", self.neighbor);
     }
     pub(crate) fn search_route_table(&self, dst_addr: IpAddr) -> Option<RouteInfo> {
-        for (dst, route_info) in &self.routes {
-            if !dst.is_unspecified() && dst.contains(dst_addr) {
-                // debug!(
-                //     "route table {} contains target ip, route info dev: {}, via: {:?}",
-                //     dst, route_info.dev.name, route_info.via
-                // );
+        for (route_addr, route_info) in &self.routes {
+            if !route_addr.is_unspecified() && route_addr.contains(dst_addr) {
+                debug!(
+                    "route table {} contains target ip, route info dev: {}, via: {:?}",
+                    route_addr, route_info.dev.name, route_info.via
+                );
                 return Some(route_info.clone());
             }
         }

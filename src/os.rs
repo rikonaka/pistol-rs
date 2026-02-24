@@ -111,7 +111,7 @@ impl Detect {
         Self {
             addr: dst_addr,
             alive: false,
-            fingerprint: Fingerprint::empty(),
+            fingerprint: Fingerprint::default(),
             detects: Vec::new(),
             cost: Duration::ZERO,
             layer2_cost: Duration::ZERO,
@@ -135,7 +135,7 @@ impl Detect6 {
         Self {
             addr: dst_addr,
             alive: false,
-            fingerprint: Fingerprint6::empty(),
+            fingerprint: Fingerprint6::default(),
             detects: Vec::new(),
             cost: Duration::ZERO,
             layer2_cost: Duration::ZERO,
@@ -201,22 +201,6 @@ pub struct OsDetects {
 }
 
 #[cfg(feature = "os")]
-impl OsDetects {
-    fn new() -> Self {
-        Self {
-            layer2_cost: Duration::ZERO,
-            detect_reports: Vec::new(),
-            start_time: Local::now(),
-            finish_time: Local::now(),
-        }
-    }
-    fn finish(&mut self, os_detects: Vec<DetectReport>) {
-        self.finish_time = Local::now();
-        self.detect_reports = os_detects;
-    }
-}
-
-#[cfg(feature = "os")]
 impl fmt::Display for OsDetects {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -239,9 +223,9 @@ impl fmt::Display for OsDetects {
         for (addr, detect) in btm_addr {
             match detect {
                 DetectReport::V4(o) => {
-                    let time_cost_str = utils::time_sec_to_string(o.cost);
+                    let time_cost_str = utils::time_to_string(o.cost);
                     let addr_str = format!("{}", addr);
-                    total_cost += o.cost.as_secs_f64();
+                    total_cost += o.cost.as_secs_f32();
                     if o.alive {
                         if o.detects.len() > 0 {
                             for (i, os_info) in o.detects.iter().enumerate() {
@@ -264,9 +248,9 @@ impl fmt::Display for OsDetects {
                     }
                 }
                 DetectReport::V6(o) => {
-                    let time_cost_str = utils::time_sec_to_string(o.cost);
+                    let time_cost_str = utils::time_to_string(o.cost);
                     let addr_str = format!("{}", addr);
-                    total_cost += o.cost.as_secs_f64();
+                    total_cost += o.cost.as_secs_f32();
                     if o.alive {
                         if o.detects.len() > 0 {
                             for (i, os_info6) in o.detects.iter().enumerate() {
@@ -291,13 +275,31 @@ impl fmt::Display for OsDetects {
                 }
             }
         }
-        let avg_cost = total_cost / self.detect_reports.len() as f64;
+        let avg_cost = total_cost / self.detect_reports.len() as f32;
+        let total_cost_str = utils::time_to_string(Duration::from_secs_f32(total_cost));
+        let avg_cost_str = utils::time_to_string(Duration::from_secs_f32(avg_cost));
         let summary = format!(
-            "total used time: {:.3}s, avg time cost: {:.3}s",
-            total_cost, avg_cost,
+            "total used time: {}, avg time cost: {}",
+            total_cost_str, avg_cost_str,
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(7)]));
         write!(f, "{}", table)
+    }
+}
+
+#[cfg(feature = "os")]
+impl OsDetects {
+    fn new() -> Self {
+        Self {
+            layer2_cost: Duration::ZERO,
+            detect_reports: Vec::new(),
+            start_time: Local::now(),
+            finish_time: Local::now(),
+        }
+    }
+    fn finish(&mut self, os_detects: Vec<DetectReport>) {
+        self.finish_time = Local::now();
+        self.detect_reports = os_detects;
     }
 }
 
@@ -552,7 +554,7 @@ pub fn os_detect(
                         let o = Detect {
                             addr,
                             alive: false,
-                            fingerprint: Fingerprint::empty(),
+                            fingerprint: Fingerprint::default(),
                             detects: Vec::new(),
                             cost: start_time.elapsed(),
                             layer2_cost: Duration::ZERO,
@@ -564,7 +566,7 @@ pub fn os_detect(
                         let o = Detect6 {
                             addr,
                             alive: false,
-                            fingerprint: Fingerprint6::empty(),
+                            fingerprint: Fingerprint6::default(),
                             detects: Vec::new(),
                             cost: start_time.elapsed(),
                             layer2_cost: Duration::ZERO,
@@ -642,7 +644,7 @@ pub fn os_detect_raw(
                     let o = Detect {
                         addr: dst_addr,
                         alive: false,
-                        fingerprint: Fingerprint::empty(),
+                        fingerprint: Fingerprint::default(),
                         detects: Vec::new(),
                         cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
@@ -691,7 +693,7 @@ pub fn os_detect_raw(
                     let o = Detect6 {
                         addr: dst_addr,
                         alive: false,
-                        fingerprint: Fingerprint6::empty(),
+                        fingerprint: Fingerprint6::default(),
                         detects: Vec::new(),
                         cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
@@ -776,7 +778,7 @@ mod tests {
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
 
         let reports = ret.detect_reports;
         for dr in reports {
@@ -847,7 +849,7 @@ mod tests {
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
 
         let reports = ret.detect_reports;
         for dr in reports {
@@ -917,7 +919,7 @@ mod tests {
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
         // let fingerprint = ret.
     }
 
@@ -972,7 +974,7 @@ mod tests {
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
         let ret = os_detect(net_infos, threads, timeout, top_k).unwrap();
-        println!("layer2: {:.3}s, {}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
         // let fingerprint = ret.
     }
     #[test]
@@ -992,7 +994,7 @@ mod tests {
             .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let ret = os_detect_raw(net_info, timeout, top_k).unwrap();
-        println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {:?}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_os_detect6_raw() {
@@ -1013,7 +1015,7 @@ mod tests {
             .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
             .unwrap();
         let ret = os_detect_raw(net_info, timeout, top_k).unwrap();
-        println!("layer2: {:.3}s, {:?}", dur.as_secs_f32(), ret);
+        println!("layer2: {:.2}s, {:?}", dur.as_secs_f32(), ret);
     }
     #[test]
     fn test_compare_with_nmap() {
