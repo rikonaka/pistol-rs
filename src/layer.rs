@@ -902,6 +902,25 @@ impl PacketFilter {
             PacketFilter::Layer4FilterIcmpv6(icmpv6) => icmpv6.name.clone(),
         }
     }
+    /// Get layer4 info (src ip and src port) for response packet.
+    pub(crate) fn layer4_info(&self) -> Option<(IpAddr, u16)> {
+        match self {
+            PacketFilter::Layer2Filter(_l2) => None,
+            PacketFilter::Layer3Filter(_l3) => None,
+            PacketFilter::Layer4FilterTcpUdp(tcp_udp) => match &tcp_udp.layer3 {
+                Some(layer3) => match layer3.src_addr {
+                    Some(src_addr) => match tcp_udp.src_port {
+                        Some(src_port) => Some((src_addr, src_port)),
+                        None => None,
+                    },
+                    None => None,
+                },
+                None => None,
+            },
+            PacketFilter::Layer4FilterIcmp(_icmp) => None,
+            PacketFilter::Layer4FilterIcmpv6(_icmpv6) => None,
+        }
+    }
 }
 
 pub(crate) fn multicast_mac(ip: Ipv6Addr) -> MacAddr {

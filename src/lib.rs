@@ -58,6 +58,7 @@ use tracing::error;
 use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
 
+mod engine;
 mod error;
 mod flood;
 mod layer;
@@ -539,134 +540,6 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 ];
 
 #[derive(Debug, Clone)]
-struct SenderMsg {
-    dst_mac: MacAddr,            // destination mac address
-    src_mac: MacAddr,            // source mac address
-    ethernet_payload: Arc<[u8]>, // the layer3 packet to send
-    ethernet_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
-    retransmit: usize, // how many times to retransmit the packet, 0 means no retransmission
-}
-
-#[derive(Debug, Clone)]
-struct ReceiverMsg {
-    filters: Vec<PacketFilter>, // runner receive filters to match
-    sender: Sender<Arc<[u8]>>,  // then send matched packets back to threads
-    created: Instant,           // create time, used to drop if exceed timeout
-    elapsed: Duration,          // elapsed time, used to drop if exceed timeout
-}
-
-impl ReceiverMsg {
-    fn check_packet(&self, received_packet: &[u8]) -> bool {
-        for filter in &self.filters {
-            if filter.check(received_packet) {
-                debug!("layer2 recv matched filter: {}", filter.name());
-                return true;
-            }
-        }
-        false
-    }
-    fn send_packet_back(&self, packet: &[u8]) {
-        let packet = Arc::from(packet);
-        if let Err(e) = self.sender.send(packet) {
-            error!("failed to send matched packet: {}", e);
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct PistolMsg {
-    smsg: SenderMsg,   // send packet to runner, and let runner send it
-    rmsg: ReceiverMsg, // receive filters and packet sender
-}
-
-static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Arc<HashMap<String, RunnerCommunicationChannel>>> =
-    LazyLock::new(|| {
-        let ifaces: Vec<String> = interfaces()
-            .iter()
-            .map(|iface| iface.name.clone())
-            .collect();
-        let mut hm = HashMap::new();
-        for iface in ifaces {
-            let (filter_sender, filter_receiver) = unbounded::<PistolMsg>();
-            let cc = RunnerCommunicationChannel {
-                sender: filter_sender,
-                receiver: filter_receiver,
-            };
-            hm.insert(iface, cc);
-        }
-        Arc::new(hm)
-    });
-
-#[derive(Debug, Clone)]
-struct RunnerCommunicationChannel {
-    sender: Sender<PistolMsg>,
-    receiver: Receiver<PistolMsg>,
-}
-
-impl RunnerCommunicationChannel {
-    /// Returns a receiver to get matched packets from the runner.
-    fn send_to_runner(
-        &self,
-        dst_mac: MacAddr,
-        src_mac: MacAddr,
-        ethernet_payload: &[u8],
-        ethernet_type: EtherType,
-        filters: Vec<PacketFilter>,
-        elapsed: Duration,
-        retransmit: usize,
-    ) -> Receiver<Arc<[u8]>> {
-        let (sender, receiver) = unbounded::<Arc<[u8]>>();
-        let ethernet_payload = Arc::from(ethernet_payload);
-        let created = Instant::now();
-
-        let smsg = SenderMsg {
-            dst_mac,
-            src_mac,
-            ethernet_payload,
-            ethernet_type,
-            retransmit,
-        };
-        let rmsg = ReceiverMsg {
-            filters,
-            sender,
-            created,
-            elapsed,
-        };
-        let runner_msg = PistolMsg { smsg, rmsg };
-        let _ = self.sender.send(runner_msg);
-        receiver
-    }
-}
-
-pub(crate) fn ask_runner(
-    iface: String,
-    dst_mac: MacAddr,
-    src_mac: MacAddr,
-    ethernet_payload: &[u8],
-    ethernet_type: EtherType,
-    filters: Vec<PacketFilter>,
-    elapsed: Duration,
-    retransmit: usize,
-) -> Result<Receiver<Arc<[u8]>>, PistolError> {
-    let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
-    let rcc = match hm.get(&iface) {
-        Some(rcc) => rcc,
-        None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: iface }),
-    };
-
-    let packet_receiver = rcc.send_to_runner(
-        dst_mac,
-        src_mac,
-        ethernet_payload,
-        ethernet_type,
-        filters,
-        elapsed,
-        retransmit,
-    );
-    Ok(packet_receiver)
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct NetInfo {
     pub dst_mac: MacAddr,
     pub src_mac: MacAddr,
@@ -776,8 +649,6 @@ impl NetInfo {
     }
 }
 
-const MAX_HISTORY_PACKETS: usize = 10_000;
-
 #[derive(Debug, Clone)]
 pub struct Pistol {
     if_name: Option<String>,
@@ -793,7 +664,7 @@ impl Default for Pistol {
             if_name: None,
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
-            threads: 8,      // default 8 threads
+            threads: 8,     // default 8 threads
             max_retries: 2, // default 2 max_retries
         }
     }
@@ -889,194 +760,6 @@ impl Pistol {
 
         Ok(())
     }
-    fn sender(
-        iface: String,
-        sreceiver: Receiver<SenderMsg>,
-        timeout: Duration,
-    ) -> Result<(), PistolError> {
-        debug!("start sender for iface: {}", iface);
-        let config = datalink::Config {
-            write_buffer_size: ETHERNET_BUFF_SIZE,
-            read_buffer_size: ETHERNET_BUFF_SIZE,
-            read_timeout: Some(timeout),
-            write_timeout: Some(timeout),
-            channel_type: datalink::ChannelType::Layer2,
-            bpf_fd_attempts: 1000,
-            linux_fanout: None,
-            promiscuous: false,
-            socket_fd: None,
-        };
-
-        let interface = match find_interface_by_name(&iface) {
-            Some(i) => i,
-            None => {
-                return Err(PistolError::CanNotFoundInterface { i: iface });
-            }
-        };
-
-        let (mut sender, _) = match datalink::channel(&interface, config) {
-            Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
-            Err(e) => return Err(e.into()),
-        };
-
-        let timeout = Duration::from_millis(1);
-        loop {
-            let smsg = match sreceiver.recv_timeout(timeout) {
-                Ok(s) => s,
-                Err(_e) => continue,
-            };
-            let payload = smsg.ethernet_payload;
-            let dst_mac = smsg.dst_mac;
-            let src_mac = smsg.src_mac;
-            let ether_type = smsg.ethernet_type;
-            let retransmit = smsg.retransmit;
-
-            let payload_len = payload.len();
-            let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
-            let mut buff = vec![0u8; ethernet_buff_len];
-            let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
-                Some(p) => p,
-                None => {
-                    return Err(PistolError::BuildPacketError {
-                        location: format!("{}", Location::caller()),
-                    });
-                }
-            };
-            ethernet_packet.set_destination(dst_mac);
-            ethernet_packet.set_source(src_mac);
-            ethernet_packet.set_ethertype(ether_type);
-            ethernet_packet.set_payload(&payload);
-
-            let m = format!(
-                "dm: {}, sm: {}, et: {}, l: {}",
-                dst_mac,
-                src_mac,
-                ether_type.to_string().to_lowercase(),
-                payload.len()
-            );
-            if retransmit == 0 {
-                // send packet once
-                if let Some(r) = sender.send_to(&buff, None) {
-                    match r {
-                        Ok(_) => debug!("send packet success, {}", m),
-                        Err(e) => error!("send packet error, {} - {}", m, e),
-                    }
-                }
-            } else {
-                // send packet multiple times to flood the network,
-                // which can increase the chance of receiving packets back,
-                // but also can cause network congestion, so we need to control the retransmit times.
-                for i in 0..retransmit {
-                    if let Some(r) = sender.send_to(&buff, None) {
-                        match r {
-                            Ok(_) => debug!("send flood {} packet success, {}", i, m),
-                            Err(e) => error!("send flood {} packet error, {} - {}", i, m, e),
-                        }
-                    }
-                }
-            }
-        }
-    }
-    fn receiver(iface: String, rreceiver: Receiver<ReceiverMsg>) -> Result<(), PistolError> {
-        debug!("start receiver for iface: {}", iface);
-        let mut cap = Capture::new(&iface)?;
-        cap.set_timeout(50);
-        cap.set_promiscuous_mode(true);
-        // cap.set_immediate_mode(true);
-
-        let timeout_1ms = Duration::from_millis(1);
-
-        // The history_packets is used to store recently received packets,
-        // which will be matched with new filters when they arrive.
-        // This is to avoid missing packets that arrive before filters,
-        // since libpcap will not loss any packets,
-        // we can store all received packets in memory and match them with new filters when they arrive.
-        let mut history_packets: Vec<Arc<[u8]>> = Vec::new();
-        let mut r_msgs = Vec::new();
-        loop {
-            #[cfg(feature = "debug")]
-            let loop_start = Instant::now();
-
-            // Fetch packets first, then check if there are new filters to match,
-            // this can avoid missing packets that arrive before filters.
-            let packets = cap.fetch_as_vec()?;
-            debug!("layer2 recv {} packets", packets.len());
-
-            for packet in packets {
-                // #[cfg(feature = "debug")]
-                // debug_show_packet(packet, None);
-                // #[cfg(feature = "debug")]
-                // debug_show_packet(packet, Some(EtherTypes::Arp));
-                history_packets.push(Arc::from(packet));
-            }
-
-            if history_packets.len() > MAX_HISTORY_PACKETS {
-                // remove old packets to avoid memory overflow, keep the latest MAX_HISTORY_PACKETS packets
-                history_packets =
-                    history_packets.split_off(history_packets.len() - MAX_HISTORY_PACKETS);
-            }
-
-            loop {
-                match rreceiver.recv_timeout(timeout_1ms) {
-                    Ok(r) => r_msgs.push(r),
-                    Err(_) => break,
-                }
-            }
-
-            for packet in &history_packets {
-                let mut drop_idx = 0;
-                let mut need_drop = false;
-                #[cfg(feature = "debug")]
-                debug_show_packet(packet, Some(EtherTypes::Arp));
-                for (i, msg) in r_msgs.iter().enumerate() {
-                    if msg.check_packet(packet) {
-                        // send matched packet back to thread
-                        debug!("matched packet [{}]", packet.len());
-                        msg.send_packet_back(packet);
-                        need_drop = true;
-                        drop_idx = i;
-                        break;
-                    }
-                }
-                if need_drop {
-                    let _droped_msg = r_msgs.swap_remove(drop_idx);
-                }
-            }
-
-            let mut drop_idxs = Vec::new();
-            let mut need_drop = false;
-            for (i, msg) in r_msgs.iter().enumerate() {
-                if msg.created.elapsed() > msg.elapsed {
-                    // timeout, remove this msg
-                    drop_idxs.push(i);
-                    need_drop = true;
-                }
-            }
-            if need_drop {
-                debug!(
-                    "layer2 runner {} has {} expired msgs to drop",
-                    iface,
-                    drop_idxs.len()
-                );
-                for &drop_idx in drop_idxs.iter().rev() {
-                    let _droped_msg = r_msgs.swap_remove(drop_idx);
-                }
-            }
-
-            debug!(
-                "layer2 runner {} has {} msgs to process",
-                iface,
-                r_msgs.len()
-            );
-
-            #[cfg(feature = "debug")]
-            println!(
-                "runner loop cost: {:.2}ms",
-                loop_start.elapsed().as_secs_f64() * 1000.0
-            );
-        }
-    }
     fn runner(iface: String, timeout: Duration) -> Result<(), PistolError> {
         let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
         let rcc = match hm.get(&iface) {
@@ -1089,7 +772,7 @@ impl Pistol {
 
         let iface_sender = iface.clone();
         let iface_receiver = iface.clone();
-        let _handle = thread::spawn(move || Self::sender(iface_sender, sreceiver, timeout));
+        let _handle = thread::spawn(move || Self::send_all(iface_sender, sreceiver, timeout));
         let _handle = thread::spawn(move || Self::receiver(iface_receiver, rreceiver));
 
         // very small timeout to check new message
@@ -1540,8 +1223,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1659,8 +1341,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
