@@ -59,6 +59,8 @@ use crate::error::PistolError;
 use crate::layer::find_interface_by_dst_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layer::multicast_mac;
+#[cfg(feature = "scan")]
+use crate::scan::arp::recv_arp_scan_response;
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[cfg(feature = "scan")]
 use crate::scan::arp::send_arp_scan_packet;
@@ -234,7 +236,12 @@ pub fn arp_scan_raw(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
-            send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)
+            let start = Instant::now();
+            let receiver =
+                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
+            let mac = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
+            let rtt = start.elapsed();
+            Ok((mac, rtt))
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
     }

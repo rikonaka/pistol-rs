@@ -27,6 +27,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6AddrExt;
@@ -48,6 +49,7 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::layer::multicast_mac;
+use crate::scan::arp::recv_arp_scan_response;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 
@@ -67,12 +69,18 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     None
 }
 
-fn neigh_cache_update(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
+fn neigh_cache_update(
+    addr: IpAddr,
+    mac: MacAddr,
+    rtt: Option<Duration>,
+) -> Result<(), PistolError> {
     // release the lock when leaving the function
     let mut gncs = GLOBAL_NET_CACHES
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    let _ = gncs.system_network_cache.update_neighbor_cache(addr, mac);
+    let _ = gncs
+        .system_network_cache
+        .update_neighbor_cache(addr, mac, rtt);
     debug!("update neighbor cache finish: {:?}", (*gncs));
     Ok(())
 }
@@ -804,12 +812,15 @@ fn send_neighbor_detect_packet(
                             return Err(PistolError::CanNotFoundSrcAddress);
                         }
                     };
-                    let (mac, _rtt) = send_arp_scan_packet(
+                    let start = Instant::now();
+                    let receiver = send_arp_scan_packet(
                         dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout,
                     )?;
+                    let mac = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
+                    let rtt = start.elapsed();
                     match mac {
                         Some(dst_mac) => {
-                            neigh_cache_update(dst_ipv4.into(), dst_mac)?;
+                            neigh_cache_update(dst_ipv4.into(), dst_mac, rtt)?;
                             Ok(dst_mac)
                         }
                         None => Err(PistolError::CanNotFoundDstMacAddress),
@@ -828,7 +839,7 @@ fn send_neighbor_detect_packet(
                     )?;
                     match mac {
                         Some(dst_mac) => {
-                            neigh_cache_update(dst_ipv6.into(), dst_mac)?;
+                            neigh_cache_update(dst_ipv6.into(), dst_mac, rtt)?;
                             Ok(dst_mac)
                         }
                         None => Err(PistolError::CanNotFoundDstMacAddress),
@@ -863,9 +874,12 @@ fn send_neighbor_detect_packet(
                     IpAddr::V4(dr_ipv4) => {
                         debug!("try to found the dst mac by arp scan");
                         if let IpAddr::V4(src_ipv4) = src_addr {
-                            let (mac, _rtt) = send_arp_scan_packet(
+                            let start = Instant::now();
+                            let receiver = send_arp_scan_packet(
                                 dst_mac, dr_ipv4, src_mac, src_ipv4, &interface, timeout,
                             )?;
+                            let mac = recv_arp_scan_response(dr_ipv4, start, timeout, receiver)?;
+                            let _rtt = start.elapsed();
                             match mac {
                                 Some(m) => {
                                     debug!("update the neigh cache: {} - {}", dr_ipv4, m);
@@ -1708,12 +1722,18 @@ impl NeighborCache {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub(crate) struct Neighbor {
+    pub(crate) mac: MacAddr,
+    pub(crate) rtt: Option<Duration>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SystemNetCache {
     pub(crate) default_route: Option<DefaultRoute>,
     pub(crate) default_route6: Option<DefaultRoute>,
     pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
-    pub(crate) neighbor: HashMap<IpAddr, MacAddr>,
+    pub(crate) neighbor: HashMap<IpAddr, Neighbor>,
 }
 
 impl fmt::Display for SystemNetCache {
@@ -1740,7 +1760,7 @@ impl fmt::Display for SystemNetCache {
 
         let mut neighbor = Vec::new();
         for (k, v) in &self.neighbor {
-            neighbor.push(format!("{}({})", k, v));
+            neighbor.push(format!("{}({})", k, v.mac));
         }
         let neighbor_string = format!("neighbor cache: {}", neighbor.join(","));
         output.push(neighbor_string);
@@ -1753,23 +1773,36 @@ impl SystemNetCache {
         let route_table = RouteTable::init()?;
         debug!("route table: {}", route_table);
         let neighbor_cache = NeighborCache::init()?;
+        let mut fix_neighbor_cache = HashMap::new();
+        for (&k, &v) in &neighbor_cache {
+            fix_neighbor_cache.insert(k, Neighbor { mac: v, rtt: None });
+        }
         debug!("neighbor cache: {:?}", neighbor_cache);
         let snc = SystemNetCache {
             default_route: route_table.default_route,
             default_route6: route_table.default_route6,
             routes: route_table.routes,
-            neighbor: neighbor_cache,
+            neighbor: fix_neighbor_cache,
         };
         Ok(snc)
     }
     pub(crate) fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
         match self.neighbor.get(&ip) {
-            Some(&m) => Some(m),
+            Some(&m) => {
+                debug!("search neighbor cache hit: ip {}, mac {}", ip, m.mac);
+                Some(m.mac)
+            }
             None => None,
         }
     }
-    pub(crate) fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
-        self.neighbor.insert(ip, mac);
+    pub(crate) fn update_neighbor_cache(
+        &mut self,
+        ip: IpAddr,
+        mac: MacAddr,
+        rtt: Option<Duration>,
+    ) {
+        let neighbor = Neighbor { mac, rtt };
+        self.neighbor.insert(ip, neighbor);
         debug!("update the neigh cache done: {:?}", self.neighbor);
     }
     pub(crate) fn search_route_table(&self, dst_addr: IpAddr) -> Option<RouteInfo> {

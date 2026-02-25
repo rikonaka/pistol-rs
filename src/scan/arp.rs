@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -12,7 +13,6 @@ use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tracing::debug;
 
 use crate::GLOBAL_NET_CACHES;
 use crate::ask_runner;
@@ -45,7 +45,7 @@ pub fn send_arp_scan_packet(
     src_ipv4: Ipv4Addr,
     interface: &NetworkInterface,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<Receiver<Arc<[u8]>>, PistolError> {
     let iface = interface.name.clone();
 
     let mut arp_buff = [0u8; ARP_HEADER_SIZE];
@@ -84,7 +84,6 @@ pub fn send_arp_scan_packet(
     };
     let filter_1 = PacketFilter::Layer3Filter(layer3);
 
-    let start = Instant::now();
     // send the filters to runner
     let receiver = ask_runner(
         iface,
@@ -96,14 +95,31 @@ pub fn send_arp_scan_packet(
         timeout,
         0,
     )?;
-    let eth_reponse = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv arp response timeout: {}", dst_ipv4, e);
-            Arc::new([])
-        }
+    Ok(receiver)
+}
+
+pub(crate) fn recv_arp_scan_response(
+    dst_ipv4: Ipv4Addr,
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<Arc<[u8]>>,
+) -> Result<Option<MacAddr>, PistolError> {
+    // recv the arp response packet right now
+    let now = start.elapsed();
+    let eth_reponse = if now < timeout {
+        let fix_timeout = timeout - now;
+        let eth_reponse = match receiver.recv_timeout(fix_timeout) {
+            Ok(b) => b,
+            Err(_e) => Arc::new([]),
+        };
+        eth_reponse
+    } else {
+        let eth_reponse = match receiver.recv() {
+            Ok(b) => b,
+            Err(_e) => Arc::new([]),
+        };
+        eth_reponse
     };
-    let rtt = start.elapsed();
 
     let mac = get_mac_from_arp_response(&eth_reponse);
     match mac {
@@ -127,5 +143,5 @@ pub fn send_arp_scan_packet(
         }
     }
 
-    Ok((mac, rtt))
+    Ok(mac)
 }

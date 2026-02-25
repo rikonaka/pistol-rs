@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -65,7 +66,7 @@ pub fn send_ndp_ns_scan_packet(
     src_ipv6: Ipv6Addr,
     interface: &NetworkInterface,
     timeout: Duration,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<Receiver<Arc<[u8]>>, PistolError> {
     // same as arp in ipv4, but use icmpv6 neighbor solicitation
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -135,7 +136,6 @@ pub fn send_ndp_ns_scan_packet(
 
     let ether_type = EtherTypes::Ipv6;
     let iface = interface.name.clone();
-    let start = Instant::now();
     let receiver = ask_runner(
         iface,
         dst_mac,
@@ -146,12 +146,35 @@ pub fn send_ndp_ns_scan_packet(
         timeout,
         0,
     )?;
-    let eth_response = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
-            Arc::new([])
-        }
+    Ok(receiver)
+}
+
+pub(crate) fn recv_ndp_ns_scan_response(
+    dst_ipv6: Ipv6Addr,
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<Arc<[u8]>>,
+) -> Result<Option<MacAddr>, PistolError> {
+    let now = Instant::now();
+    if now < timeout {
+        let fix_timeout = timeout - now;
+        let eth_response = match receiver.recv_timeout(fix_timeout) {
+            Ok(b) => b,
+            Err(e) => {
+                debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
+                Arc::new([])
+            }
+        };
+        eth_response
+    } else {
+        let eth_response = match receiver.recv() {
+            Ok(b) => b,
+            Err(e) => {
+                debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
+                Arc::new([])
+            }
+        };
+        eth_response
     };
 
     let rtt = start.elapsed();
