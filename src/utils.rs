@@ -84,7 +84,7 @@ pub(crate) fn get_threads_pool(threads: usize) -> ThreadPool {
 }
 
 pub(crate) struct PistolHex {
-    pub hex: String, // hex => dec
+    pub(crate) hex: String, // hex => dec
 }
 
 impl PistolHex {

@@ -166,10 +166,10 @@ impl Layer2Filter {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Layer3Filter {
-    pub name: String,
-    pub layer2: Option<Layer2Filter>,
-    pub src_addr: Option<IpAddr>, // response packet
-    pub dst_addr: Option<IpAddr>, // response packet
+    pub(crate) name: String,
+    pub(crate) layer2: Option<Layer2Filter>,
+    pub(crate) src_addr: Option<IpAddr>, // response packet
+    pub(crate) dst_addr: Option<IpAddr>, // response packet
 }
 
 impl Layer3Filter {

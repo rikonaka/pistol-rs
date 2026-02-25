@@ -668,21 +668,21 @@ pub(crate) fn ask_runner(
 
 #[derive(Debug, Clone)]
 pub(crate) struct NetInfo {
-    pub dst_mac: MacAddr,
-    pub src_mac: MacAddr,
+    pub(crate) dst_mac: MacAddr,
+    pub(crate) src_mac: MacAddr,
     /// Inferred destination IP address.
-    pub dst_addr: IpAddr,
+    pub(crate) dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
-    pub src_addr: IpAddr,
+    pub(crate) src_addr: IpAddr,
     /// User input destination ports.
-    pub dst_ports: Vec<u16>,
+    pub(crate) dst_ports: Vec<u16>,
     /// User input source port.
-    pub src_port: Option<u16>,
-    pub interface: NetworkInterface,
+    pub(crate) src_port: Option<u16>,
+    pub(crate) interface: NetworkInterface,
     /// Whether the network information is cached or inferred.
-    pub cached: bool,
-    pub cost: Duration,
-    pub valid: bool,
+    pub(crate) cached: bool,
+    pub(crate) cost: Duration,
+    pub(crate) valid: bool,
 }
 
 impl Default for NetInfo {
@@ -793,7 +793,7 @@ impl Default for Pistol {
             if_name: None,
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
-            threads: 8,      // default 8 threads
+            threads: 8,     // default 8 threads
             max_retries: 2, // default 2 max_retries
         }
     }
@@ -1540,8 +1540,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1659,8 +1658,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }

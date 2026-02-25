@@ -829,7 +829,7 @@ fn scan(
 ) -> Result<PortScans, PistolError> {
     let mut pistol_port_scans = PortScans::new(max_retries);
     debug!("scan will create {} threads to do the jobs", threads);
-    // let pool = utils::get_threads_pool(threads);
+    let pool = utils::get_threads_pool(threads);
     let (tx, rx) = channel();
     let mut recv_size = 0;
     let mut reports = Vec::new();
@@ -857,100 +857,79 @@ fn scan(
                     let tx = tx.clone();
                     recv_size += 1;
 
-                    let start_time = Instant::now();
-                    let scan_ret = scan_thread(
-                        dst_mac,
-                        dst_ipv4,
-                        dst_port,
-                        src_mac,
-                        src_ipv4,
-                        src_port,
-                        zombie_mac,
-                        zombie_ipv4,
-                        zombie_port,
-                        &interface,
-                        method,
-                        timeout,
-                    );
-                    if let Err(e) =
-                        tx.send((dst_addr, dst_port, scan_ret, start_time.elapsed(), cached))
-                    {
-                        error!("failed to send to tx on func scan: {}", e);
-                    }
-
-                    // pool.execute(move || {
-                    //     for ind in 0..max_retries {
-                    //         let start_time = Instant::now();
-                    //         debug!(
-                    //             "sending scan packet to [{}] port [{}] try [{}]",
-                    //             dst_ipv4, dst_port, ind
-                    //         );
-                    //         let scan_ret = scan_thread(
-                    //             dst_mac,
-                    //             dst_ipv4,
-                    //             dst_port,
-                    //             src_mac,
-                    //             src_ipv4,
-                    //             src_port,
-                    //             zombie_mac,
-                    //             zombie_ipv4,
-                    //             zombie_port,
-                    //             &interface,
-                    //             method,
-                    //             timeout,
-                    //         );
-                    //         if ind == max_retries - 1 {
-                    //             // last attempt
-                    //             if let Err(e) = tx.send((
-                    //                 dst_addr,
-                    //                 dst_port,
-                    //                 scan_ret,
-                    //                 start_time.elapsed(),
-                    //                 cached,
-                    //             )) {
-                    //                 error!("failed to send to tx on func scan: {}", e);
-                    //             }
-                    //         } else {
-                    //             match scan_ret {
-                    //                 Ok((_port_status, data_recv_status, _rtt)) => {
-                    //                     match data_recv_status {
-                    //                         DataRecvStatus::Yes => {
-                    //                             // conclusions drawn from the returned data
-                    //                             if let Err(e) = tx.send((
-                    //                                 dst_addr,
-                    //                                 dst_port,
-                    //                                 scan_ret,
-                    //                                 start_time.elapsed(),
-                    //                                 cached,
-                    //                             )) {
-                    //                                 error!(
-                    //                                     "failed to send to tx on func scan: {}",
-                    //                                     e
-                    //                                 );
-                    //                             }
-                    //                             break; // quit loop now
-                    //                         }
-                    //                         // conclusions from the default policy
-                    //                         DataRecvStatus::No => (), // continue probing
-                    //                     }
-                    //                 }
-                    //                 Err(_) => {
-                    //                     // stop probe immediately if an error occurs
-                    //                     if let Err(e) = tx.send((
-                    //                         dst_addr,
-                    //                         dst_port,
-                    //                         scan_ret,
-                    //                         start_time.elapsed(),
-                    //                         cached,
-                    //                     )) {
-                    //                         error!("failed to send to tx on func scan: {}", e);
-                    //                     }
-                    //                     break;
-                    //                 }
-                    //             }
-                    //         }
-                    //     }
-                    // });
+                    pool.execute(move || {
+                        for ind in 0..max_retries {
+                            let start_time = Instant::now();
+                            debug!(
+                                "sending scan packet to [{}] port [{}] try [{}]",
+                                dst_ipv4, dst_port, ind
+                            );
+                            let scan_ret = scan_thread(
+                                dst_mac,
+                                dst_ipv4,
+                                dst_port,
+                                src_mac,
+                                src_ipv4,
+                                src_port,
+                                zombie_mac,
+                                zombie_ipv4,
+                                zombie_port,
+                                &interface,
+                                method,
+                                timeout,
+                            );
+                            if ind == max_retries - 1 {
+                                // last attempt
+                                if let Err(e) = tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                    cached,
+                                )) {
+                                    error!("failed to send to tx on func scan: {}", e);
+                                }
+                            } else {
+                                match scan_ret {
+                                    Ok((_port_status, data_recv_status, _rtt)) => {
+                                        match data_recv_status {
+                                            DataRecvStatus::Yes => {
+                                                // conclusions drawn from the returned data
+                                                if let Err(e) = tx.send((
+                                                    dst_addr,
+                                                    dst_port,
+                                                    scan_ret,
+                                                    start_time.elapsed(),
+                                                    cached,
+                                                )) {
+                                                    error!(
+                                                        "failed to send to tx on func scan: {}",
+                                                        e
+                                                    );
+                                                }
+                                                break; // quit loop now
+                                            }
+                                            // conclusions from the default policy
+                                            DataRecvStatus::No => (), // continue probing
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // stop probe immediately if an error occurs
+                                        if let Err(e) = tx.send((
+                                            dst_addr,
+                                            dst_port,
+                                            scan_ret,
+                                            start_time.elapsed(),
+                                            cached,
+                                        )) {
+                                            error!("failed to send to tx on func scan: {}", e);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
             }
             IpAddr::V6(dst_ipv6) => {
@@ -968,69 +947,69 @@ fn scan(
                     let tx = tx.clone();
                     recv_size += 1;
 
-                    // pool.execute(move || {
-                    //     for ind in 0..max_retries {
-                    //         let start_time = Instant::now();
-                    //         let scan_ret = scan_thread6(
-                    //             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
-                    //             &interface, method, timeout,
-                    //         );
-                    //         if ind == max_retries - 1 {
-                    //             if let Err(e) = tx.send((
-                    //                 dst_addr,
-                    //                 dst_port,
-                    //                 scan_ret,
-                    //                 start_time.elapsed(),
-                    //                 cached,
-                    //             )) {
-                    //                 error!("failed to send to tx on func scan: {}", e);
-                    //             }
-                    //         } else {
-                    //             match scan_ret {
-                    //                 Ok((_port_status, data_recv_status, _rtt)) => {
-                    //                     match data_recv_status {
-                    //                         DataRecvStatus::Yes => {
-                    //                             // conclusions drawn from the returned data
-                    //                             if let Err(e) = tx.send((
-                    //                                 dst_addr,
-                    //                                 dst_port,
-                    //                                 scan_ret,
-                    //                                 start_time.elapsed(),
-                    //                                 cached,
-                    //                             )) {
-                    //                                 error!(
-                    //                                     "failed to send to tx on func scan: {}",
-                    //                                     e
-                    //                                 );
-                    //                             }
-                    //                             break; // quit loop now
-                    //                         }
-                    //                         // conclusions from the default policy
-                    //                         DataRecvStatus::No => (), // continue probing
-                    //                     }
-                    //                 }
-                    //                 Err(_) => {
-                    //                     // stop probe immediately if an error occurs
-                    //                     // debug!(
-                    //                     //     "scan error for {}: {}, stop probing",
-                    //                     //     dst_ipv6,
-                    //                     //     e.to_string()
-                    //                     // );
-                    //                     if let Err(e) = tx.send((
-                    //                         dst_addr,
-                    //                         dst_port,
-                    //                         scan_ret,
-                    //                         start_time.elapsed(),
-                    //                         cached,
-                    //                     )) {
-                    //                         error!("failed to send to tx on func scan: {}", e);
-                    //                     }
-                    //                     break;
-                    //                 }
-                    //             }
-                    //         }
-                    //     }
-                    // });
+                    pool.execute(move || {
+                        for ind in 0..max_retries {
+                            let start_time = Instant::now();
+                            let scan_ret = scan_thread6(
+                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
+                                &interface, method, timeout,
+                            );
+                            if ind == max_retries - 1 {
+                                if let Err(e) = tx.send((
+                                    dst_addr,
+                                    dst_port,
+                                    scan_ret,
+                                    start_time.elapsed(),
+                                    cached,
+                                )) {
+                                    error!("failed to send to tx on func scan: {}", e);
+                                }
+                            } else {
+                                match scan_ret {
+                                    Ok((_port_status, data_recv_status, _rtt)) => {
+                                        match data_recv_status {
+                                            DataRecvStatus::Yes => {
+                                                // conclusions drawn from the returned data
+                                                if let Err(e) = tx.send((
+                                                    dst_addr,
+                                                    dst_port,
+                                                    scan_ret,
+                                                    start_time.elapsed(),
+                                                    cached,
+                                                )) {
+                                                    error!(
+                                                        "failed to send to tx on func scan: {}",
+                                                        e
+                                                    );
+                                                }
+                                                break; // quit loop now
+                                            }
+                                            // conclusions from the default policy
+                                            DataRecvStatus::No => (), // continue probing
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // stop probe immediately if an error occurs
+                                        // debug!(
+                                        //     "scan error for {}: {}, stop probing",
+                                        //     dst_ipv6,
+                                        //     e.to_string()
+                                        // );
+                                        if let Err(e) = tx.send((
+                                            dst_addr,
+                                            dst_port,
+                                            scan_ret,
+                                            start_time.elapsed(),
+                                            cached,
+                                        )) {
+                                            error!("failed to send to tx on func scan: {}", e);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
             }
         }
