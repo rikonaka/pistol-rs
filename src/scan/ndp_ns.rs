@@ -155,8 +155,8 @@ pub(crate) fn recv_ndp_ns_scan_response(
     timeout: Duration,
     receiver: Receiver<Arc<[u8]>>,
 ) -> Result<Option<MacAddr>, PistolError> {
-    let now = Instant::now();
-    if now < timeout {
+    let now = start.elapsed();
+    let eth_response = if now < timeout {
         let fix_timeout = timeout - now;
         let eth_response = match receiver.recv_timeout(fix_timeout) {
             Ok(b) => b,
@@ -184,9 +184,8 @@ pub(crate) fn recv_ndp_ns_scan_response(
             let mut gncs = GLOBAL_NET_CACHES
                 .lock()
                 .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-            let _ = gncs
-                .system_network_cache
-                .update_neighbor_cache(dst_ipv6.into(), mac);
+            gncs.system_network_cache
+                .update_neighbor_cache(dst_ipv6.into(), mac, Some(rtt));
         }
         None => {
             // this case may happen when the target host is down or the arp response packet is lost,
@@ -194,13 +193,15 @@ pub(crate) fn recv_ndp_ns_scan_response(
             let mut gncs = GLOBAL_NET_CACHES
                 .lock()
                 .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-            let _ = gncs
-                .system_network_cache
-                .update_neighbor_cache(dst_ipv6.into(), MacAddr::zero());
+            gncs.system_network_cache.update_neighbor_cache(
+                dst_ipv6.into(),
+                MacAddr::zero(),
+                Some(rtt),
+            );
         }
     }
 
-    Ok((mac, rtt))
+    Ok(mac)
 }
 
 #[cfg(feature = "scan")]

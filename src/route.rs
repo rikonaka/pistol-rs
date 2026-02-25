@@ -78,8 +78,7 @@ fn neigh_cache_update(
     let mut gncs = GLOBAL_NET_CACHES
         .lock()
         .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    let _ = gncs
-        .system_network_cache
+    gncs.system_network_cache
         .update_neighbor_cache(addr, mac, rtt);
     debug!("update neighbor cache finish: {:?}", (*gncs));
     Ok(())

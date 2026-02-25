@@ -122,14 +122,14 @@ pub(crate) fn recv_arp_scan_response(
     };
 
     let mac = get_mac_from_arp_response(&eth_reponse);
+    let rtt = start.elapsed();
     match mac {
         Some(mac) => {
             let mut gncs = GLOBAL_NET_CACHES
                 .lock()
                 .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-            let _ = gncs
-                .system_network_cache
-                .update_neighbor_cache(dst_ipv4.into(), mac);
+            gncs.system_network_cache
+                .update_neighbor_cache(dst_ipv4.into(), mac, Some(rtt));
         }
         None => {
             // this case may happen when the target host is down or the arp response packet is lost,
@@ -137,9 +137,11 @@ pub(crate) fn recv_arp_scan_response(
             let mut gncs = GLOBAL_NET_CACHES
                 .lock()
                 .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-            let _ = gncs
-                .system_network_cache
-                .update_neighbor_cache(dst_ipv4.into(), MacAddr::zero());
+            gncs.system_network_cache.update_neighbor_cache(
+                dst_ipv4.into(),
+                MacAddr::zero(),
+                Some(rtt),
+            );
         }
     }
 

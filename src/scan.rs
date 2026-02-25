@@ -65,6 +65,8 @@ use crate::scan::arp::recv_arp_scan_response;
 #[cfg(feature = "scan")]
 use crate::scan::arp::send_arp_scan_packet;
 #[cfg(feature = "scan")]
+use crate::scan::ndp_ns::recv_ndp_ns_scan_response;
+#[cfg(feature = "scan")]
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils;
@@ -286,7 +288,12 @@ pub fn ndp_ns_scan_raw(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-            send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)
+            let start = Instant::now();
+            let receiver =
+                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
+            let mac = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
+            let rtt = start.elapsed();
+            Ok((mac, rtt))
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
     }
