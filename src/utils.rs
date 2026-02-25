@@ -53,20 +53,6 @@ pub(crate) fn time_to_string(cost: Duration) -> String {
     }
 }
 
-pub(crate) fn threads_check(threads: usize) -> usize {
-    let mut threads = threads;
-    let max_threads = 1024;
-    if threads > max_threads {
-        warn!(
-            "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
-            threads, max_threads
-        );
-        threads = max_threads;
-    }
-    debug!("program will create {} threads", threads);
-    threads
-}
-
 /// Returns the number of CPUs in the machine
 pub(crate) fn get_cpu_num() -> usize {
     num_cpus::get()
@@ -84,7 +70,7 @@ pub(crate) fn get_threads_pool(threads: usize) -> ThreadPool {
 }
 
 pub(crate) struct PistolHex {
-    pub hex: String, // hex => dec
+    pub(crate) hex: String, // hex => dec
 }
 
 impl PistolHex {

@@ -98,8 +98,6 @@ pub enum PistolError {
     /* LIB */
     #[error("the destination address and source address Ip versions do not match")]
     IpVersionNotMatch,
-    #[error("can not found the interface filter channel {i}")]
-    CanNotFoundInterfaceFilterChannel { i: String },
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]

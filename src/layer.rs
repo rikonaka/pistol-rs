@@ -19,6 +19,9 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use std::net::IpAddr;
 use std::net::Ipv6Addr;
+use std::sync::Arc;
+
+use crate::engine::HandleParam;
 
 pub(crate) const ETHERNET_HEADER_SIZE: usize = 14;
 pub(crate) const ARP_HEADER_SIZE: usize = 28;
@@ -124,6 +127,7 @@ pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
 #[derive(Debug, Clone)]
 pub(crate) struct Layer2Filter {
     pub(crate) name: String,
+    pub(crate) target: IpAddr,
     pub(crate) src_mac: Option<MacAddr>, // response packet src mac
     pub(crate) dst_mac: Option<MacAddr>, // response packet dst mac
     pub(crate) ether_type: Option<EtherType>, // reponse packet ethernet type
@@ -166,10 +170,10 @@ impl Layer2Filter {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Layer3Filter {
-    pub name: String,
-    pub layer2: Option<Layer2Filter>,
-    pub src_addr: Option<IpAddr>, // response packet
-    pub dst_addr: Option<IpAddr>, // response packet
+    pub(crate) name: String,
+    pub(crate) layer2: Option<Layer2Filter>,
+    pub(crate) src_addr: Option<IpAddr>, // response packet
+    pub(crate) dst_addr: Option<IpAddr>, // response packet
 }
 
 impl Layer3Filter {
@@ -902,23 +906,71 @@ impl PacketFilter {
             PacketFilter::Layer4FilterIcmpv6(icmpv6) => icmpv6.name.clone(),
         }
     }
-    /// Get layer4 info (src ip and src port) for response packet.
-    pub(crate) fn layer4_info(&self) -> Option<(IpAddr, u16)> {
+    pub(crate) fn get_handle_param(&self) -> Option<HandleParam> {
         match self {
-            PacketFilter::Layer2Filter(_l2) => None,
-            PacketFilter::Layer3Filter(_l3) => None,
-            PacketFilter::Layer4FilterTcpUdp(tcp_udp) => match &tcp_udp.layer3 {
-                Some(layer3) => match layer3.src_addr {
-                    Some(src_addr) => match tcp_udp.src_port {
-                        Some(src_port) => Some((src_addr, src_port)),
-                        None => None,
-                    },
-                    None => None,
-                },
-                None => None,
-            },
-            PacketFilter::Layer4FilterIcmp(_icmp) => None,
-            PacketFilter::Layer4FilterIcmpv6(_icmpv6) => None,
+            PacketFilter::Layer2Filter(l2) => {
+                let target = l2.target;
+                let hp = HandleParam {
+                    addr: target,
+                    port: 0,
+                    payload: Arc::new([]),
+                };
+                Some(hp)
+            }
+            PacketFilter::Layer3Filter(l3) => {
+                if let Some(src_addr) = l3.src_addr {
+                    let hp = HandleParam {
+                        addr: src_addr,
+                        port: 0,
+                        payload: Arc::new([]),
+                    };
+                    return Some(hp);
+                }
+                None
+            }
+            PacketFilter::Layer4FilterTcpUdp(tcp_udp) => {
+                if let Some(l3) = &tcp_udp.layer3 {
+                    if let Some(src_addr) = l3.src_addr {
+                        if let Some(src_port) = tcp_udp.src_port {
+                            let hp = HandleParam {
+                                addr: src_addr,
+                                // The reponse src port is the dst port of the sent packet,
+                                // and the reponse dst port is the src port of the sent packet.
+                                port: src_port,
+                                payload: Arc::new([]),
+                            };
+                            return Some(hp);
+                        }
+                    }
+                }
+                None
+            }
+            PacketFilter::Layer4FilterIcmp(icmp) => {
+                if let Some(l3) = &icmp.layer3 {
+                    if let Some(src_addr) = l3.src_addr {
+                        let hp = HandleParam {
+                            addr: src_addr,
+                            port: 0,
+                            payload: Arc::new([]),
+                        };
+                        return Some(hp);
+                    }
+                }
+                None
+            }
+            PacketFilter::Layer4FilterIcmpv6(icmpv6) => {
+                if let Some(l3) = &icmpv6.layer3 {
+                    if let Some(src_addr) = l3.src_addr {
+                        let hp = HandleParam {
+                            addr: src_addr,
+                            port: 0,
+                            payload: Arc::new([]),
+                        };
+                        return Some(hp);
+                    }
+                }
+                None
+            }
         }
     }
 }

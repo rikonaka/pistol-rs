@@ -541,21 +541,21 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 
 #[derive(Debug, Clone)]
 pub(crate) struct NetInfo {
-    pub dst_mac: MacAddr,
-    pub src_mac: MacAddr,
+    pub(crate) dst_mac: MacAddr,
+    pub(crate) src_mac: MacAddr,
     /// Inferred destination IP address.
-    pub dst_addr: IpAddr,
+    pub(crate) dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
-    pub src_addr: IpAddr,
+    pub(crate) src_addr: IpAddr,
     /// User input destination ports.
-    pub dst_ports: Vec<u16>,
+    pub(crate) dst_ports: Vec<u16>,
     /// User input source port.
-    pub src_port: Option<u16>,
-    pub interface: NetworkInterface,
+    pub(crate) src_port: Option<u16>,
+    pub(crate) interface: NetworkInterface,
     /// Whether the network information is cached or inferred.
-    pub cached: bool,
-    pub cost: Duration,
-    pub valid: bool,
+    pub(crate) cached: bool,
+    pub(crate) cost: Duration,
+    pub(crate) valid: bool,
 }
 
 impl Default for NetInfo {
@@ -604,7 +604,7 @@ impl fmt::Display for NetInfo {
 }
 
 impl NetInfo {
-    pub(crate) fn new(
+    pub(crate) fn infer(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
@@ -654,7 +654,6 @@ pub struct Pistol {
     if_name: Option<String>,
     log_level: Option<Level>,
     timeout: Duration,
-    threads: usize,
     max_retries: usize,
 }
 
@@ -664,7 +663,6 @@ impl Default for Pistol {
             if_name: None,
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
-            threads: 8,     // default 8 threads
             max_retries: 2, // default 2 max_retries
         }
     }
@@ -760,48 +758,10 @@ impl Pistol {
 
         Ok(())
     }
-    fn runner(iface: String, timeout: Duration) -> Result<(), PistolError> {
-        let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
-        let rcc = match hm.get(&iface) {
-            Some(rcc) => rcc,
-            None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: iface }),
-        };
-
-        let (ssender, sreceiver) = unbounded::<SenderMsg>();
-        let (rsender, rreceiver) = unbounded::<ReceiverMsg>();
-
-        let iface_sender = iface.clone();
-        let iface_receiver = iface.clone();
-        let _handle = thread::spawn(move || Self::send_all(iface_sender, sreceiver, timeout));
-        let _handle = thread::spawn(move || Self::receiver(iface_receiver, rreceiver));
-
-        // very small timeout to check new message
-        let timeout_1ms = Duration::from_millis(1);
-        loop {
-            // recv all msg except timeout, since we need to check all filters for each packet,
-            // we can not block here for too long, otherwise we may miss some packets that arrive before filters.
-            if let Ok(msg) = rcc.receiver.recv_timeout(timeout_1ms) {
-                if let Err(e) = ssender.send(msg.smsg) {
-                    error!("failed to send msg to runner sender: {}", e);
-                }
-                // only send msg to runner receiver if there are filters
-                if msg.rmsg.filters.len() > 0 {
-                    if let Err(e) = rsender.send(msg.rmsg) {
-                        error!("failed to send msg to runner receiver: {}", e);
-                    }
-                }
-            }
-        }
-    }
     /// Initialize multiple runners for multiple targets without source address info.
     /// For mac scan like function which does not need mac info.
     fn init_runners_without_net_infos(&mut self) -> Result<(), PistolError> {
         self.init_logger()?;
-        // spawn a runner thread for each interface we need
-        for ni in interfaces() {
-            let timeout = self.timeout;
-            let _ = thread::spawn(move || Self::runner(ni.name, timeout));
-        }
         Ok(())
     }
     /// Initialize multiple runners for multiple targets.
@@ -813,55 +773,39 @@ impl Pistol {
     ) -> Result<(Vec<NetInfo>, Duration), PistolError> {
         self.init_logger()?;
         let now = Instant::now();
-        // start runners and listen on all interfaces,
-        // since we don't know which interface will be used for each target,
-        // we need to listen on all interfaces.
-        for ni in interfaces() {
-            let timeout = self.timeout;
-            let _handle = thread::spawn(move || Self::runner(ni.name, timeout));
-        }
-
-        // we can not spawn too many threads, otherwise it may cause performance degradation,
-        let threads = utils::threads_check(self.threads);
-        let thread_pool = ThreadPool::new(threads);
-        let recv_size = targets.len();
-        let (tx, rx) = mpsc::channel();
+        let mut net_infos = Vec::new();
 
         for t in targets {
             let dst_addr = t.addr;
             let dst_ports = t.ports.clone();
             let tx = tx.clone();
-            thread_pool.execute(move || {
-                let net_info_now = Instant::now();
-                let net_info = match NetInfo::new(dst_addr, dst_ports, src_addr, src_port) {
-                    Ok(mut ni) => {
+            let net_info_now = Instant::now();
+            let net_info = match NetInfo::infer(dst_addr, dst_ports, src_addr, src_port) {
+                Ok(mut ni) => {
+                    ni.cost = net_info_now.elapsed();
+                    Ok(ni)
+                }
+                Err(e) => match e {
+                    PistolError::CanNotFoundDstMacAddress => {
+                        warn!(
+                            "can not found dst mac address for target {}, this target may be down or unreachable, set it to unvalid net_info now",
+                            dst_addr
+                        );
+                        let mut ni = NetInfo::default();
+                        ni.dst_addr = dst_addr;
+                        #[cfg(feature = "debug")]
+                        println!("now cost: {:.2}s", net_info_now.elapsed().as_secs_f64());
                         ni.cost = net_info_now.elapsed();
                         Ok(ni)
                     }
-                    Err(e) => match e {
-                        PistolError::CanNotFoundDstMacAddress => {
-                            warn!("can not found dst mac address for target {}, this target may be down or unreachable, set it to unvalid net_info now", dst_addr);
-                            let mut ni = NetInfo::default();
-                            ni.dst_addr = dst_addr;
-                            #[cfg(feature = "debug")]
-                            println!("now cost: {:.2}s", net_info_now.elapsed().as_secs_f64());
-                            ni.cost = net_info_now.elapsed();
-                            Ok(ni)
-                        }
-                        _ => Err(e),
-                    },
-                };
-                if let Err(e) = tx.send(net_info) {
-                    error!("failed to send net_info: {}", e);
-                }
-            });
-        }
-
-        let mut net_infos = Vec::new();
-        let iter = rx.into_iter().take(recv_size);
-        for ni in iter {
-            let ni = ni?;
+                    _ => Err(e),
+                },
+            };
+            let ni = net_info?;
             net_infos.push(ni);
+            if let Err(e) = tx.send(net_info) {
+                error!("failed to send net_info: {}", e);
+            }
         }
 
         Ok((net_infos, now.elapsed()))
@@ -883,7 +827,7 @@ impl Pistol {
             let timeout = self.timeout;
             let _ = thread::spawn(move || Self::runner(ni.name, timeout));
         }
-        let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
+        let net_info = NetInfo::infer(dst_addr, dst_ports, src_addr, src_port)?;
         Ok((net_info, now.elapsed()))
     }
     /* Scan */
@@ -1122,7 +1066,7 @@ impl Pistol {
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
         let zommbie_net_info =
-            NetInfo::new(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
+            NetInfo::infer(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
         let zombie_mac = zommbie_net_info.dst_mac;
         let mut ret = scan::tcp_idle_scan(
             net_infos,
@@ -1157,7 +1101,7 @@ impl Pistol {
         };
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let zombie_net_info =
-            NetInfo::new(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
+            NetInfo::infer(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
         let zombie_mac = zombie_net_info.dst_mac;
         let mut ret = scan::tcp_idle_scan_raw(
             net_info,
