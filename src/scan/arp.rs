@@ -45,7 +45,7 @@ pub fn send_arp_scan_packet(
     src_ipv4: Ipv4Addr,
     interface: &NetworkInterface,
     timeout: Duration,
-) -> Result<Receiver<Arc<[u8]>>, PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     let iface = interface.name.clone();
 
     let mut arp_buff = [0u8; ARP_HEADER_SIZE];
