@@ -553,6 +553,7 @@ struct ReceiverMsg {
     sender: Sender<Arc<[u8]>>,  // then send matched packets back to threads
     created: Instant,           // create time, used to drop if exceed timeout
     elapsed: Duration,          // elapsed time, used to drop if exceed timeout
+    start: Duration,            // start time, used to calculate elapsed time
 }
 
 impl ReceiverMsg {
@@ -613,6 +614,7 @@ impl RunnerCommunicationChannel {
         ethernet_type: EtherType,
         filters: Vec<PacketFilter>,
         elapsed: Duration,
+        start: Duration,
         retransmit: usize,
     ) -> Receiver<Arc<[u8]>> {
         let (sender, receiver) = unbounded::<Arc<[u8]>>();
@@ -631,6 +633,7 @@ impl RunnerCommunicationChannel {
             sender,
             created,
             elapsed,
+            start,
         };
         let runner_msg = PistolMsg { smsg, rmsg };
         let _ = self.sender.send(runner_msg);
@@ -646,6 +649,7 @@ pub(crate) fn ask_runner(
     ethernet_type: EtherType,
     filters: Vec<PacketFilter>,
     elapsed: Duration,
+    start: Duration,
     retransmit: usize,
 ) -> Result<Receiver<Arc<[u8]>>, PistolError> {
     let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
@@ -660,6 +664,7 @@ pub(crate) fn ask_runner(
         ethernet_payload,
         ethernet_type,
         filters,
+        start,
         elapsed,
         retransmit,
     );

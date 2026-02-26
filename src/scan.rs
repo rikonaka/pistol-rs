@@ -424,8 +424,8 @@ pub fn mac_scan(
         for (&dst_addr, (retiries, data_recved, _status)) in &mac_scan_status {
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
+                    debug!("arp scan packets: #{}/{}", retiries + 1, max_retries);
                     if *retiries < max_retries && !data_recved {
-                        debug!("arp scan packets: #{}/{}", retiries + 1, max_retries);
                         // retry to send arp scan packet and recv response
                         let receiver = arp_scan_thread(dst_ipv4, timeout)?;
                         mac_scan_status_clone
@@ -434,8 +434,8 @@ pub fn mac_scan(
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
+                    debug!("ndp_ns scan packets: #{}/{}", retiries + 1, max_retries);
                     if *retiries < max_retries && !data_recved {
-                        debug!("ndp_ns scan packets: #{}/{}", retiries + 1, max_retries);
                         // retry to send ndp_ns scan packet and recv response
                         let receiver = ndp_ns_scan_thread(dst_ipv6, timeout)?;
                         mac_scan_status_clone
