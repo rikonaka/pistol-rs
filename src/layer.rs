@@ -31,7 +31,7 @@ pub(crate) const ICMP_HEADER_SIZE: usize = 8;
 pub(crate) const ETHERNET_BUFF_SIZE: usize = 4096;
 
 pub(crate) const ICMPV6_NS_HEADER_SIZE: usize = 32;
-pub(crate) const ICMPV6_RS_HEADER_SIZE: usize = 16;
+pub(crate) const ICMPV6_RA_HEADER_SIZE: usize = 16;
 // pub(crate) const ICMPV6_NA_HEADER_SIZE: usize = 32;
 pub(crate) const ICMPV6_ER_HEADER_SIZE: usize = 8;
 pub(crate) const ICMPV6_NI_HEADER_SIZE: usize = 32;

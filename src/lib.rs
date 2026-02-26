@@ -1258,7 +1258,7 @@ impl Pistol {
     #[cfg(feature = "scan")]
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
         self.init_runners_without_net_infos()?;
-        scan::mac_scan(targets, self.timeout, self.threads, self.max_retries)
+        scan::mac_scan(targets, self.timeout, self.max_retries)
     }
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
@@ -2786,7 +2786,6 @@ mod tests {
     fn test_mac_scan() {
         let mut pistol = Pistol::new();
         pistol.set_threads(8);
-        // pistol.set_log_level("debug");
         pistol.set_max_retries(2);
         pistol.set_threads(8);
         pistol.set_timeout(2.5);

@@ -4,6 +4,8 @@ use chrono::DateTime;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::Local;
 #[cfg(feature = "scan")]
+use crossbeam::channel::Receiver;
+#[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::datalink::NetworkInterface;
@@ -17,6 +19,8 @@ use prettytable::Table;
 use prettytable::row;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::collections::BTreeMap;
+#[cfg(feature = "scan")]
+use std::collections::HashMap;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::fmt;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -25,6 +29,8 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::Ipv6Addr;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use std::sync::Arc;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::mpsc::channel;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -40,6 +46,7 @@ use tracing::error;
 
 pub mod arp;
 pub mod ndp_ns;
+pub mod ndp_ra_rs;
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub mod tcp;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -250,6 +257,54 @@ pub fn arp_scan_raw(
 }
 
 #[cfg(feature = "scan")]
+fn arp_scan_thread(
+    dst_ipv4: Ipv4Addr,
+    timeout: Duration,
+) -> Result<(Receiver<Arc<[u8]>>, Instant), PistolError> {
+    debug!("start arp scan thread to {}", dst_ipv4);
+
+    // broadcast mac address
+    let dst_mac = MacAddr::broadcast();
+    let interface = match find_interface_by_dst_ip(dst_ipv4.into()) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                i: format!("arp to {}", dst_ipv4),
+            });
+        }
+    };
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
+    };
+    let mut src_ipv4 = None;
+    for ipn in &interface.ips {
+        match ipn.ip() {
+            IpAddr::V4(src) => {
+                if src.is_loopback() {
+                    continue;
+                } else {
+                    src_ipv4 = Some(src);
+                    break;
+                }
+            }
+            _ => debug!("skip non-ipv4 address {}", ipn.ip()),
+        }
+    }
+
+    match src_ipv4 {
+        Some(src_ipv4) => {
+            debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
+            let start = Instant::now();
+            let receiver =
+                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
+            Ok((receiver, start))
+        }
+        None => Err(PistolError::CanNotFoundSrcAddress),
+    }
+}
+
+#[cfg(feature = "scan")]
 pub fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
@@ -300,103 +355,140 @@ pub fn ndp_ns_scan_raw(
 }
 
 #[cfg(feature = "scan")]
+pub fn ndp_ns_scan_thread(
+    dst_ipv6: Ipv6Addr,
+    timeout: Duration,
+) -> Result<(Receiver<Arc<[u8]>>, Instant), PistolError> {
+    let interface = match find_interface_by_dst_ip(dst_ipv6.into()) {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                i: format!("to {}", dst_ipv6),
+            });
+        }
+    };
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
+    };
+
+    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
+    let dst_ipv6 = dst_ipv6_ext.link_multicast();
+    let dst_mac = multicast_mac(dst_ipv6);
+
+    let mut src_ipv6 = None;
+    for ipn in &interface.ips {
+        match ipn.ip() {
+            IpAddr::V6(src) => {
+                if src.is_loopback() {
+                    continue;
+                } else {
+                    src_ipv6 = Some(src);
+                }
+            }
+            _ => debug!("skip non-ipv6 address {}", ipn.ip()),
+        }
+    }
+
+    match src_ipv6 {
+        Some(src_ipv6) => {
+            debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+            let start = Instant::now();
+            let receiver =
+                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
+            Ok((receiver, start))
+        }
+        None => Err(PistolError::CanNotFoundSrcAddress),
+    }
+}
+
+#[cfg(feature = "scan")]
 pub fn mac_scan(
     targets: &[Target],
     timeout: Duration,
-    threads: usize,
     max_retries: usize,
 ) -> Result<MacScans, PistolError> {
     let nmap_mac_prefixes = get_nmap_mac_prefixes();
-    let mut ret = MacScans::new(max_retries);
-    let threads = utils::threads_check(threads);
-    let pool = utils::get_threads_pool(threads);
-    let (tx, rx) = channel();
-    let mut recv_size = 0;
+    let mut rets = MacScans::new(max_retries);
+
+    let mut mac_scan_status = HashMap::new();
     for t in targets {
-        let dst_addr = t.addr;
-        match dst_addr {
-            IpAddr::V4(dst_ipv4) => {
-                let tx = tx.clone();
-                recv_size += 1;
-                pool.execute(move || {
-                    for i in 0..max_retries {
-                        debug!("arp scan packets: #{}/{}", i + 1, max_retries);
-                        let scan_ret = arp_scan_raw(dst_ipv4, timeout);
-                        if i == max_retries - 1 {
-                            if let Err(e) = tx.send((dst_addr, scan_ret)) {
-                                error!("failed to send to tx on func mac_scan: {}", e);
-                            }
-                        } else {
-                            match scan_ret {
-                                Ok((value, _rtt)) => {
-                                    if value.is_some() {
-                                        if let Err(e) = tx.send((dst_addr, scan_ret)) {
-                                            error!("failed to send to tx on func mac_scan: {}", e);
-                                        }
-                                        break;
-                                    }
-                                }
-                                Err(_) => {
-                                    // debug!(
-                                    //     "arp scan error for {}: {}, stop probing",
-                                    //     dst_ipv4,
-                                    //     e.to_string()
-                                    // );
-                                    if let Err(e) = tx.send((dst_addr, scan_ret)) {
-                                        error!("failed to send to tx on func mac_scan: {}", e);
-                                    }
-                                    break;
-                                }
-                            }
+        // (0, true, None) => (retiries, has data recved?, and receiver)
+        mac_scan_status.insert(t.addr, (0, false, None));
+    }
+
+    let mut mac_scan_rets = HashMap::new();
+    loop {
+        let mut all_done = true;
+        let mut mac_scan_status_clone = mac_scan_status.clone();
+        for (&dst_addr, (retiries, data_recved, _status)) in &mac_scan_status {
+            match dst_addr {
+                IpAddr::V4(dst_ipv4) => {
+                    if *retiries < max_retries && !data_recved {
+                        debug!("arp scan packets: #{}/{}", retiries + 1, max_retries);
+                        // retry to send arp scan packet and recv response
+                        let receiver = arp_scan_thread(dst_ipv4, timeout)?;
+                        mac_scan_status_clone
+                            .insert(dst_addr, (retiries + 1, false, Some(receiver)));
+                        all_done = false;
+                    }
+                }
+                IpAddr::V6(dst_ipv6) => {
+                    if *retiries < max_retries && !data_recved {
+                        debug!("ndp_ns scan packets: #{}/{}", retiries + 1, max_retries);
+                        // retry to send ndp_ns scan packet and recv response
+                        let receiver = ndp_ns_scan_thread(dst_ipv6, timeout)?;
+                        mac_scan_status_clone
+                            .insert(dst_addr, (retiries + 1, false, Some(receiver)));
+                        all_done = false;
+                    }
+                }
+            }
+        }
+
+        mac_scan_status = mac_scan_status_clone.clone();
+        for (&dst_addr, (retiries, data_recved, status)) in &mac_scan_status {
+            if *data_recved {
+                continue;
+            }
+            match status {
+                Some((receiver, start)) => {
+                    let receiver = receiver.clone();
+                    let recv_result = match dst_addr {
+                        IpAddr::V4(dst_ipv4) => {
+                            recv_arp_scan_response(dst_ipv4, Instant::now(), timeout, receiver)
+                        }
+                        IpAddr::V6(dst_ipv6) => {
+                            recv_ndp_ns_scan_response(dst_ipv6, Instant::now(), timeout, receiver)
+                        }
+                    };
+                    let rtt = start.elapsed();
+                    match recv_result {
+                        Ok(mac) => {
+                            mac_scan_status_clone.insert(dst_addr, (*retiries, true, None));
+                            mac_scan_rets.insert(dst_addr, (mac, rtt));
+                        }
+                        Err(e) => {
+                            error!("recv scan response error: {}", e);
+                            mac_scan_status_clone.insert(dst_addr, (*retiries, false, None));
                         }
                     }
-                });
+                }
+                None => {
+                    mac_scan_status_clone.insert(dst_addr, (*retiries, false, None));
+                }
             }
-            IpAddr::V6(dst_ipv6) => {
-                let tx = tx.clone();
-                recv_size += 1;
-                pool.execute(move || {
-                    for i in 0..max_retries {
-                        debug!("ndp_ns scan packets: #{}/{}", i + 1, max_retries);
-                        let scan_ret = ndp_ns_scan_raw(dst_ipv6, timeout);
-                        if i == max_retries - 1 {
-                            if let Err(e) = tx.send((dst_addr, scan_ret)) {
-                                error!("failed to send to tx on func mac_scan: {}", e);
-                            }
-                        } else {
-                            match scan_ret {
-                                Ok((value, _rtt)) => {
-                                    if value.is_some() {
-                                        if let Err(e) = tx.send((dst_addr, scan_ret)) {
-                                            error!("failed to send to tx on func mac_scan: {}", e);
-                                        }
-                                        break;
-                                    }
-                                }
-                                Err(_) => {
-                                    // debug!(
-                                    //     "ndp_ns scan error for {}: {}, stop probing",
-                                    //     dst_ipv6,
-                                    //     e.to_string()
-                                    // );
-                                    if let Err(e) = tx.send((dst_addr, scan_ret)) {
-                                        error!("failed to send to tx on func mac_scan: {}", e);
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+        }
+        mac_scan_status = mac_scan_status_clone;
+        if all_done {
+            break;
         }
     }
 
     let mut mac_scan_reports = Vec::new();
-    let iter = rx.into_iter().take(recv_size);
-    for (target_addr, values) in iter {
-        match values? {
-            (Some(target_mac), rtt) => {
+    for (target_addr, (mac, rtt)) in mac_scan_rets {
+        match mac {
+            Some(target_mac) => {
                 let mut target_ouis = String::new();
                 let mut mac_prefix = String::new();
                 let m0 = format!("{:X}", target_mac.0);
@@ -440,7 +532,7 @@ pub fn mac_scan(
                 };
                 mac_scan_reports.push(mr);
             }
-            (None, rtt) => {
+            None => {
                 let mr = MacReport {
                     addr: target_addr,
                     mac: None,
@@ -451,8 +543,8 @@ pub fn mac_scan(
             }
         }
     }
-    ret.finish(mac_scan_reports);
-    Ok(ret)
+    rets.finish(mac_scan_reports);
+    Ok(rets)
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -1582,20 +1674,20 @@ fn scan_raw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Pistol, Target};
-    use std::{str::FromStr, vec};
+    use crate::Pistol;
+    use crate::Target;
+    use std::str::FromStr;
     #[test]
     fn test_arp_scan_single() {
         let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
         let targets = vec![target];
         let timeout = Duration::from_secs_f32(10.0);
-        let threads = 512;
         let max_retries = 2;
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
         pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, threads, max_retries).unwrap();
+        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1609,26 +1701,24 @@ mod tests {
         // let targets = vec![target1, target2, target3, target4];
         // let targets = vec![target1];
         let timeout = Duration::from_secs_f32(1.5);
-        let threads = 512;
         let max_retries = 2;
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
         pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, threads, max_retries).unwrap();
+        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
         println!("{}", ret);
     }
     #[test]
     fn test_ndp_ns_scan_subnet() {
         let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
         let timeout = Duration::from_secs_f32(1.5);
-        let threads = 512;
         let max_retries = 2;
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
         pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, threads, max_retries).unwrap();
+        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -1637,13 +1727,12 @@ mod tests {
         let target = Target::new(dst_ipv6.into(), None);
         let targets = vec![target];
         let timeout = Duration::from_secs_f32(0.5);
-        let threads = 512;
         let max_retries = 2;
 
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
         pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, threads, max_retries).unwrap();
+        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
         println!("{}", ret);
     }
     #[test]
