@@ -17,6 +17,7 @@ use std::time::Instant;
 use crate::GLOBAL_NET_CACHES;
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::ARP_HEADER_SIZE;
 use crate::layer::Layer2Filter;
 use crate::layer::Layer3Filter;
@@ -102,27 +103,10 @@ pub(crate) fn recv_arp_scan_response(
     dst_ipv4: Ipv4Addr,
     start: Instant,
     timeout: Duration,
-    receiver: Receiver<Arc<[u8]>>,
-) -> Result<Option<MacAddr>, PistolError> {
-    // recv the arp response packet right now
-    let now = start.elapsed();
-    let eth_reponse = if now < timeout {
-        let fix_timeout = timeout - now;
-        let eth_reponse = match receiver.recv_timeout(fix_timeout) {
-            Ok(b) => b,
-            Err(_e) => Arc::new([]),
-        };
-        eth_reponse
-    } else {
-        let eth_reponse = match receiver.recv() {
-            Ok(b) => b,
-            Err(_e) => Arc::new([]),
-        };
-        eth_reponse
-    };
-
-    let mac = get_mac_from_arp_response(&eth_reponse);
-    let rtt = start.elapsed();
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
+    let mac = get_mac_from_arp_response(&eth_response);
     match mac {
         Some(mac) => {
             let mut gncs = GLOBAL_NET_CACHES
@@ -145,5 +129,5 @@ pub(crate) fn recv_arp_scan_response(
         }
     }
 
-    Ok(mac)
+    Ok((mac, rtt))
 }

@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -32,6 +33,7 @@ use tracing::debug;
 
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -56,7 +58,7 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_SYN_MASK: u8 = 0b00000010;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
 
-pub fn send_syn_scan_packet(
+pub(crate) fn send_syn_scan_packet(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
@@ -65,7 +67,7 @@ pub fn send_syn_scan_packet(
     src_port: u16,
     interface: &NetworkInterface,
     timeout: Duration,
-) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -144,18 +146,8 @@ pub fn send_syn_scan_packet(
     let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
     let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
 
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let start = Instant::now();
     let receiver = ask_runner(
         iface,
         dst_mac,
@@ -166,16 +158,25 @@ pub fn send_syn_scan_packet(
         timeout,
         0,
     )?;
-    let eth_buff = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv tcp syn scan response timeout: {}", dst_ipv4, e);
-            Arc::new([])
-        }
-    };
-    let rtt = start.elapsed();
+    Ok(receiver)
+}
 
-    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+pub(crate) fn recv_syn_scan_packet(
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
+    let codes = vec![
+        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
+        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
+        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
+        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
+        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
+        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
+    ];
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
             match ip_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Tcp => {

@@ -21,11 +21,11 @@ use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tracing::debug;
 
 use crate::GLOBAL_NET_CACHES;
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -66,7 +66,7 @@ pub fn send_ndp_ns_scan_packet(
     src_ipv6: Ipv6Addr,
     interface: &NetworkInterface,
     timeout: Duration,
-) -> Result<Receiver<Arc<[u8]>>, PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     // same as arp in ipv4, but use icmpv6 neighbor solicitation
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -153,31 +153,9 @@ pub(crate) fn recv_ndp_ns_scan_response(
     dst_ipv6: Ipv6Addr,
     start: Instant,
     timeout: Duration,
-    receiver: Receiver<Arc<[u8]>>,
-) -> Result<Option<MacAddr>, PistolError> {
-    let now = start.elapsed();
-    let eth_response = if now < timeout {
-        let fix_timeout = timeout - now;
-        let eth_response = match receiver.recv_timeout(fix_timeout) {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
-                Arc::new([])
-            }
-        };
-        eth_response
-    } else {
-        let eth_response = match receiver.recv() {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
-                Arc::new([])
-            }
-        };
-        eth_response
-    };
-
-    let rtt = start.elapsed();
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
     let mac = get_mac_from_ndp_ns(&eth_response);
     match mac {
         Some(mac) => {
@@ -201,7 +179,7 @@ pub(crate) fn recv_ndp_ns_scan_response(
         }
     }
 
-    Ok(mac)
+    Ok((mac, rtt))
 }
 
 #[cfg(feature = "scan")]

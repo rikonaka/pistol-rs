@@ -666,6 +666,32 @@ pub(crate) fn ask_runner(
     Ok(packet_receiver)
 }
 
+pub(crate) fn get_response(
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+    start: Instant,
+    timeout: Duration,
+) -> (Arc<[u8]>, Duration) {
+    let now = start.elapsed();
+    if now < timeout {
+        let fix_timeout = timeout - now;
+        match receiver.recv_timeout(fix_timeout) {
+            Ok((buff, rtt)) => (buff, rtt),
+            Err(e) => {
+                let buff: Arc<[u8]> = Arc::new([]);
+                (buff, Duration::ZERO)
+            }
+        }
+    } else {
+        match receiver.recv() {
+            Ok((buff, rtt)) => (buff, rtt),
+            Err(e) => {
+                let buff: Arc<[u8]> = Arc::new([]);
+                (buff, Duration::ZERO)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct NetInfo {
     pub(crate) dst_mac: MacAddr,

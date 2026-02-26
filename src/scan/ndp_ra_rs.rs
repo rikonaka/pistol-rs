@@ -18,11 +18,11 @@ use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tracing::debug;
 
 use crate::GLOBAL_NET_CACHES;
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::ICMPV6_RA_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -47,7 +47,7 @@ fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
 pub(crate) fn send_ndp_ra_scan_packet(
     src_ipv6: Ipv6Addr,
     timeout: Duration,
-) -> Result<Receiver<Arc<[u8]>>, PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     // router solicitation
     let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
@@ -162,31 +162,9 @@ pub(crate) fn recv_ndp_rs_scan_response(
     dst_ipv6: Ipv6Addr,
     start: Instant,
     timeout: Duration,
-    receiver: Receiver<Arc<[u8]>>,
-) -> Result<Option<MacAddr>, PistolError> {
-    let now = start.elapsed();
-    let eth_response = if now < timeout {
-        let fix_timeout = timeout - now;
-        let eth_response = match receiver.recv_timeout(fix_timeout) {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
-                Arc::new([])
-            }
-        };
-        eth_response
-    } else {
-        let eth_response = match receiver.recv() {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv ndp_ns response timeout: {}", dst_ipv6, e);
-                Arc::new([])
-            }
-        };
-        eth_response
-    };
-
-    let rtt = start.elapsed();
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
     let mac = if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         let eth_payload = eth_packet.payload();
         let mac = get_mac_from_ndp_rs(eth_payload);
@@ -216,7 +194,7 @@ pub(crate) fn recv_ndp_rs_scan_response(
         }
     }
 
-    Ok(mac)
+    Ok((mac, rtt))
 }
 
 #[cfg(feature = "scan")]
