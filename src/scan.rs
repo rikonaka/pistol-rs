@@ -245,11 +245,9 @@ pub fn arp_scan_raw(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
-            let start = Instant::now();
             let receiver =
                 send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
-            let mac = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
-            let rtt = start.elapsed();
+            let (mac, rtt) = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
             Ok((mac, rtt))
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -260,7 +258,7 @@ pub fn arp_scan_raw(
 fn arp_scan_thread(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
-) -> Result<(Receiver<Arc<[u8]>>, Instant), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     debug!("start arp scan thread to {}", dst_ipv4);
 
     // broadcast mac address
@@ -295,10 +293,9 @@ fn arp_scan_thread(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
-            let start = Instant::now();
             let receiver =
                 send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
-            Ok((receiver, start))
+            Ok(receiver)
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
     }
@@ -343,11 +340,9 @@ pub fn ndp_ns_scan_raw(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-            let start = Instant::now();
             let receiver =
                 send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
-            let mac = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
-            let rtt = start.elapsed();
+            let (mac, rtt) = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
             Ok((mac, rtt))
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -358,7 +353,7 @@ pub fn ndp_ns_scan_raw(
 pub fn ndp_ns_scan_thread(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
-) -> Result<(Receiver<Arc<[u8]>>, Instant), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     let interface = match find_interface_by_dst_ip(dst_ipv6.into()) {
         Some(i) => i,
         None => {
@@ -393,10 +388,9 @@ pub fn ndp_ns_scan_thread(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-            let start = Instant::now();
             let receiver =
                 send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
-            Ok((receiver, start))
+            Ok(receiver)
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
     }
@@ -413,7 +407,7 @@ pub fn mac_scan(
 
     let mut mac_scan_status = HashMap::new();
     for t in targets {
-        // (0, true, None) => (retiries, has data recved?, and receiver)
+        // (0, false, None) => (retiries, has data recved?, and receiver)
         mac_scan_status.insert(t.addr, (0, false, None));
     }
 
@@ -452,7 +446,7 @@ pub fn mac_scan(
                 continue;
             }
             match status {
-                Some((receiver, start)) => {
+                Some(receiver) => {
                     let receiver = receiver.clone();
                     let recv_result = match dst_addr {
                         IpAddr::V4(dst_ipv4) => {
@@ -462,9 +456,8 @@ pub fn mac_scan(
                             recv_ndp_ns_scan_response(dst_ipv6, Instant::now(), timeout, receiver)
                         }
                     };
-                    let rtt = start.elapsed();
                     match recv_result {
-                        Ok(mac) => {
+                        Ok((mac, rtt)) => {
                             mac_scan_status_clone.insert(dst_addr, (*retiries, true, None));
                             mac_scan_rets.insert(dst_addr, (mac, rtt));
                         }
