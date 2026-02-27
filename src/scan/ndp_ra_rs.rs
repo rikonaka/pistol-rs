@@ -116,7 +116,7 @@ pub(crate) fn send_ndp_ra_scan_packet(
     icmpv6_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: "ndp_ns layer3".to_string().to_string(),
+        name: String::from("ndp_ns layer3").to_string(),
         layer2: None,
         src_addr: None,
         dst_addr: None,
@@ -133,7 +133,7 @@ pub(crate) fn send_ndp_ra_scan_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmpv6);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "ndp_ns icmpv6".to_string().to_string(),
+        name: String::from("ndp_ns icmpv6").to_string(),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::RouterAdvert), // Type: Router Advertisement (134)
         icmpv6_code: None,

@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -17,10 +18,10 @@ use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tracing::debug;
 
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -33,7 +34,7 @@ use crate::trace::HopStatus;
 
 const ICMPV6_DATA_SIZE: usize = 32;
 
-pub fn send_icmpv6_trace_packet(
+pub(crate) fn send_icmpv6_trace_packet(
     dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
@@ -43,7 +44,7 @@ pub fn send_icmpv6_trace_packet(
     icmpv6_id: u16,
     seq: u16,
     timeout: Duration,
-) -> Result<(HopStatus, Duration), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -95,7 +96,7 @@ pub fn send_icmpv6_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Filter {
-        name: "icmpv6 trace time exceeded layer3".to_string(),
+        name: String::from("icmpv6 trace time exceeded layer3"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
@@ -111,7 +112,7 @@ pub fn send_icmpv6_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmpv6(payload_icmp);
     let layer4_icmp = Layer4FilterIcmpv6 {
-        name: "icmpv6 trace time exceeded icmpv6".to_string(),
+        name: String::from("icmpv6 trace time exceeded icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::TimeExceeded),
         icmpv6_code: None,
@@ -121,13 +122,13 @@ pub fn send_icmpv6_trace_packet(
 
     // icmp reply
     let layer3 = Layer3Filter {
-        name: "icmpv6 trace reply layer3".to_string(),
+        name: String::from("icmpv6 trace reply layer3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "icmpv6 trace reply icmpv6".to_string(),
+        name: String::from("icmpv6 trace reply icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: None,
         icmpv6_code: None,
@@ -137,7 +138,6 @@ pub fn send_icmpv6_trace_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
-    let start = Instant::now();
     let receiver = ask_runner(
         iface,
         dst_mac,
@@ -148,17 +148,17 @@ pub fn send_icmpv6_trace_packet(
         timeout,
         0,
     )?;
+    Ok(receiver)
+}
 
-    let eth_buff = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv icmpv6 trace response timeout: {}", dst_ipv6, e);
-            Arc::new([])
-        }
-    };
-    let rtt = start.elapsed();
+pub(crate) fn recv_icmpv6_trace_packet(
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(HopStatus, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
 
-    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
             match ipv6_packet.get_next_header() {
                 IpNextHeaderProtocols::Icmpv6 => {

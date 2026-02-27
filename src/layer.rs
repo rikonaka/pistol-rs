@@ -286,6 +286,7 @@ pub(crate) struct Layer4FilterTcpUdp {
     pub(crate) layer3: Option<Layer3Filter>,
     pub(crate) src_port: Option<u16>, // response tcp or udp packet src port
     pub(crate) dst_port: Option<u16>, // response tcp or udp packet dst port
+    pub(crate) flag: Option<u8>,      // response tcp packet flag, only for tcp packet
 }
 
 /// for debug use, return (src_ip, dst_ip)
@@ -323,22 +324,10 @@ fn get_ip(ethernet_packet: &[u8]) -> Option<(IpAddr, IpAddr)> {
 
 impl Layer4FilterTcpUdp {
     pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
-        // let mut is_debug = false;
-        // if let Some((src_ip, dst_ip)) = get_ip(ethernet_packet) {
-        //     let src_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        //     let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        //     if src_ip == src_ipv4 && dst_ip == dst_ipv4 {
-        //         is_debug = true;
-        //     }
-        // }
-
         let m1 = match &self.layer3 {
             Some(layer3) => layer3.check(ethernet_packet),
             None => true,
         };
-        // if is_debug {
-        //     println!("m1: {}", m1);
-        // }
         if !m1 {
             // early stop
             return false;
@@ -359,6 +348,11 @@ impl Layer4FilterTcpUdp {
                             Some(t) => t,
                             None => return false,
                         };
+                        if let Some(flag) = self.flag {
+                            if tcp_packet.get_flags() != flag {
+                                return false;
+                            }
+                        }
                         (tcp_packet.get_source(), tcp_packet.get_destination())
                     }
                     IpNextHeaderProtocols::Udp => {
@@ -382,6 +376,11 @@ impl Layer4FilterTcpUdp {
                             Some(t) => t,
                             None => return false,
                         };
+                        if let Some(flag) = self.flag {
+                            if tcp_packet.get_flags() != flag {
+                                return false;
+                            }
+                        }
                         (tcp_packet.get_source(), tcp_packet.get_destination())
                     }
                     IpNextHeaderProtocols::Udp => {
@@ -396,9 +395,6 @@ impl Layer4FilterTcpUdp {
             }
             _ => (0, 0),
         };
-        // if is_debug {
-        //     println!("read to match src port");
-        // }
         match self.src_port {
             Some(src_port) => {
                 if src_port != r_src_port {
@@ -407,13 +403,6 @@ impl Layer4FilterTcpUdp {
             }
             None => (),
         };
-        // if is_debug {
-        //     println!("src port pass");
-        //     println!(
-        //         "next dst_port: {:?}, r_dst_port: {}",
-        //         self.dst_port, r_dst_port
-        //     );
-        // }
         match self.dst_port {
             Some(dst_port) => {
                 if dst_port != r_dst_port {
@@ -422,9 +411,6 @@ impl Layer4FilterTcpUdp {
             }
             None => (),
         };
-        // if is_debug {
-        //     println!("dst port pass");
-        // }
         true
     }
 }
@@ -933,7 +919,7 @@ mod tests {
         let dst_port = 8080;
         let src_port = 29450;
         let layer3 = Layer3Filter {
-            name: "test layer3".to_string().to_string(),
+            name: String::from("test layer3").to_string(),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
@@ -949,7 +935,7 @@ mod tests {
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
         let layer4_icmp = Layer4FilterIcmp {
-            name: "test icmp".to_string().to_string(),
+            name: String::from("test icmp").to_string(),
             layer3: Some(layer3),
             icmp_type: None,
             icmp_code: None,
@@ -972,13 +958,13 @@ mod tests {
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
         let layer3 = Layer3Filter {
-            name: "test layer3".to_string().to_string(),
+            name: String::from("test layer3").to_string(),
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
         let layer4_icmpv6 = Layer4FilterIcmpv6 {
-            name: "test icmpv6".to_string().to_string(),
+            name: String::from("test icmpv6").to_string(),
             layer3: Some(layer3),
             icmpv6_type: Some(Icmpv6Types::NeighborAdvert),
             icmpv6_code: None,
@@ -995,7 +981,7 @@ mod tests {
         let src_port = 45982;
         let dst_port = 33434;
         let layer3 = Layer3Filter {
-            name: "test layer3".to_string().to_string(),
+            name: String::from("test layer3").to_string(),
             layer2: None,
             src_addr: None,
             dst_addr: Some(src_ipv4.into()),
@@ -1012,7 +998,7 @@ mod tests {
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
         let layer4_icmp = Layer4FilterIcmp {
-            name: "test icmp".to_string().to_string(),
+            name: String::from("test icmp").to_string(),
             layer3: Some(layer3),
             icmp_type: Some(IcmpTypes::TimeExceeded),
             icmp_code: None,
@@ -1041,7 +1027,7 @@ mod tests {
         let dst_port = 80;
 
         let layer3 = Layer3Filter {
-            name: "test layer3".to_string().to_string(),
+            name: String::from("test layer3").to_string(),
             layer2: None,
             src_addr: None, // usually this is the address of the router, not the address of the target machine.
             dst_addr: Some(src_ipv4.into()),
@@ -1057,7 +1043,7 @@ mod tests {
         };
         let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
         let layer4_icmp = Layer4FilterIcmp {
-            name: "test icmp".to_string().to_string(),
+            name: String::from("test icmp").to_string(),
             layer3: Some(layer3),
             icmp_type: Some(IcmpTypes::TimeExceeded),
             icmp_code: None,
@@ -1086,13 +1072,13 @@ mod tests {
         let dst_port = 80;
 
         let layer3 = Layer3Filter {
-            name: "test layer3".to_string().to_string(),
+            name: String::from("test layer3").to_string(),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
         let layer4_tcp_udp = Layer4FilterTcpUdp {
-            name: "test tcp_udp".to_string().to_string(),
+            name: String::from("test tcp_udp").to_string(),
             layer3: Some(layer3),
             src_port: Some(dst_port),
             dst_port: Some(src_port),

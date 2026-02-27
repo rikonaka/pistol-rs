@@ -47,7 +47,7 @@ use crate::NetInfo;
 #[cfg(feature = "ping")]
 use crate::error::PistolError;
 #[cfg(feature = "ping")]
-use crate::scan::DataRecvStatus;
+use crate::scan::RecvResponse;
 #[cfg(feature = "ping")]
 use crate::scan::PortStatus;
 #[cfg(feature = "ping")]
@@ -303,7 +303,7 @@ fn ping_thread(
     interface: &NetworkInterface,
     method: PingMethods,
     timeout: Duration,
-) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
+) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
     let (ping_status, data_recv_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -387,7 +387,7 @@ fn ping_thread6(
     interface: &NetworkInterface,
     method: PingMethods,
     timeout: Duration,
-) -> Result<(PingStatus, DataRecvStatus, Duration), PistolError> {
+) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
     let (ping_status, data_recv_status, rtt) = match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
@@ -520,7 +520,7 @@ fn ping(
                             match ping_ret {
                                 Ok((_port_status, data_recv_status, _)) => {
                                     match data_recv_status {
-                                        DataRecvStatus::Yes => {
+                                        RecvResponse::Yes => {
                                             // conclusions drawn from the returned data
                                             if let Err(e) = tx.send((
                                                 dst_addr,
@@ -533,7 +533,7 @@ fn ping(
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
-                                        DataRecvStatus::No => (), // continue probing
+                                        RecvResponse::No => (), // continue probing
                                     }
                                 }
                                 Err(_) => {
@@ -591,7 +591,7 @@ fn ping(
                             match ping_ret {
                                 Ok((_port_status, data_recv_status, _)) => {
                                     match data_recv_status {
-                                        DataRecvStatus::Yes => {
+                                        RecvResponse::Yes => {
                                             // conclusions drawn from the returned data
                                             if let Err(e) = tx.send((
                                                 dst_addr,
@@ -604,7 +604,7 @@ fn ping(
                                             break; // quit loop now
                                         }
                                         // conclusions from the default policy
-                                        DataRecvStatus::No => (), // continue probing
+                                        RecvResponse::No => (), // continue probing
                                     }
                                 }
                                 Err(_) => {

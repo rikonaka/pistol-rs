@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -17,13 +18,13 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use std::panic::Location;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::debug;
 
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -36,7 +37,7 @@ use crate::trace::HopStatus;
 
 const ICMP_DATA_SIZE: usize = 32;
 
-pub fn send_icmp_trace_packet(
+pub(crate) fn send_icmp_trace_packet(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
@@ -47,7 +48,7 @@ pub fn send_icmp_trace_packet(
     icmp_id: u16,
     seq: u16,
     timeout: Duration,
-) -> Result<(HopStatus, Duration), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
@@ -99,7 +100,7 @@ pub fn send_icmp_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Filter {
-        name: "icmp trace time exceeded layer3".to_string(),
+        name: String::from("icmp trace time exceeded layer3"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
@@ -115,7 +116,7 @@ pub fn send_icmp_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchIcmp(payload_icmp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "icmp trace time exceeded icmp".to_string(),
+        name: String::from("icmp trace time exceeded icmp"),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
@@ -125,13 +126,13 @@ pub fn send_icmp_trace_packet(
 
     // icmp reply
     let layer3 = Layer3Filter {
-        name: "icmp trace reply layer3".to_string(),
+        name: String::from("icmp trace reply layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4FilterIcmp {
-        name: "icmp trace reply icmp".to_string(),
+        name: String::from("icmp trace reply icmp"),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::EchoReply),
         icmp_code: None,
@@ -141,7 +142,6 @@ pub fn send_icmp_trace_packet(
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let start = Instant::now();
     let receiver = ask_runner(
         iface,
         dst_mac,
@@ -152,17 +152,17 @@ pub fn send_icmp_trace_packet(
         timeout,
         0,
     )?;
+    Ok(receiver)
+}
 
-    let eth_buff = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv icmp trace response timeout: {}", dst_ipv4, e);
-            Arc::new([])
-        }
-    };
-    let rtt = start.elapsed();
+pub(crate) fn recv_icmp_trace_packet(
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(HopStatus, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
 
-    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
             match ip_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Icmp => {

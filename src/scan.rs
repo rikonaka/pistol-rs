@@ -83,7 +83,7 @@ use crate::utils;
 /// So when UDP scan returns to the open_or_filtered state, DataRecvStatus should be set to No.
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
-pub enum DataRecvStatus {
+pub enum RecvResponse {
     Yes,
     No,
 }
@@ -805,7 +805,7 @@ fn scan_thread(
     interface: &NetworkInterface,
     method: ScanMethod,
     timeout: Duration,
-) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
+) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
     let (port_status, data_recv_status, rtt) = match method {
         ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv4.into(), dst_port, timeout)?,
         ScanMethod::Syn => tcp::send_syn_scan_packet(
@@ -835,7 +835,7 @@ fn scan_thread(
                 Some(zm) => zm,
                 None => {
                     return Err(PistolError::IdleScanNoParamsError {
-                        params: "zombie_mac".to_string(),
+                        params: String::from("zombie_mac"),
                     });
                 }
             };
@@ -843,7 +843,7 @@ fn scan_thread(
                 Some(zi) => zi,
                 None => {
                     return Err(PistolError::IdleScanNoParamsError {
-                        params: "zombie_ipv4".to_string(),
+                        params: String::from("zombie_ipv4"),
                     });
                 }
             };
@@ -851,11 +851,11 @@ fn scan_thread(
                 Some(zp) => zp,
                 None => {
                     return Err(PistolError::IdleScanNoParamsError {
-                        params: "zombie_port".to_string(),
+                        params: String::from("zombie_port"),
                     });
                 }
             };
-            tcp::send_idle_scan_packet(
+            tcp::send_idle_scan_packet_1(
                 dst_mac,
                 dst_ipv4,
                 dst_port,
@@ -888,7 +888,7 @@ fn scan_thread6(
     interface: &NetworkInterface,
     method: ScanMethod,
     timeout: Duration,
-) -> Result<(PortStatus, DataRecvStatus, Duration), PistolError> {
+) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
     let (port_status, data_recv_status, rtt) = match method {
         ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv6.into(), dst_port, timeout)?,
         ScanMethod::Syn => tcp6::send_syn_scan_packet(
@@ -999,7 +999,7 @@ fn scan(
                                 match scan_ret {
                                     Ok((_port_status, data_recv_status, _rtt)) => {
                                         match data_recv_status {
-                                            DataRecvStatus::Yes => {
+                                            RecvResponse::Yes => {
                                                 // conclusions drawn from the returned data
                                                 if let Err(e) = tx.send((
                                                     dst_addr,
@@ -1016,7 +1016,7 @@ fn scan(
                                                 break; // quit loop now
                                             }
                                             // conclusions from the default policy
-                                            DataRecvStatus::No => (), // continue probing
+                                            RecvResponse::No => (), // continue probing
                                         }
                                     }
                                     Err(_) => {
@@ -1074,7 +1074,7 @@ fn scan(
                                 match scan_ret {
                                     Ok((_port_status, data_recv_status, _rtt)) => {
                                         match data_recv_status {
-                                            DataRecvStatus::Yes => {
+                                            RecvResponse::Yes => {
                                                 // conclusions drawn from the returned data
                                                 if let Err(e) = tx.send((
                                                     dst_addr,
@@ -1091,7 +1091,7 @@ fn scan(
                                                 break; // quit loop now
                                             }
                                             // conclusions from the default policy
-                                            DataRecvStatus::No => (), // continue probing
+                                            RecvResponse::No => (), // continue probing
                                         }
                                     }
                                     Err(_) => {
@@ -1611,7 +1611,7 @@ fn scan_raw(
                     });
                 } else {
                     match data_recv_status {
-                        DataRecvStatus::Yes => {
+                        RecvResponse::Yes => {
                             port_report = Some(PortReport {
                                 addr: dst_addr,
                                 port: dst_port,
@@ -1621,7 +1621,7 @@ fn scan_raw(
                             });
                             break;
                         }
-                        DataRecvStatus::No => (), // continue probing
+                        RecvResponse::No => (), // continue probing
                     }
                 }
             }
@@ -1650,7 +1650,7 @@ fn scan_raw(
                     });
                 } else {
                     match data_recv_status {
-                        DataRecvStatus::Yes => {
+                        RecvResponse::Yes => {
                             port_report = Some(PortReport {
                                 addr: dst_addr,
                                 port: dst_port,
@@ -1660,7 +1660,7 @@ fn scan_raw(
                             });
                             break;
                         }
-                        DataRecvStatus::No => (), // continue probing
+                        RecvResponse::No => (), // continue probing
                     }
                 }
             }

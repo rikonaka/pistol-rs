@@ -227,7 +227,7 @@ pub fn get_scan_line(
         }
         dst_mac_str
     } else {
-        "".to_string()
+        String::new()
     };
     // The OS scan time (TM) is provided in Unix time_t format (in hexadecimal).
     let now: DateTime<Utc> = Utc::now();
@@ -309,6 +309,7 @@ fn send_seq_probes(
             layer3: Some(layer3),
             src_port: Some(dst_open_port),
             dst_port: Some(src_port),
+            flag: None,
         };
         let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
@@ -329,7 +330,7 @@ fn send_seq_probes(
                     0,
                 ) {
                     Ok(receiver) => {
-                        let eth_buff = match receiver.recv_timeout(timeout) {
+                        let eth_response = match receiver.recv_timeout(timeout) {
                             Ok(b) => b,
                             Err(e) => {
                                 debug!("{} recv seq_{} probe response timeout: {}", dst_ipv4, i, e);
@@ -337,7 +338,7 @@ fn send_seq_probes(
                             }
                         };
                         let rtt = start.elapsed();
-                        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+                        if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
                             let eth_payload = eth_packet.payload().to_vec();
                             if eth_payload.len() > 0 {
                                 let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
@@ -434,13 +435,13 @@ fn send_ie_probes(
     let buffs = vec![buff_1, buff_2];
 
     let layer3 = Layer3Filter {
-        name: "os scan ie layer3".to_string(),
+        name: String::from("os scan ie layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4FilterIcmp {
-        name: "os scan ie icmp".to_string(),
+        name: String::from("os scan ie icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -468,7 +469,7 @@ fn send_ie_probes(
                 0,
             ) {
                 Ok(receiver) => {
-                    let eth_buff = match receiver.recv_timeout(timeout) {
+                    let eth_response = match receiver.recv_timeout(timeout) {
                         Ok(b) => b,
                         Err(e) => {
                             debug!("{} recv ie_{} probe timeout: {}", dst_ipv4, i, e);
@@ -476,7 +477,7 @@ fn send_ie_probes(
                         }
                     };
                     let rtt = start.elapsed();
-                    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+                    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
                         let eth_payload = eth_packet.payload().to_vec();
                         if eth_payload.len() > 0 {
                             let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
@@ -516,8 +517,12 @@ fn send_ie_probes(
         ies.insert(i, rr);
     }
 
-    let ie1 = ies.get(&0).map_or(RequestResponse::default(), |x| x.clone());
-    let ie2 = ies.get(&1).map_or(RequestResponse::default(), |x| x.clone());
+    let ie1 = ies
+        .get(&0)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let ie2 = ies
+        .get(&1)
+        .map_or(RequestResponse::default(), |x| x.clone());
 
     let ie = IERR { ie1, ie2 };
     Ok(ie)
@@ -534,13 +539,13 @@ fn send_ecn_probe(
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
-        name: "os scan ecn layer3".to_string(),
+        name: String::from("os scan ecn layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp".to_string(),
+        name: String::from("os scan ecn tcp_udp"),
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
@@ -565,7 +570,7 @@ fn send_ecn_probe(
             timeout,
             0,
         )?;
-        let eth_buff = match receiver.recv_timeout(timeout) {
+        let eth_response = match receiver.recv_timeout(timeout) {
             Ok(b) => b,
             Err(e) => {
                 debug!("{} recv ecn probe response timeout: {}", dst_ipv4, e);
@@ -574,7 +579,7 @@ fn send_ecn_probe(
         };
         let _rtt = start.elapsed();
 
-        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
             let eth_payload = eth_packet.payload().to_vec();
             if eth_payload.len() > 0 {
                 let rr = RequestResponse {
@@ -617,43 +622,43 @@ fn send_tx_probes(
     }
 
     let layer3 = Layer3Filter {
-        name: "os scan tx layer3".to_string(),
+        name: String::from("os scan tx layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp_1 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 1".to_string(),
+        name: String::from("os scan ecn tcp_udp 1"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
     };
     let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 2".to_string(),
+        name: String::from("os scan ecn tcp_udp 2"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
     };
     let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 3".to_string(),
+        name: String::from("os scan ecn tcp_udp 3"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
     };
     let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 4".to_string(),
+        name: String::from("os scan ecn tcp_udp 4"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
     };
     let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 5".to_string(),
+        name: String::from("os scan ecn tcp_udp 5"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
     };
     let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
-        name: "os scan ecn tcp_udp 6".to_string(),
+        name: String::from("os scan ecn tcp_udp 6"),
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
@@ -707,7 +712,7 @@ fn send_tx_probes(
                     0,
                 ) {
                     Ok(receiver) => {
-                        let eth_buff = match receiver.recv_timeout(timeout) {
+                        let eth_response = match receiver.recv_timeout(timeout) {
                             Ok(b) => b,
                             Err(e) => {
                                 debug!("{} recv tx_{} probe response timeout: {}", dst_ipv4, i, e);
@@ -715,7 +720,7 @@ fn send_tx_probes(
                             }
                         };
                         let rtt = start.elapsed();
-                        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+                        if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
                             let eth_payload = eth_packet.payload().to_vec();
                             if eth_payload.len() > 0 {
                                 let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
@@ -797,13 +802,13 @@ fn send_u1_probe(
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
-        name: "os scan u1 layer3".to_string(),
+        name: String::from("os scan u1 layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_icmp = Layer4FilterIcmp {
-        name: "os scan u1 icmp".to_string(),
+        name: String::from("os scan u1 icmp"),
         layer3: Some(layer3),
         icmp_type: None,
         icmp_code: None,
@@ -829,7 +834,7 @@ fn send_u1_probe(
             timeout,
             0,
         )?;
-        let eth_buff = match receiver.recv_timeout(timeout) {
+        let eth_response = match receiver.recv_timeout(timeout) {
             Ok(b) => b,
             Err(e) => {
                 debug!("{} recv u1 probe response timeout: {}", dst_ipv4, e);
@@ -838,7 +843,7 @@ fn send_u1_probe(
         };
         let _rtt = start.elapsed();
 
-        if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+        if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
             let eth_payload = eth_packet.payload().to_vec();
             if eth_payload.len() > 0 {
                 let rr = RequestResponse {

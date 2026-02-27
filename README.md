@@ -2,7 +2,7 @@
 
 The library must be run as root (Linux, *BSD), the `stable` version of rust is recommended.
 
-Every codes was written by and checked by humans.
+Every codes was written and checked by humans.
 
 [![Rust](https://github.com/rikonaka/pistol-rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/rikonaka/pistol-rs/actions/workflows/rust.yml)
 

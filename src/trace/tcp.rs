@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -20,10 +21,10 @@ use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tracing::debug;
 
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -44,7 +45,7 @@ const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
 const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
 
-pub fn send_syn_trace_packet(
+pub(crate) fn send_syn_trace_packet(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
@@ -55,7 +56,7 @@ pub fn send_syn_trace_packet(
     ip_id: u16,
     ttl: u8,
     timeout: Duration,
-) -> Result<(HopStatus, Duration), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
@@ -110,7 +111,7 @@ pub fn send_syn_trace_packet(
 
     // time exceeded packet
     let layer3 = Layer3Filter {
-        name: "tcp trace time exceeded layer3".to_string(),
+        name: String::from("tcp trace time exceeded layer3"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv4.into()),
@@ -126,7 +127,7 @@ pub fn send_syn_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmp = Layer4FilterIcmp {
-        name: "tcp trace time exceeded icmp".to_string(),
+        name: String::from("tcp trace time exceeded icmp"),
         layer3: Some(layer3),
         icmp_type: Some(IcmpTypes::TimeExceeded),
         icmp_code: None,
@@ -136,22 +137,22 @@ pub fn send_syn_trace_packet(
 
     // tcp syn, ack or rst packet
     let layer3 = Layer3Filter {
-        name: "tcp trace reply layer3".to_string(),
+        name: String::from("tcp trace reply layer3"),
         layer2: None,
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
     let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: "tcp trace reply tcp_udp".to_string(),
+        name: String::from("tcp trace reply tcp_udp"),
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
+        flag: None,
     };
     let filter_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
-    let start = Instant::now();
     let receiver = ask_runner(
         iface,
         dst_mac,
@@ -162,16 +163,17 @@ pub fn send_syn_trace_packet(
         timeout,
         0,
     )?;
-    let eth_buff = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv syn trace response timeout: {}", dst_ipv4, e);
-            Arc::new([])
-        }
-    };
-    let rtt = start.elapsed();
+    Ok(receiver)
+}
 
-    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+pub(crate) fn recv_syn_trace_packet(
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(HopStatus, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
             match ip_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Tcp => {

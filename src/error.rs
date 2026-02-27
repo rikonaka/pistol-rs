@@ -50,7 +50,7 @@ pub enum PistolError {
 
     /* SCAN ERROR */
     #[error(
-        "idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is: all zeros, try another proxy"
+        "idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is all zeros, try another proxy"
     )]
     IdleScanAllZeroError {
         zombie_ipv4: Ipv4Addr,

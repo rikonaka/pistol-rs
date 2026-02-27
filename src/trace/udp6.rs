@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -13,13 +14,13 @@ use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tracing::debug;
-use std::sync::Arc;
 
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
@@ -33,7 +34,7 @@ use crate::trace::HopStatus;
 
 const UDP_DATA_SIZE: usize = 32;
 
-pub fn send_udp_trace_packet(
+pub(crate) fn send_udp_trace_packet(
     dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
@@ -43,7 +44,7 @@ pub fn send_udp_trace_packet(
     interface: &NetworkInterface,
     hop_limit: u8,
     timeout: Duration,
-) -> Result<(HopStatus, Duration), PistolError> {
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -85,7 +86,7 @@ pub fn send_udp_trace_packet(
 
     // generally speaking, the target random UDP port will not return any data.
     let layer3 = Layer3Filter {
-        name: "udp6 trace layer3 1".to_string(),
+        name: String::from("udp6 trace layer3 1"),
         layer2: None,
         src_addr: None, // usually this is the address of the router, not the address of the target machine.
         dst_addr: Some(src_ipv6.into()),
@@ -101,7 +102,7 @@ pub fn send_udp_trace_packet(
     };
     let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcp_udp);
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "udp6 trace icmpv6 1".to_string(),
+        name: String::from("udp6 trace icmpv6 1"),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::TimeExceeded),
         icmpv6_code: None,
@@ -111,13 +112,13 @@ pub fn send_udp_trace_packet(
 
     // finally, the UDP packet arrives at the target machine.
     let layer3 = Layer3Filter {
-        name: "udp6 trace layer3 2".to_string(),
+        name: String::from("udp6 trace layer3 2"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4_icmpv6 = Layer4FilterIcmpv6 {
-        name: "udp6 trace icmpv6".to_string(),
+        name: String::from("udp6 trace icmpv6"),
         layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Types::DestinationUnreachable),
         icmpv6_code: Some(Icmpv6Code(4)), // port unreachable
@@ -127,22 +128,22 @@ pub fn send_udp_trace_packet(
 
     // there is a small chance that the target's UDP port will be open.
     let layer3 = Layer3Filter {
-        name: "udp6 trace layer3 3".to_string(),
+        name: String::from("udp6 trace layer3 3"),
         layer2: None,
         src_addr: Some(dst_ipv6.into()),
         dst_addr: Some(src_ipv6.into()),
     };
     let layer4 = Layer4FilterTcpUdp {
-        name: "udp6 trace tcp_udp".to_string(),
+        name: String::from("udp6 trace tcp_udp"),
         layer3: Some(layer3),
         src_port: Some(dst_port),
         dst_port: Some(src_port),
+        flag: None,
     };
     let filter_3 = PacketFilter::Layer4FilterTcpUdp(layer4);
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
-    let start = Instant::now();
     let receiver = ask_runner(
         iface,
         dst_mac,
@@ -153,16 +154,17 @@ pub fn send_udp_trace_packet(
         timeout,
         0,
     )?;
-    let eth_buff = match receiver.recv_timeout(timeout) {
-        Ok(b) => b,
-        Err(e) => {
-            debug!("{} recv udp6 trace response timeout: {}", dst_ipv6, e);
-            Arc::new([])
-        }
-    };
-    let rtt = start.elapsed();
+    Ok(receiver)
+}
 
-    if let Some(eth_packet) = EthernetPacket::new(&eth_buff) {
+pub(crate) fn recv_udp_trace_packet(
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(HopStatus, Duration), PistolError> {
+    let (eth_response, rtt) = get_response(receiver, start, timeout);
+
+    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
             match ipv6_packet.get_next_header() {
                 IpNextHeaderProtocols::Udp => {

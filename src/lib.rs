@@ -609,21 +609,21 @@ impl RunnerCommunicationChannel {
         &self,
         dst_mac: MacAddr,
         src_mac: MacAddr,
-        ethernet_payload: &[u8],
-        ethernet_type: EtherType,
+        ether_payload: &[u8],
+        ether_type: EtherType,
         filters: Vec<PacketFilter>,
         elapsed: Duration,
         retransmit: usize,
     ) -> Receiver<(Arc<[u8]>, Duration)> {
         let (sender, receiver) = unbounded::<(Arc<[u8]>, Duration)>();
-        let ethernet_payload = Arc::from(ethernet_payload);
+        let ethernet_payload = Arc::from(ether_payload);
         let created = Instant::now();
 
         let smsg = SenderMsg {
             dst_mac,
             src_mac,
             ethernet_payload,
-            ethernet_type,
+            ethernet_type: ether_type,
             retransmit,
         };
         let rmsg = ReceiverMsg {
@@ -642,8 +642,8 @@ pub(crate) fn ask_runner(
     iface: String,
     dst_mac: MacAddr,
     src_mac: MacAddr,
-    ethernet_payload: &[u8],
-    ethernet_type: EtherType,
+    ether_payload: &[u8],
+    ether_type: EtherType,
     filters: Vec<PacketFilter>,
     elapsed: Duration,
     retransmit: usize,
@@ -657,8 +657,8 @@ pub(crate) fn ask_runner(
     let packet_receiver = rcc.send_to_runner(
         dst_mac,
         src_mac,
-        ethernet_payload,
-        ethernet_type,
+        ether_payload,
+        ether_type,
         filters,
         elapsed,
         retransmit,
