@@ -854,7 +854,7 @@ pub(crate) fn infer_mac(
     let mutex = if let Some(mutex) = neighbor_detect_mutex.get(&dst_addr) {
         (*mutex).clone()
     } else {
-        let mutex = Arc::new(Mutex::new(()));
+        let mutex = Arc::from(Mutex::new(()));
         neighbor_detect_mutex.insert(dst_addr, mutex.clone());
         mutex
     };

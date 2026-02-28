@@ -1178,7 +1178,7 @@ fn forge_syn_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    Ok(Arc::new(ip_buff))
+    Ok(Arc::from(ip_buff))
 }
 
 /// Step 1: probe the zombie's ip id.

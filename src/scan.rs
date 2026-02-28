@@ -245,6 +245,7 @@ pub fn arp_scan_raw(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
+            let start = Instant::now();
             let receiver =
                 send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
             let (mac, rtt) = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
@@ -340,6 +341,7 @@ pub fn ndp_ns_scan_raw(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+            let start = Instant::now();
             let receiver =
                 send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
             let (mac, rtt) = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
@@ -407,23 +409,24 @@ pub fn mac_scan(
 
     let mut mac_scan_status = HashMap::new();
     for t in targets {
-        // (0, false, None) => (retiries, has data recved?, and receiver)
-        mac_scan_status.insert(t.addr, (0, false, None));
+        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
+        mac_scan_status.insert(t.addr, (0, false, None, Instant::now()));
     }
 
     let mut mac_scan_rets = HashMap::new();
     loop {
         let mut all_done = true;
         let mut mac_scan_status_clone = mac_scan_status.clone();
-        for (&dst_addr, (retiries, data_recved, _status)) in &mac_scan_status {
+        for (&dst_addr, (retiries, data_recved, _status, _start)) in &mac_scan_status {
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
                     debug!("arp scan packets: #{}/{}", retiries + 1, max_retries);
                     if *retiries < max_retries && !data_recved {
                         // retry to send arp scan packet and recv response
+                        let start = Instant::now();
                         let receiver = arp_scan_thread(dst_ipv4, timeout)?;
                         mac_scan_status_clone
-                            .insert(dst_addr, (retiries + 1, false, Some(receiver)));
+                            .insert(dst_addr, (retiries + 1, false, Some(receiver), start));
                         all_done = false;
                     }
                 }
@@ -431,18 +434,24 @@ pub fn mac_scan(
                     debug!("ndp_ns scan packets: #{}/{}", retiries + 1, max_retries);
                     if *retiries < max_retries && !data_recved {
                         // retry to send ndp_ns scan packet and recv response
+                        let start = Instant::now();
                         let receiver = ndp_ns_scan_thread(dst_ipv6, timeout)?;
                         mac_scan_status_clone
-                            .insert(dst_addr, (retiries + 1, false, Some(receiver)));
+                            .insert(dst_addr, (retiries + 1, false, Some(receiver), start));
                         all_done = false;
                     }
                 }
             }
         }
 
+        if all_done {
+            break;
+        }
+
         mac_scan_status = mac_scan_status_clone.clone();
-        for (&dst_addr, (retiries, data_recved, status)) in &mac_scan_status {
-            if *data_recved {
+        for (&dst_addr, x) in &mac_scan_status {
+            let (retiries, data_recved, status, start) = (*x).clone();
+            if data_recved {
                 continue;
             }
             match status {
@@ -450,32 +459,29 @@ pub fn mac_scan(
                     let receiver = receiver.clone();
                     let recv_result = match dst_addr {
                         IpAddr::V4(dst_ipv4) => {
-                            recv_arp_scan_response(dst_ipv4, Instant::now(), timeout, receiver)
+                            recv_arp_scan_response(dst_ipv4, start, timeout, receiver)
                         }
                         IpAddr::V6(dst_ipv6) => {
-                            recv_ndp_ns_scan_response(dst_ipv6, Instant::now(), timeout, receiver)
+                            recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)
                         }
                     };
                     match recv_result {
                         Ok((mac, rtt)) => {
-                            mac_scan_status_clone.insert(dst_addr, (*retiries, true, None));
+                            mac_scan_status_clone.insert(dst_addr, (retiries, true, None, start));
                             mac_scan_rets.insert(dst_addr, (mac, rtt));
                         }
                         Err(e) => {
                             error!("recv scan response error: {}", e);
-                            mac_scan_status_clone.insert(dst_addr, (*retiries, false, None));
+                            mac_scan_status_clone.insert(dst_addr, (retiries, false, None, start));
                         }
                     }
                 }
                 None => {
-                    mac_scan_status_clone.insert(dst_addr, (*retiries, false, None));
+                    mac_scan_status_clone.insert(dst_addr, (retiries, false, None, start));
                 }
             }
         }
         mac_scan_status = mac_scan_status_clone;
-        if all_done {
-            break;
-        }
     }
 
     let mut mac_scan_reports = Vec::new();

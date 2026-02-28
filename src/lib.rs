@@ -108,7 +108,7 @@ pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
 /// In order to reduce multiple neighbor detection in a multi-threaded environment.
 static NEIGHBOR_DETECT_MUTEX: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
+    LazyLock::new(|| Arc::from(Mutex::new(HashMap::new())));
 
 /// Cache the network information of the program runtime process to avoid repeated calculations.
 static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
@@ -127,7 +127,7 @@ static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
             }
         }
     };
-    Arc::new(Mutex::new(nc))
+    Arc::from(Mutex::new(nc))
 });
 
 const NETWORK_CACHE_PATH: &str = ".plnetcache";
@@ -540,19 +540,19 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 
 #[derive(Debug, Clone)]
 struct SenderMsg {
-    dst_mac: MacAddr,            // destination mac address
-    src_mac: MacAddr,            // source mac address
-    ethernet_payload: Arc<[u8]>, // the layer3 packet to send
-    ethernet_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
-    retransmit: usize, // how many times to retransmit the packet, 0 means no retransmission
+    dst_mac: MacAddr,         // destination mac address
+    src_mac: MacAddr,         // source mac address
+    ether_payload: Arc<[u8]>, // the layer3 packet to send
+    ether_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
+    retransmit: usize,        // how many times to retransmit the packet, 0 means no retransmission
 }
 
 #[derive(Debug, Clone)]
 struct ReceiverMsg {
-    filters: Vec<PacketFilter>,            // runner receive filters to match
+    filters: Vec<Arc<PacketFilter>>, // runner receive filters to match
     sender: Sender<(Arc<[u8]>, Duration)>, // then send matched packets and rtt back to threads
-    created: Instant,                      // create time, used to drop if exceed timeout
-    elapsed: Duration,                     // elapsed time, used to drop if exceed timeout
+    created: Instant,                // create time, used to drop if exceed timeout
+    elapsed: Duration,               // elapsed time, used to drop if exceed timeout
 }
 
 impl ReceiverMsg {
@@ -594,7 +594,7 @@ static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Arc<HashMap<String, RunnerCommunic
             };
             hm.insert(iface, cc);
         }
-        Arc::new(hm)
+        Arc::from(hm)
     });
 
 #[derive(Debug, Clone)]
@@ -609,21 +609,20 @@ impl RunnerCommunicationChannel {
         &self,
         dst_mac: MacAddr,
         src_mac: MacAddr,
-        ether_payload: &[u8],
+        ether_payload: Arc<[u8]>,
         ether_type: EtherType,
-        filters: Vec<PacketFilter>,
+        filters: Vec<Arc<PacketFilter>>,
         elapsed: Duration,
         retransmit: usize,
     ) -> Receiver<(Arc<[u8]>, Duration)> {
         let (sender, receiver) = unbounded::<(Arc<[u8]>, Duration)>();
-        let ethernet_payload = Arc::from(ether_payload);
         let created = Instant::now();
 
         let smsg = SenderMsg {
             dst_mac,
             src_mac,
-            ethernet_payload,
-            ethernet_type: ether_type,
+            ether_payload,
+            ether_type,
             retransmit,
         };
         let rmsg = ReceiverMsg {
@@ -642,9 +641,9 @@ pub(crate) fn ask_runner(
     iface: String,
     dst_mac: MacAddr,
     src_mac: MacAddr,
-    ether_payload: &[u8],
+    ether_payload: Arc<[u8]>,
     ether_type: EtherType,
-    filters: Vec<PacketFilter>,
+    filters: Vec<Arc<PacketFilter>>,
     elapsed: Duration,
     retransmit: usize,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
@@ -676,16 +675,16 @@ pub(crate) fn get_response(
         let fix_timeout = timeout - now;
         match receiver.recv_timeout(fix_timeout) {
             Ok((buff, rtt)) => (buff, rtt),
-            Err(e) => {
-                let buff: Arc<[u8]> = Arc::new([]);
+            Err(_e) => {
+                let buff: Arc<[u8]> = Arc::from([]);
                 (buff, Duration::ZERO)
             }
         }
     } else {
         match receiver.recv() {
             Ok((buff, rtt)) => (buff, rtt),
-            Err(e) => {
-                let buff: Arc<[u8]> = Arc::new([]);
+            Err(_e) => {
+                let buff: Arc<[u8]> = Arc::from([]);
                 (buff, Duration::ZERO)
             }
         }
@@ -952,10 +951,10 @@ impl Pistol {
                 Ok(s) => s,
                 Err(_e) => continue,
             };
-            let payload = smsg.ethernet_payload;
+            let payload = smsg.ether_payload;
             let dst_mac = smsg.dst_mac;
             let src_mac = smsg.src_mac;
-            let ether_type = smsg.ethernet_type;
+            let ether_type = smsg.ether_type;
             let retransmit = smsg.retransmit;
 
             let payload_len = payload.len();

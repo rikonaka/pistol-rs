@@ -12,18 +12,16 @@ use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
-use tracing::error;
-use tracing::warn;
 
 use crate::IpCheckMethods;
 use crate::NetInfo;
 use crate::ask_runner;
 use crate::error::PistolError;
+use crate::get_response;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -68,11 +66,10 @@ use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
 use crate::trace::icmp_trace;
-use crate::utils::get_threads_pool;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
 
-const MAX_RETRY: usize = 5; // nmap default
+const PROBE_MAX_RETIRIES: usize = 5; // nmap default
 
 // EXAMPLE
 // SCAN(V=5.05BETA1%D=8/23%OT=22%CT=1%CU=42341%PV=N%DS=0%DC=L%G=Y%TM=4A91CB90%P=i686-pc-linux-gnu)
@@ -274,6 +271,7 @@ fn send_seq_probes(
     interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<SEQRR, PistolError> {
+    let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
@@ -287,9 +285,15 @@ fn send_seq_probes(
     let buff_4 = packet::seq_packet_4_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[3])?;
     let buff_5 = packet::seq_packet_5_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[4])?;
     let buff_6 = packet::seq_packet_6_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[5])?;
-    let buffs = vec![buff_1, buff_2, buff_3, buff_4, buff_5, buff_6];
+    let mut buff_hm = HashMap::new();
+    buff_hm.insert(1, buff_1);
+    buff_hm.insert(2, buff_2);
+    buff_hm.insert(3, buff_3);
+    buff_hm.insert(4, buff_4);
+    buff_hm.insert(5, buff_5);
+    buff_hm.insert(6, buff_6);
 
-    let mut filters = Vec::new();
+    let mut filter_hm = HashMap::new();
     for i in 1..=6 {
         let src_port = src_ports[i];
         let name = format!("os scan seq {} layer3", i);
@@ -307,124 +311,95 @@ fn send_seq_probes(
             dst_port: Some(src_port),
             flag: None,
         };
-        let filter = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-        filters.push(filter);
+        let filter = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+        filter_hm.insert(i, filter);
     }
 
     let mut send_status = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        // (0, false, None) => (retiries, has data recved?, and receiver)
-        send_status.insert(t, (0, false, None));
+        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
+        send_status.insert(t, (0, false, None, Instant::now()));
     }
 
-    loop {
-        let mut i = 1;
-        for (buff, filter) in zip(buffs, filters) {
-            let ether_type = EtherTypes::Ipv4;
-            let iface = interface.name.clone();
-            let receiver = ask_runner(
-                iface.clone(),
-                dst_mac,
-                src_mac,
-                &buff,
-                ether_type,
-                vec![filter_1.clone()],
-                timeout,
-                0,
-            )?;
-            send_status.insert(i, (0, false, Some(receiver)));
-            i += 1;
-        }
-    }
-
-    
-        for retry_time in 0..MAX_RETRY {
-            let start = Instant::now();
-            let receiver = match ask_runner(
-                iface.clone(),
-                dst_mac,
-                src_mac,
-                &buff,
-                ether_type,
-                vec![filter_1.clone()],
-                timeout,
-                0,
-            ) {
-                Ok(receiver) => {
-                    receiver
-                }
-                Err(e) => {
-                    if retry_time == MAX_RETRY - 1 {
-                        let data = (i, buff.to_vec(), Err(e));
-                        if let Err(e) = tx.send(data) {
-                            error!("send seq probe result error: {}", e);
-                        }
-                    }
-                }
-            }
-            let eth_response = match receiver.recv_timeout(timeout) {
-                Ok(b) => b,
-                Err(e) => {
-                    debug!("{} recv seq_{} probe response timeout: {}", dst_ipv4, i, e);
-                    Arc::new([])
-                }
-            };
-            let rtt = start.elapsed();
-            if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-                let eth_payload = eth_packet.payload().to_vec();
-                if eth_payload.len() > 0 {
-                    let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
-                    if let Err(e) = tx.send(data) {
-                        error!("send seq probe result error: {}", e);
-                    }
-                } else if retry_time == MAX_RETRY - 1 {
-                    let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
-                    if let Err(e) = tx.send(data) {
-                        error!("send seq probe result error: {}", e);
-                    }
-                }
-            } else {
-                if let Err(e) = tx.send((i, buff.to_vec(), Ok((Vec::new(), rtt)))) {
-                    error!("send seq probe result error: {}", e);
-                }
-            }
-        }
-        // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
-        sleep(Duration::from_millis(100));
-    }
-
+    let ether_type = EtherTypes::Ipv4;
+    let iface = interface.name.clone();
     let mut seq_hm = HashMap::new();
-    let iter = rx.into_iter().take(6);
-    for (i, request, ret) in iter {
-        let (response, _rtt) = ret?;
-        if response.len() == 0 {
-            warn!("sqx_{} response is null", i);
+    loop {
+        let mut all_done = true;
+        let mut send_status_clone = send_status.clone();
+        for (i, buff) in &buff_hm {
+            let filter = &filter_hm[i];
+            let (retiries, recved, _receiver, _start) = &send_status[&i];
+            if *retiries < PROBE_MAX_RETIRIES && !recved {
+                let start = Instant::now();
+                let receiver = ask_runner(
+                    iface.clone(),
+                    dst_mac,
+                    src_mac,
+                    buff.clone(),
+                    ether_type,
+                    vec![filter.clone()],
+                    timeout,
+                    0,
+                )?;
+                send_status_clone.insert(*i, (retiries + 1, *recved, Some(receiver), start));
+                all_done = false;
+            }
+
+            // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
+            sleep(Duration::from_millis(100));
         }
-        let rr = RequestResponse { request, response };
-        seq_hm.insert(i, rr);
+
+        if all_done {
+            break;
+        }
+
+        for (i, x) in send_status_clone.clone() {
+            let (_retiries, _recved, receiver, start) = x;
+            match receiver {
+                Some(receiver) => {
+                    let (eth_response, rtt) = get_response(receiver, start, timeout);
+                    match EthernetPacket::new(&eth_response) {
+                        Some(eth_packet) => {
+                            let eth_payload = Arc::from(eth_packet.payload());
+                            let request = buff_hm[&i].clone();
+                            let rr = RequestResponse {
+                                request,
+                                response: eth_payload,
+                                rtt,
+                            };
+                            seq_hm.insert(i, rr);
+                        }
+                        None => (),
+                    }
+                }
+                None => (),
+            }
+        }
+        send_status = send_status_clone;
     }
-    let elapsed = start.elapsed().as_secs_f64();
 
     let seq1 = seq_hm
-        .get(&0)
-        .map_or(RequestResponse::default(), |x| x.clone());
-    let seq2 = seq_hm
         .get(&1)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let seq3 = seq_hm
+    let seq2 = seq_hm
         .get(&2)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let seq4 = seq_hm
+    let seq3 = seq_hm
         .get(&3)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let seq5 = seq_hm
+    let seq4 = seq_hm
         .get(&4)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let seq6 = seq_hm
+    let seq5 = seq_hm
         .get(&5)
         .map_or(RequestResponse::default(), |x| x.clone());
+    let seq6 = seq_hm
+        .get(&6)
+        .map_or(RequestResponse::default(), |x| x.clone());
 
+    let elapsed = begin.elapsed().as_secs_f64();
     let seqrr = SEQRR {
         seq1,
         seq2,
@@ -446,15 +421,15 @@ fn send_ie_probes(
     interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<IERR, PistolError> {
-    let (tx, rx) = channel();
-
     let mut rng = rand::rng();
     let id_1 = rng.random();
     // and the ICMP request ID and sequence numbers are incremented by one from the previous query values
     let id_2 = id_1 + 1;
     let buff_1 = packet::ie_packet_1_layer3(dst_ipv4, src_ipv4, id_1)?;
     let buff_2 = packet::ie_packet_2_layer3(dst_ipv4, src_ipv4, id_2)?;
-    let buffs = vec![buff_1, buff_2];
+    let mut buff_hm = HashMap::new();
+    buff_hm.insert(1, buff_1);
+    buff_hm.insert(2, buff_2);
 
     let layer3 = Layer3Filter {
         name: String::from("os scan ie layer3"),
@@ -469,81 +444,73 @@ fn send_ie_probes(
         icmp_code: None,
         payload: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter = Arc::from(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
+    let mut send_status = HashMap::new();
+    for t in 1..=2 {
+        // 1 means buff_1, 2 means buff_2, and so on.
+        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
+        send_status.insert(t, (0, false, None, Instant::now()));
+    }
+
+    let mut ie_hm = HashMap::new();
+    let ether_type = EtherTypes::Ipv4;
     let iface = interface.name.clone();
-    for (i, buff) in buffs.into_iter().enumerate() {
-        let tx = tx.clone();
-        // For those that do not require time, process them in order.
-        // Prevent the previous request from receiving response from the later request.
-        // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-        let ether_type = EtherTypes::Ipv4;
-        for retry_time in 0..MAX_RETRY {
-            let start = Instant::now();
-            match ask_runner(
-                iface.clone(),
-                dst_mac,
-                src_mac,
-                &buff,
-                ether_type,
-                vec![filter_1.clone()],
-                timeout,
-                0,
-            ) {
-                Ok(receiver) => {
-                    let eth_response = match receiver.recv_timeout(timeout) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            debug!("{} recv ie_{} probe timeout: {}", dst_ipv4, i, e);
-                            Arc::new([])
+    loop {
+        let mut all_done = true;
+        let mut send_status_clone = send_status.clone();
+        for (i, buff) in &buff_hm {
+            let (retiries, recved, _receiver, _start) = &send_status[&i];
+            if *retiries < PROBE_MAX_RETIRIES && !recved {
+                let start = Instant::now();
+                let receiver = ask_runner(
+                    iface.clone(),
+                    dst_mac,
+                    src_mac,
+                    buff.clone(),
+                    ether_type,
+                    vec![filter.clone()],
+                    timeout,
+                    0,
+                )?;
+                send_status_clone.insert(*i, (retiries + 1, *recved, Some(receiver), start));
+                all_done = false;
+            }
+        }
+
+        if all_done {
+            break;
+        }
+
+        for (i, x) in send_status_clone.clone() {
+            let (_retiries, _recved, receiver, start) = x;
+            match receiver {
+                Some(receiver) => {
+                    let (eth_response, rtt) = get_response(receiver, start, timeout);
+                    match EthernetPacket::new(&eth_response) {
+                        Some(eth_packet) => {
+                            let eth_payload = Arc::from(eth_packet.payload());
+                            let request = buff_hm[&i].clone();
+                            let rr = RequestResponse {
+                                request,
+                                response: eth_payload,
+                                rtt,
+                            };
+                            ie_hm.insert(i, rr);
                         }
-                    };
-                    let rtt = start.elapsed();
-                    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-                        let eth_payload = eth_packet.payload().to_vec();
-                        if eth_payload.len() > 0 {
-                            let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
-                            if let Err(e) = tx.send(data) {
-                                error!("send ie probe result error: {}", e);
-                            }
-                        } else if retry_time == MAX_RETRY - 1 {
-                            let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
-                            if let Err(e) = tx.send(data) {
-                                error!("send ie probe result error: {}", e);
-                            }
-                        }
-                    } else {
-                        if let Err(e) = tx.send((i, buff.to_vec(), Ok((Vec::new(), rtt)))) {
-                            error!("send ie probe result error: {}", e);
-                        }
+                        None => (),
                     }
                 }
-                Err(e) => {
-                    if retry_time == MAX_RETRY - 1 {
-                        let data = (i, buff.to_vec(), Err(e));
-                        if let Err(e) = tx.send(data) {
-                            error!("send ie probe result error: {}", e);
-                        }
-                    }
-                }
+                None => (),
             }
         }
     }
 
-    let mut ies = HashMap::new();
-
-    let iter = rx.into_iter().take(2);
-    for (i, request, ret) in iter {
-        let (response, _rtt) = ret?;
-        let rr = RequestResponse { request, response };
-        ies.insert(i, rr);
-    }
-
-    let ie1 = ies
-        .get(&0)
-        .map_or(RequestResponse::default(), |x| x.clone());
-    let ie2 = ies
+    let ie1 = ie_hm
         .get(&1)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let ie2 = ie_hm
+        .get(&2)
         .map_or(RequestResponse::default(), |x| x.clone());
 
     let ie = IERR { ie1, ie2 };
@@ -571,42 +538,36 @@ fn send_ecn_probe(
         layer3: Some(layer3),
         src_port: Some(dst_open_port),
         dst_port: Some(src_port),
+        flag: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_1 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
 
     let iface = interface.name.clone();
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
+    let ether_type = EtherTypes::Ipv4;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    for _ in 0..MAX_RETRY {
+    for _ in 0..PROBE_MAX_RETIRIES {
         let start = Instant::now();
-        let ether_type = EtherTypes::Ipv4;
         let receiver = ask_runner(
             iface.clone(),
             dst_mac,
             src_mac,
-            &buff,
+            buff.clone(),
             ether_type,
             vec![filter_1.clone()],
             timeout,
             0,
         )?;
-        let eth_response = match receiver.recv_timeout(timeout) {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv ecn probe response timeout: {}", dst_ipv4, e);
-                Arc::new([])
-            }
-        };
-        let _rtt = start.elapsed();
-
+        let (eth_response, rtt) = get_response(receiver, start, timeout);
         if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-            let eth_payload = eth_packet.payload().to_vec();
+            let eth_payload: Arc<[u8]> = Arc::from(eth_packet.payload());
             if eth_payload.len() > 0 {
                 let rr = RequestResponse {
                     request: buff,
                     response: eth_payload,
+                    rtt,
                 };
                 let ecn = ECNRR { ecn: rr };
                 return Ok(ecn);
@@ -616,7 +577,8 @@ fn send_ecn_probe(
 
     let rr = RequestResponse {
         request: buff,
-        response: vec![],
+        response: Arc::from([]),
+        rtt: Duration::ZERO,
     };
 
     let ecn = ECNRR { ecn: rr };
@@ -633,10 +595,6 @@ fn send_tx_probes(
     interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<TXRR, PistolError> {
-    // 6 packets with 6 threads
-    let pool = get_threads_pool(6);
-    let (tx, rx) = channel();
-
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
@@ -649,56 +607,61 @@ fn send_tx_probes(
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let layer4_tcp_udp_1 = Layer4FilterTcpUdp {
-        name: String::from("os scan ecn tcp_udp 1"),
+    let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
+        name: String::from("os scan tx tcp_udp 2"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[0]),
+        flag: None,
     };
-    let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
-        name: String::from("os scan ecn tcp_udp 2"),
+    let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
+        name: String::from("os scan tx tcp_udp 3"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[1]),
+        flag: None,
     };
-    let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
-        name: String::from("os scan ecn tcp_udp 3"),
+    let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
+        name: String::from("os scan tx tcp_udp 4"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_port),
         dst_port: Some(src_ports[2]),
+        flag: None,
     };
-    let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
-        name: String::from("os scan ecn tcp_udp 4"),
+    let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
+        name: String::from("os scan tx tcp_udp 5"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[3]),
+        flag: None,
     };
-    let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
-        name: String::from("os scan ecn tcp_udp 5"),
+    let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
+        name: String::from("os scan tx tcp_udp 6"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[4]),
+        flag: None,
     };
-    let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
+    let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
         name: String::from("os scan ecn tcp_udp 6"),
         layer3: Some(layer3),
         src_port: Some(dst_closed_port),
         dst_port: Some(src_ports[5]),
+        flag: None,
     };
-    let layer_match_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_1);
-    let layer_match_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2);
-    let layer_match_3 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3);
-    let layer_match_4 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4);
-    let layer_match_5 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5);
-    let layer_match_6 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6);
-    let filters = vec![
-        layer_match_1,
-        layer_match_2,
-        layer_match_3,
-        layer_match_4,
-        layer_match_5,
-        layer_match_6,
-    ];
+    let layer_match_2 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2));
+    let layer_match_3 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3));
+    let layer_match_4 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4));
+    let layer_match_5 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5));
+    let layer_match_6 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6));
+    let layer_match_7 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_7));
+    let mut filter_hm = HashMap::new();
+    filter_hm.insert(2, layer_match_2);
+    filter_hm.insert(3, layer_match_3);
+    filter_hm.insert(4, layer_match_4);
+    filter_hm.insert(5, layer_match_5);
+    filter_hm.insert(6, layer_match_6);
+    filter_hm.insert(7, layer_match_7);
 
     // T2 sends a TCP null (no flags set) packet with the IP DF bit set and a window field of 128 to an open port.
     let buff_2 = packet::t2_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_ports[0])?;
@@ -712,93 +675,92 @@ fn send_tx_probes(
     let buff_6 = packet::t6_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_ports[4])?;
     // T7 sends a TCP packet with the FIN, PSH, and URG flags set and a window field of 65535 to a closed port. The IP DF bit is not set.
     let buff_7 = packet::t7_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_ports[5])?;
-    let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
-    // let buffs = vec![buff_5];
+    let mut buff_hm = HashMap::new();
+    buff_hm.insert(2, buff_2);
+    buff_hm.insert(3, buff_3);
+    buff_hm.insert(4, buff_4);
+    buff_hm.insert(5, buff_5);
+    buff_hm.insert(6, buff_6);
+    buff_hm.insert(7, buff_7);
 
-    for (i, buff) in buffs.into_iter().enumerate() {
-        let tx = tx.clone();
-        let filter_1 = filters[i].clone();
-        let iface = interface.name.clone();
-        let ether_type = EtherTypes::Ipv4;
-        pool.execute(move || {
-            for retry_time in 0..MAX_RETRY {
+    let mut send_status = HashMap::new();
+    for t in 2..=7 {
+        // 1 means buff_1, 2 means buff_2, and so on.
+        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
+        send_status.insert(t, (0, false, None, Instant::now()));
+    }
+
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
+    let mut tx_hm = HashMap::new();
+    loop {
+        let mut all_done = true;
+        let mut send_status_clone = send_status.clone();
+        for (i, buff) in &buff_hm {
+            let filter = filter_hm[&i].clone();
+            let (retiries, recved, _receiver, _start) = &send_status[&i];
+            if *retiries < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
-                match ask_runner(
+                let receiver = ask_runner(
                     iface.clone(),
                     dst_mac,
                     src_mac,
-                    &buff,
+                    buff.clone(),
                     ether_type,
-                    vec![filter_1.clone()],
+                    vec![filter.clone()],
                     timeout,
                     0,
-                ) {
-                    Ok(receiver) => {
-                        let eth_response = match receiver.recv_timeout(timeout) {
-                            Ok(b) => b,
-                            Err(e) => {
-                                debug!("{} recv tx_{} probe response timeout: {}", dst_ipv4, i, e);
-                                Arc::new([])
-                            }
-                        };
-                        let rtt = start.elapsed();
-                        if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-                            let eth_payload = eth_packet.payload().to_vec();
-                            if eth_payload.len() > 0 {
-                                let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
-                                if let Err(e) = tx.send(data) {
-                                    error!("send tx probe result error: {}", e);
-                                }
-                            } else if retry_time == MAX_RETRY - 1 {
-                                let data = (i, buff.to_vec(), Ok((eth_payload, rtt)));
-                                if let Err(e) = tx.send(data) {
-                                    error!("send tx probe result error: {}", e);
-                                }
-                            }
-                        } else {
-                            if let Err(e) = tx.send((i, buff.to_vec(), Ok((Vec::new(), rtt)))) {
-                                error!("send tx probe result error: {}", e);
-                            }
+                )?;
+                send_status_clone.insert(*i, (retiries + 1, *recved, Some(receiver), start));
+                all_done = false;
+            }
+        }
+
+        if all_done {
+            break;
+        }
+
+        for (i, x) in send_status_clone.clone() {
+            let (_retiries, _recved, receiver, start) = x;
+            match receiver {
+                Some(receiver) => {
+                    let (eth_response, rtt) = get_response(receiver, start, timeout);
+                    match EthernetPacket::new(&eth_response) {
+                        Some(eth_packet) => {
+                            let eth_payload: Arc<[u8]> = Arc::from(eth_packet.payload());
+                            let request = buff_hm[&i].clone();
+                            let rr = RequestResponse {
+                                request,
+                                response: eth_payload,
+                                rtt,
+                            };
+                            tx_hm.insert(i, rr);
                         }
-                    }
-                    Err(e) => {
-                        if retry_time == MAX_RETRY - 1 {
-                            let data = (i, buff.to_vec(), Err(e));
-                            if let Err(e) = tx.send(data) {
-                                error!("send tx probe result error: {}", e);
-                            }
-                        }
+                        None => (),
                     }
                 }
+                None => (),
             }
-        });
-    }
-
-    let mut tx_hm = HashMap::new();
-    let iter = rx.into_iter().take(6);
-    for (i, request, ret) in iter {
-        let (response, _rtt) = ret?;
-        let rr = RequestResponse { request, response };
-        tx_hm.insert(i, rr);
+        }
     }
 
     let t2 = tx_hm
-        .get(&0)
-        .map_or(RequestResponse::default(), |x| x.clone());
-    let t3 = tx_hm
-        .get(&1)
-        .map_or(RequestResponse::default(), |x| x.clone());
-    let t4 = tx_hm
         .get(&2)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let t5 = tx_hm
+    let t3 = tx_hm
         .get(&3)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let t6 = tx_hm
+    let t4 = tx_hm
         .get(&4)
         .map_or(RequestResponse::default(), |x| x.clone());
-    let t7 = tx_hm
+    let t5 = tx_hm
         .get(&5)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t6 = tx_hm
+        .get(&6)
+        .map_or(RequestResponse::default(), |x| x.clone());
+    let t7 = tx_hm
+        .get(&7)
         .map_or(RequestResponse::default(), |x| x.clone());
 
     let txrr = TXRR {
@@ -836,13 +798,13 @@ fn send_u1_probe(
         icmp_code: None,
         payload: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter = Arc::from(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let buff = packet::udp_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    for _ in 0..MAX_RETRY {
+    for _ in 0..PROBE_MAX_RETIRIES {
         let iface = interface.name.clone();
         let ether_type = EtherTypes::Ipv4;
         let start = Instant::now();
@@ -850,27 +812,21 @@ fn send_u1_probe(
             iface.clone(),
             dst_mac,
             src_mac,
-            &buff,
+            buff.clone(),
             ether_type,
-            vec![filter_1.clone()],
+            vec![filter.clone()],
             timeout,
             0,
         )?;
-        let eth_response = match receiver.recv_timeout(timeout) {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv u1 probe response timeout: {}", dst_ipv4, e);
-                Arc::new([])
-            }
-        };
-        let _rtt = start.elapsed();
+        let (eth_response, rtt) = get_response(receiver, start, timeout);
 
         if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-            let eth_payload = eth_packet.payload().to_vec();
+            let eth_payload: Arc<[u8]> = Arc::from(eth_packet.payload());
             if eth_payload.len() > 0 {
                 let rr = RequestResponse {
                     request: buff,
                     response: eth_payload,
+                    rtt,
                 };
 
                 let u1 = U1RR { u1: rr };
@@ -878,13 +834,14 @@ fn send_u1_probe(
             }
         }
     }
+
     let rr = RequestResponse {
         request: buff,
-        response: vec![],
+        response: Arc::from([]),
+        rtt: Duration::ZERO,
     };
-
     let u1 = U1RR { u1: rr };
-    return Ok(u1);
+    Ok(u1)
 }
 
 fn send_all_probes(

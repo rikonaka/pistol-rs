@@ -16,6 +16,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
+use std::sync::Arc;
 
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
@@ -107,16 +108,15 @@ pub fn seq_packet_1_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv4_buff =
-        [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
     // ip header
-    let mut ip_header = match MutableIpv4Packet::new(&mut ipv4_buff) {
+    let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -139,7 +139,7 @@ pub fn seq_packet_1_layer3(
     ip_header.set_checksum(c);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv4_buff[IPV4_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV4_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -173,7 +173,7 @@ pub fn seq_packet_1_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(ipv4_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_2_layer3(
@@ -181,7 +181,7 @@ pub fn seq_packet_2_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
@@ -244,7 +244,7 @@ pub fn seq_packet_2_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_3_layer3(
@@ -252,7 +252,7 @@ pub fn seq_packet_3_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -318,7 +318,7 @@ pub fn seq_packet_3_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_4_layer3(
@@ -326,7 +326,7 @@ pub fn seq_packet_4_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
@@ -388,7 +388,7 @@ pub fn seq_packet_4_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_5_layer3(
@@ -396,7 +396,7 @@ pub fn seq_packet_5_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
@@ -459,7 +459,7 @@ pub fn seq_packet_5_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_6_layer3(
@@ -467,7 +467,7 @@ pub fn seq_packet_6_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
@@ -529,14 +529,14 @@ pub fn seq_packet_6_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn ie_packet_1_layer3(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     idtf: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const ICMP_DATA_SIZE: usize = 120; // and 120 bytes of 0x00 for the data payload
 
@@ -597,14 +597,14 @@ pub fn ie_packet_1_layer3(
     };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn ie_packet_2_layer3(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     idtf: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     // 150 bytes of data is sent
     let mut rng = rand::rng();
     const ICMP_DATA_SIZE: usize = 150; // 150 bytes of data is sent
@@ -665,7 +665,7 @@ pub fn ie_packet_2_layer3(
     };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn ecn_packet_layer3(
@@ -673,7 +673,7 @@ pub fn ecn_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = WSCALE_SIZE
@@ -753,7 +753,7 @@ pub fn ecn_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t2_packet_layer3(
@@ -761,7 +761,7 @@ pub fn t2_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -825,7 +825,7 @@ pub fn t2_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t3_packet_layer3(
@@ -833,7 +833,7 @@ pub fn t3_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -897,7 +897,7 @@ pub fn t3_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t4_packet_layer3(
@@ -905,7 +905,7 @@ pub fn t4_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -969,7 +969,7 @@ pub fn t4_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t5_packet_layer3(
@@ -977,7 +977,7 @@ pub fn t5_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -1041,7 +1041,7 @@ pub fn t5_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t6_packet_layer3(
@@ -1049,7 +1049,7 @@ pub fn t6_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -1113,7 +1113,7 @@ pub fn t6_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t7_packet_layer3(
@@ -1121,7 +1121,7 @@ pub fn t7_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
@@ -1187,7 +1187,7 @@ pub fn t7_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn udp_packet_layer3(
@@ -1195,7 +1195,7 @@ pub fn udp_packet_layer3(
     dst_port: u16,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     const UDP_DATA_SIZE: usize = 300;
     let mut buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     // ip header
@@ -1238,5 +1238,5 @@ pub fn udp_packet_layer3(
     udp_header.set_payload(&udp_data);
     let checksum = udp::ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
-    Ok(buff.to_vec())
+    Ok(Arc::from(buff))
 }

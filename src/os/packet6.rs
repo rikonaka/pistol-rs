@@ -22,6 +22,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use rand::RngExt;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::sync::Arc;
 
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
@@ -114,15 +115,14 @@ pub fn seq_packet_1_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -144,7 +144,7 @@ pub fn seq_packet_1_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -178,7 +178,7 @@ pub fn seq_packet_1_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_2_layer3(
@@ -186,13 +186,13 @@ pub fn seq_packet_2_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize = MSS_SIZE + WSCALE_SIZE + 1 + SACK_PERM_SIZE + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -214,7 +214,7 @@ pub fn seq_packet_2_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -247,7 +247,7 @@ pub fn seq_packet_2_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_3_layer3(
@@ -255,14 +255,14 @@ pub fn seq_packet_3_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize =
         TIMESTAMP_SIZE + NOP_SIZE + NOP_SIZE + WSCALE_SIZE + NOP_SIZE + MSS_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -284,7 +284,7 @@ pub fn seq_packet_3_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -319,7 +319,7 @@ pub fn seq_packet_3_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_4_layer3(
@@ -327,13 +327,13 @@ pub fn seq_packet_4_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize = SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE + WSCALE_SIZE + 3;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -355,7 +355,7 @@ pub fn seq_packet_4_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -387,7 +387,7 @@ pub fn seq_packet_4_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_5_layer3(
@@ -395,13 +395,13 @@ pub fn seq_packet_5_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + WSCALE_SIZE + 1;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -423,7 +423,7 @@ pub fn seq_packet_5_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -456,7 +456,7 @@ pub fn seq_packet_5_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn seq_packet_6_layer3(
@@ -464,13 +464,13 @@ pub fn seq_packet_6_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_OPTIONS_SIZE: usize = MSS_SIZE + 1 + SACK_PERM_SIZE + 3 + TIMESTAMP_SIZE;
     const TCP_DATA_SIZE: usize = 0;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -492,7 +492,7 @@ pub fn seq_packet_6_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -524,20 +524,23 @@ pub fn seq_packet_6_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
-pub fn ie_packet_1_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ie_packet_1_layer3(
+    dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 120;
     const HOPBYHOP_OPTION_SIZE: usize = 8;
 
     // ipv6 header
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE
+    let mut buff = [0u8; IPV6_HEADER_SIZE
         + HOPBYHOP_OPTION_SIZE
         + ICMPV6_ER_HEADER_SIZE
         + ICMPV6_PROBE_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -561,7 +564,7 @@ pub fn ie_packet_1_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     ipv6_header.set_destination(dst_ipv6);
 
     // there is one Hop-By-Hop extension header containing only padding
-    let mut hop_option = match MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut hop_option = match MutableHopByHopPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -575,16 +578,16 @@ pub fn ie_packet_1_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     hop_option.set_options(&options);
 
     // icmp header
-    let mut icmpv6_header = match MutableEchoRequestPacket::new(
-        &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..],
-    ) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
-    };
+    let mut icmpv6_header =
+        match MutableEchoRequestPacket::new(&mut buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
+        {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    location: format!("{}", Location::caller()),
+                });
+            }
+        };
     // The type is 128 (Echo Request) and the code is 9, though it should be 0.
     icmpv6_header.set_icmpv6_type(Icmpv6Type(128));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(9));
@@ -596,8 +599,7 @@ pub fn ie_packet_1_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     icmpv6_header.set_payload(&icmp_data);
 
     let mut icmpv6_header =
-        match MutableIcmpv6Packet::new(&mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
-        {
+        match MutableIcmpv6Packet::new(&mut buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..]) {
             Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
@@ -607,10 +609,13 @@ pub fn ie_packet_1_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
         };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
-pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ie_packet_2_layer3(
+    dst_ipv6: Ipv6Addr,
+    src_ipv6: Ipv6Addr,
+) -> Result<Arc<[u8]>, PistolError> {
     // 150 bytes of data is sent
     let mut rng = rand::rng();
     const ICMPV6_PROBE_DATA_SIZE: usize = 0;
@@ -619,7 +624,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     const ROUTING_OPTION_SIZE: usize = 8;
 
     // ipv6 header
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE
+    let mut buff = [0u8; IPV6_HEADER_SIZE
         + HOPBYHOP_OPTION_SIZE
         + DESTINATION_OPTION_SIZE
         + ROUTING_OPTION_SIZE
@@ -627,7 +632,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
         + ICMPV6_ER_HEADER_SIZE
         + ICMPV6_PROBE_DATA_SIZE];
 
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -663,7 +668,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     // 4) Hop-By-Hop
 
     // Hop-By-Hop
-    let mut hop_option = match MutableHopByHopPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut hop_option = match MutableHopByHopPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -678,16 +683,16 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     hop_option.set_options(&padn);
 
     // Destination Options
-    let mut dest_option = match MutableDestinationPacket::new(
-        &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..],
-    ) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
-            });
-        }
-    };
+    let mut dest_option =
+        match MutableDestinationPacket::new(&mut buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE)..])
+        {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    location: format!("{}", Location::caller()),
+                });
+            }
+        };
     // Routing
     dest_option.set_next_header(IpNextHeaderProtocol(43));
     dest_option.set_hdr_ext_len(0);
@@ -695,7 +700,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
 
     // Routing
     let mut routing_option = match MutableRoutingPacket::new(
-        &mut ipv6_buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE + DESTINATION_OPTION_SIZE)..],
+        &mut buff[(IPV6_HEADER_SIZE + HOPBYHOP_OPTION_SIZE + DESTINATION_OPTION_SIZE)..],
     ) {
         Some(p) => p,
         None => {
@@ -712,7 +717,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
 
     // Hop-By-Hop
     let mut hop_option = match MutableHopByHopPacket::new(
-        &mut ipv6_buff[(IPV6_HEADER_SIZE
+        &mut buff[(IPV6_HEADER_SIZE
             + HOPBYHOP_OPTION_SIZE
             + DESTINATION_OPTION_SIZE
             + ROUTING_OPTION_SIZE)..],
@@ -731,7 +736,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
 
     // ICMPV6
     let mut icmpv6_header = match MutableEchoRequestPacket::new(
-        &mut ipv6_buff[(IPV6_HEADER_SIZE
+        &mut buff[(IPV6_HEADER_SIZE
             + HOPBYHOP_OPTION_SIZE
             + DESTINATION_OPTION_SIZE
             + ROUTING_OPTION_SIZE
@@ -752,7 +757,7 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     icmpv6_header.set_sequence_number(1);
 
     let mut icmpv6_header = match MutableIcmpv6Packet::new(
-        &mut ipv6_buff[(IPV6_HEADER_SIZE
+        &mut buff[(IPV6_HEADER_SIZE
             + HOPBYHOP_OPTION_SIZE
             + DESTINATION_OPTION_SIZE
             + ROUTING_OPTION_SIZE
@@ -767,16 +772,16 @@ pub fn ie_packet_2_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<
     };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
-pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8>, PistolError> {
+pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
     // ipv6 header
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE];
+    let mut buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NI_HEADER_SIZE + ICMPV6_DATA_SIZE];
 
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -831,8 +836,7 @@ pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8
      */
 
     // icmp header
-    let mut icmpv6_header = match MutableEchoRequestPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..])
-    {
+    let mut icmpv6_header = match MutableEchoRequestPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -860,7 +864,7 @@ pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8
     // The nonce is set to the fixed string "\x01\x02\x03\x04\x05\x06\x07\x0a".
     icmpv6_header.set_payload(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0a]);
 
-    let mut icmp_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut icmp_header = match MutableIcmpv6Packet::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -870,20 +874,20 @@ pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Vec<u8
     };
     let checksum = icmpv6::checksum(&icmp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn ns_packet_layer3(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     src_mac: MacAddr,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     // This probe is only sent to hosts on the same subnet.
     const ICMPV6_DATA_SIZE: usize = 0;
 
     // ipv6
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE + ICMPV6_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE + ICMPV6_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -906,15 +910,14 @@ pub fn ns_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // icmpv6
-    let mut icmpv6_header =
-        match MutableNeighborSolicitPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
-            Some(p) => p,
-            None => {
-                return Err(PistolError::BuildPacketError {
-                    location: format!("{}", Location::caller()),
-                });
-            }
-        };
+    let mut icmpv6_header = match MutableNeighborSolicitPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
+        Some(p) => p,
+        None => {
+            return Err(PistolError::BuildPacketError {
+                location: format!("{}", Location::caller()),
+            });
+        }
+    };
     // Neighbor Solicitation
     icmpv6_header.set_icmpv6_type(Icmpv6Type(135));
     icmpv6_header.set_icmpv6_code(Icmpv6Code(0));
@@ -927,7 +930,7 @@ pub fn ns_packet_layer3(
     };
     icmpv6_header.set_options(&vec![ndp_option]);
 
-    let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut icmpv6_header = match MutableIcmpv6Packet::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -937,7 +940,7 @@ pub fn ns_packet_layer3(
     };
     let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
     icmpv6_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn udp_packet_layer3(
@@ -945,12 +948,12 @@ pub fn udp_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const UDP_DATA_SIZE: usize = 300;
 
-    let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -972,7 +975,7 @@ pub fn udp_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // udp header
-    let mut udp_header = match MutableUdpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut udp_header = match MutableUdpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -989,7 +992,7 @@ pub fn udp_packet_layer3(
     udp_header.set_payload(&udp_data);
     let checksum = udp::ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn tecn_packet_layer3(
@@ -997,7 +1000,7 @@ pub fn tecn_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize = WSCALE_SIZE
@@ -1012,9 +1015,8 @@ pub fn tecn_packet_layer3(
         + NOP_SIZE
         + 1;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1036,7 +1038,7 @@ pub fn tecn_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1075,7 +1077,7 @@ pub fn tecn_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t2_packet_layer3(
@@ -1083,15 +1085,14 @@ pub fn t2_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1113,7 +1114,7 @@ pub fn t2_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1145,7 +1146,7 @@ pub fn t2_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t3_packet_layer3(
@@ -1153,15 +1154,14 @@ pub fn t3_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1183,7 +1183,7 @@ pub fn t3_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1215,7 +1215,7 @@ pub fn t3_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t4_packet_layer3(
@@ -1223,15 +1223,14 @@ pub fn t4_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1253,7 +1252,7 @@ pub fn t4_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1285,7 +1284,7 @@ pub fn t4_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t5_packet_layer3(
@@ -1293,15 +1292,14 @@ pub fn t5_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1323,7 +1321,7 @@ pub fn t5_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1355,7 +1353,7 @@ pub fn t5_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t6_packet_layer3(
@@ -1363,15 +1361,14 @@ pub fn t6_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1393,7 +1390,7 @@ pub fn t6_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1425,7 +1422,7 @@ pub fn t6_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
 
 pub fn t7_packet_layer3(
@@ -1433,15 +1430,14 @@ pub fn t7_packet_layer3(
     dst_port: u16,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-) -> Result<Vec<u8>, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const TCP_DATA_SIZE: usize = 0;
     const TCP_OPTIONS_SIZE: usize =
         WSCALE_SIZE + NOP_SIZE + MSS_SIZE + TIMESTAMP_SIZE + SACK_PERM_SIZE;
 
-    let mut ipv6_buff =
-        [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
-    let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
+    let mut buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
+    let mut ipv6_header = match MutableIpv6Packet::new(&mut buff) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1463,7 +1459,7 @@ pub fn t7_packet_layer3(
     ipv6_header.set_destination(dst_ipv6);
 
     // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ipv6_buff[IPV6_HEADER_SIZE..]) {
+    let mut tcp_header = match MutableTcpPacket::new(&mut buff[IPV6_HEADER_SIZE..]) {
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
@@ -1497,5 +1493,5 @@ pub fn t7_packet_layer3(
 
     let checksum = tcp::ipv6_checksum(&tcp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     tcp_header.set_checksum(checksum);
-    Ok(ipv6_buff.to_vec())
+    Ok(Arc::from(buff))
 }
