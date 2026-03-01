@@ -173,7 +173,7 @@ pub fn seq_packet_1_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn seq_packet_2_layer3(
@@ -244,7 +244,7 @@ pub fn seq_packet_2_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn seq_packet_3_layer3(
@@ -318,7 +318,7 @@ pub fn seq_packet_3_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn seq_packet_4_layer3(
@@ -388,7 +388,7 @@ pub fn seq_packet_4_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn seq_packet_5_layer3(
@@ -459,7 +459,7 @@ pub fn seq_packet_5_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn seq_packet_6_layer3(
@@ -529,7 +529,7 @@ pub fn seq_packet_6_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn ie_packet_1_layer3(
@@ -597,7 +597,7 @@ pub fn ie_packet_1_layer3(
     };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn ie_packet_2_layer3(
@@ -665,7 +665,7 @@ pub fn ie_packet_2_layer3(
     };
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn ecn_packet_layer3(
@@ -753,7 +753,7 @@ pub fn ecn_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn t2_packet_layer3(
@@ -825,7 +825,7 @@ pub fn t2_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn t3_packet_layer3(
@@ -897,7 +897,7 @@ pub fn t3_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn t4_packet_layer3(
@@ -969,7 +969,7 @@ pub fn t4_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn t5_packet_layer3(
@@ -1041,7 +1041,7 @@ pub fn t5_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn t6_packet_layer3(
@@ -1113,7 +1113,7 @@ pub fn t6_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn t7_packet_layer3(
@@ -1187,7 +1187,7 @@ pub fn t7_packet_layer3(
 
     let checksum = tcp::ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }
 
 pub fn udp_packet_layer3(
@@ -1238,5 +1238,5 @@ pub fn udp_packet_layer3(
     udp_header.set_payload(&udp_data);
     let checksum = udp::ipv4_checksum(&udp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     udp_header.set_checksum(checksum);
-    Ok(Arc::from(buff))
+    Ok(Arc::new(buff))
 }

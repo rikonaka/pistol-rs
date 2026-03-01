@@ -14,6 +14,7 @@ use pnet::util::MacAddr;
 use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ask_runner;
@@ -95,15 +96,17 @@ pub fn send_icmp_flood_packet(
     let ether_type = EtherTypes::Ipv4;
     let iface = interface.name.clone();
     // ignore receiver, because we don't care about the response in flood attack
+    let ip_buff_len = ip_buff.len();
+    let ip_buff = Arc::new(ip_buff);
     let _receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         Vec::new(),
         timeout,
         retransmit,
     )?;
-    Ok(ip_buff.len() * retransmit)
+    Ok(ip_buff_len * retransmit)
 }

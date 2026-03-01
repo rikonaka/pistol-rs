@@ -311,7 +311,7 @@ fn send_seq_probes(
             dst_port: Some(src_port),
             flag: None,
         };
-        let filter = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+        let filter = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
         filter_hm.insert(i, filter);
     }
 
@@ -444,7 +444,7 @@ fn send_ie_probes(
         icmp_code: None,
         payload: None,
     };
-    let filter = Arc::from(PacketFilter::Layer4FilterIcmp(layer4_icmp));
+    let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let mut send_status = HashMap::new();
     for t in 1..=2 {
@@ -540,7 +540,7 @@ fn send_ecn_probe(
         dst_port: Some(src_port),
         flag: None,
     };
-    let filter_1 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
 
     let iface = interface.name.clone();
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_port, src_ipv4, src_port)?;
@@ -577,7 +577,7 @@ fn send_ecn_probe(
 
     let rr = RequestResponse {
         request: buff,
-        response: Arc::from([]),
+        response: Arc::new([]),
         rtt: Duration::ZERO,
     };
 
@@ -649,12 +649,12 @@ fn send_tx_probes(
         dst_port: Some(src_ports[5]),
         flag: None,
     };
-    let layer_match_2 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2));
-    let layer_match_3 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3));
-    let layer_match_4 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4));
-    let layer_match_5 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5));
-    let layer_match_6 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6));
-    let layer_match_7 = Arc::from(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_7));
+    let layer_match_2 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2));
+    let layer_match_3 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3));
+    let layer_match_4 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4));
+    let layer_match_5 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5));
+    let layer_match_6 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6));
+    let layer_match_7 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_7));
     let mut filter_hm = HashMap::new();
     filter_hm.insert(2, layer_match_2);
     filter_hm.insert(3, layer_match_3);
@@ -798,15 +798,15 @@ fn send_u1_probe(
         icmp_code: None,
         payload: None,
     };
-    let filter = Arc::from(PacketFilter::Layer4FilterIcmp(layer4_icmp));
+    let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let buff = packet::udp_packet_layer3(dst_ipv4, dst_closed_port, src_ipv4, src_port)?;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
+    let iface = interface.name.clone();
+    let ether_type = EtherTypes::Ipv4;
     for _ in 0..PROBE_MAX_RETIRIES {
-        let iface = interface.name.clone();
-        let ether_type = EtherTypes::Ipv4;
         let start = Instant::now();
         let receiver = ask_runner(
             iface.clone(),
@@ -837,7 +837,7 @@ fn send_u1_probe(
 
     let rr = RequestResponse {
         request: buff,
-        response: Arc::from([]),
+        response: Arc::new([]),
         rtt: Duration::ZERO,
     };
     let u1 = U1RR { u1: rr };

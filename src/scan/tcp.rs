@@ -143,16 +143,17 @@ pub(crate) fn send_syn_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -297,16 +298,17 @@ pub(crate) fn send_fin_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -452,16 +454,17 @@ pub(crate) fn send_ack_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
+    let ip_buff = Arc::new(ip_buff);
     let ether_type = EtherTypes::Ipv4;
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -603,16 +606,17 @@ pub(crate) fn send_null_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -755,16 +759,17 @@ pub(crate) fn send_xmas_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1178,7 +1183,7 @@ fn forge_syn_packet(
     let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
     tcp_header.set_checksum(checksum);
 
-    Ok(Arc::from(ip_buff))
+    Ok(Arc::new(ip_buff))
 }
 
 /// Step 1: probe the zombie's ip id.

@@ -113,17 +113,18 @@ pub(crate) fn send_icmpv6_ping_packet(
         icmpv6_code: None,
         payload: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
+    let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ipv6_buff,
+        ipv6_buff,
         ether_type,
-        vec![filter_1],
+        vec![filter],
         timeout,
         0,
     )?;

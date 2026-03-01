@@ -10,6 +10,7 @@ use pnet::packet::udp::ipv4_checksum;
 use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ask_runner;
@@ -74,15 +75,17 @@ pub fn send_udp_flood_packet(
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
     let iface = interface.name.clone();
+    let ip_buff = Arc::new(ip_buff);
+    let ip_buff_len = ip_buff.len();
     let _receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         Vec::new(),
         timeout,
         retransmit,
     )?;
-    Ok(ip_buff.len() * retransmit)
+    Ok(ip_buff_len * retransmit)
 }

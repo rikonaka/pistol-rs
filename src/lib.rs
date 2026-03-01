@@ -108,7 +108,7 @@ pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
 /// In order to reduce multiple neighbor detection in a multi-threaded environment.
 static NEIGHBOR_DETECT_MUTEX: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
-    LazyLock::new(|| Arc::from(Mutex::new(HashMap::new())));
+    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// Cache the network information of the program runtime process to avoid repeated calculations.
 static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
@@ -127,7 +127,7 @@ static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
             }
         }
     };
-    Arc::from(Mutex::new(nc))
+    Arc::new(Mutex::new(nc))
 });
 
 const NETWORK_CACHE_PATH: &str = ".plnetcache";
@@ -566,7 +566,7 @@ impl ReceiverMsg {
         false
     }
     fn send_packet_back(&self, packet: &[u8], rtt: Duration) {
-        let packet = Arc::from(packet);
+        let packet = Arc::new(packet);
         if let Err(e) = self.sender.send((packet, rtt)) {
             error!("failed to send matched packet: {}", e);
         }
@@ -594,7 +594,7 @@ static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Arc<HashMap<String, RunnerCommunic
             };
             hm.insert(iface, cc);
         }
-        Arc::from(hm)
+        Arc::new(hm)
     });
 
 #[derive(Debug, Clone)]
@@ -676,7 +676,7 @@ pub(crate) fn get_response(
         match receiver.recv_timeout(fix_timeout) {
             Ok((buff, rtt)) => (buff, rtt),
             Err(_e) => {
-                let buff: Arc<[u8]> = Arc::from([]);
+                let buff: Arc<[u8]> = Arc::new([]);
                 (buff, Duration::ZERO)
             }
         }
@@ -684,7 +684,7 @@ pub(crate) fn get_response(
         match receiver.recv() {
             Ok((buff, rtt)) => (buff, rtt),
             Err(_e) => {
-                let buff: Arc<[u8]> = Arc::from([]);
+                let buff: Arc<[u8]> = Arc::new([]);
                 (buff, Duration::ZERO)
             }
         }
@@ -1033,7 +1033,7 @@ impl Pistol {
                 // debug_show_packet(packet, None);
                 // #[cfg(feature = "debug")]
                 // debug_show_packet(packet, Some(EtherTypes::Arp));
-                history_packets.push(Arc::from(packet));
+                history_packets.push(Arc::new(packet));
             }
 
             if history_packets.len() > MAX_HISTORY_PACKETS {

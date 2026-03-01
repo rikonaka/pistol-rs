@@ -13,8 +13,8 @@ pub(crate) struct RequestResponse {
 impl Default for RequestResponse {
     fn default() -> Self {
         Self {
-            request: Arc::from([]),
-            response: Arc::from([]),
+            request: Arc::new([]),
+            response: Arc::new([]),
             rtt: Duration::ZERO,
         }
     }

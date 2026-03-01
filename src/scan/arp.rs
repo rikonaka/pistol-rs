@@ -83,16 +83,16 @@ pub fn send_arp_scan_packet(
         src_addr: Some(dst_ipv4.into()),
         dst_addr: Some(src_ipv4.into()),
     };
-    let filter_1 = PacketFilter::Layer3Filter(layer3);
-
+    let filter = Arc::new(PacketFilter::Layer3Filter(layer3));
+    let arp_buff = Arc::new(arp_buff);
     // send the filters to runner
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &arp_buff,
+        arp_buff,
         ether_type,
-        vec![filter_1],
+        vec![filter],
         timeout,
         0,
     )?;

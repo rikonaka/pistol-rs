@@ -118,15 +118,16 @@ pub(crate) fn send_icmp_echo_packet(
         icmp_code: None,
         payload: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1],
         timeout,
@@ -248,17 +249,18 @@ pub(crate) fn send_icmp_timestamp_packet(
         icmp_code: None,
         payload: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
-        vec![filter_1],
+        vec![filter],
         timeout,
         0,
     )?;
@@ -367,17 +369,18 @@ pub(crate) fn send_icmp_address_mask_packet(
         icmp_code: None,
         payload: None,
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
-        vec![filter_1],
+        vec![filter],
         timeout,
         0,
     )?;

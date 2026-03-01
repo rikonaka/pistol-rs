@@ -7,6 +7,7 @@ use pnet::packet::udp::MutableUdpPacket;
 use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
 use std::panic::Location;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ask_runner;
@@ -67,15 +68,17 @@ pub fn send_udp_flood_packet(
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
     let iface = interface.name.clone();
+    let ipv6_buff = Arc::new(ipv6_buff);
+    let ipv6_buff_len = ipv6_buff.len();
     let _receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ipv6_buff,
+        ipv6_buff,
         ether_type,
         Vec::new(),
         timeout,
         retransmit,
     )?;
-    Ok(ipv6_buff.len() * retransmit)
+    Ok(ipv6_buff_len * retransmit)
 }
