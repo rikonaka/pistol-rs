@@ -122,7 +122,7 @@ pub(crate) fn send_icmp_trace_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     // icmp reply
     let layer3 = Layer3Filter {
@@ -138,15 +138,16 @@ pub(crate) fn send_icmp_trace_packet(
         icmp_code: None,
         payload: None,
     };
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,

@@ -56,8 +56,8 @@ pub enum PistolError {
         zombie_ipv4: Ipv4Addr,
         zombie_port: u16,
     },
-    #[error("idle scan has no params: {params}")]
-    IdleScanNoParamsError { params: String },
+    #[error("idle scan need params: {params}")]
+    IdleScanNeedParamsError { params: String },
     #[error("idle scan not support ipv6")]
     IdleScanNotSupportIpVersion,
     #[error("serde json error")]

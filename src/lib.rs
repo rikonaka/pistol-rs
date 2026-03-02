@@ -566,7 +566,7 @@ impl ReceiverMsg {
         false
     }
     fn send_packet_back(&self, packet: &[u8], rtt: Duration) {
-        let packet = Arc::new(packet);
+        let packet = Arc::from(packet);
         if let Err(e) = self.sender.send((packet, rtt)) {
             error!("failed to send matched packet: {}", e);
         }
@@ -691,7 +691,7 @@ pub(crate) fn get_response(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct NetInfo {
     pub(crate) dst_mac: MacAddr,
     pub(crate) src_mac: MacAddr,
@@ -1033,7 +1033,7 @@ impl Pistol {
                 // debug_show_packet(packet, None);
                 // #[cfg(feature = "debug")]
                 // debug_show_packet(packet, Some(EtherTypes::Arp));
-                history_packets.push(Arc::new(packet));
+                history_packets.push(Arc::from(packet));
             }
 
             if history_packets.len() > MAX_HISTORY_PACKETS {
@@ -1775,8 +1775,7 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            ping::icmp_address_mask_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_address_mask_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1818,8 +1817,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            ping::icmp_echo_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_echo_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1863,8 +1861,7 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            ping::icmp_timestamp_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_timestamp_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1927,7 +1924,7 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::icmpv6_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmpv6_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1943,7 +1940,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_ack_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1977,7 +1974,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_syn_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2011,7 +2008,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::udp_ping(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = ping::udp_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2417,12 +2414,12 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
 
 #[cfg(feature = "os")]
 trait Ipv6CheckMethods {
-    fn is_global_x(&self) -> bool;
+    fn is_global_ex(&self) -> bool;
 }
 
 #[cfg(feature = "os")]
 impl Ipv6CheckMethods for Ipv6Addr {
-    fn is_global_x(&self) -> bool {
+    fn is_global_ex(&self) -> bool {
         let ip = self;
         let segments = ip.segments();
 
@@ -2495,12 +2492,12 @@ impl Ipv6CheckMethods for Ipv6Addr {
 
 #[cfg(feature = "os")]
 trait Ipv4CheckMethods {
-    fn is_global_x(&self) -> bool;
+    fn is_global_ex(&self) -> bool;
 }
 
 #[cfg(feature = "os")]
 impl Ipv4CheckMethods for Ipv4Addr {
-    fn is_global_x(&self) -> bool {
+    fn is_global_ex(&self) -> bool {
         let ip = self;
         let octets = ip.octets();
 
@@ -2574,8 +2571,8 @@ trait IpCheckMethods {
 impl IpCheckMethods for IpAddr {
     fn is_global_x(&self) -> bool {
         match self {
-            IpAddr::V4(ipv4) => ipv4.is_global_x(),
-            IpAddr::V6(ipv6) => ipv6.is_global_x(),
+            IpAddr::V4(ipv4) => ipv4.is_global_ex(),
+            IpAddr::V6(ipv6) => ipv6.is_global_ex(),
         }
     }
 }

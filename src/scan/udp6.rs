@@ -113,16 +113,17 @@ pub(crate) fn send_udp_scan_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
+    let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ipv6_buff,
+        ipv6_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,

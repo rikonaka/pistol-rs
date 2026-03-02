@@ -108,7 +108,7 @@ pub(crate) fn send_udp_trace_packet(
         icmpv6_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
     // finally, the UDP packet arrives at the target machine.
     let layer3 = Layer3Filter {
@@ -124,7 +124,7 @@ pub(crate) fn send_udp_trace_packet(
         icmpv6_code: Some(Icmpv6Code(4)), // port unreachable
         payload: None,
     };
-    let filter_2 = PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6);
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
     // there is a small chance that the target's UDP port will be open.
     let layer3 = Layer3Filter {
@@ -140,15 +140,16 @@ pub(crate) fn send_udp_trace_packet(
         dst_port: Some(src_port),
         flag: None,
     };
-    let filter_3 = PacketFilter::Layer4FilterTcpUdp(layer4);
+    let filter_3 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
+    let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ipv6_buff,
+        ipv6_buff,
         ether_type,
         vec![filter_1, filter_2, filter_3],
         timeout,

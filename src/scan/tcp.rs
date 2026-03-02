@@ -911,16 +911,17 @@ pub(crate) fn send_window_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1067,16 +1068,17 @@ pub(crate) fn send_maimon_scan_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1233,8 +1235,8 @@ pub(crate) fn send_idle_scan_packet_1(
         payload: Some(payload),
     };
 
-    let filter_zombie_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_zombie);
-    let filter_zombie_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp_zombie);
+    let filter_zombie_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_zombie));
+    let filter_zombie_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp_zombie));
 
     let ip_buff_1 = forge_syn_packet(zombie_ipv4, zombie_port, src_ipv4, src_port)?;
 
@@ -1244,7 +1246,7 @@ pub(crate) fn send_idle_scan_packet_1(
         iface,
         zombie_mac,
         src_mac,
-        &ip_buff_1,
+        ip_buff_1,
         ether_type,
         vec![filter_zombie_1, filter_zombie_2],
         timeout,
@@ -1276,7 +1278,7 @@ pub(crate) fn send_idle_scan_packet_2(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff_2,
+        ip_buff_2,
         ether_type,
         Vec::new(),
         timeout,
@@ -1333,8 +1335,8 @@ pub(crate) fn send_idle_scan_packet_3(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let ip_buff_3 = forge_syn_packet(zombie_ipv4, zombie_port, src_ipv4, src_port)?;
 
@@ -1344,7 +1346,7 @@ pub(crate) fn send_idle_scan_packet_3(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff_3,
+        ip_buff_3,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1558,16 +1560,17 @@ pub(crate) fn send_connect_scan_packet_1(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1585,8 +1588,8 @@ pub(crate) fn send_connect_scan_packet_2(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    last_server_sequence: u32,
-    last_server_acknowledgement: u32,
+    last_server_seq: u32,
+    last_server_ack: u32,
     interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
@@ -1625,8 +1628,8 @@ pub(crate) fn send_connect_scan_packet_2(
     };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(last_server_acknowledgement);
-    tcp_header.set_acknowledgement(last_server_sequence + 1);
+    tcp_header.set_sequence(last_server_ack);
+    tcp_header.set_acknowledgement(last_server_seq + 1);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -1666,16 +1669,17 @@ pub(crate) fn send_connect_scan_packet_2(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1693,8 +1697,8 @@ pub(crate) fn send_connect_scan_packet_3(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    last_client_sequence: u32,
-    last_client_acknowledgement: u32,
+    last_client_seq: u32,
+    last_client_ack: u32,
     interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
@@ -1733,8 +1737,8 @@ pub(crate) fn send_connect_scan_packet_3(
     };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(last_client_sequence);
-    tcp_header.set_acknowledgement(last_client_acknowledgement);
+    tcp_header.set_sequence(last_client_seq);
+    tcp_header.set_acknowledgement(last_client_ack);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::FIN | TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -1774,16 +1778,17 @@ pub(crate) fn send_connect_scan_packet_3(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1802,8 +1807,8 @@ pub(crate) fn send_connect_scan_packet_4(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    last_server_sequence: u32,
-    last_server_acknowledgement: u32,
+    last_server_seq: u32,
+    last_server_ack: u32,
     interface: &NetworkInterface,
     timeout: Duration,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
@@ -1842,8 +1847,8 @@ pub(crate) fn send_connect_scan_packet_4(
     };
     tcp_header.set_source(src_port);
     tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(last_server_acknowledgement);
-    tcp_header.set_acknowledgement(last_server_sequence + 1);
+    tcp_header.set_sequence(last_server_ack);
+    tcp_header.set_acknowledgement(last_server_seq + 1);
     tcp_header.set_reserved(0);
     tcp_header.set_flags(TcpFlags::ACK);
     tcp_header.set_urgent_ptr(0);
@@ -1883,16 +1888,17 @@ pub(crate) fn send_connect_scan_packet_4(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
-    let filter_2 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,
@@ -1902,7 +1908,7 @@ pub(crate) fn send_connect_scan_packet_4(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TcpConnStatus {
+pub(crate) enum ConnStatus {
     Next,
     Stop,
     Retry,
@@ -1917,7 +1923,7 @@ pub(crate) fn recv_connect_scan_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(TcpConnStatus, u32, u32, Duration), PistolError> {
+) -> Result<(ConnStatus, u32, u32, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
@@ -1936,11 +1942,11 @@ pub(crate) fn recv_connect_scan_packet(
                         let tcp_flags = tcp_packet.get_flags();
                         if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                             // tcp rst response
-                            return Ok((TcpConnStatus::Stop, 0, 0, rtt));
+                            return Ok((ConnStatus::Stop, 0, 0, rtt));
                         } else {
                             let seq = tcp_packet.get_sequence();
                             let ack = tcp_packet.get_acknowledgement();
-                            return Ok((TcpConnStatus::Next, seq, ack, rtt));
+                            return Ok((ConnStatus::Next, seq, ack, rtt));
                         }
                     }
                 }
@@ -1951,7 +1957,7 @@ pub(crate) fn recv_connect_scan_packet(
                         if icmp_type == IcmpTypes::DestinationUnreachable {
                             if codes.contains(&icmp_code) {
                                 // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((TcpConnStatus::Stop, 0, 0, rtt));
+                                return Ok((ConnStatus::Stop, 0, 0, rtt));
                             }
                         }
                     }
@@ -1961,7 +1967,7 @@ pub(crate) fn recv_connect_scan_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((TcpConnStatus::Retry, 0, 0, rtt))
+    Ok((ConnStatus::Retry, 0, 0, rtt))
 }
 
 /// For both IPv4 and IPv6 target.

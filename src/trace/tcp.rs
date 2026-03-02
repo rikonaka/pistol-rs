@@ -133,7 +133,7 @@ pub(crate) fn send_syn_trace_packet(
         icmp_code: None,
         payload: Some(payload),
     };
-    let filter_1 = PacketFilter::Layer4FilterIcmp(layer4_icmp);
+    let filter_1 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
     // tcp syn, ack or rst packet
     let layer3 = Layer3Filter {
@@ -149,15 +149,16 @@ pub(crate) fn send_syn_trace_packet(
         dst_port: Some(src_port),
         flag: None,
     };
-    let filter_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+    let filter_2 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
 
     let iface = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
+    let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
         iface,
         dst_mac,
         src_mac,
-        &ip_buff,
+        ip_buff,
         ether_type,
         vec![filter_1, filter_2],
         timeout,

@@ -580,20 +580,20 @@ The `threads` parameter here is to control the total number of threads, and the 
 The relationship between the three variables in my local test environment.
 
 | threads | retransmit_count | repeat_count | sending speed |
-| :---------- | :--------------- | :----------- | :------------ |
-| 10          | 1                | 10           | 1.923MB/s     |
-| 10          | 10               | 1            | 13.609MB/s    |
-| 30          | 1                | 10           | 1.908MB/s     |
-| 30          | 10               | 1            | 16.725MB/s    |
-| 60          | 60               | 1            | 71.631MB/s    |
-| 60          | 1                | 60           | 1.952MB/s     |
-| 120         | 60               | 1            | 127.775MB/s   |
-| 120         | 120              | 1            | 196.072MB/s   |
-| 240         | 120              | 1            | 0.252GB/s     |
-| 240         | 60               | 4            | 0.116GB/s     |
-| 240         | 240              | 4            | 0.605GB/s     |
-| 240         | 240              | 1            | 0.551GB/s     |
-| 240         | 480              | 4            | 0.636GB/s     |
+| :------ | :--------------- | :----------- | :------------ |
+| 10      | 1                | 10           | 1.923MB/s     |
+| 10      | 10               | 1            | 13.609MB/s    |
+| 30      | 1                | 10           | 1.908MB/s     |
+| 30      | 10               | 1            | 16.725MB/s    |
+| 60      | 60               | 1            | 71.631MB/s    |
+| 60      | 1                | 60           | 1.952MB/s     |
+| 120     | 60               | 1            | 127.775MB/s   |
+| 120     | 120              | 1            | 196.072MB/s   |
+| 240     | 120              | 1            | 0.252GB/s     |
+| 240     | 60               | 4            | 0.116GB/s     |
+| 240     | 240              | 4            | 0.605GB/s     |
+| 240     | 240              | 1            | 0.551GB/s     |
+| 240     | 480              | 4            | 0.636GB/s     |
 
 The above conclusions were drawn on my local VMware virtualized network card. The performance of the attack in a real attack environment depends on factors such as your network bandwidth and network card performance.
 

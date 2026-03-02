@@ -629,8 +629,7 @@ fn send_neighbor_detect_packet(
                     let receiver = send_arp_scan_packet(
                         dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout,
                     )?;
-                    let mac = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
-                    let rtt = start.elapsed();
+                    let (mac, rtt) = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
                     match mac {
                         Some(dst_mac) => {
                             neigh_cache_update(dst_ipv4.into(), dst_mac, Some(rtt))?;
@@ -648,18 +647,17 @@ fn send_neighbor_detect_packet(
                     let dst_ipv6 = dst_ipv6_ext.link_multicast();
                     let dst_mac = multicast_mac(dst_ipv6);
                     let start = Instant::now();
-                    let mac = if is_route {
+                    let (mac, rtt) = if is_route {
                         let receiver = send_ndp_ra_scan_packet(src_ipv6, timeout)?;
-                        let mac = recv_ndp_rs_scan_response(dst_ipv6, start, timeout, receiver)?;
-                        mac
+                        let ret = recv_ndp_rs_scan_response(dst_ipv6, start, timeout, receiver)?;
+                        ret
                     } else {
                         let receiver = send_ndp_ns_scan_packet(
                             dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout,
                         )?;
-                        let mac = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
-                        mac
+                        let ret = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
+                        ret
                     };
-                    let rtt = start.elapsed();
                     match mac {
                         Some(dst_mac) => {
                             neigh_cache_update(dst_ipv6.into(), dst_mac, Some(rtt))?;

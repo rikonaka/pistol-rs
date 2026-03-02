@@ -18,6 +18,8 @@ use prettytable::Table;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::row;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use std::char::MAX;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::collections::BTreeMap;
 #[cfg(feature = "scan")]
 use std::collections::HashMap;
@@ -31,6 +33,8 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::Arc;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use std::sync::mpsc::Receiver;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::mpsc::channel;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -76,13 +80,15 @@ use crate::scan::ndp_ns::recv_ndp_ns_scan_response;
 #[cfg(feature = "scan")]
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use crate::scan::tcp::ConnStatus;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils;
 
 /// This structure is used to indicate whether the program has data received or no data received.
 /// For example, in UDP scan, if no data is received, the status returned is open_or_filtered.
 /// So when UDP scan returns to the open_or_filtered state, DataRecvStatus should be set to No.
 #[cfg(any(feature = "scan", feature = "ping"))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecvResponse {
     Yes,
     No,
@@ -412,16 +418,17 @@ pub fn mac_scan(
         // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
         mac_scan_status.insert(t.addr, (0, false, None, Instant::now()));
     }
+    let mut mac_scan_status_clone = mac_scan_status.clone();
 
     let mut mac_scan_rets = HashMap::new();
     loop {
         let mut all_done = true;
-        let mut mac_scan_status_clone = mac_scan_status.clone();
-        for (&dst_addr, (retiries, data_recved, _status, _start)) in &mac_scan_status {
+        for (dst_addr, status) in mac_scan_status {
+            let (retiries, data_recved, _receiver, _start) = status;
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
                     debug!("arp scan packets: #{}/{}", retiries + 1, max_retries);
-                    if *retiries < max_retries && !data_recved {
+                    if retiries < max_retries && !data_recved {
                         // retry to send arp scan packet and recv response
                         let start = Instant::now();
                         let receiver = arp_scan_thread(dst_ipv4, timeout)?;
@@ -432,7 +439,7 @@ pub fn mac_scan(
                 }
                 IpAddr::V6(dst_ipv6) => {
                     debug!("ndp_ns scan packets: #{}/{}", retiries + 1, max_retries);
-                    if *retiries < max_retries && !data_recved {
+                    if retiries < max_retries && !data_recved {
                         // retry to send ndp_ns scan packet and recv response
                         let start = Instant::now();
                         let receiver = ndp_ns_scan_thread(dst_ipv6, timeout)?;
@@ -449,12 +456,12 @@ pub fn mac_scan(
         }
 
         mac_scan_status = mac_scan_status_clone.clone();
-        for (&dst_addr, x) in &mac_scan_status {
-            let (retiries, data_recved, status, start) = (*x).clone();
+        for (dst_addr, status) in mac_scan_status {
+            let (retiries, data_recved, receiver, start) = status;
             if data_recved {
                 continue;
             }
-            match status {
+            match receiver {
                 Some(receiver) => {
                     let receiver = receiver.clone();
                     let recv_result = match dst_addr {
@@ -481,7 +488,7 @@ pub fn mac_scan(
                 }
             }
         }
-        mac_scan_status = mac_scan_status_clone;
+        mac_scan_status = mac_scan_status_clone.clone();
     }
 
     let mut mac_scan_reports = Vec::new();
@@ -790,94 +797,725 @@ impl PortScans {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ConnectScanSteps {
+    SendStep1,
+    RecvStep1,
+    SendStep2,
+    RecvStep2,
+    SendStep3,
+    RecvStep3,
+    SendStep4,
+    RecvStep4,
+    Done,
+}
+
+#[derive(Debug, Clone)]
+struct ConnectScanStatus {
+    retiries: usize,
+    data_recved: bool,
+    receiver: Option<Receiver<(Arc<[u8]>, Duration)>>,
+    start: Instant,
+    rtt_1: Duration,
+    rtt_2: Duration,
+    rtt_3: Duration,
+    rtt_4: Duration,
+    steps: ConnectScanSteps,
+    server_seq_1: u32,
+    server_ack_1: u32,
+    server_seq_2: u32,
+    server_ack_2: u32,
+}
+
 #[cfg(any(feature = "scan", feature = "ping"))]
-fn scan_thread(
+fn connect_scan(
+    net_infos: Vec<NetInfo>,
+    timeout: Duration,
+    max_retries: usize,
+) -> Result<PortScans, PistolError> {
+    let mut port_scans = PortScans::new(max_retries);
+    let mut connnect_scan_status = HashMap::new();
+    for ni in net_infos {
+        let status = ConnectScanStatus {
+            retiries: 0,
+            data_recved: false,
+            receiver: None,
+            start: Instant::now(),
+            rtt_1: Duration::ZERO,
+            rtt_2: Duration::ZERO,
+            rtt_3: Duration::ZERO,
+            rtt_4: Duration::ZERO,
+            steps: ConnectScanSteps::SendStep1,
+            server_seq_1: 0,
+            server_ack_1: 0,
+            server_seq_2: 0,
+            server_ack_2: 0,
+        };
+        connnect_scan_status.insert(ni, status);
+    }
+    let mut connect_scan_status_clone = connnect_scan_status.clone();
+
+    let mut port_reports = Vec::new();
+    loop {
+        let mut all_done = true;
+        for (ni, status) in connnect_scan_status {
+            if status.retiries < max_retries && !status.data_recved {
+                match ni.dst_addr {
+                    IpAddr::V4(dst_ipv4) => {
+                        let dst_mac = ni.dst_mac;
+                        let dst_port = if ni.dst_ports.len() > 0 {
+                            ni.dst_ports[0]
+                        } else {
+                            return Err(PistolError::IdleScanNeedParamsError {
+                                params: String::from("dst_ports"),
+                            });
+                        };
+                        let src_ipv4 = match ni.src_addr {
+                            IpAddr::V4(src_ipv4) => src_ipv4,
+                            _ => return Err(PistolError::CanNotFoundSrcAddress),
+                        };
+                        let src_mac = ni.src_mac;
+                        let src_port = match ni.src_port {
+                            Some(s) => s,
+                            None => utils::random_port(),
+                        };
+                        let interface = &ni.interface;
+                        match status.steps {
+                            ConnectScanSteps::SendStep1 => {
+                                if status.retiries < max_retries && !status.data_recved {
+                                    // send probe 1 packet and recv response
+                                    let start = Instant::now();
+                                    let receiver = tcp::send_connect_scan_packet_1(
+                                        dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
+                                        interface, timeout,
+                                    )?;
+                                    let new_status = ConnectScanStatus {
+                                        retiries: status.retiries + 1,
+                                        data_recved: false,
+                                        receiver: Some(receiver),
+                                        start,
+                                        rtt_1: status.rtt_1,
+                                        rtt_2: status.rtt_2,
+                                        rtt_3: status.rtt_3,
+                                        rtt_4: status.rtt_4,
+                                        steps: ConnectScanSteps::RecvStep2,
+                                        server_seq_1: status.server_seq_1,
+                                        server_ack_1: status.server_ack_1,
+                                        server_seq_2: status.server_seq_2,
+                                        server_ack_2: status.server_ack_2,
+                                    };
+                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    all_done = false;
+                                }
+                            }
+                            ConnectScanSteps::SendStep2 => {
+                                if status.retiries < max_retries && !status.data_recved {
+                                    // send probe 2 packet but do not recv any response
+                                    let last_server_seq = status.server_seq_1;
+                                    let last_server_ack = status.server_ack_1;
+                                    let start = Instant::now();
+                                    let receiver = tcp::send_connect_scan_packet_2(
+                                        dst_mac,
+                                        dst_ipv4,
+                                        dst_port,
+                                        src_mac,
+                                        src_ipv4,
+                                        src_port,
+                                        last_server_seq,
+                                        last_server_ack,
+                                        interface,
+                                        timeout,
+                                    )?;
+                                    let new_status = ConnectScanStatus {
+                                        retiries: status.retiries + 1,
+                                        data_recved: false,
+                                        receiver: Some(receiver),
+                                        start,
+                                        rtt_1: status.rtt_1,
+                                        rtt_2: status.rtt_2,
+                                        rtt_3: status.rtt_3,
+                                        rtt_4: status.rtt_4,
+                                        steps: ConnectScanSteps::RecvStep2,
+                                        server_seq_1: status.server_seq_1,
+                                        server_ack_1: status.server_ack_1,
+                                        server_seq_2: status.server_seq_2,
+                                        server_ack_2: status.server_ack_2,
+                                    };
+                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    all_done = false;
+                                }
+                            }
+                            ConnectScanSteps::SendStep3 => {
+                                if status.retiries < max_retries && !status.data_recved {
+                                    // send probe 3 packet and recv response
+                                    let start = Instant::now();
+                                    let last_client_seq = status.server_ack_1;
+                                    let last_client_ack = status.server_seq_1 + 1;
+                                    let receiver = tcp::send_connect_scan_packet_3(
+                                        dst_mac,
+                                        dst_ipv4,
+                                        dst_port,
+                                        src_mac,
+                                        src_ipv4,
+                                        src_port,
+                                        last_client_seq,
+                                        last_client_ack,
+                                        interface,
+                                        timeout,
+                                    )?;
+                                    let new_status = ConnectScanStatus {
+                                        retiries: status.retiries + 1,
+                                        data_recved: false,
+                                        receiver: Some(receiver),
+                                        start,
+                                        rtt_1: status.rtt_1,
+                                        rtt_2: status.rtt_2,
+                                        rtt_3: status.rtt_3,
+                                        rtt_4: status.rtt_4,
+                                        steps: ConnectScanSteps::RecvStep3,
+                                        server_seq_1: status.server_seq_1,
+                                        server_ack_1: status.server_ack_1,
+                                        server_seq_2: status.server_seq_2,
+                                        server_ack_2: status.server_ack_2,
+                                    };
+                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    all_done = false;
+                                }
+                            }
+                            ConnectScanSteps::SendStep4 => {
+                                if status.retiries < max_retries && !status.data_recved {
+                                    // send probe 4 packet but do not recv any response
+                                    let last_server_seq = status.server_seq_2;
+                                    let last_server_ack = status.server_ack_2;
+                                    let start = Instant::now();
+                                    let receiver = tcp::send_connect_scan_packet_4(
+                                        dst_mac,
+                                        dst_ipv4,
+                                        dst_port,
+                                        src_mac,
+                                        src_ipv4,
+                                        src_port,
+                                        last_server_seq,
+                                        last_server_ack,
+                                        interface,
+                                        timeout,
+                                    )?;
+                                    let new_status = ConnectScanStatus {
+                                        retiries: status.retiries + 1,
+                                        data_recved: false,
+                                        receiver: Some(receiver),
+                                        start,
+                                        rtt_1: status.rtt_1,
+                                        rtt_2: status.rtt_2,
+                                        rtt_3: status.rtt_3,
+                                        rtt_4: status.rtt_4,
+                                        steps: ConnectScanSteps::RecvStep4,
+                                        server_seq_1: status.server_seq_1,
+                                        server_ack_1: status.server_ack_1,
+                                        server_seq_2: status.server_seq_2,
+                                        server_ack_2: status.server_ack_2,
+                                    };
+                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    all_done = false;
+                                }
+                            }
+                            _ => (),
+                        }
+                    }
+                    IpAddr::V6(dst_ipv6) => {
+                        todo!()
+                    }
+                };
+            }
+        }
+
+        if all_done {
+            break;
+        }
+
+        connnect_scan_status = connect_scan_status_clone.clone();
+        for (ni, status) in connnect_scan_status {
+            match status.steps {
+                ConnectScanSteps::RecvStep1 => match status.receiver {
+                    Some(receiver) => {
+                        let start = status.start;
+                        let (conn_status, seq, ack, rtt) =
+                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        if conn_status == ConnStatus::Next {
+                            let new_status = ConnectScanStatus {
+                                retiries: status.retiries,
+                                data_recved: true,
+                                receiver: None,
+                                start,
+                                rtt_1: rtt,
+                                rtt_2: status.rtt_2,
+                                rtt_3: status.rtt_3,
+                                rtt_4: status.rtt_4,
+                                steps: ConnectScanSteps::SendStep2,
+                                server_seq_1: seq,
+                                server_ack_1: ack,
+                                server_seq_2: status.server_seq_2,
+                                server_ack_2: status.server_ack_2,
+                            };
+                            connect_scan_status_clone.insert(ni.clone(), new_status);
+                        }
+                    }
+                    None => (),
+                },
+                ConnectScanSteps::RecvStep2 => match status.receiver {
+                    Some(receiver) => {
+                        let start = status.start;
+                        let (conn_status, seq, ack, rtt) =
+                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        if conn_status == ConnStatus::Next {
+                            let new_status = ConnectScanStatus {
+                                retiries: status.retiries,
+                                data_recved: true,
+                                receiver: None,
+                                start,
+                                rtt_1: status.rtt_1,
+                                rtt_2: rtt,
+                                rtt_3: status.rtt_3,
+                                rtt_4: status.rtt_4,
+                                steps: ConnectScanSteps::SendStep3,
+                                server_seq_1: status.server_seq_1,
+                                server_ack_1: status.server_ack_1,
+                                server_seq_2: seq,
+                                server_ack_2: ack,
+                            };
+                            connect_scan_status_clone.insert(ni.clone(), new_status);
+                        }
+                    }
+                    None => (),
+                },
+                ConnectScanSteps::RecvStep3 => match status.receiver {
+                    Some(receiver) => {
+                        let start = status.start;
+                        let (conn_status, seq, ack, rtt) =
+                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        if conn_status == ConnStatus::Next {
+                            let new_status = ConnectScanStatus {
+                                retiries: status.retiries,
+                                data_recved: true,
+                                receiver: None,
+                                start,
+                                rtt_1: status.rtt_1,
+                                rtt_2: status.rtt_2,
+                                rtt_3: rtt,
+                                rtt_4: status.rtt_4,
+                                steps: ConnectScanSteps::SendStep3,
+                                server_seq_1: status.server_seq_1,
+                                server_ack_1: status.server_ack_1,
+                                server_seq_2: seq,
+                                server_ack_2: ack,
+                            };
+                            connect_scan_status_clone.insert(ni.clone(), new_status);
+                        }
+                    }
+                    None => (),
+                },
+                ConnectScanSteps::RecvStep4 => match status.receiver {
+                    Some(receiver) => {
+                        let start = status.start;
+                        let (conn_status, _seq, _ack, rtt) =
+                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        if conn_status == ConnStatus::Next {
+                            let new_status = ConnectScanStatus {
+                                retiries: status.retiries,
+                                data_recved: true,
+                                receiver: None,
+                                start,
+                                rtt_1: status.rtt_1,
+                                rtt_2: status.rtt_2,
+                                rtt_3: status.rtt_3,
+                                rtt_4: rtt,
+                                steps: ConnectScanSteps::Done,
+                                server_seq_1: status.server_seq_1,
+                                server_ack_1: status.server_ack_1,
+                                server_seq_2: status.server_seq_2,
+                                server_ack_2: status.server_ack_2,
+                            };
+                            connect_scan_status_clone.insert(ni.clone(), new_status);
+
+                            let dst_addr = ni.dst_addr;
+                            let dst_port = if ni.dst_ports.len() > 0 {
+                                ni.dst_ports[0]
+                            } else {
+                                return Err(PistolError::IdleScanNeedParamsError {
+                                    params: String::from("dst_ports"),
+                                });
+                            };
+                            let port_report = PortReport {
+                                addr: dst_addr,
+                                port: dst_port,
+                                status: PortStatus::Open,
+                                cost: status.rtt_1 + status.rtt_2 + status.rtt_3 + rtt,
+                                cached: ni.cached,
+                            };
+                            port_reports.push(port_report);
+                        }
+                    }
+                    None => (),
+                },
+                _ => (),
+            }
+        }
+        connnect_scan_status = connect_scan_status_clone.clone();
+    }
+    port_scans.finish(port_reports);
+    Ok(port_scans)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum IdleScanSteps {
+    SendStep1,
+    RecvStep1,
+    SendStep2,
+    RecvStep2,
+    Done,
+}
+
+#[derive(Debug, Clone)]
+struct IdleScanStatus {
+    retiries: usize,
+    data_recved: bool,
+    receiver: Option<Receiver<(Arc<[u8]>, Duration)>>,
+    start: Instant,
+    rtt_1: Duration,
+    rtt_2: Duration,
+    steps: IdleScanSteps,
+    zombie_ip_id_1: u16,
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
+fn idle_scan(
+    net_infos: Vec<NetInfo>,
+    zombie_mac: Option<MacAddr>,
+    zombie_ipv4: Option<Ipv4Addr>,
+    zombie_port: Option<u16>,
+    timeout: Duration,
+    max_retries: usize,
+) -> Result<PortScans, PistolError> {
+    let mut port_scans = PortScans::new(max_retries);
+    let zombie_mac = match zombie_mac {
+        Some(zm) => zm,
+        None => {
+            return Err(PistolError::IdleScanNeedParamsError {
+                params: String::from("zombie_mac"),
+            });
+        }
+    };
+    let zombie_ipv4 = match zombie_ipv4 {
+        Some(zi) => zi,
+        None => {
+            return Err(PistolError::IdleScanNeedParamsError {
+                params: String::from("zombie_ipv4"),
+            });
+        }
+    };
+    let zombie_port = match zombie_port {
+        Some(zp) => zp,
+        None => {
+            return Err(PistolError::IdleScanNeedParamsError {
+                params: String::from("zombie_port"),
+            });
+        }
+    };
+
+    let mut idle_scan_status = HashMap::new();
+    for ni in net_infos {
+        let status = IdleScanStatus {
+            retiries: 0,
+            data_recved: false,
+            receiver: None,
+            start: Instant::now(),
+            rtt_1: Duration::ZERO,
+            rtt_2: Duration::ZERO,
+            steps: IdleScanSteps::SendStep1,
+            zombie_ip_id_1: 0,
+        };
+        idle_scan_status.insert(ni, status);
+    }
+    let mut idle_scan_status_clone = idle_scan_status.clone();
+
+    let mut port_reports = Vec::new();
+    loop {
+        let mut all_done = true;
+        for (ni, status) in idle_scan_status {
+            if status.retiries < max_retries && !status.data_recved {
+                let dst_mac = ni.dst_mac;
+                let dst_ipv4 = match ni.dst_addr {
+                    IpAddr::V4(dst_ipv4) => dst_ipv4,
+                    _ => return Err(PistolError::IdleScanNotSupportIpVersion),
+                };
+                let dst_port = if ni.dst_ports.len() > 0 {
+                    ni.dst_ports[0]
+                } else {
+                    return Err(PistolError::IdleScanNeedParamsError {
+                        params: String::from("dst_ports"),
+                    });
+                };
+                let src_ipv4 = match ni.src_addr {
+                    IpAddr::V4(src_ipv4) => src_ipv4,
+                    _ => return Err(PistolError::CanNotFoundSrcAddress),
+                };
+                let src_mac = ni.src_mac;
+                let src_port = match ni.src_port {
+                    Some(s) => s,
+                    None => utils::random_port(),
+                };
+                let interface = &ni.interface;
+                match status.steps {
+                    IdleScanSteps::SendStep1 => {
+                        if status.retiries < max_retries && !status.data_recved {
+                            // send probe 1 packet and recv response
+                            let start = Instant::now();
+                            let receiver = tcp::send_idle_scan_packet_1(
+                                dst_mac,
+                                dst_ipv4,
+                                dst_port,
+                                src_mac,
+                                src_ipv4,
+                                src_port,
+                                zombie_mac,
+                                zombie_ipv4,
+                                zombie_port,
+                                interface,
+                                timeout,
+                            )?;
+                            let new_status = IdleScanStatus {
+                                retiries: status.retiries + 1,
+                                data_recved: false,
+                                receiver: Some(receiver),
+                                start,
+                                rtt_1: status.rtt_1,
+                                rtt_2: status.rtt_2,
+                                steps: IdleScanSteps::RecvStep2,
+                                zombie_ip_id_1: status.zombie_ip_id_1,
+                            };
+                            idle_scan_status_clone.insert(ni.clone(), new_status);
+                            all_done = false;
+                        }
+                    }
+                    IdleScanSteps::SendStep2 => {
+                        if status.retiries < max_retries && !status.data_recved {
+                            // send probe 2 packet but do not recv any response
+                            tcp::send_idle_scan_packet_2(
+                                dst_mac,
+                                dst_ipv4,
+                                dst_port,
+                                src_mac,
+                                src_ipv4,
+                                src_port,
+                                zombie_mac,
+                                zombie_ipv4,
+                                zombie_port,
+                                interface,
+                                timeout,
+                            )?;
+
+                            // send probe 3 packet and recv response
+                            let start = Instant::now();
+                            let receiver = tcp::send_idle_scan_packet_3(
+                                dst_mac,
+                                dst_ipv4,
+                                dst_port,
+                                src_mac,
+                                src_ipv4,
+                                src_port,
+                                zombie_mac,
+                                zombie_ipv4,
+                                zombie_port,
+                                interface,
+                                timeout,
+                            )?;
+                            let new_status = IdleScanStatus {
+                                retiries: status.retiries + 1,
+                                data_recved: false,
+                                receiver: Some(receiver),
+                                start,
+                                rtt_1: status.rtt_1,
+                                rtt_2: status.rtt_2,
+                                steps: IdleScanSteps::RecvStep2,
+                                zombie_ip_id_1: status.zombie_ip_id_1,
+                            };
+                            idle_scan_status_clone.insert(ni.clone(), new_status);
+                            all_done = false;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        if all_done {
+            break;
+        }
+
+        idle_scan_status = idle_scan_status_clone.clone();
+        for (ni, status) in idle_scan_status {
+            match status.steps {
+                IdleScanSteps::RecvStep1 => match status.receiver {
+                    Some(receiver) => {
+                        let start = status.start;
+                        let (port_status, recv_response, rtt_1, zombie_ip_id_1) =
+                            tcp::recv_idle_scan_packet_1(start, timeout, receiver)?;
+                        let data_recved = match recv_response {
+                            RecvResponse::Yes => true,
+                            RecvResponse::No => false,
+                        };
+                        if port_status == PortStatus::Open {
+                            let new_status = IdleScanStatus {
+                                retiries: status.retiries,
+                                data_recved,
+                                receiver: None,
+                                start,
+                                rtt_1,
+                                rtt_2: status.rtt_2,
+                                steps: IdleScanSteps::SendStep2,
+                                zombie_ip_id_1,
+                            };
+                            idle_scan_status_clone.insert(ni, new_status);
+                        } else {
+                            let new_status = IdleScanStatus {
+                                retiries: status.retiries,
+                                data_recved,
+                                receiver: None,
+                                start,
+                                rtt_1,
+                                rtt_2: status.rtt_2,
+                                steps: IdleScanSteps::Done,
+                                zombie_ip_id_1,
+                            };
+                            idle_scan_status_clone.insert(ni, new_status);
+                        }
+                    }
+                    None => (),
+                },
+                IdleScanSteps::RecvStep2 => match status.receiver {
+                    Some(receiver) => {
+                        let start = status.start;
+                        let rtt_1 = status.rtt_1;
+                        let zombie_ip_id_1 = status.zombie_ip_id_1;
+                        let (port_status, recv_response, rtt_2) = tcp::recv_idle_scan_packet_2(
+                            zombie_ipv4,
+                            zombie_port,
+                            start,
+                            timeout,
+                            receiver,
+                            rtt_1,
+                            zombie_ip_id_1,
+                        )?;
+
+                        let dst_addr = ni.dst_addr;
+                        let dst_port = if ni.dst_ports.len() > 0 {
+                            ni.dst_ports[0]
+                        } else {
+                            return Err(PistolError::IdleScanNeedParamsError {
+                                params: String::from("dst_ports"),
+                            });
+                        };
+                        let report = PortReport {
+                            addr: dst_addr,
+                            port: dst_port,
+                            status: port_status,
+                            cost: rtt_1 + rtt_2,
+                            cached: ni.cached,
+                        };
+                        port_reports.push(report);
+
+                        let data_recved = match recv_response {
+                            RecvResponse::Yes => true,
+                            RecvResponse::No => false,
+                        };
+                        let new_status = IdleScanStatus {
+                            retiries: status.retiries,
+                            data_recved,
+                            receiver: None,
+                            start,
+                            rtt_1,
+                            rtt_2,
+                            steps: IdleScanSteps::Done,
+                            zombie_ip_id_1: status.zombie_ip_id_1,
+                        };
+                        idle_scan_status_clone.insert(ni, new_status);
+                    }
+                    None => (),
+                },
+                _ => (),
+            }
+        }
+        idle_scan_status = idle_scan_status_clone.clone();
+    }
+    port_scans.finish(port_reports);
+    Ok(port_scans)
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
+fn scan_send(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    zombie_mac: Option<MacAddr>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
     interface: &NetworkInterface,
     method: ScanMethod,
     timeout: Duration,
-) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
-    let (port_status, data_recv_status, rtt) = match method {
-        ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv4.into(), dst_port, timeout)?,
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+    // The connect scan and idle scan need to send more than one packets,
+    // so we put them other functions instead of here.
+    match method {
         ScanMethod::Syn => tcp::send_syn_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Fin => tcp::send_fin_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Ack => tcp::send_ack_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Null => tcp::send_null_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Xmas => tcp::send_xmas_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Window => tcp::send_window_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Maimon => tcp::send_maimon_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
-        ScanMethod::Idle => {
-            // this three parameters must be Some
-            let zombie_mac = match zombie_mac {
-                Some(zm) => zm,
-                None => {
-                    return Err(PistolError::IdleScanNoParamsError {
-                        params: String::from("zombie_mac"),
-                    });
-                }
-            };
-            let zombie_ipv4 = match zombie_ipv4 {
-                Some(zi) => zi,
-                None => {
-                    return Err(PistolError::IdleScanNoParamsError {
-                        params: String::from("zombie_ipv4"),
-                    });
-                }
-            };
-            let zombie_port = match zombie_port {
-                Some(zp) => zp,
-                None => {
-                    return Err(PistolError::IdleScanNoParamsError {
-                        params: String::from("zombie_port"),
-                    });
-                }
-            };
-            tcp::send_idle_scan_packet_1(
-                dst_mac,
-                dst_ipv4,
-                dst_port,
-                src_mac,
-                src_ipv4,
-                src_port,
-                zombie_mac,
-                zombie_ipv4,
-                zombie_port,
-                interface,
-                timeout,
-            )?
-        }
+        ),
         ScanMethod::Udp => udp::send_udp_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        )?,
-    };
-
-    Ok((port_status, data_recv_status, rtt))
+        ),
+        _ => unreachable!(),
+    }
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-fn scan_thread6(
+fn scan_recv(
+    method: ScanMethod,
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
+    match method {
+        ScanMethod::Syn => tcp::recv_syn_scan_packet(start, timeout, receiver),
+        ScanMethod::Fin => tcp::recv_fin_scan_packet(start, timeout, receiver),
+        ScanMethod::Ack => tcp::recv_ack_scan_packet(start, timeout, receiver),
+        ScanMethod::Null => tcp::recv_null_scan_packet(start, timeout, receiver),
+        ScanMethod::Xmas => tcp::recv_xmas_scan_packet(start, timeout, receiver),
+        ScanMethod::Window => tcp::recv_window_scan_packet(start, timeout, receiver),
+        ScanMethod::Maimon => tcp::recv_maimon_scan_packet(start, timeout, receiver),
+        ScanMethod::Udp => udp::recv_udp_scan_packet(start, timeout, receiver),
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(any(feature = "scan", feature = "ping"))]
+fn scan_send6(
     dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
@@ -887,37 +1525,56 @@ fn scan_thread6(
     interface: &NetworkInterface,
     method: ScanMethod,
     timeout: Duration,
-) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
-    let (port_status, data_recv_status, rtt) = match method {
-        ScanMethod::Connect => tcp::send_connect_scan_packet(dst_ipv6.into(), dst_port, timeout)?,
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+    match method {
         ScanMethod::Syn => tcp6::send_syn_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Fin => tcp6::send_fin_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Ack => tcp6::send_ack_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Null => tcp6::send_null_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Xmas => tcp6::send_xmas_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Window => tcp6::send_window_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Maimon => tcp6::send_maimon_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
+        ),
         ScanMethod::Udp => udp6::send_udp_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        )?,
-        ScanMethod::Idle => return Err(PistolError::IpVersionNotMatch),
-    };
+        ),
+        ScanMethod::Idle => Err(PistolError::IpVersionNotMatch),
+        _ => unreachable!(),
+    }
+}
 
-    Ok((port_status, data_recv_status, rtt))
+#[cfg(any(feature = "scan", feature = "ping"))]
+fn scan_recv6(
+    method: ScanMethod,
+    start: Instant,
+    timeout: Duration,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
+    match method {
+        ScanMethod::Syn => tcp6::recv_syn_scan_packet(start, timeout, receiver),
+        ScanMethod::Fin => tcp6::recv_fin_scan_packet(start, timeout, receiver),
+        ScanMethod::Ack => tcp6::recv_ack_scan_packet(start, timeout, receiver),
+        ScanMethod::Null => tcp6::recv_null_scan_packet(start, timeout, receiver),
+        ScanMethod::Xmas => tcp6::recv_xmas_scan_packet(start, timeout, receiver),
+        ScanMethod::Window => tcp6::recv_window_scan_packet(start, timeout, receiver),
+        ScanMethod::Maimon => tcp6::recv_maimon_scan_packet(start, timeout, receiver),
+        ScanMethod::Udp => udp6::recv_udp_scan_packet(start, timeout, receiver),
+        ScanMethod::Idle => Err(PistolError::IpVersionNotMatch),
+        _ => unreachable!(),
+    }
 }
 
 /// General scan function.
@@ -928,236 +1585,142 @@ fn scan(
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
     method: ScanMethod,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
     let mut pistol_port_scans = PortScans::new(max_retries);
-    debug!("scan will create {} threads to do the jobs", threads);
-    let pool = utils::get_threads_pool(threads);
-    let (tx, rx) = channel();
-    let mut recv_size = 0;
     let mut reports = Vec::new();
 
-    for ni in net_infos {
-        if !ni.valid {
-            continue;
+    match method {
+        ScanMethod::Idle => {
+            let port_scans = idle_scan(
+                net_infos,
+                zombie_mac,
+                zombie_ipv4,
+                zombie_port,
+                timeout,
+                max_retries,
+            )?;
+            return Ok(port_scans);
         }
-        let dst_mac = ni.dst_mac;
-        let dst_addr = ni.dst_addr;
-        let src_mac = ni.src_mac;
-        match dst_addr {
-            IpAddr::V4(dst_ipv4) => {
-                let src_ipv4 = match ni.src_addr {
-                    IpAddr::V4(s) => s,
-                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
-                };
-                for dst_port in ni.dst_ports {
-                    let interface = ni.interface.clone();
-                    let src_port = match ni.src_port {
-                        Some(s) => s,
-                        None => utils::random_port(),
-                    };
-                    let cached = ni.cached;
-                    let tx = tx.clone();
-                    recv_size += 1;
-
-                    pool.execute(move || {
-                        for ind in 0..max_retries {
-                            let start_time = Instant::now();
-                            debug!(
-                                "sending scan packet to [{}] port [{}] try [{}]",
-                                dst_ipv4, dst_port, ind
-                            );
-                            let scan_ret = scan_thread(
-                                dst_mac,
-                                dst_ipv4,
-                                dst_port,
-                                src_mac,
-                                src_ipv4,
-                                src_port,
-                                zombie_mac,
-                                zombie_ipv4,
-                                zombie_port,
-                                &interface,
-                                method,
-                                timeout,
-                            );
-                            if ind == max_retries - 1 {
-                                // last attempt
-                                if let Err(e) = tx.send((
-                                    dst_addr,
-                                    dst_port,
-                                    scan_ret,
-                                    start_time.elapsed(),
-                                    cached,
-                                )) {
-                                    error!("failed to send to tx on func scan: {}", e);
-                                }
-                            } else {
-                                match scan_ret {
-                                    Ok((_port_status, data_recv_status, _rtt)) => {
-                                        match data_recv_status {
-                                            RecvResponse::Yes => {
-                                                // conclusions drawn from the returned data
-                                                if let Err(e) = tx.send((
-                                                    dst_addr,
-                                                    dst_port,
-                                                    scan_ret,
-                                                    start_time.elapsed(),
-                                                    cached,
-                                                )) {
-                                                    error!(
-                                                        "failed to send to tx on func scan: {}",
-                                                        e
-                                                    );
-                                                }
-                                                break; // quit loop now
-                                            }
-                                            // conclusions from the default policy
-                                            RecvResponse::No => (), // continue probing
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // stop probe immediately if an error occurs
-                                        if let Err(e) = tx.send((
-                                            dst_addr,
-                                            dst_port,
-                                            scan_ret,
-                                            start_time.elapsed(),
-                                            cached,
-                                        )) {
-                                            error!("failed to send to tx on func scan: {}", e);
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-            IpAddr::V6(dst_ipv6) => {
-                let src_ipv6 = match ni.src_addr {
-                    IpAddr::V6(s) => s,
-                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
-                };
-                for dst_port in ni.dst_ports {
-                    let interface = ni.interface.clone();
-                    let src_port = match ni.src_port {
-                        Some(s) => s,
-                        None => utils::random_port(),
-                    };
-                    let cached = ni.cached;
-                    let tx = tx.clone();
-                    recv_size += 1;
-
-                    pool.execute(move || {
-                        for ind in 0..max_retries {
-                            let start_time = Instant::now();
-                            let scan_ret = scan_thread6(
-                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
-                                &interface, method, timeout,
-                            );
-                            if ind == max_retries - 1 {
-                                if let Err(e) = tx.send((
-                                    dst_addr,
-                                    dst_port,
-                                    scan_ret,
-                                    start_time.elapsed(),
-                                    cached,
-                                )) {
-                                    error!("failed to send to tx on func scan: {}", e);
-                                }
-                            } else {
-                                match scan_ret {
-                                    Ok((_port_status, data_recv_status, _rtt)) => {
-                                        match data_recv_status {
-                                            RecvResponse::Yes => {
-                                                // conclusions drawn from the returned data
-                                                if let Err(e) = tx.send((
-                                                    dst_addr,
-                                                    dst_port,
-                                                    scan_ret,
-                                                    start_time.elapsed(),
-                                                    cached,
-                                                )) {
-                                                    error!(
-                                                        "failed to send to tx on func scan: {}",
-                                                        e
-                                                    );
-                                                }
-                                                break; // quit loop now
-                                            }
-                                            // conclusions from the default policy
-                                            RecvResponse::No => (), // continue probing
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // stop probe immediately if an error occurs
-                                        // debug!(
-                                        //     "scan error for {}: {}, stop probing",
-                                        //     dst_ipv6,
-                                        //     e.to_string()
-                                        // );
-                                        if let Err(e) = tx.send((
-                                            dst_addr,
-                                            dst_port,
-                                            scan_ret,
-                                            start_time.elapsed(),
-                                            cached,
-                                        )) {
-                                            error!("failed to send to tx on func scan: {}", e);
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-            }
+        ScanMethod::Connect => {
+            let port_scans = connect_scan(net_infos, timeout, max_retries)?;
+            return Ok(port_scans);
         }
+        _ => (),
     }
 
-    let iter = rx.into_iter().take(recv_size);
-    for (dst_addr, dst_port, ret, elapsed, cached) in iter {
-        match ret {
-            Ok((port_status, _data_recv_status, rtt)) => {
-                // println!("rtt: {:.2}", rtt.as_secs_f64());
-                let scan_report = PortReport {
-                    addr: dst_addr,
-                    port: dst_port,
-                    status: port_status,
-                    cost: rtt,
-                    cached,
-                };
-                reports.push(scan_report);
+    let mut scan_status = HashMap::new();
+    for ni in net_infos {
+        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
+        if ni.valid {
+            let mut hm = HashMap::new();
+            for p in ni.dst_ports {
+                hm.insert(p, (0, false, None, Instant::now()));
             }
-            Err(e) => match e {
-                PistolError::CanNotFoundDstMacAddress => {
-                    let scan_report = PortReport {
-                        addr: dst_addr,
-                        port: dst_port,
-                        status: PortStatus::Offline,
-                        cost: elapsed,
-                        cached,
-                    };
-                    reports.push(scan_report);
-                }
-                _ => {
-                    debug!("scan error: {}", e);
-                    let scan_report = PortReport {
-                        addr: dst_addr,
-                        port: dst_port,
-                        status: PortStatus::Error,
-                        cost: elapsed,
-                        cached,
-                    };
-                    reports.push(scan_report);
-                }
-            },
+            scan_status.insert(ni.clone(), hm);
         }
+    }
+    let mut scan_status_clone = scan_status.clone();
+
+    loop {
+        let mut all_done = true;
+        for (ni, hm) in scan_status {
+            let dst_mac = ni.dst_mac;
+            let dst_addr = ni.dst_addr;
+            let src_mac = ni.src_mac;
+            let src_port = match ni.src_port {
+                Some(s) => s,
+                None => utils::random_port(),
+            };
+            let interface = &ni.interface;
+            match dst_addr {
+                IpAddr::V4(dst_ipv4) => {
+                    let src_ipv4 = match ni.src_addr {
+                        IpAddr::V4(s) => s,
+                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                    };
+                    let mut tmp_hm = scan_status_clone[&ni].clone();
+                    for (dst_port, status) in hm {
+                        let (retries, data_recved, _receiver, _start) = status;
+                        if retries < max_retries && !data_recved {
+                            let start = Instant::now();
+                            let receiver = scan_send(
+                                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
+                                interface, method, timeout,
+                            )?;
+                            tmp_hm.insert(
+                                dst_port,
+                                (retries + 1, data_recved, Some(receiver), start),
+                            );
+                            all_done = false;
+                        }
+                    }
+                    scan_status_clone.insert(ni, tmp_hm);
+                }
+                IpAddr::V6(dst_ipv6) => {
+                    let src_ipv6 = match ni.src_addr {
+                        IpAddr::V6(s) => s,
+                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                    };
+                    let mut tmp_hm = scan_status_clone[&ni].clone();
+                    for (dst_port, status) in hm {
+                        let (retries, data_recved, _receiver, _start) = status;
+                        if retries < max_retries && !data_recved {
+                            let start = Instant::now();
+                            let receiver = scan_send6(
+                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
+                                interface, method, timeout,
+                            )?;
+                            tmp_hm.insert(
+                                dst_port,
+                                (retries + 1, data_recved, Some(receiver), start),
+                            );
+                            all_done = false;
+                        }
+                    }
+                    scan_status_clone.insert(ni, tmp_hm);
+                }
+            }
+        }
+
+        if all_done {
+            break;
+        }
+
+        scan_status = scan_status_clone.clone();
+        for (ni, hm) in scan_status {
+            let dst_addr = ni.dst_addr;
+            let cached = ni.cached;
+            let mut tmp_hm = scan_status_clone[&ni].clone();
+            for (dst_port, status) in hm {
+                let (retries, _data_recved, receiver, start) = status;
+                match receiver {
+                    Some(receiver) => {
+                        let (port_status, recv_response, rtt) = match dst_addr {
+                            IpAddr::V4(_) => scan_recv(method, start, timeout, receiver)?,
+                            IpAddr::V6(_) => scan_recv6(method, start, timeout, receiver)?,
+                        };
+                        if recv_response == RecvResponse::Yes {
+                            let report = PortReport {
+                                addr: dst_addr,
+                                port: dst_port,
+                                status: port_status,
+                                cost: rtt,
+                                cached,
+                            };
+                            reports.push(report);
+                            tmp_hm.insert(dst_port, (retries, true, None, start));
+                        } else {
+                            tmp_hm.insert(dst_port, (retries, false, None, start));
+                        }
+                    }
+                    None => (),
+                }
+            }
+            scan_status_clone.insert(ni, tmp_hm);
+        }
+        scan_status = scan_status_clone.clone();
     }
     pistol_port_scans.finish(reports);
     Ok(pistol_port_scans)
@@ -1166,7 +1729,6 @@ fn scan(
 #[cfg(feature = "scan")]
 pub fn tcp_connect_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1176,7 +1738,6 @@ pub fn tcp_connect_scan(
         None,
         None,
         ScanMethod::Connect,
-        threads,
         timeout,
         max_retries,
     )
@@ -1203,7 +1764,6 @@ pub fn tcp_connect_scan_raw(
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub fn tcp_syn_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1213,7 +1773,6 @@ pub fn tcp_syn_scan(
         None,
         None,
         ScanMethod::Syn,
-        threads,
         timeout,
         max_retries,
     )
@@ -1240,7 +1799,6 @@ pub fn tcp_syn_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_fin_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1250,7 +1808,6 @@ pub fn tcp_fin_scan(
         None,
         None,
         ScanMethod::Fin,
-        threads,
         timeout,
         max_retries,
     )
@@ -1277,7 +1834,6 @@ pub fn tcp_fin_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_ack_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1287,7 +1843,6 @@ pub fn tcp_ack_scan(
         None,
         None,
         ScanMethod::Ack,
-        threads,
         timeout,
         max_retries,
     )
@@ -1314,7 +1869,6 @@ pub fn tcp_ack_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_null_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1324,7 +1878,6 @@ pub fn tcp_null_scan(
         None,
         None,
         ScanMethod::Null,
-        threads,
         timeout,
         max_retries,
     )
@@ -1351,7 +1904,6 @@ pub fn tcp_null_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_xmas_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1361,7 +1913,6 @@ pub fn tcp_xmas_scan(
         None,
         None,
         ScanMethod::Xmas,
-        threads,
         timeout,
         max_retries,
     )
@@ -1388,7 +1939,6 @@ pub fn tcp_xmas_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_window_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1398,7 +1948,6 @@ pub fn tcp_window_scan(
         None,
         None,
         ScanMethod::Window,
-        threads,
         timeout,
         max_retries,
     )
@@ -1425,7 +1974,6 @@ pub fn tcp_window_scan_raw(
 #[cfg(feature = "scan")]
 pub fn tcp_maimon_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1435,7 +1983,6 @@ pub fn tcp_maimon_scan(
         None,
         None,
         ScanMethod::Maimon,
-        threads,
         timeout,
         max_retries,
     )
@@ -1465,7 +2012,6 @@ pub fn tcp_idle_scan(
     zombie_mac: Option<MacAddr>,
     zombie_ipv4: Option<Ipv4Addr>,
     zombie_port: Option<u16>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1475,7 +2021,6 @@ pub fn tcp_idle_scan(
         zombie_ipv4,
         zombie_port,
         ScanMethod::Idle,
-        threads,
         timeout,
         max_retries,
     )
@@ -1505,7 +2050,6 @@ pub fn tcp_idle_scan_raw(
 #[cfg(feature = "scan")]
 pub fn udp_scan(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
@@ -1515,7 +2059,6 @@ pub fn udp_scan(
         None,
         None,
         ScanMethod::Udp,
-        threads,
         timeout,
         max_retries,
     )
@@ -1555,6 +2098,37 @@ fn scan_raw(
         return Ok(ret);
     }
 
+    match method {
+        ScanMethod::Idle => {
+            let port_scans = idle_scan(
+                vec![net_info],
+                zombie_mac,
+                zombie_ipv4,
+                zombie_port,
+                timeout,
+                max_retries,
+            )?;
+            let port_report = if port_scans.port_reports.len() > 0 {
+                Some(port_scans.port_reports[0].clone())
+            } else {
+                None
+            };
+            ret.finish(port_report);
+            return Ok(ret);
+        }
+        ScanMethod::Connect => {
+            let port_scans = connect_scan(vec![net_info], timeout, max_retries)?;
+            let port_report = if port_scans.port_reports.len() > 0 {
+                Some(port_scans.port_reports[0].clone())
+            } else {
+                None
+            };
+            ret.finish(port_report);
+            return Ok(ret);
+        }
+        _ => (),
+    }
+
     let dst_mac = net_info.dst_mac;
     let dst_addr = net_info.dst_addr;
     let src_mac = net_info.src_mac;
@@ -1586,18 +2160,8 @@ fn scan_raw(
                 }
             };
             for i in 0..max_retries {
-                let (port_status, data_recv_status, rtt) = scan_thread(
-                    dst_mac,
-                    dst_ipv4,
-                    dst_port,
-                    src_mac,
-                    src_ipv4,
-                    src_port,
-                    zombie_mac,
-                    zombie_ipv4,
-                    zombie_port,
-                    interface,
-                    method,
+                let receiver = scan_send(
+                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, method,
                     timeout,
                 )?;
                 if i == max_retries - 1 {
@@ -1635,7 +2199,7 @@ fn scan_raw(
                 }
             };
             for i in 0..max_retries {
-                let (port_status, data_recv_status, rtt) = scan_thread6(
+                let receiver = scan_send6(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, method,
                     timeout,
                 )?;

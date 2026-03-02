@@ -1082,6 +1082,7 @@ mod tests {
             layer3: Some(layer3),
             src_port: Some(dst_port),
             dst_port: Some(src_port),
+            flag: None,
         };
         let layer_match_tcp = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
 
