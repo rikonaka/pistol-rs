@@ -581,7 +581,7 @@ match enistic-manager m|^WZ=AAAAAAAAAAByAAE=73\r0E0000000000cgAD83\r$| p/Enistic
 
 match envisalink m|^5053CD\r\n| p/EyezOn EnvisaLink/ d/security-misc/
 
-match epoptes-client m|^\ndie\(\) {\n    echo \"epoptes-client ERROR: \$@\" >&2\n    exit 1\n}\n\ninfo\(\) {\n    local server_ip def_iface\n\n    if \[ -z \"\$cached_info\" \]; then\n        VERSION=\${VERSION:-([\d.]+)}| p/Epoptes LTSPd/ i/compat version $1/ cpe:/a:epoptes:epoptes/
+match epoptes-client m|^\ndie\(\) {\n    echo \"epoptes-client ERROR: \$@\" >&2\n    exit 1\n}\n\ninfo\(\) {\n    local server_ip def_interface_name\n\n    if \[ -z \"\$cached_info\" \]; then\n        VERSION=\${VERSION:-([\d.]+)}| p/Epoptes LTSPd/ i/compat version $1/ cpe:/a:epoptes:epoptes/
 match epp m|^\x00\x00..<\?xml version=\"1\.0\" encoding=\"UTF-8\" standalone=\"no\" \?>\n<epp xmlns=\"http://www\.yoursrs\.com/xml/epp/epp-1\.0\" xmlns:xsi=\"http://www\.w3\.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://www\.yoursrs\.com/xml/epp/epp-1\.0 epp-1\.0\.xsd\">\n\n  <greeting>\n    <svID>([^<]+)</svID>\n    <svDate>.*</svDate>\n    <svcMenu>\n      <version>([\w._-]+)</version>\n|s p/Extensible Provisioning Protocol/ v/$2/ h/$1/
 softmatch epp m|^\0...<\?xml version="1\.0" encoding="[uU][tT][fF]-8" standalone="no"\?>\s*<epp xmlns="urn:ietf:params:xml:ns:epp-1\.0".*<svID>([^<]+)</svID>|s p/Extensible Provisioning Protocol/ i/name: $1/
 # RFC 5730

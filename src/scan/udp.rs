@@ -34,7 +34,7 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
 use crate::scan::PortStatus;
-use crate::scan::RecvResponse;
+use crate::scan::HasResponse;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
@@ -123,11 +123,11 @@ pub(crate) fn send_udp_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ip_buff,
@@ -143,7 +143,7 @@ pub(crate) fn recv_udp_scan_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
     let codes_1 = vec![
         destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
@@ -161,7 +161,7 @@ pub(crate) fn recv_udp_scan_packet(
             match ip_packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => {
                     // any udp response from target port (unusual)
-                    return Ok((PortStatus::Open, RecvResponse::Yes, rtt));
+                    return Ok((PortStatus::Open, HasResponse::Yes, rtt));
                 }
                 IpNextHeaderProtocols::Icmp => {
                     if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
@@ -170,10 +170,10 @@ pub(crate) fn recv_udp_scan_packet(
                         if icmp_type == IcmpTypes::DestinationUnreachable {
                             if codes_1.contains(&icmp_code) {
                                 // icmp port unreachable error (type 3, code 3)
-                                return Ok((PortStatus::Closed, RecvResponse::Yes, rtt));
+                                return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
                             } else if codes_2.contains(&icmp_code) {
                                 // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, RecvResponse::Yes, rtt));
+                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
                             }
                         }
                     }
@@ -183,5 +183,5 @@ pub(crate) fn recv_udp_scan_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, RecvResponse::No, rtt))
+    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
 }

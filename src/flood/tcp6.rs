@@ -76,11 +76,11 @@ pub fn send_syn_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ipv6_buff = Arc::new(ipv6_buff);
     let ipv6_buff_len = ipv6_buff.len();
     let _receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,
@@ -148,11 +148,11 @@ pub fn send_ack_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ipv6_buff = Arc::new(ipv6_buff);
     let ipv6_buff_len = ipv6_buff.len();
     let _receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,
@@ -220,11 +220,11 @@ pub fn send_ack_psh_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ipv6_buff = Arc::new(ipv6_buff);
     let ipv6_buff_len = ipv6_buff.len();
     let _receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,

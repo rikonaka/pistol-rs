@@ -94,12 +94,12 @@ pub fn send_icmp_flood_packet(
     // very short timeout for flood attack
     let timeout = Duration::from_secs_f32(0.01);
     let ether_type = EtherTypes::Ipv4;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     // ignore receiver, because we don't care about the response in flood attack
     let ip_buff_len = ip_buff.len();
     let ip_buff = Arc::new(ip_buff);
     let _receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ip_buff,

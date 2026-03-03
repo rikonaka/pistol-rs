@@ -140,11 +140,11 @@ pub(crate) fn send_icmp_trace_packet(
     };
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ip_buff,

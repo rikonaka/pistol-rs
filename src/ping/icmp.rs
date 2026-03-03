@@ -33,7 +33,7 @@ use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::PacketFilter;
 use crate::ping::PingStatus;
-use crate::scan::RecvResponse;
+use crate::scan::HasResponse;
 
 const ICMP_ECHO_DATA_SIZE: usize = 16;
 const ICMP_TIMESTAMP_DATA_SIZE: usize = 12;
@@ -120,11 +120,11 @@ pub(crate) fn send_icmp_echo_packet(
     };
     let filter_1 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ip_buff,
@@ -140,7 +140,7 @@ pub(crate) fn recv_icmp_echo_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -160,10 +160,10 @@ pub(crate) fn recv_icmp_echo_packet(
                         let icmp_code = icmp_packet.get_icmp_code();
                         if icmp_type == IcmpTypes::DestinationUnreachable {
                             if codes.contains(&icmp_code) {
-                                return Ok((PingStatus::Down, RecvResponse::Yes, rtt));
+                                return Ok((PingStatus::Down, HasResponse::Yes, rtt));
                             }
                         } else if icmp_type == IcmpTypes::EchoReply {
-                            return Ok((PingStatus::Up, RecvResponse::Yes, rtt));
+                            return Ok((PingStatus::Up, HasResponse::Yes, rtt));
                         }
                     }
                 }
@@ -172,7 +172,7 @@ pub(crate) fn recv_icmp_echo_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PingStatus::Down, RecvResponse::No, rtt))
+    Ok((PingStatus::Down, HasResponse::No, rtt))
 }
 
 pub(crate) fn send_icmp_timestamp_packet(
@@ -251,11 +251,11 @@ pub(crate) fn send_icmp_timestamp_packet(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ip_buff,
@@ -271,7 +271,7 @@ pub(crate) fn recv_icmp_timestamp_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
@@ -281,9 +281,9 @@ pub(crate) fn recv_icmp_timestamp_packet(
                     if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
                         let icmp_type = icmp_packet.get_icmp_type();
                         if icmp_type == IcmpTypes::DestinationUnreachable {
-                            return Ok((PingStatus::Down, RecvResponse::Yes, rtt));
+                            return Ok((PingStatus::Down, HasResponse::Yes, rtt));
                         } else if icmp_type == IcmpTypes::TimestampReply {
-                            return Ok((PingStatus::Up, RecvResponse::Yes, rtt));
+                            return Ok((PingStatus::Up, HasResponse::Yes, rtt));
                         }
                     }
                 }
@@ -292,7 +292,7 @@ pub(crate) fn recv_icmp_timestamp_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PingStatus::Down, RecvResponse::No, rtt))
+    Ok((PingStatus::Down, HasResponse::No, rtt))
 }
 
 pub(crate) fn send_icmp_address_mask_packet(
@@ -371,11 +371,11 @@ pub(crate) fn send_icmp_address_mask_packet(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ip_buff,
@@ -391,7 +391,7 @@ pub(crate) fn recv_icmp_address_mask_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -412,10 +412,10 @@ pub(crate) fn recv_icmp_address_mask_packet(
                         if icmp_type == IcmpTypes::DestinationUnreachable {
                             if codes.contains(&icmp_code) {
                                 // icmp protocol unreachable error (type 3, code 2)
-                                return Ok((PingStatus::Down, RecvResponse::Yes, rtt));
+                                return Ok((PingStatus::Down, HasResponse::Yes, rtt));
                             }
                         } else if icmp_type == IcmpTypes::AddressMaskReply {
-                            return Ok((PingStatus::Up, RecvResponse::Yes, rtt));
+                            return Ok((PingStatus::Up, HasResponse::Yes, rtt));
                         }
                     }
                 }
@@ -424,5 +424,5 @@ pub(crate) fn recv_icmp_address_mask_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PingStatus::Down, RecvResponse::No, rtt))
+    Ok((PingStatus::Down, HasResponse::No, rtt))
 }

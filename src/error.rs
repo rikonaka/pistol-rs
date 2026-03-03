@@ -82,8 +82,6 @@ pub enum PistolError {
     CreateDatalinkChannelFailed,
     #[error("can not found the src mac address, please check your network connection")]
     CanNotFoundSrcMacAddress,
-    #[error("can not found the dst mac address, please make sure the target is alive")]
-    CanNotFoundDstMacAddress,
     #[error("can not found the route's mac address")]
     CanNotFoundRouteMacAddress,
     #[error("can not found the interface {i}")]

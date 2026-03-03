@@ -49,7 +49,7 @@ use crate::error::PistolError;
 #[cfg(feature = "ping")]
 use crate::scan::PortStatus;
 #[cfg(feature = "ping")]
-use crate::scan::RecvResponse;
+use crate::scan::HasResponse;
 #[cfg(feature = "ping")]
 use crate::scan::tcp;
 #[cfg(feature = "ping")]
@@ -369,7 +369,7 @@ fn ping_recv(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
     match method {
         PingMethods::Syn => {
             let (port_status, data_recv_status, rtt) =
@@ -489,7 +489,7 @@ fn ping_recv6(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
     match method {
         PingMethods::Syn => {
             let (port_status, data_recv_status, rtt) =
@@ -653,7 +653,7 @@ fn ping(
             let cached = ni.cached;
             match receiver {
                 Some(receiver) => {
-                    let (ping_status, recv_response, rtt) = match dst_addr {
+                    let (ping_status, has_response, rtt) = match dst_addr {
                         IpAddr::V4(dst_ipv4) => {
                             ping_recv(dst_ipv4, method, start, timeout, receiver)?
                         }
@@ -662,7 +662,7 @@ fn ping(
                         }
                     };
 
-                    if recv_response == RecvResponse::Yes {
+                    if has_response == HasResponse::Yes {
                         let ping_report = PingReport {
                             addr: dst_addr,
                             status: ping_status,

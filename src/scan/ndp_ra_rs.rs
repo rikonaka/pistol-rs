@@ -32,6 +32,7 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
 use crate::layer::find_interface_by_src_ip;
+use crate::scan::HasResponse;
 
 fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
     // return mac address from ndp
@@ -55,13 +56,13 @@ pub(crate) fn send_ndp_ra_scan_packet(
         Some(i) => i,
         None => {
             return Err(PistolError::CanNotFoundInterface {
-                i: format!("ipv6 src iface({})", src_ipv6),
+                i: format!("ipv6 src interface_name({})", src_ipv6),
             });
         }
     };
     let src_mac = match interface.mac {
         Some(m) => m,
-        None => return Err(PistolError::CanNotFoundDstMacAddress),
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
     };
 
     // ipv6
@@ -142,10 +143,10 @@ pub(crate) fn send_ndp_ra_scan_packet(
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name;
+    let interface_name = interface.name;
     let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,
@@ -162,8 +163,13 @@ pub(crate) fn recv_ndp_rs_scan_response(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<(Option<MacAddr>, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
+    let has_response = if eth_response.len() > 0 {
+        HasResponse::Yes
+    } else {
+        HasResponse::No
+    };
     let mac = if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         let eth_payload = eth_packet.payload();
         let mac = get_mac_from_ndp_rs(eth_payload);
@@ -193,7 +199,7 @@ pub(crate) fn recv_ndp_rs_scan_response(
         }
     }
 
-    Ok((mac, rtt))
+    Ok((mac, has_response, rtt))
 }
 
 #[cfg(feature = "scan")]

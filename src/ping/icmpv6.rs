@@ -30,7 +30,7 @@ use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
 use crate::ping::PingStatus;
-use crate::scan::RecvResponse;
+use crate::scan::HasResponse;
 
 const ICMPV6_DATA_SIZE: usize = 16;
 const TTL: u8 = 255;
@@ -115,11 +115,11 @@ pub(crate) fn send_icmpv6_ping_packet(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,
@@ -135,7 +135,7 @@ pub(crate) fn recv_icmpv6_ping_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
@@ -145,9 +145,9 @@ pub(crate) fn recv_icmpv6_ping_packet(
                     if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
                         let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                         if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            return Ok((PingStatus::Down, RecvResponse::Yes, rtt));
+                            return Ok((PingStatus::Down, HasResponse::Yes, rtt));
                         } else if icmpv6_type == Icmpv6Types::EchoReply {
-                            return Ok((PingStatus::Up, RecvResponse::Yes, rtt));
+                            return Ok((PingStatus::Up, HasResponse::Yes, rtt));
                         }
                     }
                 }
@@ -156,5 +156,5 @@ pub(crate) fn recv_icmpv6_ping_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PingStatus::Down, RecvResponse::No, rtt))
+    Ok((PingStatus::Down, HasResponse::No, rtt))
 }

@@ -142,11 +142,11 @@ pub(crate) fn send_udp_trace_packet(
     };
     let filter_3 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,

@@ -1,6 +1,5 @@
 use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::arp::ArpHardwareTypes;
 use pnet::packet::arp::ArpOperations;
@@ -22,6 +21,7 @@ use crate::layer::ARP_HEADER_SIZE;
 use crate::layer::Layer2Filter;
 use crate::layer::Layer3Filter;
 use crate::layer::PacketFilter;
+use crate::scan::HasResponse;
 
 fn get_mac_from_arp_response(ethernet_packet: &[u8]) -> Option<MacAddr> {
     if ethernet_packet.len() > 0 {
@@ -44,11 +44,9 @@ pub fn send_arp_scan_packet(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    interface: &NetworkInterface,
+    interface_name: String,
     timeout: Duration,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
-    let iface = interface.name.clone();
-
     let mut arp_buff = [0u8; ARP_HEADER_SIZE];
     let mut arp_packet = match MutableArpPacket::new(&mut arp_buff) {
         Some(p) => p,
@@ -87,7 +85,7 @@ pub fn send_arp_scan_packet(
     let arp_buff = Arc::new(arp_buff);
     // send the filters to runner
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         arp_buff,
@@ -104,8 +102,13 @@ pub(crate) fn recv_arp_scan_response(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<(Option<MacAddr>, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
+    let has_response = if eth_response.len() > 0 {
+        HasResponse::Yes
+    } else {
+        HasResponse::No
+    };
     let mac = get_mac_from_arp_response(&eth_response);
     match mac {
         Some(mac) => {
@@ -129,5 +132,5 @@ pub(crate) fn recv_arp_scan_response(
         }
     }
 
-    Ok((mac, rtt))
+    Ok((mac, has_response, rtt))
 }

@@ -1,6 +1,5 @@
 use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -31,6 +30,7 @@ use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::PacketFilter;
+use crate::scan::HasResponse;
 
 fn get_mac_from_ndp_ns(ethernet_packet: &[u8]) -> Option<MacAddr> {
     if ethernet_packet.len() == 0 {
@@ -64,7 +64,7 @@ pub fn send_ndp_ns_scan_packet(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface: &NetworkInterface,
+    interface_name: String,
     timeout: Duration,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     // same as arp in ipv4, but use icmpv6 neighbor solicitation
@@ -135,10 +135,9 @@ pub fn send_ndp_ns_scan_packet(
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6.clone()));
 
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
     let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,
@@ -155,8 +154,13 @@ pub(crate) fn recv_ndp_ns_scan_response(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<(Option<MacAddr>, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
+    let has_response = if eth_response.len() > 0 {
+        HasResponse::Yes
+    } else {
+        HasResponse::No
+    };
     let mac = get_mac_from_ndp_ns(&eth_response);
     match mac {
         Some(mac) => {
@@ -180,7 +184,7 @@ pub(crate) fn recv_ndp_ns_scan_response(
         }
     }
 
-    Ok((mac, rtt))
+    Ok((mac, has_response, rtt))
 }
 
 #[cfg(feature = "scan")]

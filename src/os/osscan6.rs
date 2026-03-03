@@ -573,7 +573,7 @@ fn send_seq_probes(
     }
 
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let mut seq_hm = HashMap::new();
     let mut scan_start_hm = HashMap::new();
     loop {
@@ -585,7 +585,7 @@ fn send_seq_probes(
             if *retiries < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let receiver = ask_runner(
-                    iface.clone(),
+                    interface_name.clone(),
                     dst_mac,
                     src_mac,
                     buff.clone(),
@@ -757,7 +757,7 @@ fn send_ie_probes(
     let mut ie_hm = HashMap::new();
     let mut scan_start_hm = HashMap::new();
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     loop {
         let mut all_done = true;
         let mut send_status_clone = send_status.clone();
@@ -766,7 +766,7 @@ fn send_ie_probes(
             if *retiries < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let receiver = ask_runner(
-                    iface.clone(),
+                    interface_name.clone(),
                     dst_mac,
                     src_mac,
                     buff.clone(),
@@ -873,7 +873,7 @@ fn send_nx_probes(
     let mut nx_hm = HashMap::new();
     let mut scan_start_hm = HashMap::new();
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     loop {
         let mut all_done = true;
         let mut send_status_clone = send_status.clone();
@@ -882,7 +882,7 @@ fn send_nx_probes(
             if *retiries < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let receiver = ask_runner(
-                    iface.clone(),
+                    interface_name.clone(),
                     dst_mac,
                     src_mac,
                     buff.clone(),
@@ -979,13 +979,13 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
     for _ in 0..PROBE_MAX_RETIRIES {
         let start = Instant::now();
         let st = scan_start.elapsed();
         let receiver = ask_runner(
-            iface.clone(),
+            interface_name.clone(),
             dst_mac,
             src_mac,
             buff.clone(),
@@ -1056,11 +1056,11 @@ fn send_tecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
     let start = Instant::now();
     let receiver = ask_runner(
-        iface.clone(),
+        interface_name.clone(),
         dst_mac,
         src_mac,
         buff.clone(),
@@ -1193,7 +1193,7 @@ fn send_tx_probes(
     }
 
     let ether_type = EtherTypes::Ipv6;
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let mut tx_hm = HashMap::new();
     let mut scan_start_hm = HashMap::new();
     loop {
@@ -1205,7 +1205,7 @@ fn send_tx_probes(
             if *retiries < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let receiver = ask_runner(
-                    iface.clone(),
+                    interface_name.clone(),
                     dst_mac,
                     src_mac,
                     buff.clone(),

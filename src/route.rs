@@ -1,3 +1,4 @@
+use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
@@ -11,7 +12,6 @@ use std::net::IpAddr;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv6AddrExt;
@@ -19,11 +19,11 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::GLOBAL_NET_CACHES;
-use crate::NEIGHBOR_DETECT_MUTEX;
 use crate::error::PistolError;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::layer::multicast_mac;
+use crate::scan::HasResponse;
 use crate::scan::arp::recv_arp_scan_response;
 use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::recv_ndp_ns_scan_response;
@@ -608,260 +608,371 @@ pub(crate) fn search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolErro
     Ok(gncs.system_network_cache.search_mac(dst_addr))
 }
 
+fn recv_neighbor_detect_packet(
+    dst_addr: IpAddr,
+    start: Instant,
+    timeout: Duration,
+    is_route: bool,
+    receiver: Receiver<(Arc<[u8]>, Duration)>,
+) -> Result<(MacAddr, HasResponse, Duration), PistolError> {
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => {
+            let (mac, has_response, rtt) =
+                recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
+            let mac = match mac {
+                Some(dst_mac) => {
+                    neigh_cache_update(dst_addr, dst_mac, Some(rtt))?;
+                    dst_mac
+                }
+                None => {
+                    let new_mac = MacAddr::zero();
+                    neigh_cache_update(dst_addr, new_mac, Some(rtt))?;
+                    new_mac
+                }
+            };
+            Ok((mac, has_response, rtt))
+        }
+        IpAddr::V6(dst_ipv6) => {
+            let (mac, has_response, rtt) = if is_route {
+                recv_ndp_rs_scan_response(dst_ipv6, start, timeout, receiver)?
+            } else {
+                recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?
+            };
+            let mac = match mac {
+                Some(dst_mac) => {
+                    neigh_cache_update(dst_addr, dst_mac, Some(rtt))?;
+                    dst_mac
+                }
+                None => {
+                    let new_mac = MacAddr::zero();
+                    neigh_cache_update(dst_addr, new_mac, Some(rtt))?;
+                    new_mac
+                }
+            };
+            Ok((mac, has_response, rtt))
+        }
+    }
+}
+
 fn send_neighbor_detect_packet(
     dst_addr: IpAddr,
     src_addr: IpAddr,
     interface: NetworkInterface,
     timeout: Duration,
-) -> Result<MacAddr, PistolError> {
-    let detect_neighbor =
-        |dst_addr: IpAddr, src_mac: MacAddr, is_route: bool| -> Result<MacAddr, PistolError> {
-            match dst_addr {
-                IpAddr::V4(dst_ipv4) => {
-                    let dst_mac = MacAddr::broadcast();
-                    let src_ipv4 = match src_addr {
-                        IpAddr::V4(src) => src,
-                        _ => {
-                            return Err(PistolError::CanNotFoundSrcAddress);
-                        }
-                    };
-                    let start = Instant::now();
-                    let receiver = send_arp_scan_packet(
-                        dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout,
-                    )?;
-                    let (mac, rtt) = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
-                    match mac {
-                        Some(dst_mac) => {
-                            neigh_cache_update(dst_ipv4.into(), dst_mac, Some(rtt))?;
-                            Ok(dst_mac)
-                        }
-                        None => Err(PistolError::CanNotFoundDstMacAddress),
-                    }
-                }
-                IpAddr::V6(dst_ipv6) => {
-                    let src_ipv6 = match src_addr {
-                        IpAddr::V6(src) => src,
-                        _ => return Err(PistolError::CanNotFoundSrcAddress),
-                    };
-                    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
-                    let dst_ipv6 = dst_ipv6_ext.link_multicast();
-                    let dst_mac = multicast_mac(dst_ipv6);
-                    let start = Instant::now();
-                    let (mac, rtt) = if is_route {
-                        let receiver = send_ndp_ra_scan_packet(src_ipv6, timeout)?;
-                        let ret = recv_ndp_rs_scan_response(dst_ipv6, start, timeout, receiver)?;
-                        ret
-                    } else {
-                        let receiver = send_ndp_ns_scan_packet(
-                            dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout,
-                        )?;
-                        let ret = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
-                        ret
-                    };
-                    match mac {
-                        Some(dst_mac) => {
-                            neigh_cache_update(dst_ipv6.into(), dst_mac, Some(rtt))?;
-                            Ok(dst_mac)
-                        }
-                        None => Err(PistolError::CanNotFoundDstMacAddress),
-                    }
-                }
-            }
-        };
-
-    if dst_addr.is_loopback() || addr_is_my_ip(dst_addr) {
-        // target is your own machine, such as when using localhost or 127.0.0.1 as the target
-        if let Some(dst_mac) = interface.mac {
-            Ok(dst_mac)
-        } else {
-            Err(PistolError::CanNotFoundDstMacAddress)
-        }
-    } else if dst_addr_in_local_net(dst_addr) {
-        if let Some(dst_mac) = search_mac(dst_addr)? {
-            debug!("dst {} in arp cache", dst_addr);
-            Ok(dst_mac)
-        } else {
-            debug!("dst {} not in arp cache", dst_addr);
-            // if addr is local address and in local net
-            // use the arp or ndp_ns to ask the mac address
-            let src_mac = match interface.mac {
-                Some(m) => m,
-                None => return Err(PistolError::CanNotFoundSrcMacAddress),
+    is_route: bool,
+) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+    let interface_name = interface.name;
+    match dst_addr {
+        IpAddr::V4(dst_ipv4) => {
+            let dst_mac = MacAddr::broadcast();
+            let src_ipv4 = match src_addr {
+                IpAddr::V4(src) => src,
+                _ => return Err(PistolError::CanNotFoundSrcAddress),
             };
-            detect_neighbor(dst_addr, src_mac, false)
+            let receiver = send_arp_scan_packet(
+                dst_mac,
+                dst_ipv4,
+                src_mac,
+                src_ipv4,
+                interface_name,
+                timeout,
+            )?;
+            Ok(receiver)
         }
-    } else {
-        // finally, send it to the the default route address in layer2
-        let (default_route, default_route6) = get_default_route()?;
-        let dr = if dst_addr.is_ipv4() {
-            match default_route {
-                Some(dr) => dr,
-                None => return Err(PistolError::CanNotFoundRouterAddress),
-            }
-        } else {
-            match default_route6 {
-                Some(dr) => dr,
-                None => return Err(PistolError::CanNotFoundRouterAddress),
-            }
-        };
-
-        match search_mac(dr.via)? {
-            Some(dst_mac) => Ok(dst_mac),
-            None => {
-                let src_mac = match interface.mac {
-                    Some(m) => m,
-                    None => return Err(PistolError::CanNotFoundDstMacAddress),
-                };
-                detect_neighbor(dr.via, src_mac, true)
+        IpAddr::V6(dst_ipv6) => {
+            let src_ipv6 = match src_addr {
+                IpAddr::V6(src) => src,
+                _ => return Err(PistolError::CanNotFoundSrcAddress),
+            };
+            let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
+            let dst_ipv6 = dst_ipv6_ext.link_multicast();
+            let dst_mac = multicast_mac(dst_ipv6);
+            if is_route {
+                let receiver = send_ndp_ra_scan_packet(src_ipv6, timeout)?;
+                Ok(receiver)
+            } else {
+                let receiver = send_ndp_ns_scan_packet(
+                    dst_mac,
+                    dst_ipv6,
+                    src_mac,
+                    src_ipv6,
+                    interface_name,
+                    timeout,
+                )?;
+                Ok(receiver)
             }
         }
     }
 }
 
-/// Get destination mac address and source interface.
-pub(crate) fn infer_mac(
+fn get_route_via(
     dst_addr: IpAddr,
     src_addr: IpAddr,
-    timeout: Duration,
-) -> Result<(MacAddr, NetworkInterface, bool), PistolError> {
-    fn get_mac(
-        dst_addr: IpAddr,
-        src_addr: IpAddr,
-        timeout: Duration,
-    ) -> Result<(MacAddr, NetworkInterface, bool), PistolError> {
-        let (src_iface, route_via) = if src_addr == dst_addr {
-            // if the source address is the same as the destination address,
-            // it means that the target is your own machine.
-            let src_interface = match find_interface_by_src_ip(src_addr.into()) {
-                Some(i) => i,
-                None => {
-                    return Err(PistolError::CanNotFoundInterface {
-                        i: format!("src interface from {}", src_addr),
-                    });
-                }
-            };
-            let via = Some(RouteVia::IpAddr(src_addr));
-            (src_interface, via)
-        } else {
-            let route_info = match search_route_table(dst_addr)? {
-                Some(route_info) => route_info,
-                None => {
-                    // send it to the default route address
-                    let (default_route, default_route6) = get_default_route()?;
-                    let dr = if dst_addr.is_ipv4() {
-                        if let Some(dr_ipv4) = default_route {
-                            dr_ipv4
-                        } else {
-                            return Err(PistolError::CanNotFoundRouterAddress);
-                        }
-                    } else {
-                        if let Some(dr_ipv6) = default_route6 {
-                            dr_ipv6
-                        } else {
-                            return Err(PistolError::CanNotFoundRouterAddress);
-                        }
-                    };
-                    match search_route_table(dr.via)? {
-                        Some(route_info) => route_info,
-                        None => return Err(PistolError::CanNotFoundInterface { i: dr.dev.name }),
-                    }
-                }
-            };
-            (route_info.dev, route_info.via)
+) -> Result<(NetworkInterface, Option<RouteVia>), PistolError> {
+    if src_addr == dst_addr {
+        // if the source address is the same as the destination address,
+        // it means that the target is your own machine.
+        let src_interface = match find_interface_by_src_ip(src_addr.into()) {
+            Some(i) => i,
+            None => {
+                return Err(PistolError::CanNotFoundInterface {
+                    i: format!("src interface from {}", src_addr),
+                });
+            }
         };
+        let via = Some(RouteVia::IpAddr(src_addr));
+        Ok((src_interface, via))
+    } else {
+        match search_route_table(dst_addr)? {
+            Some(route_info) => Ok((route_info.dev, route_info.via)),
+            None => {
+                // send it to the default route address
+                let (dr, dr6) = get_default_route()?;
+                let default_route = if dst_addr.is_ipv4() {
+                    let dr_ipv4 = dr.ok_or(PistolError::CanNotFoundRouterAddress)?;
+                    dr_ipv4
+                } else {
+                    let dr_ipv6 = dr6.ok_or(PistolError::CanNotFoundRouterAddress)?;
+                    dr_ipv6
+                };
+                match search_route_table(default_route.via)? {
+                    Some(route_info) => Ok((route_info.dev, route_info.via)),
+                    None => Err(PistolError::CanNotFoundInterface {
+                        i: default_route.dev.name,
+                    }),
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct InferMacOutput {
+    pub(crate) dst_mac: MacAddr,
+    pub(crate) src_interface: NetworkInterface,
+    pub(crate) cached: bool,
+    pub(crate) rtt: Duration,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct InferMacInput {
+    pub(crate) dst_addr: IpAddr,
+    pub(crate) src_addr: IpAddr,
+}
+
+/// Get destination mac address and source interface.
+pub(crate) fn infer_macs(
+    inputs: &[InferMacInput],
+    timeout: Duration,
+    max_retries: usize,
+) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
+    // Define some hashmaps to store the intermediate data, and the key is dst_addr.
+    let mut mac_hm = HashMap::new();
+    let mut via_hm = HashMap::new();
+    let mut interface_name_hm = HashMap::new();
+    let mut src_addr_hm = HashMap::new();
+    let mut cached_hm = HashMap::new();
+    let mut rtt_hm = HashMap::new();
+    // part 2
+    let mut receiver_hm = HashMap::new();
+    let mut start_hm = HashMap::new();
+    let mut is_route_hm = HashMap::new();
+    let mut target_hm = HashMap::new();
+    let mut retried_hm = HashMap::new();
+
+    for it in inputs {
+        let src_addr = it.src_addr;
+        let dst_addr = it.dst_addr;
+        let (src_interface, route_via) = get_route_via(dst_addr, src_addr)?;
         debug!(
             "src interface: {}, via addr: {:?}",
-            src_iface.name, route_via
+            src_interface.name, route_via
         );
+        mac_hm.insert(dst_addr, MacAddr::zero());
+        via_hm.insert(dst_addr, route_via);
+        interface_name_hm.insert(dst_addr, src_interface);
+        src_addr_hm.insert(dst_addr, src_addr);
+        cached_hm.insert(dst_addr, false);
+        rtt_hm.insert(dst_addr, Duration::ZERO);
+    }
 
+    for (dst_addr, route_via) in via_hm {
         match route_via {
             Some(route_via) => {
                 match route_via {
                     RouteVia::IfIndex(if_index) => {
-                        let interface = match find_interface_by_index(if_index) {
-                            Some(i) => i,
-                            None => {
-                                return Err(PistolError::CanNotFoundInterface {
-                                    i: format!("iface({})", if_index),
-                                });
-                            }
-                        };
                         // no via_addr, use dst_addr here
-                        let (dst_mac, cached) = match search_mac(dst_addr)? {
-                            Some(dst_mac) => (dst_mac, true),
+                        match search_mac(dst_addr)? {
+                            Some(dst_mac) => {
+                                mac_hm.insert(dst_addr, dst_mac);
+                                cached_hm.insert(dst_addr, true);
+                            }
                             None => {
-                                let dst_mac = send_neighbor_detect_packet(
+                                // replace with new src_interfaces
+                                let src_interface = match find_interface_by_index(if_index) {
+                                    Some(i) => i,
+                                    None => {
+                                        return Err(PistolError::CanNotFoundInterface {
+                                            i: format!("interface_name({})", if_index),
+                                        });
+                                    }
+                                };
+                                let src_addr = src_addr_hm[&dst_addr];
+                                let start = Instant::now();
+                                let receiver = send_neighbor_detect_packet(
                                     dst_addr,
                                     src_addr,
-                                    interface.clone(),
+                                    src_interface,
                                     timeout,
+                                    false,
                                 )?;
-                                (dst_mac, false)
+                                receiver_hm.insert(dst_addr, receiver);
+                                start_hm.insert(dst_addr, start);
+                                cached_hm.insert(dst_addr, false);
+                                is_route_hm.insert(dst_addr, false);
+                                target_hm.insert(dst_addr, dst_addr);
+                                retried_hm.insert(dst_addr, 0);
                             }
                         };
-                        Ok((dst_mac, interface, cached))
                     }
-                    RouteVia::MacAddr(dst_mac) => Ok((dst_mac, src_iface, true)),
+                    RouteVia::MacAddr(dst_mac) => {
+                        mac_hm.insert(dst_addr, dst_mac);
+                        cached_hm.insert(dst_addr, true);
+                    }
                     RouteVia::IpAddr(via_addr) => {
-                        // we need to fix 0.0.0.0
+                        // fix 0.0.0.0 address
                         let via_addr = if via_addr.is_unspecified() {
                             dst_addr
                         } else {
                             via_addr
                         };
-                        let (dst_mac, cached) = match search_mac(via_addr)? {
-                            Some(m) => (m, true),
-                            None => (
-                                send_neighbor_detect_packet(
+                        match search_mac(via_addr)? {
+                            Some(m) => {
+                                mac_hm.insert(dst_addr, m);
+                                cached_hm.insert(dst_addr, true);
+                            }
+                            None => {
+                                let src_addr = src_addr_hm[&dst_addr];
+                                let src_interface = interface_name_hm[&dst_addr].clone();
+                                let start = Instant::now();
+                                let receiver = send_neighbor_detect_packet(
                                     via_addr,
                                     src_addr,
-                                    src_iface.clone(),
+                                    src_interface,
                                     timeout,
-                                )?,
-                                false,
-                            ),
-                        };
-                        Ok((dst_mac, src_iface, cached))
+                                    true,
+                                )?;
+                                receiver_hm.insert(dst_addr, receiver);
+                                start_hm.insert(dst_addr, start);
+                                cached_hm.insert(dst_addr, false);
+                                is_route_hm.insert(dst_addr, true);
+                                target_hm.insert(dst_addr, via_addr);
+                                retried_hm.insert(dst_addr, 0);
+                            }
+                        }
                     }
                 }
             }
             None => {
                 debug!("route_via is none");
-                let (dst_mac, cached) = match search_mac(dst_addr)? {
-                    Some(m) => (m, true),
+                match search_mac(dst_addr)? {
+                    Some(m) => {
+                        mac_hm.insert(dst_addr, m);
+                        cached_hm.insert(dst_addr, true);
+                    }
                     None => {
-                        let dst_mac = send_neighbor_detect_packet(
+                        let src_addr = src_addr_hm[&dst_addr];
+                        let src_interface = interface_name_hm[&dst_addr].clone();
+                        let start = Instant::now();
+                        let receiver = send_neighbor_detect_packet(
                             dst_addr,
                             src_addr,
-                            src_iface.clone(),
+                            src_interface,
                             timeout,
+                            false,
                         )?;
-                        (dst_mac, false)
+                        receiver_hm.insert(dst_addr, receiver);
+                        start_hm.insert(dst_addr, start);
+                        cached_hm.insert(dst_addr, false);
+                        is_route_hm.insert(dst_addr, false);
+                        target_hm.insert(dst_addr, dst_addr);
+                        retried_hm.insert(dst_addr, 0);
                     }
-                };
-                debug!("route_via is none and found dst_mac: {}", dst_mac);
-                Ok((dst_mac, src_iface, cached))
+                }
             }
         }
     }
 
-    let mut neighbor_detect_mutex = NEIGHBOR_DETECT_MUTEX
-        .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+    let mut receiver_hm_clone = receiver_hm.clone();
+    loop {
+        for (dst_addr, receiver) in &receiver_hm {
+            let start = start_hm[&dst_addr];
+            let is_route = is_route_hm[&dst_addr];
+            let retried = retried_hm[&dst_addr];
+            if retried < max_retries {
+                let receiver = receiver.clone();
+                let dst_addr = dst_addr.clone();
+                let (mac, has_response, rtt) =
+                    recv_neighbor_detect_packet(dst_addr, start, timeout, is_route, receiver)?;
+                if mac != MacAddr::zero() {
+                    println!(
+                        ">>>>>>>>>>>>>>>>>>>>> from {}, mac: {}, rtt: {:?}",
+                        dst_addr, mac, rtt
+                    );
+                }
 
-    let mutex = if let Some(mutex) = neighbor_detect_mutex.get(&dst_addr) {
-        (*mutex).clone()
-    } else {
-        let mutex = Arc::new(Mutex::new(()));
-        neighbor_detect_mutex.insert(dst_addr, mutex.clone());
-        mutex
-    };
+                match has_response {
+                    HasResponse::Yes => {
+                        mac_hm.insert(dst_addr, mac);
+                        rtt_hm.insert(dst_addr, rtt);
+                    }
+                    HasResponse::No => {
+                        if retried < max_retries - 1 {
+                            let target_addr = target_hm[&dst_addr];
+                            let src_addr = src_addr_hm[&dst_addr];
+                            let interface = interface_name_hm[&dst_addr].clone();
+                            let is_route = is_route_hm[&dst_addr];
+                            let start = Instant::now();
+                            println!("scan {} retry {}/{}", dst_addr, retried + 1, max_retries);
+                            let receiver = send_neighbor_detect_packet(
+                                target_addr,
+                                src_addr,
+                                interface,
+                                timeout,
+                                is_route,
+                            )?;
+                            receiver_hm_clone.insert(dst_addr, receiver);
+                            start_hm.insert(dst_addr, start);
+                            retried_hm.insert(dst_addr, retried + 1);
+                        } else {
+                            receiver_hm_clone.remove(&dst_addr);
+                        }
+                    }
+                }
+            }
+        }
+        receiver_hm = receiver_hm_clone.clone();
 
-    // lock and wait here to send arp scan or ndp_ns scan packet only once
-    let _m = mutex
-        .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
-    get_mac(dst_addr, src_addr, timeout)
+        if receiver_hm.is_empty() {
+            break;
+        }
+    }
+
+    let mut rets = HashMap::new();
+    for (dst_addr, mac) in mac_hm {
+        let src_interface = interface_name_hm[&dst_addr].clone();
+        let cached = cached_hm[&dst_addr];
+        let rtt = rtt_hm[&dst_addr];
+        let output = InferMacOutput {
+            dst_mac: mac,
+            src_interface,
+            cached,
+            rtt,
+        };
+        rets.insert(dst_addr, output);
+    }
+    Ok(rets)
 }
 
 /// The source address is inferred from the target address.
@@ -1535,7 +1646,7 @@ pub(crate) struct SystemNetCache {
     pub(crate) default_route: Option<DefaultRoute>,
     pub(crate) default_route6: Option<DefaultRoute>,
     pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
-    pub(crate) neighbor: HashMap<IpAddr, Neighbor>,
+    pub(crate) neighbors: HashMap<IpAddr, Neighbor>,
 }
 
 impl fmt::Display for SystemNetCache {
@@ -1561,7 +1672,7 @@ impl fmt::Display for SystemNetCache {
         output.push(routes_string);
 
         let mut neighbor = Vec::new();
-        for (k, v) in &self.neighbor {
+        for (k, v) in &self.neighbors {
             neighbor.push(format!("{}({})", k, v.mac));
         }
         let neighbor_string = format!("neighbor cache: {}", neighbor.join(","));
@@ -1584,12 +1695,12 @@ impl SystemNetCache {
             default_route: route_table.default_route,
             default_route6: route_table.default_route6,
             routes: route_table.routes,
-            neighbor: fix_neighbor_cache,
+            neighbors: fix_neighbor_cache,
         };
         Ok(snc)
     }
     pub(crate) fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
-        match self.neighbor.get(&ip) {
+        match self.neighbors.get(&ip) {
             Some(&m) => {
                 debug!("search neighbor cache hit: ip {}, mac {}", ip, m.mac);
                 Some(m.mac)
@@ -1604,8 +1715,8 @@ impl SystemNetCache {
         rtt: Option<Duration>,
     ) {
         let neighbor = Neighbor { mac, rtt };
-        self.neighbor.insert(ip, neighbor);
-        debug!("update the neigh cache done: {:?}", self.neighbor);
+        self.neighbors.insert(ip, neighbor);
+        debug!("update the neigh cache done: {:?}", self.neighbors);
     }
     pub(crate) fn search_route_table(&self, dst_addr: IpAddr) -> Option<RouteInfo> {
         for (route_addr, route_info) in &self.routes {

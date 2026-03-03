@@ -31,7 +31,7 @@ use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
 use crate::scan::PortStatus;
-use crate::scan::RecvResponse;
+use crate::scan::HasResponse;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
@@ -116,11 +116,11 @@ pub(crate) fn send_udp_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let iface = interface.name.clone();
+    let interface_name = interface.name.clone();
     let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
     let receiver = ask_runner(
-        iface,
+        interface_name,
         dst_mac,
         src_mac,
         ipv6_buff,
@@ -136,7 +136,7 @@ pub(crate) fn recv_udp_scan_packet(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
     let (eth_response, rtt) = get_response(receiver, start, timeout);
     let codes_1 = vec![
         Icmpv6Code(4), // port unreachable
@@ -151,7 +151,7 @@ pub(crate) fn recv_udp_scan_packet(
             match ipv6_packet.get_next_header() {
                 IpNextHeaderProtocols::Udp => {
                     // any udp response from target port (unusual)
-                    return Ok((PortStatus::Open, RecvResponse::Yes, rtt));
+                    return Ok((PortStatus::Open, HasResponse::Yes, rtt));
                 }
                 IpNextHeaderProtocols::Icmpv6 => {
                     if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
@@ -160,9 +160,9 @@ pub(crate) fn recv_udp_scan_packet(
                         if icmpv6_type == Icmpv6Types::DestinationUnreachable {
                             if codes_1.contains(&icmpv6_code) {
                                 // icmpv6 port unreachable error (type 1, code 4)
-                                return Ok((PortStatus::Closed, RecvResponse::Yes, rtt));
+                                return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
                             } else if codes_2.contains(&icmpv6_code) {
-                                return Ok((PortStatus::Filtered, RecvResponse::Yes, rtt));
+                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
                             }
                         }
                     }
@@ -172,5 +172,5 @@ pub(crate) fn recv_udp_scan_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, RecvResponse::No, rtt))
+    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
 }

@@ -83,7 +83,7 @@ use crate::utils;
 /// So when UDP scan returns to the open_or_filtered state, DataRecvStatus should be set to No.
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RecvResponse {
+pub enum HasResponse {
     Yes,
     No,
 }
@@ -245,10 +245,12 @@ pub fn arp_scan_raw(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
+            let interface_name = interface.name;
             let start = Instant::now();
             let receiver =
-                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
-            let (mac, rtt) = recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
+                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, interface_name, timeout)?;
+            let (mac, _has_response, rtt) =
+                recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
             Ok((mac, rtt))
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -294,8 +296,9 @@ fn arp_scan_thread(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
+            let interface_name = interface.name;
             let receiver =
-                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, timeout)?;
+                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, interface_name, timeout)?;
             Ok(receiver)
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -341,10 +344,12 @@ pub fn ndp_ns_scan_raw(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+            let interface_name = interface.name;
             let start = Instant::now();
             let receiver =
-                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
-            let (mac, rtt) = recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
+                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, interface_name, timeout)?;
+            let (mac, _has_response, rtt) =
+                recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
             Ok((mac, rtt))
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -390,8 +395,9 @@ pub fn ndp_ns_scan_thread(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+            let interface_name = interface.name;
             let receiver =
-                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout)?;
+                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, interface_name, timeout)?;
             Ok(receiver)
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -467,7 +473,7 @@ pub fn mac_scan(
                         }
                     };
                     match recv_result {
-                        Ok((mac, rtt)) => {
+                        Ok((mac, _has_response, rtt)) => {
                             mac_scan_status_clone.insert(dst_addr, (retiries, true, None, start));
                             mac_scan_rets.insert(dst_addr, (mac, rtt));
                         }
@@ -1352,11 +1358,11 @@ fn idle_scan(
                 IdleScanSteps::RecvStep1 => match status.receiver {
                     Some(receiver) => {
                         let start = status.start;
-                        let (port_status, recv_response, rtt_1, zombie_ip_id_1) =
+                        let (port_status, has_response, rtt_1, zombie_ip_id_1) =
                             tcp::recv_idle_scan_packet_1(start, timeout, receiver)?;
-                        let data_recved = match recv_response {
-                            RecvResponse::Yes => true,
-                            RecvResponse::No => false,
+                        let data_recved = match has_response {
+                            HasResponse::Yes => true,
+                            HasResponse::No => false,
                         };
                         if port_status == PortStatus::Open {
                             let new_status = IdleScanStatus {
@@ -1391,7 +1397,7 @@ fn idle_scan(
                         let start = status.start;
                         let rtt_1 = status.rtt_1;
                         let zombie_ip_id_1 = status.zombie_ip_id_1;
-                        let (port_status, recv_response, rtt_2) = tcp::recv_idle_scan_packet_2(
+                        let (port_status, has_response, rtt_2) = tcp::recv_idle_scan_packet_2(
                             zombie_ipv4,
                             zombie_port,
                             start,
@@ -1418,9 +1424,9 @@ fn idle_scan(
                         };
                         port_reports.push(report);
 
-                        let data_recved = match recv_response {
-                            RecvResponse::Yes => true,
-                            RecvResponse::No => false,
+                        let data_recved = match has_response {
+                            HasResponse::Yes => true,
+                            HasResponse::No => false,
                         };
                         let new_status = IdleScanStatus {
                             retiries: status.retiries,
@@ -1494,7 +1500,7 @@ fn scan_recv(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
     match method {
         ScanMethod::Syn => tcp::recv_syn_scan_packet(start, timeout, receiver),
         ScanMethod::Fin => tcp::recv_fin_scan_packet(start, timeout, receiver),
@@ -1556,7 +1562,7 @@ fn scan_recv6(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, RecvResponse, Duration), PistolError> {
+) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
     match method {
         ScanMethod::Syn => tcp6::recv_syn_scan_packet(start, timeout, receiver),
         ScanMethod::Fin => tcp6::recv_fin_scan_packet(start, timeout, receiver),
@@ -1691,11 +1697,11 @@ fn scan(
                 let (retries, _data_recved, receiver, start) = status;
                 match receiver {
                     Some(receiver) => {
-                        let (port_status, recv_response, rtt) = match dst_addr {
+                        let (port_status, has_response, rtt) = match dst_addr {
                             IpAddr::V4(_) => scan_recv(method, start, timeout, receiver)?,
                             IpAddr::V6(_) => scan_recv6(method, start, timeout, receiver)?,
                         };
-                        if recv_response == RecvResponse::Yes {
+                        if has_response == HasResponse::Yes {
                             let report = PortReport {
                                 addr: dst_addr,
                                 port: dst_port,
@@ -2158,9 +2164,8 @@ fn scan_raw(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, method,
                     timeout,
                 )?;
-                let (port_status, recv_response, rtt) =
-                    scan_recv(method, start, timeout, receiver)?;
-                if recv_response == RecvResponse::Yes {
+                let (port_status, has_response, rtt) = scan_recv(method, start, timeout, receiver)?;
+                if has_response == HasResponse::Yes {
                     let report = PortReport {
                         addr: dst_addr,
                         port: dst_port,
@@ -2188,9 +2193,9 @@ fn scan_raw(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, method,
                     timeout,
                 )?;
-                let (port_status, recv_response, rtt) =
+                let (port_status, has_response, rtt) =
                     scan_recv6(method, start, timeout, receiver)?;
-                if recv_response == RecvResponse::Yes {
+                if has_response == HasResponse::Yes {
                     let report = PortReport {
                         addr: dst_addr,
                         port: dst_port,

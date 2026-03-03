@@ -30,7 +30,6 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpPacket;
 #[cfg(feature = "debug")]
 use pnet::packet::udp::UdpPacket;
-use rand::RngExt;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -46,7 +45,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -88,9 +86,10 @@ use crate::os::dbparser::NmapOsDb;
 use crate::ping::HostPing;
 #[cfg(feature = "ping")]
 use crate::ping::HostPings;
+use crate::route::InferMacInput;
 use crate::route::SystemNetCache;
 use crate::route::infer_addr;
-use crate::route::infer_mac;
+use crate::route::infer_macs;
 #[cfg(feature = "scan")]
 use crate::scan::MacScans;
 #[cfg(feature = "scan")]
@@ -105,10 +104,6 @@ use crate::vs::PistolVsScans;
 use crate::vs::PortService;
 
 pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
-
-/// In order to reduce multiple neighbor detection in a multi-threaded environment.
-static NEIGHBOR_DETECT_MUTEX: LazyLock<Arc<Mutex<HashMap<IpAddr, Arc<Mutex<()>>>>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// Cache the network information of the program runtime process to avoid repeated calculations.
 static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
@@ -539,39 +534,6 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 ];
 
 #[derive(Debug, Clone)]
-pub(crate) struct FlowItem {
-    pub(crate) dst_mac: MacAddr,
-    pub(crate) src_mac: MacAddr,
-    pub(crate) filters: Vec<Arc<PacketFilter>>,
-    /// The ethernet request packet.
-    pub(crate) request: Arc<[u8]>,
-    /// The ethernet response packet, empty if no response received.
-    pub(crate) response: Arc<[u8]>,
-    pub(crate) processed: bool,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct Flow {
-    pub(crate) packet_flow: Vec<Arc<FlowItem>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct StateMachineKey(u64);
-
-impl StateMachineKey {
-    pub(crate) fn new() -> Self {
-        let mut rng = rand::rng();
-        let key = rng.random();
-        Self(key)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct StateMachine {
-    pub(crate) states: HashMap<StateMachineKey, Flow>,
-}
-
-#[derive(Debug, Clone)]
 struct SenderMsg {
     dst_mac: MacAddr,         // destination mac address
     src_mac: MacAddr,         // source mac address
@@ -614,18 +576,18 @@ struct PistolMsg {
 
 static RUNNER_COMMUNICATION_CHANNEL: LazyLock<Arc<HashMap<String, RunnerCommunicationChannel>>> =
     LazyLock::new(|| {
-        let ifaces: Vec<String> = interfaces()
+        let interface_names: Vec<String> = interfaces()
             .iter()
-            .map(|iface| iface.name.clone())
+            .map(|interface_name| interface_name.name.clone())
             .collect();
         let mut hm = HashMap::new();
-        for iface in ifaces {
+        for interface_name in interface_names {
             let (filter_sender, filter_receiver) = unbounded::<PistolMsg>();
             let cc = RunnerCommunicationChannel {
                 sender: filter_sender,
                 receiver: filter_receiver,
             };
-            hm.insert(iface, cc);
+            hm.insert(interface_name, cc);
         }
         Arc::new(hm)
     });
@@ -671,7 +633,7 @@ impl RunnerCommunicationChannel {
 }
 
 pub(crate) fn ask_runner(
-    iface: String,
+    interface_name: String,
     dst_mac: MacAddr,
     src_mac: MacAddr,
     ether_payload: Arc<[u8]>,
@@ -681,9 +643,9 @@ pub(crate) fn ask_runner(
     retransmit: usize,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
     let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
-    let rcc = match hm.get(&iface) {
+    let rcc = match hm.get(&interface_name) {
         Some(rcc) => rcc,
-        None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: iface }),
+        None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: interface_name }),
     };
 
     let packet_receiver = rcc.send_to_runner(
@@ -703,12 +665,13 @@ pub(crate) fn get_response(
     start: Instant,
     timeout: Duration,
 ) -> (Arc<[u8]>, Duration) {
-    let now = start.elapsed();
-    if now < timeout {
-        let fix_timeout = timeout - now;
+    let elapsed = start.elapsed();
+    if elapsed < timeout {
+        let fix_timeout = timeout - elapsed;
         match receiver.recv_timeout(fix_timeout) {
             Ok((buff, rtt)) => (buff, rtt),
-            Err(_e) => {
+            Err(e) => {
+                debug!("get_response recv_timeout error: {}", e);
                 let buff: Arc<[u8]> = Arc::new([]);
                 (buff, Duration::ZERO)
             }
@@ -716,7 +679,8 @@ pub(crate) fn get_response(
     } else {
         match receiver.recv() {
             Ok((buff, rtt)) => (buff, rtt),
-            Err(_e) => {
+            Err(e) => {
+                debug!("get_response recv error: {}", e);
                 let buff: Arc<[u8]> = Arc::new([]);
                 (buff, Duration::ZERO)
             }
@@ -771,8 +735,8 @@ impl Default for NetInfo {
 #[cfg(feature = "ping")]
 impl fmt::Display for NetInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.valid {
-            format!(
+        if self.valid {
+            let output = format!(
                 "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
                 self.dst_mac,
                 self.src_mac,
@@ -780,33 +744,51 @@ impl fmt::Display for NetInfo {
                 self.src_addr,
                 self.dst_ports,
                 self.interface.name
-            )
+            );
+            write!(f, "{}", output)
         } else {
-            format!("unvalid target: dst_addr: {}", self.dst_addr)
-        };
-        write!(f, "{}", output)
+            let output = format!(
+                "dst_addr: {}, dst_ports: {:?} is down or unreachable",
+                self.dst_addr, self.dst_ports
+            );
+            write!(f, "{}", output)
+        }
     }
 }
 
+#[derive(Debug, Clone)]
+struct NetInfoInput {
+    dst_addr: IpAddr,
+    dst_ports: Vec<u16>,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
+}
+
 impl NetInfo {
-    pub(crate) fn new(
-        dst_addr: IpAddr,
-        dst_ports: Vec<u16>,
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
-        debug!("infer: dst_addr({}) - src_addr({:?})", dst_addr, src_addr);
+    pub(crate) fn detect(input: &NetInfoInput) -> Result<Self, PistolError> {
+        let dst_addr = input.dst_addr;
+        let src_addr = input.src_addr;
+        debug!("infer dst_addr({})...", dst_addr);
         let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
             Some(ret) => ret,
             None => return Err(PistolError::CanNotFoundSrcAddress),
         };
-        debug!("inferred: dst_addr({}) src_addr({})", dst_addr, src_addr);
+        debug!("inferred dst_addr({}) src_addr({})", dst_addr, src_addr);
+
+        let mi = InferMacInput { dst_addr, src_addr };
+        let infer_mac_inputs = vec![mi];
 
         // Use a small timeout to infer mac address,
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
         let infer_mac_timeout = Duration::from_secs_f32(0.5);
-        let (dst_mac, interface, cached) = infer_mac(dst_addr, src_addr, infer_mac_timeout)?;
+        let max_retires = 2;
+        let infer_mac_outputs = infer_macs(&infer_mac_inputs, infer_mac_timeout, max_retires)?;
+
+        let imo = infer_mac_outputs[&dst_addr].clone();
+        let dst_mac = imo.dst_mac;
+        let dst_ports = input.dst_ports.clone();
+        let src_interface = imo.src_interface;
         if dst_mac == MacAddr::zero() {
             // Create a new NetInfo instance with invalid data,
             // indicated this target is down or unreachable.
@@ -815,22 +797,95 @@ impl NetInfo {
             fake_net_info.dst_ports = dst_ports;
             Ok(fake_net_info)
         } else {
-            match interface.mac {
-                Some(src_mac) => Ok(Self {
-                    dst_mac,
-                    src_mac,
-                    dst_addr,
-                    src_addr,
-                    dst_ports,
-                    src_port,
-                    interface,
-                    cached,
-                    cost: Duration::ZERO,
-                    valid: true,
-                }),
+            let src_port = input.src_port;
+            let cached = imo.cached;
+            match src_interface.mac {
+                Some(src_mac) => {
+                    let ni = Self {
+                        dst_mac,
+                        src_mac,
+                        dst_addr,
+                        src_addr,
+                        dst_ports,
+                        src_port,
+                        interface: src_interface,
+                        cached,
+                        cost: Duration::ZERO,
+                        valid: true,
+                    };
+                    Ok(ni)
+                }
                 None => Err(PistolError::CanNotFoundSrcMacAddress),
             }
         }
+    }
+    pub(crate) fn detects(inputs: &[NetInfoInput]) -> Result<Vec<Self>, PistolError> {
+        let mut rets = Vec::new();
+        let mut src_addr_hm = HashMap::new();
+        let mut infer_mac_inputs = Vec::new();
+        let mut dst_ports_hm = HashMap::new();
+        let mut src_port_hm = HashMap::new();
+        for it in inputs {
+            let dst_addr = it.dst_addr;
+            let src_addr = it.src_addr;
+            debug!("infer dst_addr({})...", dst_addr);
+            let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
+                Some(ret) => ret,
+                None => return Err(PistolError::CanNotFoundSrcAddress),
+            };
+            debug!("inferred dst_addr({}) src_addr({})", dst_addr, src_addr);
+            src_addr_hm.insert(dst_addr, src_addr);
+
+            let mi = InferMacInput { dst_addr, src_addr };
+            infer_mac_inputs.push(mi);
+            dst_ports_hm.insert(dst_addr, it.dst_ports.clone());
+            src_port_hm.insert(dst_addr, it.src_port);
+        }
+
+        // Use a small timeout to infer mac address,
+        // since the target is on localnet and may not exist or may not respond to ARP requests,
+        // and we don't want to wait too long for the response.
+        let infer_mac_timeout = Duration::from_secs_f32(0.5);
+        let max_retires = 2;
+        let infer_mac_outputs = infer_macs(&infer_mac_inputs, infer_mac_timeout, max_retires)?;
+
+        for (dst_addr, imo) in infer_mac_outputs {
+            let dst_mac = imo.dst_mac;
+            let dst_ports = dst_ports_hm[&dst_addr].clone();
+            let src_interface = imo.src_interface;
+            if dst_mac == MacAddr::zero() {
+                // Create a new NetInfo instance with invalid data,
+                // indicated this target is down or unreachable.
+                let mut fake_net_info = NetInfo::default();
+                fake_net_info.dst_addr = dst_addr;
+                fake_net_info.dst_ports = dst_ports;
+                rets.push(fake_net_info);
+            } else {
+                let src_addr = src_addr_hm[&dst_addr];
+                let src_port = src_port_hm[&dst_addr];
+                let cached = imo.cached;
+                match src_interface.mac {
+                    Some(src_mac) => {
+                        let ni = Self {
+                            dst_mac,
+                            src_mac,
+                            dst_addr,
+                            src_addr,
+                            dst_ports,
+                            src_port,
+                            interface: src_interface,
+                            cached,
+                            cost: Duration::ZERO,
+                            valid: true,
+                        };
+                        rets.push(ni);
+                    }
+                    None => return Err(PistolError::CanNotFoundSrcMacAddress),
+                }
+            }
+        }
+
+        Ok(rets)
     }
 }
 
@@ -841,7 +896,6 @@ pub struct Pistol {
     if_name: Option<String>,
     log_level: Option<Level>,
     timeout: Duration,
-    threads: usize,
     max_retries: usize,
 }
 
@@ -851,7 +905,6 @@ impl Default for Pistol {
             if_name: None,
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
-            threads: 8,     // default 8 threads
             max_retries: 2, // default 2 max_retries
         }
     }
@@ -913,14 +966,6 @@ impl Pistol {
     pub fn get_timeout(&self) -> Duration {
         self.timeout
     }
-    /// Set the number of threads to use for scanning.
-    pub fn set_threads(&mut self, threads: usize) {
-        self.threads = threads;
-    }
-    /// Get the number of threads to use for scanning.
-    pub fn get_threads(&self) -> usize {
-        self.threads
-    }
     /// Set the maximum number of max_retries to send packets to each target.
     pub fn set_max_retries(&mut self, max_retries: usize) {
         if max_retries > 0 {
@@ -948,11 +993,11 @@ impl Pistol {
         Ok(())
     }
     fn sender(
-        iface: String,
+        interface_name: String,
         sreceiver: Receiver<SenderMsg>,
         timeout: Duration,
     ) -> Result<(), PistolError> {
-        debug!("start sender for iface: {}", iface);
+        debug!("start sender for interface_name: {}", interface_name);
         let config = datalink::Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
@@ -965,10 +1010,10 @@ impl Pistol {
             socket_fd: None,
         };
 
-        let interface = match find_interface_by_name(&iface) {
+        let interface = match find_interface_by_name(&interface_name) {
             Some(i) => i,
             None => {
-                return Err(PistolError::CanNotFoundInterface { i: iface });
+                return Err(PistolError::CanNotFoundInterface { i: interface_name });
             }
         };
 
@@ -1036,9 +1081,12 @@ impl Pistol {
             }
         }
     }
-    fn receiver(iface: String, rreceiver: Receiver<ReceiverMsg>) -> Result<(), PistolError> {
-        debug!("start receiver for iface: {}", iface);
-        let mut cap = Capture::new(&iface)?;
+    fn receiver(
+        interface_name: String,
+        rreceiver: Receiver<ReceiverMsg>,
+    ) -> Result<(), PistolError> {
+        debug!("start receiver for interface_name: {}", interface_name);
+        let mut cap = Capture::new(&interface_name)?;
         cap.set_timeout(50);
         cap.set_promiscuous_mode(true);
         // cap.set_immediate_mode(true);
@@ -1085,12 +1133,12 @@ impl Pistol {
             for packet in &history_packets {
                 let mut drop_idx = 0;
                 let mut need_drop = false;
-                #[cfg(feature = "debug")]
-                debug_show_packet(packet, Some(EtherTypes::Arp));
                 for (i, msg) in r_msgs.iter().enumerate() {
                     if msg.check_packet(packet) {
                         // send matched packet back to thread
                         debug!("matched packet [{}]", packet.len());
+                        #[cfg(feature = "debug")]
+                        debug_show_packet(packet, Some(EtherTypes::Arp));
                         let rtt = msg.created.elapsed();
                         msg.send_packet_back(packet, rtt);
                         need_drop = true;
@@ -1115,7 +1163,7 @@ impl Pistol {
             if need_drop {
                 debug!(
                     "layer2 runner {} has {} expired msgs to drop",
-                    iface,
+                    interface_name,
                     drop_idxs.len()
                 );
                 for &drop_idx in drop_idxs.iter().rev() {
@@ -1125,7 +1173,7 @@ impl Pistol {
 
             debug!(
                 "layer2 runner {} has {} msgs to process",
-                iface,
+                interface_name,
                 r_msgs.len()
             );
 
@@ -1136,20 +1184,23 @@ impl Pistol {
             );
         }
     }
-    fn runner(iface: String, timeout: Duration) -> Result<(), PistolError> {
+    fn runner(interface_name: String, timeout: Duration) -> Result<(), PistolError> {
         let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
-        let rcc = match hm.get(&iface) {
+        let rcc = match hm.get(&interface_name) {
             Some(rcc) => rcc,
-            None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: iface }),
+            None => {
+                return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: interface_name });
+            }
         };
 
         let (ssender, sreceiver) = unbounded::<SenderMsg>();
         let (rsender, rreceiver) = unbounded::<ReceiverMsg>();
 
-        let iface_sender = iface.clone();
-        let iface_receiver = iface.clone();
-        let _handle = thread::spawn(move || Self::sender(iface_sender, sreceiver, timeout));
-        let _handle = thread::spawn(move || Self::receiver(iface_receiver, rreceiver));
+        let interface_name_sender = interface_name.clone();
+        let interface_name_receiver = interface_name.clone();
+        let _handle =
+            thread::spawn(move || Self::sender(interface_name_sender, sreceiver, timeout));
+        let _handle = thread::spawn(move || Self::receiver(interface_name_receiver, rreceiver));
 
         // very small timeout to check new message
         let timeout_1ms = Duration::from_millis(1);
@@ -1197,50 +1248,20 @@ impl Pistol {
             let _handle = thread::spawn(move || Self::runner(ni.name, timeout));
         }
 
-        // we can not spawn too many threads, otherwise it may cause performance degradation,
-        let recv_size = targets.len();
-        let (tx, rx) = mpsc::channel();
-
+        let mut net_info_inputs = Vec::new();
         for t in targets {
             let dst_addr = t.addr;
             let dst_ports = t.ports.clone();
-            let tx = tx.clone();
-            thread::spawn(move || {
-                let net_info_now = Instant::now();
-                let net_info = match NetInfo::new(dst_addr, dst_ports, src_addr, src_port) {
-                    Ok(mut ni) => {
-                        ni.cost = net_info_now.elapsed();
-                        Ok(ni)
-                    }
-                    Err(e) => match e {
-                        PistolError::CanNotFoundDstMacAddress => {
-                            warn!(
-                                "can not found dst mac address for target {}, this target may be down or unreachable, set it to unvalid net_info now",
-                                dst_addr
-                            );
-                            let mut ni = NetInfo::default();
-                            ni.dst_addr = dst_addr;
-                            #[cfg(feature = "debug")]
-                            println!("now cost: {:.2}s", net_info_now.elapsed().as_secs_f64());
-                            ni.cost = net_info_now.elapsed();
-                            Ok(ni)
-                        }
-                        _ => Err(e),
-                    },
-                };
-                if let Err(e) = tx.send(net_info) {
-                    error!("failed to send net_info: {}", e);
-                }
-            });
+            let input = NetInfoInput {
+                dst_addr,
+                dst_ports,
+                src_addr,
+                src_port,
+            };
+            net_info_inputs.push(input);
         }
 
-        let mut net_infos = Vec::new();
-        let iter = rx.into_iter().take(recv_size);
-        for ni in iter {
-            let ni = ni?;
-            net_infos.push(ni);
-        }
-
+        let net_infos = NetInfo::detects(&net_info_inputs)?;
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
@@ -1260,7 +1281,14 @@ impl Pistol {
             let timeout = self.timeout;
             let _ = thread::spawn(move || Self::runner(ni.name, timeout));
         }
-        let net_info = NetInfo::new(dst_addr, dst_ports, src_addr, src_port)?;
+
+        let input = NetInfoInput {
+            dst_addr,
+            dst_ports,
+            src_addr,
+            src_port,
+        };
+        let net_info = NetInfo::detect(&input)?;
         Ok((net_info, now.elapsed()))
     }
     /* Scan */
@@ -1497,8 +1525,13 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let zommbie_net_info =
-            NetInfo::new(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
+        let zombie_net_info_input = NetInfoInput {
+            dst_addr: zombie_ipv4.into(),
+            dst_ports: vec![zombie_port],
+            src_addr,
+            src_port,
+        };
+        let zommbie_net_info = NetInfo::detect(&zombie_net_info_input)?;
         let zombie_mac = zommbie_net_info.dst_mac;
         let mut ret = scan::tcp_idle_scan(
             net_infos,
@@ -1531,8 +1564,13 @@ impl Pistol {
             None => None,
         };
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let zombie_net_info =
-            NetInfo::new(zombie_ipv4.into(), vec![zombie_port], src_addr, src_port)?;
+        let zombie_net_info_input = NetInfoInput {
+            dst_addr: zombie_ipv4.into(),
+            dst_ports: vec![zombie_port],
+            src_addr,
+            src_port,
+        };
+        let zombie_net_info = NetInfo::detect(&zombie_net_info_input)?;
         let zombie_mac = zombie_net_info.dst_mac;
         let mut ret = scan::tcp_idle_scan_raw(
             net_info,
@@ -2744,10 +2782,39 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(any(feature = "scan", feature = "os", feature = "vs"))]
-    use std::net::Ipv4Addr;
-    #[cfg(feature = "scan")]
-    use subnetwork::CrossIpv4Pool;
+    #[test]
+    fn test_net_info_detect() {
+        use std::thread::sleep;
+        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        let mut pistol = Pistol::new();
+        let (net_infos, cost) = pistol.init_runner(&targets, None, None).unwrap();
+        println!(
+            "net_infos len: {}, cost: {:.2}s",
+            net_infos.len(),
+            cost.as_secs_f32()
+        );
+
+        sleep(Duration::from_secs(3));
+
+        for ni in net_infos {
+            if ni.valid {
+                println!("net_info: {}", ni);
+            }
+        }
+    }
+    #[test]
+    fn test_load_cache() {
+        let nc = NetCache::load();
+        if let Some(nc) = nc {
+            let nbs = nc.system_network_cache.neighbors;
+            let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77));
+            let nb = nbs[&dst_addr];
+            let mac = nb.mac;
+            println!("{}", mac);
+        } else {
+            println!("no cache file found");
+        }
+    }
     #[test]
     fn test_dns_query() {
         let hostname = "ipv6.sjtu.edu.cn";
@@ -2841,9 +2908,7 @@ mod tests {
     #[test]
     fn test_mac_scan() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(8);
         pistol.set_max_retries(2);
-        pistol.set_threads(8);
         pistol.set_timeout(2.5);
         // pistol.set_log_level("debug");
 
@@ -2855,10 +2920,8 @@ mod tests {
     #[test]
     fn test_tcp_syn_scan() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(8);
         pistol.set_log_level("debug");
         pistol.set_max_retries(2);
-        pistol.set_threads(8);
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
@@ -2875,9 +2938,7 @@ mod tests {
     #[test]
     fn test_tcp_syn_scan_local() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(8);
         pistol.set_max_retries(2);
-        pistol.set_threads(8);
         pistol.set_timeout(0.5);
         pistol.set_log_level("debug");
 
@@ -2890,20 +2951,11 @@ mod tests {
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
     }
-    #[test]
-    fn test_load_cache() {
-        let nc = NetCache::load();
-        if let Some(nc) = nc {
-            println!("{:?}", nc);
-        } else {
-            println!("no cache file found");
-        }
-    }
+
     #[cfg(feature = "scan")]
     #[test]
     fn example_mac_scan() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(512);
         // set the timeout same as `arp-scan`
         pistol.set_timeout(0.5);
         pistol.set_max_retries(2);
@@ -2916,8 +2968,9 @@ mod tests {
     #[cfg(feature = "scan")]
     #[test]
     fn example_tcp_syn_scan() {
+        use subnetwork::CrossIpv4Pool;
+
         let mut pistol = Pistol::new();
-        pistol.set_threads(512);
         pistol.set_timeout(0.5);
         // Number of max_retries, it can also be understood as the maximum number of unsuccessful retries.
         // For example, here, 2 means that after the first detection the target port is closed, then an additional detection will be performed.
@@ -2948,7 +3001,6 @@ mod tests {
     #[test]
     fn example_os_detect() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(8);
         pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
 
