@@ -29,6 +29,8 @@ use std::time::Duration;
 #[cfg(feature = "vs")]
 use std::time::Instant;
 #[cfg(feature = "vs")]
+use threadpool::ThreadPool;
+#[cfg(feature = "vs")]
 use tracing::debug;
 #[cfg(feature = "vs")]
 use tracing::error;
@@ -39,8 +41,6 @@ use zip::ZipArchive;
 use crate::Target;
 #[cfg(feature = "vs")]
 use crate::error::PistolError;
-#[cfg(feature = "vs")]
-use crate::utils::get_threads_pool;
 #[cfg(feature = "vs")]
 use crate::utils::time_to_string;
 #[cfg(feature = "vs")]
@@ -186,8 +186,7 @@ pub fn vs_scan(
     timeout: Duration,
 ) -> Result<PistolVsScans, PistolError> {
     let mut ret = PistolVsScans::new();
-
-    let pool = get_threads_pool(threads);
+    let pool = ThreadPool::new(threads);
     let (tx, rx) = channel();
 
     let service_probes = get_nmap_service_probes()?;

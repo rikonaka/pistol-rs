@@ -18,8 +18,6 @@ use prettytable::Table;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use prettytable::row;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use std::char::MAX;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use std::collections::BTreeMap;
 #[cfg(feature = "scan")]
 use std::collections::HashMap;
@@ -33,10 +31,6 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::Arc;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::sync::mpsc::Receiver;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::sync::mpsc::channel;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -1615,10 +1609,10 @@ fn scan(
         // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
         if ni.valid {
             let mut hm = HashMap::new();
-            for p in ni.dst_ports {
+            for p in ni.dst_ports.clone() {
                 hm.insert(p, (0, false, None, Instant::now()));
             }
-            scan_status.insert(ni.clone(), hm);
+            scan_status.insert(ni, hm);
         }
     }
     let mut scan_status_clone = scan_status.clone();
@@ -2147,7 +2141,6 @@ fn scan_raw(
     // dst_addr may change during the processing.
     // It is only used here to determine whether the target is ipv4 or ipv6.
     // The real dst_addr is inferred from infer_addr.
-    let mut port_report = None;
     let cached = net_info.cached;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -2159,33 +2152,24 @@ fn scan_raw(
                     });
                 }
             };
-            for i in 0..max_retries {
+            for _ in 0..max_retries {
+                let start = Instant::now();
                 let receiver = scan_send(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, method,
                     timeout,
                 )?;
-                if i == max_retries - 1 {
-                    port_report = Some(PortReport {
+                let (port_status, recv_response, rtt) =
+                    scan_recv(method, start, timeout, receiver)?;
+                if recv_response == RecvResponse::Yes {
+                    let report = PortReport {
                         addr: dst_addr,
                         port: dst_port,
                         status: port_status,
                         cost: rtt,
                         cached,
-                    });
-                } else {
-                    match data_recv_status {
-                        RecvResponse::Yes => {
-                            port_report = Some(PortReport {
-                                addr: dst_addr,
-                                port: dst_port,
-                                status: port_status,
-                                cost: rtt,
-                                cached,
-                            });
-                            break;
-                        }
-                        RecvResponse::No => (), // continue probing
-                    }
+                    };
+                    ret.finish(Some(report));
+                    return Ok(ret);
                 }
             }
         }
@@ -2198,38 +2182,29 @@ fn scan_raw(
                     });
                 }
             };
-            for i in 0..max_retries {
+            for _ in 0..max_retries {
+                let start = Instant::now();
                 let receiver = scan_send6(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, method,
                     timeout,
                 )?;
-                if i == max_retries - 1 {
-                    port_report = Some(PortReport {
+                let (port_status, recv_response, rtt) =
+                    scan_recv6(method, start, timeout, receiver)?;
+                if recv_response == RecvResponse::Yes {
+                    let report = PortReport {
                         addr: dst_addr,
                         port: dst_port,
                         status: port_status,
                         cost: rtt,
                         cached,
-                    });
-                } else {
-                    match data_recv_status {
-                        RecvResponse::Yes => {
-                            port_report = Some(PortReport {
-                                addr: dst_addr,
-                                port: dst_port,
-                                status: port_status,
-                                cost: rtt,
-                                cached,
-                            });
-                            break;
-                        }
-                        RecvResponse::No => (), // continue probing
-                    }
+                    };
+                    ret.finish(Some(report));
+                    return Ok(ret);
                 }
             }
         }
     };
-    ret.finish(port_report);
+    ret.finish(None);
     Ok(ret)
 }
 
@@ -2308,12 +2283,11 @@ mod tests {
         let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
         let targets = vec![target];
         let max_retries = 2;
-        let threads = 8;
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
 
-        let ret = tcp_connect_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = tcp_connect_scan(net_infos, timeout, max_retries).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
@@ -2322,7 +2296,6 @@ mod tests {
         let src_port = None;
         let timeout = Duration::new(1, 0);
         let max_retries = 2;
-        let threads = 8;
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -2343,7 +2316,7 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_log_level("debug");
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_syn_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = tcp_syn_scan(net_infos, timeout, max_retries).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
@@ -2352,7 +2325,6 @@ mod tests {
         let src_port = Some(37888);
         let timeout = Duration::from_secs_f32(0.5);
         let max_retries = 1;
-        let threads = 65535;
         let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77));
         let ports: Vec<u16> = (22..65535).collect();
         // let ports: Vec<u16> = (8000..9000).collect();
@@ -2364,7 +2336,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_syn_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = tcp_syn_scan(net_infos, timeout, max_retries).unwrap();
         for r in &ret.port_reports {
             match r.status {
                 PortStatus::Open => println!("{}:{} -> open", r.addr, r.port),
@@ -2389,10 +2361,9 @@ mod tests {
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let targets = vec![target];
         let max_retries = 2;
-        let threads = 8;
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_fin_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = tcp_fin_scan(net_infos, timeout, max_retries).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
@@ -2404,10 +2375,9 @@ mod tests {
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let targets = vec![target];
         let max_retries = 2;
-        let threads = 8;
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_ack_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = tcp_ack_scan(net_infos, timeout, max_retries).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
@@ -2419,10 +2389,9 @@ mod tests {
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
         let targets = vec![target];
         let max_retries = 2;
-        let threads = 8;
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_null_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = tcp_null_scan(net_infos, timeout, max_retries).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
     #[test]
@@ -2434,10 +2403,9 @@ mod tests {
         let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080, 8081]));
         let targets = vec![target];
         let max_retries = 2;
-        let threads = 8;
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = udp_scan(net_infos, threads, timeout, max_retries).unwrap();
+        let ret = udp_scan(net_infos, timeout, max_retries).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
 }

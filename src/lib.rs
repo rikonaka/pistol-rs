@@ -51,7 +51,6 @@ use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
-use threadpool::ThreadPool;
 use tracing::Level;
 use tracing::debug;
 use tracing::error;
@@ -1165,8 +1164,6 @@ impl Pistol {
         }
 
         // we can not spawn too many threads, otherwise it may cause performance degradation,
-        let threads = utils::threads_check(self.threads);
-        let thread_pool = ThreadPool::new(threads);
         let recv_size = targets.len();
         let (tx, rx) = mpsc::channel();
 
@@ -1174,7 +1171,7 @@ impl Pistol {
             let dst_addr = t.addr;
             let dst_ports = t.ports.clone();
             let tx = tx.clone();
-            thread_pool.execute(move || {
+            thread::spawn(move || {
                 let net_info_now = Instant::now();
                 let net_info = match NetInfo::new(dst_addr, dst_ports, src_addr, src_port) {
                     Ok(mut ni) => {
@@ -1183,7 +1180,10 @@ impl Pistol {
                     }
                     Err(e) => match e {
                         PistolError::CanNotFoundDstMacAddress => {
-                            warn!("can not found dst mac address for target {}, this target may be down or unreachable, set it to unvalid net_info now", dst_addr);
+                            warn!(
+                                "can not found dst mac address for target {}, this target may be down or unreachable, set it to unvalid net_info now",
+                                dst_addr
+                            );
                             let mut ni = NetInfo::default();
                             ni.dst_addr = dst_addr;
                             #[cfg(feature = "debug")]
@@ -1326,7 +1326,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_ack_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1372,8 +1372,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_connect_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_connect_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1419,7 +1418,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_fin_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1472,7 +1471,6 @@ impl Pistol {
             Some(zombie_mac),
             Some(zombie_ipv4),
             Some(zombie_port),
-            self.threads,
             self.timeout,
             self.max_retries,
         )?;
@@ -1528,8 +1526,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_maimon_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_maimon_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1566,7 +1563,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_null_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_null_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1609,7 +1606,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_syn_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_syn_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1647,8 +1644,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_window_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_window_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1684,7 +1680,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_xmas_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_xmas_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1725,7 +1721,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::udp_scan(net_infos, self.threads, self.timeout, self.max_retries)?;
+        let mut ret = scan::udp_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2101,12 +2097,13 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
+        threads: usize,
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::icmp_flood(net_infos, self.threads, retransmit, repeat, fake_src)?;
+        let mut ret = flood::icmp_flood(net_infos, threads, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2318,10 +2315,11 @@ impl Pistol {
     pub fn os_detect(
         &mut self,
         targets: &[Target],
+        threads: usize,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, None, None)?;
-        let mut ret = os::os_detect(net_infos, self.threads, self.timeout, top_k)?;
+        let mut ret = os::os_detect(net_infos, threads, self.timeout, top_k)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2359,6 +2357,7 @@ impl Pistol {
     pub fn vs_scan(
         &self,
         targets: &[Target],
+        threads: usize,
         only_null_probe: bool,
         only_tcp_recommended: bool,
         only_udp_recommended: bool,
@@ -2366,7 +2365,7 @@ impl Pistol {
     ) -> Result<PistolVsScans, PistolError> {
         vs::vs_scan(
             targets,
-            self.threads,
+            threads,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
@@ -2935,17 +2934,17 @@ mod tests {
             ]),
         );
         let top_k = 3;
+        let threads = 8;
 
         // The `fingerprint` is the obtained fingerprint of the target OS.
         // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
-        let ret = pistol.os_detect(&[target], top_k).unwrap();
+        let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
     }
     #[cfg(feature = "os")]
     #[test]
     fn example_os_detect_ipv6() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(8);
         pistol.set_timeout(2.5);
 
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
@@ -2962,14 +2961,14 @@ mod tests {
         );
 
         let top_k = 3;
-        let ret = pistol.os_detect(&[target], top_k).unwrap();
+        let threads = 8;
+        let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
     }
     #[cfg(feature = "vs")]
     #[test]
     fn example_vs_scan() {
         let mut pistol = Pistol::new();
-        pistol.set_threads(8);
         pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
 
@@ -2980,9 +2979,11 @@ mod tests {
         // only_udp_recommended = true: only try the udp probe recommended port
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
+        let threads = 8;
         let ret = pistol
             .vs_scan(
                 &[target],
+                threads,
                 only_null_probe,
                 only_tcp_recommended,
                 only_udp_recommended,

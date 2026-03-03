@@ -1,11 +1,7 @@
-use num_cpus;
 use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
-use threadpool::ThreadPool;
-use tracing::debug;
-use tracing::warn;
 
 use crate::error::PistolError;
 
@@ -51,36 +47,6 @@ pub(crate) fn time_to_string(cost: Duration) -> String {
     } else {
         format!("{:.2}ms", cost.as_secs_f64() * 1000.0)
     }
-}
-
-pub(crate) fn threads_check(threads: usize) -> usize {
-    let mut threads = threads;
-    let max_threads = 1024;
-    if threads > max_threads {
-        warn!(
-            "system try to create too many threads (current threads num: {}, fixed threads num: {}))",
-            threads, max_threads
-        );
-        threads = max_threads;
-    }
-    debug!("program will create {} threads", threads);
-    threads
-}
-
-/// Returns the number of CPUs in the machine
-pub(crate) fn get_cpu_num() -> usize {
-    num_cpus::get()
-}
-
-pub(crate) fn get_threads_pool(threads: usize) -> ThreadPool {
-    let pool = if threads > 0 {
-        let threads = threads_check(threads);
-        ThreadPool::new(threads)
-    } else {
-        let cpus = get_cpu_num();
-        ThreadPool::new(cpus)
-    };
-    pool
 }
 
 pub(crate) struct PistolHex {
@@ -146,11 +112,6 @@ mod tests {
         let h = PistolHex::new_hex(s);
         let r = h.decode_as_u32().unwrap();
         assert_eq!(r, 10);
-    }
-    #[test]
-    fn test_get_cpus() {
-        let cpus = get_cpu_num();
-        println!("{}", cpus);
     }
     #[test]
     fn interface_loopback() {

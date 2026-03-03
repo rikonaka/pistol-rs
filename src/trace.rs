@@ -19,6 +19,8 @@ use std::fmt;
 use std::net::IpAddr;
 #[cfg(any(feature = "trace", feature = "os"))]
 use std::time::Duration;
+#[cfg(feature = "trace")]
+use std::time::Instant;
 #[cfg(any(feature = "trace", feature = "os"))]
 use tracing::debug;
 
@@ -151,7 +153,8 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
             for ttl in 1..=30 {
                 let random_src_port = utils::random_port_range(1000, 65535);
                 // let random_src_port = 61234; // debug use
-                let (hop_status, rtt) = tcp::send_syn_trace_packet(
+                let start = Instant::now();
+                let receiver = tcp::send_syn_trace_packet(
                     dst_mac,
                     dst_ipv4,
                     dst_port,
@@ -163,6 +166,7 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     ttl,
                     timeout,
                 )?;
+                let (hop_status, rtt) = tcp::recv_syn_trace_packet(start, timeout, receiver)?;
                 ip_id += 1;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => {
@@ -194,7 +198,8 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
             let mut last_response_hop_limit = 0;
             for hop_limit in 1..=30 {
                 let random_src_port = utils::random_port_range(1000, 65535);
-                let (hop_status, rtt) = tcp6::send_syn_trace_packet(
+                let start = Instant::now();
+                let receiver = tcp6::send_syn_trace_packet(
                     dst_mac,
                     dst_ipv6,
                     dst_port,
@@ -205,7 +210,7 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     hop_limit,
                     timeout,
                 )?;
-
+                let (hop_status, rtt) = tcp6::recv_syn_trace_packet(start, timeout, receiver)?;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => {
                         last_response_hop_limit = hop_limit;
@@ -256,10 +261,12 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
             }
             let mut last_response_ttl = 0;
             for ttl in 1..=30 {
-                let (hop_status, rtt) = icmp::send_icmp_trace_packet(
+                let start = Instant::now();
+                let receiver = icmp::send_icmp_trace_packet(
                     dst_mac, dst_ipv4, src_mac, src_ipv4, interface, ip_id, ttl, icmp_id,
                     ttl as u16, timeout,
                 )?;
+                let (hop_status, rtt) = icmp::recv_icmp_trace_packet(start, timeout, receiver)?;
                 ip_id += 1;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
@@ -285,7 +292,8 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
             };
             let mut last_response_hop_limit = 0;
             for hop_limit in 1..=30 {
-                let (hop_status, rtt) = icmpv6::send_icmpv6_trace_packet(
+                let start = Instant::now();
+                let receiver = icmpv6::send_icmpv6_trace_packet(
                     dst_mac,
                     dst_ipv6,
                     src_mac,
@@ -296,7 +304,7 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
                     hop_limit as u16,
                     timeout,
                 )?;
-
+                let (hop_status, rtt) = icmpv6::recv_icmpv6_trace_packet(start, timeout, receiver)?;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
                     // recv echo reply, means packet arrive the target machine
@@ -345,7 +353,8 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
             for ttl in 1..=30 {
                 let random_src_port = utils::random_port_range(1000, 65535);
                 let dst_port = START_PORT + (ttl - 1) as u16;
-                let (hop_status, rtt) = udp::send_udp_trace_packet(
+                let start = Instant::now();
+                let receiver = udp::send_udp_trace_packet(
                     dst_mac,
                     dst_ipv4,
                     dst_port,
@@ -357,6 +366,7 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     ttl,
                     timeout,
                 )?;
+                let (hop_status, rtt) = udp::recv_udp_trace_packet(start, timeout, receiver)?;
                 ip_id += 1;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
@@ -384,7 +394,8 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
             for hop_limit in 1..=30 {
                 let random_src_port = utils::random_port_range(1000, 65535);
                 let dst_port = START_PORT + (hop_limit - 1) as u16;
-                let (hop_status, rtt) = udp6::send_udp_trace_packet(
+                let start = Instant::now();
+                let receiver = udp6::send_udp_trace_packet(
                     dst_mac,
                     dst_ipv6,
                     dst_port,
@@ -395,7 +406,7 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     hop_limit,
                     timeout,
                 )?;
-
+                let (hop_status, rtt) = udp6::recv_udp_trace_packet(start, timeout, receiver)?;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
                     // icmpunreachable, means packet arrive the target machine

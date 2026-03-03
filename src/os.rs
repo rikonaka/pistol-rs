@@ -32,6 +32,8 @@ use std::time::Duration;
 #[cfg(feature = "os")]
 use std::time::Instant;
 #[cfg(feature = "os")]
+use threadpool::ThreadPool;
+#[cfg(feature = "os")]
 use tracing::debug;
 #[cfg(feature = "os")]
 use tracing::error;
@@ -413,7 +415,7 @@ pub fn os_detect(
     top_k: usize,
 ) -> Result<OsDetects, PistolError> {
     let (tx, rx) = channel();
-    let pool = utils::get_threads_pool(threads);
+    let pool = ThreadPool::new(threads);
     let mut recv_size = 0;
     let mut ret = OsDetects::new();
     let mut os_detects = Vec::new();
