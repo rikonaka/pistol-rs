@@ -30,6 +30,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpPacket;
 #[cfg(feature = "debug")]
 use pnet::packet::udp::UdpPacket;
+use rand::RngExt;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -536,6 +537,39 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     55600, 56737, 56738, 57294, 57797, 58080, 60020, 60443, 61532, 61900, 62078, 63331, 64623,
     64680, 65000, 65129, 65389,
 ];
+
+#[derive(Debug, Clone)]
+pub(crate) struct FlowItem {
+    pub(crate) dst_mac: MacAddr,
+    pub(crate) src_mac: MacAddr,
+    pub(crate) filters: Vec<Arc<PacketFilter>>,
+    /// The ethernet request packet.
+    pub(crate) request: Arc<[u8]>,
+    /// The ethernet response packet, empty if no response received.
+    pub(crate) response: Arc<[u8]>,
+    pub(crate) processed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Flow {
+    pub(crate) packet_flow: Vec<Arc<FlowItem>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StateMachineKey(u64);
+
+impl StateMachineKey {
+    pub(crate) fn new() -> Self {
+        let mut rng = rand::rng();
+        let key = rng.random();
+        Self(key)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StateMachine {
+    pub(crate) states: HashMap<StateMachineKey, Flow>,
+}
 
 #[derive(Debug, Clone)]
 struct SenderMsg {
