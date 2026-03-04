@@ -40,7 +40,7 @@ pub fn send_icmp_flood_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };
@@ -61,7 +61,7 @@ pub fn send_icmp_flood_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };
@@ -84,7 +84,7 @@ pub fn send_icmp_flood_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };

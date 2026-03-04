@@ -52,7 +52,7 @@ pub fn send_arp_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };

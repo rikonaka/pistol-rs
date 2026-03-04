@@ -64,7 +64,7 @@ pub(crate) fn send_syn_trace_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };
@@ -86,7 +86,7 @@ pub(crate) fn send_syn_trace_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };

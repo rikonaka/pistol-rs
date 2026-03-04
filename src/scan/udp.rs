@@ -33,8 +33,8 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::scan::PortStatus;
 use crate::scan::HasResponse;
+use crate::scan::PortStatus;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
@@ -56,7 +56,7 @@ pub(crate) fn send_udp_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };
@@ -78,7 +78,7 @@ pub(crate) fn send_udp_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };

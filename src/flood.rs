@@ -311,15 +311,15 @@ fn flood(
 
     let mut recv_size = 0;
     for ni in net_infos {
-        match ni.dst_addr {
+        match ni.inferred_dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for _ in 0..repeat {
                     for &dst_port in &ni.dst_ports {
-                        let dst_mac = ni.dst_mac;
-                        let src_mac = ni.src_mac;
+                        let dst_mac = ni.inferred_dst_mac;
+                        let src_mac = ni.inferred_src_mac;
                         let src_ipv4 = match fake_src {
                             true => utils::random_ipv4_addr(),
-                            false => match ni.src_addr {
+                            false => match ni.inferred_src_addr {
                                 IpAddr::V4(src_ipv4) => src_ipv4,
                                 _ => utils::random_ipv4_addr(),
                             },
@@ -332,7 +332,7 @@ fn flood(
                             },
                         };
                         let interface = ni.interface.clone();
-                        let dst_addr = ni.dst_addr;
+                        let dst_addr = ni.inferred_dst_addr;
 
                         let tx = tx.clone();
                         thread::spawn(move || {
@@ -352,11 +352,11 @@ fn flood(
             IpAddr::V6(dst_ipv6) => {
                 for _ in 0..repeat {
                     for &dst_port in &ni.dst_ports {
-                        let dst_mac = ni.dst_mac;
-                        let src_mac = ni.src_mac;
+                        let dst_mac = ni.inferred_dst_mac;
+                        let src_mac = ni.inferred_src_mac;
                         let src_ipv6 = match fake_src {
                             true => utils::random_ipv6_addr(),
-                            false => match ni.src_addr {
+                            false => match ni.inferred_src_addr {
                                 IpAddr::V6(src_ipv6) => src_ipv6,
                                 _ => utils::random_ipv6_addr(),
                             },
@@ -369,7 +369,7 @@ fn flood(
                             },
                         };
                         let interface = ni.interface.clone();
-                        let dst_addr = ni.dst_addr;
+                        let dst_addr = ni.inferred_dst_addr;
 
                         let tx = tx.clone();
                         thread::spawn(move || {
@@ -420,10 +420,10 @@ pub fn flood_raw(
 ) -> Result<Flood, PistolError> {
     let mut flood = Flood::new();
     let start = Instant::now();
-    let dst_mac = net_info.dst_mac;
-    let dst_addr = net_info.dst_addr;
-    let src_mac = net_info.src_mac;
-    let src_addr = net_info.src_addr;
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
+    let src_mac = net_info.inferred_src_mac;
+    let src_addr = net_info.inferred_src_addr;
     let src_port = net_info.src_port;
     let interface = &net_info.interface;
     match dst_addr {
@@ -478,7 +478,7 @@ pub fn flood_raw(
                 }
             }
             let flood_report = FloodReport {
-                addr: net_info.dst_addr,
+                addr: net_info.inferred_dst_addr,
                 send_packet: retransmit * repeat,
                 send_size: total_send_buff_size,
                 cost: start.elapsed(),
@@ -537,7 +537,7 @@ pub fn flood_raw(
                 }
             }
             let flood_report = FloodReport {
-                addr: net_info.dst_addr,
+                addr: net_info.inferred_dst_addr,
                 send_packet: retransmit * repeat,
                 send_size: total_send_buff_size,
                 cost: start.elapsed(),

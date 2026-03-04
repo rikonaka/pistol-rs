@@ -55,7 +55,7 @@ fn build_ipv6_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildIpv6PacketFailed {
+    Err(PistolError::OsDetectBuildIpv6PacketFailed {
         probe_name: probe_name.to_string(),
     })
 }
@@ -70,7 +70,7 @@ fn build_icmpv6_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildIcmpv6PacketFailed {
+    Err(PistolError::OsDetectBuildIcmpv6PacketFailed {
         probe_name: probe_name.to_string(),
     })
 }
@@ -85,7 +85,7 @@ fn build_tcp_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildTcpPacketFailed {
+    Err(PistolError::OsDetectBuildTcpPacketFailed {
         probe_name: probe_name.to_string(),
     })
 }

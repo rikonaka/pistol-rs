@@ -71,7 +71,7 @@ pub(crate) fn send_ndp_ra_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };
@@ -90,7 +90,7 @@ pub(crate) fn send_ndp_ra_scan_packet(
             Some(p) => p,
             None => {
                 return Err(PistolError::BuildPacketError {
-                    location: format!("{}", Location::caller()),
+                    location: Location::caller().to_string(),
                 });
             }
         };
@@ -109,7 +109,7 @@ pub(crate) fn send_ndp_ra_scan_packet(
         Some(p) => p,
         None => {
             return Err(PistolError::BuildPacketError {
-                location: format!("{}", Location::caller()),
+                location: Location::caller().to_string(),
             });
         }
     };
@@ -208,7 +208,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_localtion() {
-        let l = format!("{}", Location::caller());
+        let l = Location::caller().to_string();
         println!("{}", l);
     }
 }

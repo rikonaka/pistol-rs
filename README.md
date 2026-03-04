@@ -638,13 +638,3 @@ T4(R=Y%DF=Y%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
 U1(R=N)
 IE(R=Y%DFI=N%TG=40%CD=S)
 ```
-
-## Some Unsolvable Problems
-
-**Probe the loopback address and local machine**
-
-Because the entire `pistol`'s sending and receiving methods except services scan are based on the datalink layer, and the loopback address does not support sending ethernet frame data, but only at the transport layer. This means that when I send any data to local machine, I will not receive any response data packets.
-
-And the transport layer design of `libpnet` lacks flexibility and customizability, for example there is `ipv4_packet_iter` method only and no `ipv6_packet_iter` method, it means that I cannot receive any ipv6 packets if I changes the `pistol`'s sending and receiving methods from datalink layer to transport layer, [reference](https://docs.rs/pnet/0.35.0/pnet/transport/index.html).
-
-Therefore, `pistol` will not support loopback address speculation until a technical solution that can solve the above problem is found.

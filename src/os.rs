@@ -422,14 +422,14 @@ pub fn os_detect(
 
     for ni in net_infos {
         if !ni.valid {
-            let od = DetectReport::down_host(ni.dst_addr);
+            let od = DetectReport::down_host(ni.inferred_dst_addr);
             os_detects.push(od);
             continue;
         }
 
-        let dst_mac = ni.dst_mac;
-        let dst_addr = ni.dst_addr;
-        let src_mac = ni.src_mac;
+        let dst_mac = ni.inferred_dst_mac;
+        let dst_addr = ni.inferred_dst_addr;
+        let src_mac = ni.inferred_src_mac;
         let interface = ni.interface;
 
         let tx = tx.clone();
@@ -437,9 +437,9 @@ pub fn os_detect(
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let dst_ports = ni.dst_ports.clone();
-                let src_ipv4 = match ni.src_addr {
+                let src_ipv4 = match ni.inferred_src_addr {
                     IpAddr::V4(src) => src,
-                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
                 };
 
                 let nmap_os_db = get_nmap_os_db()?;
@@ -489,9 +489,9 @@ pub fn os_detect(
             }
             IpAddr::V6(dst_ipv6) => {
                 let dst_ports = ni.dst_ports.clone();
-                let src_ipv6 = match ni.src_addr {
+                let src_ipv6 = match ni.inferred_src_addr {
                     IpAddr::V6(src) => src,
-                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
                 };
 
                 let linear = gen_linear()?;
@@ -592,14 +592,14 @@ pub fn os_detect_raw(
 ) -> Result<OsDetect, PistolError> {
     let mut os_detect = OsDetect::new();
     if !net_info.valid {
-        os_detect.finish(Some(DetectReport::down_host(net_info.dst_addr)));
+        os_detect.finish(Some(DetectReport::down_host(net_info.inferred_dst_addr)));
         return Ok(os_detect);
     }
     let start_time = Instant::now();
-    let dst_mac = net_info.dst_mac;
-    let dst_addr = net_info.dst_addr;
-    let src_mac = net_info.src_mac;
-    let src_addr = net_info.src_addr;
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
+    let src_mac = net_info.inferred_src_mac;
+    let src_addr = net_info.inferred_src_addr;
     let interface = &net_info.interface;
 
     let dst_open_tcp_port = net_info.dst_ports[0];

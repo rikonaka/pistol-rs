@@ -9,6 +9,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -20,6 +22,7 @@ use tracing::warn;
 
 use crate::GLOBAL_NET_CACHES;
 use crate::error::PistolError;
+use crate::fake_interface;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::layer::multicast_mac;
@@ -553,20 +556,6 @@ fn find_loopback_interface() -> Option<NetworkInterface> {
     }
     None
 }
-*/
-
-/// Check if the target IP address is one of the system IP address.
-fn addr_is_my_ip(ip: IpAddr) -> bool {
-    for interface in interfaces() {
-        for ipn in interface.ips {
-            if ipn.ip() == ip {
-                return true;
-            }
-        }
-    }
-    debug!("dst {} not my ip", ip);
-    false
-}
 
 /// Check if the target IP address is in the local.
 fn dst_addr_in_local_net(ip: IpAddr) -> bool {
@@ -579,6 +568,19 @@ fn dst_addr_in_local_net(ip: IpAddr) -> bool {
     }
     // all data for other addresses are sent to the default route
     debug!("dst {} is not in local net", ip);
+    false
+}
+*/
+
+fn is_local_machine_ip(dst_addr: IpAddr) -> bool {
+    for interface in interfaces() {
+        for ipn in interface.ips {
+            if ipn.ip() == dst_addr {
+                return true;
+            }
+        }
+    }
+    debug!("dst {} not my ip", dst_addr);
     false
 }
 
@@ -706,12 +708,12 @@ fn send_neighbor_detect_packet(
     }
 }
 
-fn get_route_via(
+fn get_route(
     dst_addr: IpAddr,
     src_addr: IpAddr,
 ) -> Result<(NetworkInterface, Option<RouteVia>), PistolError> {
     if src_addr == dst_addr {
-        // if the source address is the same as the destination address,
+        // If the source address is the same as the destination address,
         // it means that the target is your own machine.
         let src_interface = match find_interface_by_src_ip(src_addr.into()) {
             Some(i) => i,
@@ -757,17 +759,17 @@ pub(crate) struct InferMacOutput {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct InferMacInput {
-    pub(crate) dst_addr: IpAddr,
-    pub(crate) src_addr: IpAddr,
+    pub(crate) inferred_dst_addr: IpAddr,
+    pub(crate) inferred_src_addr: IpAddr,
 }
 
 /// Get destination mac address and source interface.
 pub(crate) fn infer_macs(
-    inputs: &[InferMacInput],
+    inputs: Vec<InferMacInput>,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
-    // Define some hashmaps to store the intermediate data, and the key is dst_addr.
+    // define some hashmaps to store the intermediate data (the key is dst_addr)
     let mut mac_hm = HashMap::new();
     let mut via_hm = HashMap::new();
     let mut interface_name_hm = HashMap::new();
@@ -782,27 +784,37 @@ pub(crate) fn infer_macs(
     let mut retried_hm = HashMap::new();
 
     for it in inputs {
-        let src_addr = it.src_addr;
-        let dst_addr = it.dst_addr;
-        let (src_interface, route_via) = get_route_via(dst_addr, src_addr)?;
-        debug!(
-            "src interface: {}, via addr: {:?}",
-            src_interface.name, route_via
-        );
-        mac_hm.insert(dst_addr, MacAddr::zero());
-        via_hm.insert(dst_addr, route_via);
-        interface_name_hm.insert(dst_addr, src_interface);
-        src_addr_hm.insert(dst_addr, src_addr);
-        cached_hm.insert(dst_addr, false);
-        rtt_hm.insert(dst_addr, Duration::ZERO);
+        let src_addr = it.inferred_src_addr;
+        let dst_addr = it.inferred_dst_addr;
+        if src_addr.is_loopback() && dst_addr.is_loopback() {
+            mac_hm.insert(dst_addr, MacAddr::zero());
+            src_addr_hm.insert(dst_addr, src_addr);
+            cached_hm.insert(dst_addr, true);
+            rtt_hm.insert(dst_addr, Duration::ZERO);
+        } else {
+            let (src_interface, route_via) = get_route(dst_addr, src_addr)?;
+            debug!(
+                "src interface: {}, via addr: {:?}",
+                src_interface.name, route_via
+            );
+            mac_hm.insert(dst_addr, MacAddr::zero());
+            via_hm.insert(dst_addr, route_via);
+            interface_name_hm.insert(dst_addr, src_interface);
+            src_addr_hm.insert(dst_addr, src_addr);
+            cached_hm.insert(dst_addr, false);
+            rtt_hm.insert(dst_addr, Duration::ZERO);
+        }
     }
 
+    // Get mac of via address if its on cache or send packet to get it if not cached,
+    // and store the receiver for waiting response in the next step.
     for (dst_addr, route_via) in via_hm {
         match route_via {
             Some(route_via) => {
                 match route_via {
                     RouteVia::IfIndex(if_index) => {
-                        // no via_addr, use dst_addr here
+                        // To send to the address, we need to use this interface,
+                        // and we should repalce the src_interface with the new src_interface.
                         match search_mac(dst_addr)? {
                             Some(dst_mac) => {
                                 mac_hm.insert(dst_addr, dst_mac);
@@ -841,8 +853,9 @@ pub(crate) fn infer_macs(
                         cached_hm.insert(dst_addr, true);
                     }
                     RouteVia::IpAddr(via_addr) => {
-                        // fix 0.0.0.0 address
+                        // In most cases, this is usually the routing address.
                         let via_addr = if via_addr.is_unspecified() {
+                            // fix 0.0.0.0 address
                             dst_addr
                         } else {
                             via_addr
@@ -915,17 +928,12 @@ pub(crate) fn infer_macs(
                 let dst_addr = dst_addr.clone();
                 let (mac, has_response, rtt) =
                     recv_neighbor_detect_packet(dst_addr, start, timeout, is_route, receiver)?;
-                if mac != MacAddr::zero() {
-                    println!(
-                        ">>>>>>>>>>>>>>>>>>>>> from {}, mac: {}, rtt: {:?}",
-                        dst_addr, mac, rtt
-                    );
-                }
 
                 match has_response {
                     HasResponse::Yes => {
                         mac_hm.insert(dst_addr, mac);
                         rtt_hm.insert(dst_addr, rtt);
+                        receiver_hm_clone.remove(&dst_addr);
                     }
                     HasResponse::No => {
                         if retried < max_retries - 1 {
@@ -934,7 +942,6 @@ pub(crate) fn infer_macs(
                             let interface = interface_name_hm[&dst_addr].clone();
                             let is_route = is_route_hm[&dst_addr];
                             let start = Instant::now();
-                            println!("scan {} retry {}/{}", dst_addr, retried + 1, max_retries);
                             let receiver = send_neighbor_detect_packet(
                                 target_addr,
                                 src_addr,
@@ -961,16 +968,29 @@ pub(crate) fn infer_macs(
 
     let mut rets = HashMap::new();
     for (dst_addr, mac) in mac_hm {
-        let src_interface = interface_name_hm[&dst_addr].clone();
-        let cached = cached_hm[&dst_addr];
-        let rtt = rtt_hm[&dst_addr];
-        let output = InferMacOutput {
-            dst_mac: mac,
-            src_interface,
-            cached,
-            rtt,
-        };
-        rets.insert(dst_addr, output);
+        if dst_addr.is_loopback() {
+            let src_interface = fake_interface();
+            let cached = cached_hm[&dst_addr];
+            let rtt = rtt_hm[&dst_addr];
+            let output = InferMacOutput {
+                dst_mac: mac,
+                src_interface,
+                cached,
+                rtt,
+            };
+            rets.insert(dst_addr, output);
+        } else {
+            let src_interface = interface_name_hm[&dst_addr].clone();
+            let cached = cached_hm[&dst_addr];
+            let rtt = rtt_hm[&dst_addr];
+            let output = InferMacOutput {
+                dst_mac: mac,
+                src_interface,
+                cached,
+                rtt,
+            };
+            rets.insert(dst_addr, output);
+        }
     }
     Ok(rets)
 }
@@ -984,27 +1004,12 @@ pub(crate) fn infer_addr(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
 ) -> Result<Option<(IpAddr, IpAddr)>, PistolError> {
-    if dst_addr.is_loopback() {
-        for interface in interfaces() {
-            if !interface.is_loopback() {
-                for ipn in interface.ips {
-                    match ipn.ip() {
-                        IpAddr::V4(src_ipv4) => {
-                            if dst_addr.is_ipv4() && src_ipv4.is_private() {
-                                return Ok(Some((src_ipv4.into(), src_ipv4.into())));
-                            }
-                        }
-                        IpAddr::V6(src_ipv6) => {
-                            if dst_addr.is_ipv6()
-                                && (src_ipv6.is_unicast_link_local() || src_ipv6.is_unique_local())
-                            {
-                                return Ok(Some((src_ipv6.into(), src_ipv6.into())));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if dst_addr.is_loopback() || is_local_machine_ip(dst_addr) {
+        let loopback_addr = match dst_addr {
+            IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+        };
+        return Ok(Some((loopback_addr, loopback_addr)));
     } else {
         if let Some(src_addr) = src_addr {
             return Ok(Some((dst_addr, src_addr)));
@@ -1415,23 +1420,23 @@ impl RouteTable {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct NeighborCache;
+pub(crate) struct Neighbors;
 
-impl NeighborCache {
+impl Neighbors {
     fn get_local_mac() -> HashMap<IpAddr, MacAddr> {
-        let mut neigh = HashMap::new();
+        let mut neighbors = HashMap::new();
         for interface in interfaces() {
             if let Some(mac) = interface.mac {
                 for ipn in interface.ips {
                     let addr = ipn.ip();
                     if !addr.is_loopback() && !addr.is_unspecified() {
-                        neigh.insert(addr, mac);
+                        neighbors.insert(addr, mac);
                     }
                 }
             }
         }
-        debug!("get local machine neigh: {:?}", neigh);
-        neigh
+        debug!("get local machine neigh: {:?}", neighbors);
+        neighbors
     }
     #[cfg(target_os = "linux")]
     pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
@@ -1685,17 +1690,17 @@ impl SystemNetCache {
     pub(crate) fn init() -> Result<SystemNetCache, PistolError> {
         let route_table = RouteTable::init()?;
         debug!("route table: {}", route_table);
-        let neighbor_cache = NeighborCache::init()?;
-        let mut fix_neighbor_cache = HashMap::new();
-        for (&k, &v) in &neighbor_cache {
-            fix_neighbor_cache.insert(k, Neighbor { mac: v, rtt: None });
+        let neighbors = Neighbors::init()?;
+        let mut fix_neighbors = HashMap::new();
+        for (&k, &v) in &neighbors {
+            fix_neighbors.insert(k, Neighbor { mac: v, rtt: None });
         }
-        debug!("neighbor cache: {:?}", neighbor_cache);
+        debug!("neighbor cache: {:?}", neighbors);
         let snc = SystemNetCache {
             default_route: route_table.default_route,
             default_route6: route_table.default_route6,
             routes: route_table.routes,
-            neighbors: fix_neighbor_cache,
+            neighbors: fix_neighbors,
         };
         Ok(snc)
     }
@@ -1749,7 +1754,7 @@ mod tests {
     }
     #[test]
     fn test_details() {
-        let n = NeighborCache::init().unwrap();
+        let n = Neighbors::init().unwrap();
         println!("{:?}", n);
 
         let r = RouteTable::init().unwrap();

@@ -44,7 +44,7 @@ fn build_ipv4_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildIpv4PacketFailed {
+    Err(PistolError::OsDetectBuildIpv4PacketFailed {
         probe_name: probe_name.to_string(),
     })
 }
@@ -59,7 +59,7 @@ fn build_tcp_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildTcpPacketFailed {
+    Err(PistolError::OsDetectBuildTcpPacketFailed {
         probe_name: probe_name.to_string(),
     })
 }
@@ -74,7 +74,7 @@ fn build_icmp_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildIcmpPacketFailed {
+    Err(PistolError::OsDetectBuildIcmpPacketFailed {
         probe_name: probe_name.to_string(),
     })
 }
@@ -89,7 +89,7 @@ fn build_udp_packet<'a>(
             None => (),
         }
     }
-    Err(PistolError::BuildUdpPacketFailed {
+    Err(PistolError::OsDetectBuildUdpPacketFailed {
         probe_name: probe_name.to_string(),
     })
 }

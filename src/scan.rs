@@ -88,6 +88,16 @@ pub enum HasResponse {
     No,
 }
 
+impl fmt::Display for HasResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            HasResponse::Yes => "yes",
+            HasResponse::No => "no",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct MacReport {
@@ -247,8 +257,14 @@ pub fn arp_scan_raw(
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
             let interface_name = interface.name;
             let start = Instant::now();
-            let receiver =
-                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, interface_name, timeout)?;
+            let receiver = send_arp_scan_packet(
+                dst_mac,
+                dst_ipv4,
+                src_mac,
+                src_ipv4,
+                interface_name,
+                timeout,
+            )?;
             let (mac, _has_response, rtt) =
                 recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
             Ok((mac, rtt))
@@ -297,8 +313,14 @@ fn arp_scan_thread(
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
             let interface_name = interface.name;
-            let receiver =
-                send_arp_scan_packet(dst_mac, dst_ipv4, src_mac, src_ipv4, interface_name, timeout)?;
+            let receiver = send_arp_scan_packet(
+                dst_mac,
+                dst_ipv4,
+                src_mac,
+                src_ipv4,
+                interface_name,
+                timeout,
+            )?;
             Ok(receiver)
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -346,8 +368,14 @@ pub fn ndp_ns_scan_raw(
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
             let interface_name = interface.name;
             let start = Instant::now();
-            let receiver =
-                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, interface_name, timeout)?;
+            let receiver = send_ndp_ns_scan_packet(
+                dst_mac,
+                dst_ipv6,
+                src_mac,
+                src_ipv6,
+                interface_name,
+                timeout,
+            )?;
             let (mac, _has_response, rtt) =
                 recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?;
             Ok((mac, rtt))
@@ -396,8 +424,14 @@ pub fn ndp_ns_scan_thread(
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
             let interface_name = interface.name;
-            let receiver =
-                send_ndp_ns_scan_packet(dst_mac, dst_ipv6, src_mac, src_ipv6, interface_name, timeout)?;
+            let receiver = send_ndp_ns_scan_packet(
+                dst_mac,
+                dst_ipv6,
+                src_mac,
+                src_ipv6,
+                interface_name,
+                timeout,
+            )?;
             Ok(receiver)
         }
         None => Err(PistolError::CanNotFoundSrcAddress),
@@ -605,6 +639,7 @@ impl fmt::Display for PortStatus {
 #[derive(Debug, Clone, Copy)]
 pub struct PortReport {
     pub addr: IpAddr,
+    pub addr_origin: IpAddr,
     pub port: u16,
     pub status: PortStatus,
     /// The cost of each target, not all.
@@ -642,7 +677,7 @@ impl fmt::Display for PortScan {
 
         match self.port_report {
             Some(report) => {
-                let addr_str = format!("{}", report.addr);
+                let addr_str = format!("{}", report.addr_origin);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
                     utils::time_to_string(report.cost)
@@ -739,7 +774,7 @@ impl fmt::Display for PortScans {
                     PortStatus::Open => open_ports_num += 1,
                     _ => (),
                 }
-                let addr_str = format!("{}", report.addr);
+                let addr_str = format!("{}", report.addr_origin);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
                     let time_cost_str = utils::time_to_string(report.cost);
@@ -860,9 +895,9 @@ fn connect_scan(
         let mut all_done = true;
         for (ni, status) in connnect_scan_status {
             if status.retiries < max_retries && !status.data_recved {
-                match ni.dst_addr {
+                match ni.inferred_dst_addr {
                     IpAddr::V4(dst_ipv4) => {
-                        let dst_mac = ni.dst_mac;
+                        let dst_mac = ni.inferred_dst_mac;
                         let dst_port = if ni.dst_ports.len() > 0 {
                             ni.dst_ports[0]
                         } else {
@@ -870,11 +905,11 @@ fn connect_scan(
                                 params: String::from("dst_ports"),
                             });
                         };
-                        let src_ipv4 = match ni.src_addr {
+                        let src_ipv4 = match ni.inferred_src_addr {
                             IpAddr::V4(src_ipv4) => src_ipv4,
                             _ => return Err(PistolError::CanNotFoundSrcAddress),
                         };
-                        let src_mac = ni.src_mac;
+                        let src_mac = ni.inferred_src_mac;
                         let src_port = match ni.src_port {
                             Some(s) => s,
                             None => utils::random_port(),
@@ -1137,7 +1172,7 @@ fn connect_scan(
                             };
                             connect_scan_status_clone.insert(ni.clone(), new_status);
 
-                            let dst_addr = ni.dst_addr;
+                            let dst_addr = ni.inferred_dst_addr;
                             let dst_port = if ni.dst_ports.len() > 0 {
                                 ni.dst_ports[0]
                             } else {
@@ -1145,8 +1180,10 @@ fn connect_scan(
                                     params: String::from("dst_ports"),
                                 });
                             };
+                            let addr_origin = ni.dst_addr;
                             let port_report = PortReport {
                                 addr: dst_addr,
+                                addr_origin,
                                 port: dst_port,
                                 status: PortStatus::Open,
                                 cost: status.rtt_1 + status.rtt_2 + status.rtt_3 + rtt,
@@ -1243,8 +1280,8 @@ fn idle_scan(
         let mut all_done = true;
         for (ni, status) in idle_scan_status {
             if status.retiries < max_retries && !status.data_recved {
-                let dst_mac = ni.dst_mac;
-                let dst_ipv4 = match ni.dst_addr {
+                let dst_mac = ni.inferred_dst_mac;
+                let dst_ipv4 = match ni.inferred_dst_addr {
                     IpAddr::V4(dst_ipv4) => dst_ipv4,
                     _ => return Err(PistolError::IdleScanNotSupportIpVersion),
                 };
@@ -1255,11 +1292,11 @@ fn idle_scan(
                         params: String::from("dst_ports"),
                     });
                 };
-                let src_ipv4 = match ni.src_addr {
+                let src_ipv4 = match ni.inferred_src_addr {
                     IpAddr::V4(src_ipv4) => src_ipv4,
                     _ => return Err(PistolError::CanNotFoundSrcAddress),
                 };
-                let src_mac = ni.src_mac;
+                let src_mac = ni.inferred_src_mac;
                 let src_port = match ni.src_port {
                     Some(s) => s,
                     None => utils::random_port(),
@@ -1407,7 +1444,7 @@ fn idle_scan(
                             zombie_ip_id_1,
                         )?;
 
-                        let dst_addr = ni.dst_addr;
+                        let dst_addr = ni.inferred_dst_addr;
                         let dst_port = if ni.dst_ports.len() > 0 {
                             ni.dst_ports[0]
                         } else {
@@ -1415,8 +1452,10 @@ fn idle_scan(
                                 params: String::from("dst_ports"),
                             });
                         };
+                        let addr_origin = ni.dst_addr;
                         let report = PortReport {
                             addr: dst_addr,
+                            addr_origin,
                             port: dst_port,
                             status: port_status,
                             cost: rtt_1 + rtt_2,
@@ -1626,9 +1665,9 @@ fn scan(
     loop {
         let mut all_done = true;
         for (ni, hm) in scan_status {
-            let dst_mac = ni.dst_mac;
-            let dst_addr = ni.dst_addr;
-            let src_mac = ni.src_mac;
+            let dst_mac = ni.inferred_dst_mac;
+            let dst_addr = ni.inferred_dst_addr;
+            let src_mac = ni.inferred_src_mac;
             let src_port = match ni.src_port {
                 Some(s) => s,
                 None => utils::random_port(),
@@ -1636,9 +1675,13 @@ fn scan(
             let interface = &ni.interface;
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
-                    let src_ipv4 = match ni.src_addr {
+                    let src_ipv4 = match ni.inferred_src_addr {
                         IpAddr::V4(s) => s,
-                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                        _ => {
+                            return Err(PistolError::AttackAddressNotMatch {
+                                addr: ni.inferred_src_addr,
+                            });
+                        }
                     };
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
@@ -1659,9 +1702,13 @@ fn scan(
                     scan_status_clone.insert(ni, tmp_hm);
                 }
                 IpAddr::V6(dst_ipv6) => {
-                    let src_ipv6 = match ni.src_addr {
+                    let src_ipv6 = match ni.inferred_src_addr {
                         IpAddr::V6(s) => s,
-                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                        _ => {
+                            return Err(PistolError::AttackAddressNotMatch {
+                                addr: ni.inferred_src_addr,
+                            });
+                        }
                     };
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
@@ -1690,7 +1737,7 @@ fn scan(
 
         scan_status = scan_status_clone.clone();
         for (ni, hm) in scan_status {
-            let dst_addr = ni.dst_addr;
+            let dst_addr = ni.inferred_dst_addr;
             let cached = ni.cached;
             let mut tmp_hm = scan_status_clone[&ni].clone();
             for (dst_port, status) in hm {
@@ -1702,8 +1749,10 @@ fn scan(
                             IpAddr::V6(_) => scan_recv6(method, start, timeout, receiver)?,
                         };
                         if has_response == HasResponse::Yes {
+                            let addr_origin = ni.dst_addr;
                             let report = PortReport {
                                 addr: dst_addr,
+                                addr_origin,
                                 port: dst_port,
                                 status: port_status,
                                 cost: rtt,
@@ -2129,9 +2178,10 @@ fn scan_raw(
         _ => (),
     }
 
-    let dst_mac = net_info.dst_mac;
-    let dst_addr = net_info.dst_addr;
-    let src_mac = net_info.src_mac;
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
+    let src_mac = net_info.inferred_src_mac;
+    let addr_origin = net_info.dst_addr;
     let interface = &net_info.interface;
     let src_port = match net_info.src_port {
         Some(s) => s,
@@ -2150,11 +2200,11 @@ fn scan_raw(
     let cached = net_info.cached;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            let src_ipv4 = match net_info.src_addr {
+            let src_ipv4 = match net_info.inferred_src_addr {
                 IpAddr::V4(s) => s,
                 _ => {
                     return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.src_addr,
+                        addr: net_info.inferred_src_addr,
                     });
                 }
             };
@@ -2168,6 +2218,7 @@ fn scan_raw(
                 if has_response == HasResponse::Yes {
                     let report = PortReport {
                         addr: dst_addr,
+                        addr_origin,
                         port: dst_port,
                         status: port_status,
                         cost: rtt,
@@ -2179,11 +2230,11 @@ fn scan_raw(
             }
         }
         IpAddr::V6(dst_ipv6) => {
-            let src_ipv6 = match net_info.src_addr {
+            let src_ipv6 = match net_info.inferred_src_addr {
                 IpAddr::V6(s) => s,
                 _ => {
                     return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.src_addr,
+                        addr: net_info.inferred_src_addr,
                     });
                 }
             };
@@ -2198,6 +2249,7 @@ fn scan_raw(
                 if has_response == HasResponse::Yes {
                     let report = PortReport {
                         addr: dst_addr,
+                        addr_origin,
                         port: dst_port,
                         status: port_status,
                         cost: rtt,

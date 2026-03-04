@@ -1,3 +1,4 @@
+use pnet::packet::ethernet::EtherType;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use thiserror::Error;
@@ -8,17 +9,17 @@ pub enum PistolError {
     #[error("calculation of diff vec failed, the input vec length is not enough")]
     CalcDiffFailed,
     #[error("build {probe_name} ipv4 packet failed")]
-    BuildIpv4PacketFailed { probe_name: String },
+    OsDetectBuildIpv4PacketFailed { probe_name: String },
     #[error("build {probe_name} ipv6 packet failed")]
-    BuildIpv6PacketFailed { probe_name: String },
+    OsDetectBuildIpv6PacketFailed { probe_name: String },
     #[error("build {probe_name} icmp packet failed")]
-    BuildIcmpPacketFailed { probe_name: String },
+    OsDetectBuildIcmpPacketFailed { probe_name: String },
     #[error("build {probe_name} icmpv6 packet failed")]
-    BuildIcmpv6PacketFailed { probe_name: String },
+    OsDetectBuildIcmpv6PacketFailed { probe_name: String },
     #[error("build {probe_name} tcp packet failed")]
-    BuildTcpPacketFailed { probe_name: String },
+    OsDetectBuildTcpPacketFailed { probe_name: String },
     #[error("build udp packet failed")]
-    BuildUdpPacketFailed { probe_name: String },
+    OsDetectBuildUdpPacketFailed { probe_name: String },
     #[error("calculation of isr failed")]
     CalcISRFailed,
     #[error("calculation of ss failed")]
@@ -98,6 +99,10 @@ pub enum PistolError {
     IpVersionNotMatch,
     #[error("can not found the interface filter channel {i}")]
     CanNotFoundInterfaceFilterChannel { i: String },
+    #[error("unsupported loopback protocol: {proto}")]
+    UnsupportedLoopbackProtocol { proto: EtherType },
+    #[error("no loopback protocol")]
+    NoLoopbackProtocol,
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]

@@ -121,24 +121,24 @@ impl Trace {
 /// The default target port is 80 if not specified.
 #[cfg(feature = "trace")]
 pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
-    let mut trace = Trace::new(net_info.dst_addr);
-    let dst_mac = net_info.dst_mac;
-    let dst_addr = net_info.dst_addr;
+    let mut trace = Trace::new(net_info.inferred_dst_addr);
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
     let dst_port = if net_info.dst_ports.len() > 0 {
         net_info.dst_ports[0]
     } else {
         80
     };
-    let src_mac = net_info.src_mac;
+    let src_mac = net_info.inferred_src_mac;
     let interface = &net_info.interface;
 
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            let src_ipv4 = match net_info.src_addr {
+            let src_ipv4 = match net_info.inferred_src_addr {
                 IpAddr::V4(src) => src,
                 _ => {
                     return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.src_addr,
+                        addr: net_info.inferred_src_addr,
                     });
                 }
             };
@@ -186,11 +186,11 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
             Ok(trace)
         }
         IpAddr::V6(dst_ipv6) => {
-            let src_ipv6 = match net_info.src_addr {
+            let src_ipv6 = match net_info.inferred_src_addr {
                 IpAddr::V6(src) => src,
                 _ => {
                     return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.src_addr,
+                        addr: net_info.inferred_src_addr,
                     });
                 }
             };
@@ -238,14 +238,14 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
 
 #[cfg(any(feature = "trace", feature = "os"))]
 pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
-    let mut trace = Trace::new(net_info.dst_addr);
+    let mut trace = Trace::new(net_info.inferred_dst_addr);
     let mut rng = rand::rng();
     let icmp_id: u16 = rng.random();
 
-    let dst_mac = net_info.dst_mac;
-    let dst_addr = net_info.dst_addr;
-    let src_mac = net_info.src_mac;
-    let src_addr = net_info.src_addr;
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
+    let src_mac = net_info.inferred_src_mac;
+    let src_addr = net_info.inferred_src_addr;
     let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -330,11 +330,11 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
 
 #[cfg(feature = "trace")]
 pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
-    let mut trace = Trace::new(net_info.dst_addr);
-    let dst_mac = net_info.dst_mac;
-    let dst_addr = net_info.dst_addr;
-    let src_mac = net_info.src_mac;
-    let src_addr = net_info.src_addr;
+    let mut trace = Trace::new(net_info.inferred_dst_addr);
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
+    let src_mac = net_info.inferred_src_mac;
+    let src_addr = net_info.inferred_src_addr;
     let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {

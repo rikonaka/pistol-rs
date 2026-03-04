@@ -15,21 +15,27 @@ use pnet::datalink::interfaces;
 #[cfg(feature = "debug")]
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherType;
+use pnet::packet::ethernet::EtherTypes;
 #[cfg(feature = "debug")]
 use pnet::packet::ethernet::EtherTypes;
 #[cfg(feature = "debug")]
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ethernet::MutableEthernetPacket;
+use pnet::packet::ip::IpNextHeaderProtocols;
 #[cfg(feature = "debug")]
 use pnet::packet::ip::IpNextHeaderProtocols;
 #[cfg(feature = "debug")]
 use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv4::MutableIpv4Packet;
 #[cfg(feature = "debug")]
 use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::ipv6::MutableIpv6Packet;
 #[cfg(feature = "debug")]
 use pnet::packet::tcp::TcpPacket;
 #[cfg(feature = "debug")]
 use pnet::packet::udp::UdpPacket;
+use pnet::transport::TransportChannelType::Layer3;
+use pnet::transport::transport_channel;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -55,6 +61,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::field::debug;
 
 mod error;
 mod flood;
@@ -540,6 +547,7 @@ struct SenderMsg {
     ether_payload: Arc<[u8]>, // the layer3 packet to send
     ether_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
     retransmit: usize,        // how many times to retransmit the packet, 0 means no retransmission
+    is_loopback: bool, // whether the packet is sent to loopback interface, if true, the message should be droped.
 }
 
 #[derive(Debug, Clone)]
@@ -554,7 +562,7 @@ impl ReceiverMsg {
     fn check_packet(&self, received_packet: &[u8]) -> bool {
         for filter in &self.filters {
             if filter.check(received_packet) {
-                debug!("layer2 recv matched filter: {}", filter.name());
+                debug!("recv matched filter: {}", filter.name());
                 return true;
             }
         }
@@ -564,6 +572,7 @@ impl ReceiverMsg {
         let packet = Arc::from(packet);
         if let Err(e) = self.sender.send((packet, rtt)) {
             error!("failed to send matched packet: {}", e);
+            println!("failed to send matched packet: {}", e);
         }
     }
 }
@@ -609,16 +618,17 @@ impl RunnerCommunicationChannel {
         filters: Vec<Arc<PacketFilter>>,
         elapsed: Duration,
         retransmit: usize,
+        is_loopback: bool,
     ) -> Receiver<(Arc<[u8]>, Duration)> {
         let (sender, receiver) = unbounded::<(Arc<[u8]>, Duration)>();
         let created = Instant::now();
-
         let smsg = SenderMsg {
             dst_mac,
             src_mac,
             ether_payload,
             ether_type,
             retransmit,
+            is_loopback,
         };
         let rmsg = ReceiverMsg {
             filters,
@@ -642,12 +652,57 @@ pub(crate) fn ask_runner(
     elapsed: Duration,
     retransmit: usize,
 ) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+    let (interface_name, is_loopback) = if dst_mac == src_mac {
+        debug!("dst_mac is same as src_mac, treat it as loopback packet");
+        // This case is for loopback interface.
+        let proto = match ether_type {
+            EtherTypes::Ipv4 => IpNextHeaderProtocols::Ipv4,
+            EtherTypes::Ipv6 => IpNextHeaderProtocols::Ipv6,
+            _ => {
+                return Err(PistolError::UnsupportedLoopbackProtocol { proto: ether_type });
+            }
+        };
+        let (mut tx, _rx) = transport_channel(4096, Layer3(proto))?;
+        let loopback_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
+        let loopback_ipv6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+        let mut ether_payload = ether_payload.to_vec();
+        match ether_type {
+            EtherTypes::Ipv4 => {
+                let mut packet = MutableIpv4Packet::new(&mut ether_payload).ok_or(
+                    PistolError::BuildPacketError {
+                        location: Location::caller().to_string(),
+                    },
+                )?;
+                packet.set_source(loopback_ipv4);
+                packet.set_destination(loopback_ipv4);
+                tx.send_to(packet, loopback_ipv4.into())?;
+            }
+            EtherTypes::Ipv6 => {
+                let mut packet = MutableIpv6Packet::new(&mut ether_payload).ok_or(
+                    PistolError::BuildPacketError {
+                        location: Location::caller().to_string(),
+                    },
+                )?;
+                packet.set_source(loopback_ipv6);
+                packet.set_destination(loopback_ipv6);
+                tx.send_to(packet, loopback_ipv6.into())?;
+            }
+            _ => {
+                return Err(PistolError::UnsupportedLoopbackProtocol { proto: ether_type });
+            }
+        };
+        (String::from("lo"), true)
+    } else {
+        (interface_name, false)
+    };
+
     let hm = RUNNER_COMMUNICATION_CHANNEL.clone();
     let rcc = match hm.get(&interface_name) {
         Some(rcc) => rcc,
-        None => return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: interface_name }),
+        None => {
+            return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: interface_name });
+        }
     };
-
     let packet_receiver = rcc.send_to_runner(
         dst_mac,
         src_mac,
@@ -656,6 +711,7 @@ pub(crate) fn ask_runner(
         filters,
         elapsed,
         retransmit,
+        is_loopback,
     );
     Ok(packet_receiver)
 }
@@ -670,8 +726,8 @@ pub(crate) fn get_response(
         let fix_timeout = timeout - elapsed;
         match receiver.recv_timeout(fix_timeout) {
             Ok((buff, rtt)) => (buff, rtt),
-            Err(e) => {
-                debug!("get_response recv_timeout error: {}", e);
+            Err(_e) => {
+                // Timeout is expected, so we don't log it as error.
                 let buff: Arc<[u8]> = Arc::new([]);
                 (buff, Duration::ZERO)
             }
@@ -690,12 +746,17 @@ pub(crate) fn get_response(
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct NetInfo {
-    pub(crate) dst_mac: MacAddr,
-    pub(crate) src_mac: MacAddr,
+    pub(crate) inferred_dst_mac: MacAddr,
+    pub(crate) inferred_src_mac: MacAddr,
     /// Inferred destination IP address.
-    pub(crate) dst_addr: IpAddr,
+    pub(crate) inferred_dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
-    pub(crate) src_addr: IpAddr,
+    pub(crate) inferred_src_addr: IpAddr,
+    /// Original user input destination IP address,
+    /// which may be the same as infer_dst_addr if user input a valid IP address,
+    /// or may be different if user input a hostname or an invalid IP address.
+    pub(crate) dst_addr: IpAddr,
+    pub(crate) src_addr: Option<IpAddr>,
     /// User input destination ports.
     pub(crate) dst_ports: Vec<u16>,
     /// User input source port.
@@ -707,41 +768,16 @@ pub(crate) struct NetInfo {
     pub(crate) valid: bool,
 }
 
-impl Default for NetInfo {
-    fn default() -> Self {
-        let fake_interface = NetworkInterface {
-            name: String::new(),
-            index: 0,
-            mac: None,
-            ips: Vec::new(),
-            flags: 0,
-            description: String::new(),
-        };
-        NetInfo {
-            dst_mac: MacAddr::zero(),
-            src_mac: MacAddr::zero(),
-            dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            dst_ports: Vec::new(),
-            src_port: None,
-            interface: fake_interface,
-            cached: true,
-            cost: Duration::ZERO,
-            valid: false,
-        }
-    }
-}
-
 #[cfg(feature = "ping")]
 impl fmt::Display for NetInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.valid {
             let output = format!(
                 "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
-                self.dst_mac,
-                self.src_mac,
-                self.dst_addr,
-                self.src_addr,
+                self.inferred_dst_mac,
+                self.inferred_src_mac,
+                self.inferred_dst_addr,
+                self.inferred_src_addr,
                 self.dst_ports,
                 self.interface.name
             );
@@ -749,7 +785,7 @@ impl fmt::Display for NetInfo {
         } else {
             let output = format!(
                 "dst_addr: {}, dst_ports: {:?} is down or unreachable",
-                self.dst_addr, self.dst_ports
+                self.inferred_dst_addr, self.dst_ports
             );
             write!(f, "{}", output)
         }
@@ -764,46 +800,85 @@ struct NetInfoInput {
     src_port: Option<u16>,
 }
 
+fn fake_interface() -> NetworkInterface {
+    NetworkInterface {
+        name: String::from("fake"),
+        index: 0,
+        mac: Some(MacAddr::zero()),
+        ips: Vec::new(),
+        flags: 0,
+        description: String::new(),
+    }
+}
+
 impl NetInfo {
-    pub(crate) fn detect(input: &NetInfoInput) -> Result<Self, PistolError> {
+    fn invalid() -> Self {
+        let fake_interface = fake_interface();
+        NetInfo {
+            inferred_dst_mac: MacAddr::zero(),
+            inferred_src_mac: MacAddr::zero(),
+            inferred_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            inferred_src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            src_addr: None,
+            dst_ports: Vec::new(),
+            src_port: None,
+            interface: fake_interface,
+            cached: true,
+            cost: Duration::ZERO,
+            valid: false,
+        }
+    }
+    fn detect(input: &NetInfoInput) -> Result<Self, PistolError> {
         let dst_addr = input.dst_addr;
         let src_addr = input.src_addr;
         debug!("infer dst_addr({})...", dst_addr);
-        let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
+        let (inferred_dst_addr, inferred_src_addr) = match infer_addr(dst_addr, src_addr)? {
             Some(ret) => ret,
             None => return Err(PistolError::CanNotFoundSrcAddress),
         };
-        debug!("inferred dst_addr({}) src_addr({})", dst_addr, src_addr);
+        debug!(
+            "inferred dst_addr({}) and src_addr({})",
+            inferred_dst_addr, inferred_src_addr
+        );
 
-        let mi = InferMacInput { dst_addr, src_addr };
-        let infer_mac_inputs = vec![mi];
+        let imi = InferMacInput {
+            inferred_dst_addr,
+            inferred_src_addr,
+        };
+        let im_inputs = vec![imi];
 
         // Use a small timeout to infer mac address,
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
-        let infer_mac_timeout = Duration::from_secs_f32(0.5);
-        let max_retires = 2;
-        let infer_mac_outputs = infer_macs(&infer_mac_inputs, infer_mac_timeout, max_retires)?;
+        let timeout = Duration::from_secs_f32(0.5);
+        let max_retries = 2;
+        let infer_mac_outputs = infer_macs(im_inputs, timeout, max_retries)?;
 
-        let imo = infer_mac_outputs[&dst_addr].clone();
+        let imo = infer_mac_outputs[&inferred_dst_addr].clone();
         let dst_mac = imo.dst_mac;
         let dst_ports = input.dst_ports.clone();
         let src_interface = imo.src_interface;
-        if dst_mac == MacAddr::zero() {
-            // Create a new NetInfo instance with invalid data,
-            // indicated this target is down or unreachable.
-            let mut fake_net_info = NetInfo::default();
-            fake_net_info.dst_addr = dst_addr;
-            fake_net_info.dst_ports = dst_ports;
-            Ok(fake_net_info)
+        if dst_mac == MacAddr::zero()
+            && !inferred_dst_addr.is_loopback()
+            && !inferred_src_addr.is_loopback()
+        {
+            // no arp response target
+            let mut invalid_net_info = NetInfo::invalid();
+            invalid_net_info.inferred_dst_addr = inferred_dst_addr;
+            invalid_net_info.inferred_src_addr = inferred_src_addr;
+            invalid_net_info.dst_ports = dst_ports;
+            Ok(invalid_net_info)
         } else {
             let src_port = input.src_port;
             let cached = imo.cached;
             match src_interface.mac {
                 Some(src_mac) => {
                     let ni = Self {
-                        dst_mac,
-                        src_mac,
+                        inferred_dst_mac: dst_mac,
+                        inferred_src_mac: src_mac,
+                        inferred_dst_addr,
+                        inferred_src_addr,
                         dst_addr,
                         src_addr,
                         dst_ports,
@@ -819,56 +894,90 @@ impl NetInfo {
             }
         }
     }
-    pub(crate) fn detects(inputs: &[NetInfoInput]) -> Result<Vec<Self>, PistolError> {
+    fn detects(inputs: Vec<NetInfoInput>) -> Result<Vec<Self>, PistolError> {
         let mut rets = Vec::new();
-        let mut src_addr_hm = HashMap::new();
-        let mut infer_mac_inputs = Vec::new();
+        let mut inferred_src_addr_hm = HashMap::new();
+        let mut im_inputs = Vec::new();
         let mut dst_ports_hm = HashMap::new();
         let mut src_port_hm = HashMap::new();
+        let mut dst_addr_hm = HashMap::new();
+        let mut src_addr_hm = HashMap::new();
         for it in inputs {
             let dst_addr = it.dst_addr;
             let src_addr = it.src_addr;
             debug!("infer dst_addr({})...", dst_addr);
-            let (dst_addr, src_addr) = match infer_addr(dst_addr, src_addr)? {
+
+            let (inferred_dst_addr, inferred_src_addr) = match infer_addr(dst_addr, src_addr)? {
                 Some(ret) => ret,
                 None => return Err(PistolError::CanNotFoundSrcAddress),
             };
-            debug!("inferred dst_addr({}) src_addr({})", dst_addr, src_addr);
-            src_addr_hm.insert(dst_addr, src_addr);
+            debug!(
+                "inferred dst_addr({}) and src_addr({})",
+                inferred_dst_addr, inferred_src_addr
+            );
+            inferred_src_addr_hm.insert(inferred_dst_addr, inferred_src_addr);
 
-            let mi = InferMacInput { dst_addr, src_addr };
-            infer_mac_inputs.push(mi);
-            dst_ports_hm.insert(dst_addr, it.dst_ports.clone());
-            src_port_hm.insert(dst_addr, it.src_port);
+            let mi = InferMacInput {
+                inferred_dst_addr,
+                inferred_src_addr,
+            };
+            im_inputs.push(mi);
+            dst_ports_hm.insert(inferred_dst_addr, it.dst_ports.clone());
+            src_port_hm.insert(inferred_dst_addr, it.src_port);
+            src_addr_hm.insert(inferred_dst_addr, src_addr);
+            dst_addr_hm.insert(inferred_dst_addr, dst_addr);
         }
 
         // Use a small timeout to infer mac address,
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
-        let infer_mac_timeout = Duration::from_secs_f32(0.5);
-        let max_retires = 2;
-        let infer_mac_outputs = infer_macs(&infer_mac_inputs, infer_mac_timeout, max_retires)?;
+        let timeout = Duration::from_secs_f32(0.5);
+        let max_retries = 2;
+        let imo = infer_macs(im_inputs, timeout, max_retries)?;
 
-        for (dst_addr, imo) in infer_mac_outputs {
-            let dst_mac = imo.dst_mac;
-            let dst_ports = dst_ports_hm[&dst_addr].clone();
+        for (inferred_dst_addr, imo) in imo {
+            let inferred_dst_mac = imo.dst_mac;
+            let dst_ports = dst_ports_hm[&inferred_dst_addr].clone();
             let src_interface = imo.src_interface;
-            if dst_mac == MacAddr::zero() {
+            let inferred_src_addr = inferred_src_addr_hm[&inferred_dst_addr];
+            if inferred_dst_mac == MacAddr::zero()
+                && !inferred_dst_addr.is_loopback()
+                && !inferred_src_addr.is_loopback()
+            {
                 // Create a new NetInfo instance with invalid data,
                 // indicated this target is down or unreachable.
-                let mut fake_net_info = NetInfo::default();
-                fake_net_info.dst_addr = dst_addr;
+                let mut fake_net_info = NetInfo::invalid();
+                fake_net_info.inferred_dst_addr = inferred_dst_addr;
                 fake_net_info.dst_ports = dst_ports;
                 rets.push(fake_net_info);
             } else {
-                let src_addr = src_addr_hm[&dst_addr];
-                let src_port = src_port_hm[&dst_addr];
+                let rtt_str = utils::time_to_string(imo.rtt);
+                if imo.cached {
+                    debug!(
+                        "cached dst_addr({}) dst_mac({}) rtt(cached)",
+                        inferred_dst_addr, inferred_dst_mac
+                    );
+                } else {
+                    debug!(
+                        "inferred dst_addr({}) dst_mac({}) rtt({})",
+                        inferred_dst_addr, inferred_dst_mac, rtt_str
+                    );
+                }
+                let src_port = src_port_hm[&inferred_dst_addr];
                 let cached = imo.cached;
                 match src_interface.mac {
-                    Some(src_mac) => {
+                    Some(inferred_src_mac) => {
+                        let dst_addr = dst_addr_hm[&inferred_dst_addr];
+                        let src_addr = src_addr_hm[&inferred_dst_addr];
+                        debug!(
+                            "inferred_dst_addr({}) of dst_addr({})",
+                            inferred_dst_addr, dst_addr,
+                        );
                         let ni = Self {
-                            dst_mac,
-                            src_mac,
+                            inferred_dst_mac,
+                            inferred_src_mac,
+                            inferred_dst_addr,
+                            inferred_src_addr,
                             dst_addr,
                             src_addr,
                             dst_ports,
@@ -1029,6 +1138,10 @@ impl Pistol {
                 Ok(s) => s,
                 Err(_e) => continue,
             };
+            if smsg.is_loopback {
+                debug!("sender [{}] drop loopback packet", interface_name);
+                continue;
+            }
             let payload = smsg.ether_payload;
             let dst_mac = smsg.dst_mac;
             let src_mac = smsg.src_mac;
@@ -1042,7 +1155,7 @@ impl Pistol {
                 Some(p) => p,
                 None => {
                     return Err(PistolError::BuildPacketError {
-                        location: format!("{}", Location::caller()),
+                        location: Location::caller().to_string(),
                     });
                 }
             };
@@ -1101,13 +1214,19 @@ impl Pistol {
         let mut history_packets: Vec<Arc<[u8]>> = Vec::new();
         let mut r_msgs = Vec::new();
         loop {
+            // For my developed machine,
+            // the average time to loop one time is about 55ms.
             #[cfg(feature = "debug")]
             let loop_start = Instant::now();
 
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
             let packets = cap.fetch_as_vec()?;
-            debug!("layer2 recv {} packets", packets.len());
+            debug!(
+                "receiver [{}] recv {} packets",
+                interface_name,
+                packets.len()
+            );
 
             for packet in packets {
                 // #[cfg(feature = "debug")]
@@ -1131,9 +1250,8 @@ impl Pistol {
             }
 
             for packet in &history_packets {
-                let mut drop_idx = 0;
-                let mut need_drop = false;
-                for (i, msg) in r_msgs.iter().enumerate() {
+                for msg in &r_msgs {
+                    // Not drop any message here.
                     if msg.check_packet(packet) {
                         // send matched packet back to thread
                         debug!("matched packet [{}]", packet.len());
@@ -1141,20 +1259,23 @@ impl Pistol {
                         debug_show_packet(packet, Some(EtherTypes::Arp));
                         let rtt = msg.created.elapsed();
                         msg.send_packet_back(packet, rtt);
-                        need_drop = true;
-                        drop_idx = i;
                         break;
                     }
-                }
-                if need_drop {
-                    let _droped_msg = r_msgs.swap_remove(drop_idx);
                 }
             }
 
             let mut drop_idxs = Vec::new();
             let mut need_drop = false;
             for (i, msg) in r_msgs.iter().enumerate() {
-                if msg.created.elapsed() > msg.elapsed {
+                // Sometimes if we drop msg too quickly,
+                // as well as the sender in msg will be droped too,
+                // when worker's receiver wanna recv back packet,
+                // the 'receiving on an empty and disconnected channel' error raise,
+                // which will cause the worker can not receive matched packets back from runner,
+                // and then the worker will start next retry process,
+                // it will cause unnecessary traffic on network,
+                // so I set the timeout for each msg to be 2 times of the timeout for receiving and sending packets.
+                if msg.created.elapsed() > msg.elapsed * 2 {
                     // timeout, remove this msg
                     drop_idxs.push(i);
                     need_drop = true;
@@ -1162,7 +1283,7 @@ impl Pistol {
             }
             if need_drop {
                 debug!(
-                    "layer2 runner {} has {} expired msgs to drop",
+                    "receiver [{}] drop {} expired msgs",
                     interface_name,
                     drop_idxs.len()
                 );
@@ -1172,7 +1293,7 @@ impl Pistol {
             }
 
             debug!(
-                "layer2 runner {} has {} msgs to process",
+                "receiver [{}] has {} msgs to process",
                 interface_name,
                 r_msgs.len()
             );
@@ -1205,7 +1326,7 @@ impl Pistol {
         // very small timeout to check new message
         let timeout_1ms = Duration::from_millis(1);
         loop {
-            // recv all msg except timeout, since we need to check all filters for each packet,
+            // Recv all msg except timeout, since we need to check all filters for each packet,
             // we can not block here for too long, otherwise we may miss some packets that arrive before filters.
             if let Ok(msg) = rcc.receiver.recv_timeout(timeout_1ms) {
                 if let Err(e) = ssender.send(msg.smsg) {
@@ -1261,7 +1382,7 @@ impl Pistol {
             net_info_inputs.push(input);
         }
 
-        let net_infos = NetInfo::detects(&net_info_inputs)?;
+        let net_infos = NetInfo::detects(net_info_inputs)?;
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
@@ -1532,7 +1653,7 @@ impl Pistol {
             src_port,
         };
         let zommbie_net_info = NetInfo::detect(&zombie_net_info_input)?;
-        let zombie_mac = zommbie_net_info.dst_mac;
+        let zombie_mac = zommbie_net_info.inferred_dst_mac;
         let mut ret = scan::tcp_idle_scan(
             net_infos,
             Some(zombie_mac),
@@ -1571,7 +1692,7 @@ impl Pistol {
             src_port,
         };
         let zombie_net_info = NetInfo::detect(&zombie_net_info_input)?;
-        let zombie_mac = zombie_net_info.dst_mac;
+        let zombie_mac = zombie_net_info.inferred_dst_mac;
         let mut ret = scan::tcp_idle_scan_raw(
             net_info,
             Some(zombie_mac),
@@ -2951,7 +3072,23 @@ mod tests {
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
     }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn test_tcp_syn_scan_loopback() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(0.5);
+        pistol.set_log_level("debug");
 
+        let src_ipv4 = None;
+        let src_port = None;
+        let targets = vec![Target::new(
+            Ipv4Addr::new(192, 168, 5, 3).into(),
+            Some(vec![22, 80, 443]),
+        )];
+        let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        println!("{}", ret);
+    }
     #[cfg(feature = "scan")]
     #[test]
     fn example_mac_scan() {

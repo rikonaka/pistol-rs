@@ -559,9 +559,9 @@ fn ping(
         let mut all_done = true;
         for (ni, status) in ping_status {
             let (retries, data_recved, _receiver, _start) = status;
-            let dst_mac = ni.dst_mac;
-            let dst_addr = ni.dst_addr;
-            let src_mac = ni.src_mac;
+            let dst_mac = ni.inferred_dst_mac;
+            let dst_addr = ni.inferred_dst_addr;
+            let src_mac = ni.inferred_src_mac;
             let src_port = ni.src_port;
             let interface = ni.interface.clone();
             match dst_addr {
@@ -575,9 +575,9 @@ fn ping(
                     } else {
                         None
                     };
-                    let src_ipv4 = match ni.src_addr {
+                    let src_ipv4 = match ni.inferred_src_addr {
                         IpAddr::V4(src) => src,
-                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
                     };
 
                     let no_port_vec = vec![
@@ -606,9 +606,9 @@ fn ping(
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
-                    let src_ipv6 = match ni.src_addr {
+                    let src_ipv6 = match ni.inferred_src_addr {
                         IpAddr::V6(src) => src,
-                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.src_addr }),
+                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
                     };
                     let src_port = match src_port {
                         Some(p) => p,
@@ -649,7 +649,7 @@ fn ping(
         ping_status = ping_status_clone.clone();
         for (ni, status) in ping_status {
             let (retries, _data_recved, receiver, start) = status;
-            let dst_addr = ni.dst_addr;
+            let dst_addr = ni.inferred_dst_addr;
             let cached = ni.cached;
             match receiver {
                 Some(receiver) => {
@@ -695,7 +695,7 @@ pub fn ping_raw(
         return Ok(host_ping);
     }
 
-    let dst_mac = net_info.dst_mac;
+    let dst_mac = net_info.inferred_dst_mac;
     let dst_port = if net_info.dst_ports.len() > 0 {
         net_info.dst_ports[0]
     } else {
@@ -706,20 +706,20 @@ pub fn ping_raw(
             _ => 0,
         }
     };
-    let src_mac = net_info.src_mac;
+    let src_mac = net_info.inferred_src_mac;
     let src_port = match net_info.src_port {
         Some(p) => p,
         None => utils::random_port(),
     };
     let interface = &net_info.interface;
 
-    match net_info.dst_addr {
+    match net_info.inferred_dst_addr {
         IpAddr::V4(dst_ipv4) => {
-            let src_ipv4 = match net_info.src_addr {
+            let src_ipv4 = match net_info.inferred_src_addr {
                 IpAddr::V4(src) => src,
                 _ => {
                     return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.src_addr,
+                        addr: net_info.inferred_src_addr,
                     });
                 }
             };
@@ -803,7 +803,7 @@ pub fn ping_raw(
 
                 if status == PingStatus::Up || i == max_retries - 1 {
                     let ping_report = PingReport {
-                        addr: net_info.dst_addr,
+                        addr: net_info.inferred_dst_addr,
                         status,
                         cost: rtt,
                         cached: net_info.cached,
@@ -815,7 +815,7 @@ pub fn ping_raw(
 
             // never reached here in normal case
             let ping_report = PingReport {
-                addr: net_info.dst_addr,
+                addr: net_info.inferred_dst_addr,
                 status: PingStatus::Error,
                 cost: Duration::ZERO,
                 cached: net_info.cached,
@@ -824,11 +824,11 @@ pub fn ping_raw(
             Ok(host_ping)
         }
         IpAddr::V6(dst_ipv6) => {
-            let src_ipv6 = match net_info.src_addr {
+            let src_ipv6 = match net_info.inferred_src_addr {
                 IpAddr::V6(src) => src,
                 _ => {
                     return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.src_addr,
+                        addr: net_info.inferred_src_addr,
                     });
                 }
             };
@@ -894,7 +894,7 @@ pub fn ping_raw(
 
                 if status == PingStatus::Up || i == max_retries - 1 {
                     let ping_report = PingReport {
-                        addr: net_info.dst_addr,
+                        addr: net_info.inferred_dst_addr,
                         status,
                         cost: rtt,
                         cached: net_info.cached,
@@ -906,7 +906,7 @@ pub fn ping_raw(
 
             // never reached here in normal case
             let ping_report = PingReport {
-                addr: net_info.dst_addr,
+                addr: net_info.inferred_dst_addr,
                 status: PingStatus::Error,
                 cost: Duration::ZERO,
                 cached: net_info.cached,

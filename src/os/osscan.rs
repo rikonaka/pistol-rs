@@ -2023,10 +2023,12 @@ pub fn os_probe_thread(
     debug!("send trace packet");
 
     let icmp_trace_net_info = NetInfo {
-        dst_mac,
-        src_mac,
+        inferred_dst_mac: dst_mac,
+        inferred_src_mac: src_mac,
+        inferred_dst_addr: dst_ipv4.into(),
+        inferred_src_addr: src_ipv4.into(),
         dst_addr: dst_ipv4.into(),
-        src_addr: src_ipv4.into(),
+        src_addr: Some(src_ipv4.into()),
         dst_ports: Vec::new(),
         src_port: None,
         interface: interface.clone(),
