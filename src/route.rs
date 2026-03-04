@@ -50,7 +50,7 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     None
 }
 
-fn neigh_cache_update(
+fn update_neighbor_cache(
     addr: IpAddr,
     mac: MacAddr,
     rtt: Option<Duration>,
@@ -623,12 +623,12 @@ fn recv_neighbor_detect_packet(
                 recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
             let mac = match mac {
                 Some(dst_mac) => {
-                    neigh_cache_update(dst_addr, dst_mac, Some(rtt))?;
+                    update_neighbor_cache(dst_addr, dst_mac, Some(rtt))?;
                     dst_mac
                 }
                 None => {
                     let new_mac = MacAddr::zero();
-                    neigh_cache_update(dst_addr, new_mac, Some(rtt))?;
+                    update_neighbor_cache(dst_addr, new_mac, Some(rtt))?;
                     new_mac
                 }
             };
@@ -642,12 +642,12 @@ fn recv_neighbor_detect_packet(
             };
             let mac = match mac {
                 Some(dst_mac) => {
-                    neigh_cache_update(dst_addr, dst_mac, Some(rtt))?;
+                    update_neighbor_cache(dst_addr, dst_mac, Some(rtt))?;
                     dst_mac
                 }
                 None => {
                     let new_mac = MacAddr::zero();
-                    neigh_cache_update(dst_addr, new_mac, Some(rtt))?;
+                    update_neighbor_cache(dst_addr, new_mac, Some(rtt))?;
                     new_mac
                 }
             };

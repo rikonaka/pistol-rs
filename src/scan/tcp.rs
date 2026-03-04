@@ -19,6 +19,7 @@ use pnet::packet::tcp::TcpFlags;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::tcp::ipv4_checksum;
 use rand::RngExt;
+use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -1912,6 +1913,16 @@ pub(crate) enum ConnStatus {
     Next,
     Stop,
     Retry,
+}
+
+impl fmt::Display for ConnStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConnStatus::Next => write!(f, "next"),
+            ConnStatus::Stop => write!(f, "stop"),
+            ConnStatus::Retry => write!(f, "retry"),
+        }
+    }
 }
 
 /// Returns:

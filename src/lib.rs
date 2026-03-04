@@ -61,7 +61,6 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 use tracing_subscriber::FmtSubscriber;
-use tracing_subscriber::field::debug;
 
 mod error;
 mod flood;
@@ -572,7 +571,6 @@ impl ReceiverMsg {
         let packet = Arc::from(packet);
         if let Err(e) = self.sender.send((packet, rtt)) {
             error!("failed to send matched packet: {}", e);
-            println!("failed to send matched packet: {}", e);
         }
     }
 }
@@ -1274,8 +1272,8 @@ impl Pistol {
                 // which will cause the worker can not receive matched packets back from runner,
                 // and then the worker will start next retry process,
                 // it will cause unnecessary traffic on network,
-                // so I set the timeout for each msg to be 2 times of the timeout for receiving and sending packets.
-                if msg.created.elapsed() > msg.elapsed * 2 {
+                // so I set the timeout for each msg to be 100 times of the timeout for receiving and sending packets.
+                if msg.created.elapsed() > msg.elapsed * 100 {
                     // timeout, remove this msg
                     drop_idxs.push(i);
                     need_drop = true;
@@ -3087,6 +3085,25 @@ mod tests {
             Some(vec![22, 80, 443]),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        println!("{}", ret);
+    }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn test_tcp_connect_scan() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(0.5);
+        // pistol.set_log_level("debug");
+
+        let src_ipv4 = None;
+        let src_port = None;
+        let targets = vec![Target::new(
+            Ipv4Addr::new(192, 168, 5, 77).into(),
+            Some(vec![22, 80, 443]),
+        )];
+        let ret = pistol
+            .tcp_connect_scan(&targets, src_ipv4, src_port)
+            .unwrap();
         println!("{}", ret);
     }
     #[cfg(feature = "scan")]

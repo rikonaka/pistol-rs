@@ -924,6 +924,10 @@ fn connect_scan(
                                         dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
                                         interface, timeout,
                                     )?;
+                                    println!(
+                                        "send connect scan packet 1 to {}:{}",
+                                        dst_ipv4, dst_port
+                                    );
                                     let new_status = ConnectScanStatus {
                                         retiries: status.retiries + 1,
                                         data_recved: false,
@@ -933,7 +937,7 @@ fn connect_scan(
                                         rtt_2: status.rtt_2,
                                         rtt_3: status.rtt_3,
                                         rtt_4: status.rtt_4,
-                                        steps: ConnectScanSteps::RecvStep2,
+                                        steps: ConnectScanSteps::RecvStep1,
                                         server_seq_1: status.server_seq_1,
                                         server_ack_1: status.server_ack_1,
                                         server_seq_2: status.server_seq_2,
@@ -961,6 +965,10 @@ fn connect_scan(
                                         interface,
                                         timeout,
                                     )?;
+                                    println!(
+                                        "send connect scan packet 2 to {}:{}",
+                                        dst_ipv4, dst_port
+                                    );
                                     let new_status = ConnectScanStatus {
                                         retiries: status.retiries + 1,
                                         data_recved: false,
@@ -998,6 +1006,10 @@ fn connect_scan(
                                         interface,
                                         timeout,
                                     )?;
+                                    println!(
+                                        "send connect scan packet 3 to {}:{}",
+                                        dst_ipv4, dst_port
+                                    );
                                     let new_status = ConnectScanStatus {
                                         retiries: status.retiries + 1,
                                         data_recved: false,
@@ -1035,6 +1047,10 @@ fn connect_scan(
                                         interface,
                                         timeout,
                                     )?;
+                                    println!(
+                                        "send connect scan packet 4 to {}:{}",
+                                        dst_ipv4, dst_port
+                                    );
                                     let new_status = ConnectScanStatus {
                                         retiries: status.retiries + 1,
                                         data_recved: false,
@@ -1076,6 +1092,8 @@ fn connect_scan(
                         let start = status.start;
                         let (conn_status, seq, ack, rtt) =
                             tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        println!("recv connect scan packet 1 from {}", ni.inferred_dst_addr);
+                        println!("{}", conn_status);
                         if conn_status == ConnStatus::Next {
                             let new_status = ConnectScanStatus {
                                 retiries: status.retiries,
@@ -1102,6 +1120,7 @@ fn connect_scan(
                         let start = status.start;
                         let (conn_status, seq, ack, rtt) =
                             tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        println!("recv connect scan packet 2 from {}", ni.inferred_dst_addr);
                         if conn_status == ConnStatus::Next {
                             let new_status = ConnectScanStatus {
                                 retiries: status.retiries,
@@ -1128,6 +1147,7 @@ fn connect_scan(
                         let start = status.start;
                         let (conn_status, seq, ack, rtt) =
                             tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        println!("recv connect scan packet 3 from {}", ni.inferred_dst_addr);
                         if conn_status == ConnStatus::Next {
                             let new_status = ConnectScanStatus {
                                 retiries: status.retiries,
@@ -1154,6 +1174,7 @@ fn connect_scan(
                         let start = status.start;
                         let (conn_status, _seq, _ack, rtt) =
                             tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                        println!("recv connect scan packet 4 from {}", ni.inferred_dst_addr);
                         if conn_status == ConnStatus::Next {
                             let new_status = ConnectScanStatus {
                                 retiries: status.retiries,
