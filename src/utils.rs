@@ -42,10 +42,10 @@ pub fn random_port_range(start: u16, end: u16) -> u16 {
 }
 
 pub(crate) fn time_to_string(cost: Duration) -> String {
-    if cost.as_secs_f64() > 1.0 {
-        format!("{:.2}s", cost.as_secs_f64())
+    if cost.as_secs_f32() > 1.0 {
+        format!("{:.2}s", cost.as_secs_f32())
     } else {
-        format!("{:.2}ms", cost.as_secs_f64() * 1000.0)
+        format!("{:.2}ms", cost.as_secs_f32() * 1000.0)
     }
 }
 

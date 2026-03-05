@@ -24,6 +24,8 @@ use std::collections::HashMap;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::fmt;
 #[cfg(any(feature = "scan", feature = "ping"))]
+use std::hash::Hash;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::IpAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::Ipv4Addr;
@@ -41,6 +43,8 @@ use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::error;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use tracing::warn;
 
 pub mod arp;
 pub mod ndp_ns;
@@ -798,7 +802,11 @@ impl fmt::Display for PortScans {
         let total_cost = self.finish_time - self.start_time;
         let total_cost_str =
             utils::time_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
-        let avg_cost = total_cost.as_seconds_f32() / self.port_reports.len() as f32;
+        let avg_cost = if self.port_reports.len() > 0 {
+            total_cost.as_seconds_f32() / self.port_reports.len() as f32
+        } else {
+            total_cost.as_seconds_f32()
+        };
         let avg_cost_str = utils::time_to_string(Duration::from_secs_f32(avg_cost));
         let layer2_cost_str = utils::time_to_string(self.layer2_cost);
         let summary2 = format!(
@@ -845,23 +853,6 @@ enum ConnectScanSteps {
     Done,
 }
 
-#[derive(Debug, Clone)]
-struct ConnectScanStatus {
-    retiries: usize,
-    data_recved: bool,
-    receiver: Option<Receiver<(Arc<[u8]>, Duration)>>,
-    start: Instant,
-    rtt_1: Duration,
-    rtt_2: Duration,
-    rtt_3: Duration,
-    rtt_4: Duration,
-    steps: ConnectScanSteps,
-    server_seq_1: u32,
-    server_ack_1: u32,
-    server_seq_2: u32,
-    server_ack_2: u32,
-}
-
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn connect_scan(
     net_infos: Vec<NetInfo>,
@@ -869,55 +860,122 @@ fn connect_scan(
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
     let mut port_scans = PortScans::new(max_retries);
-    let mut connnect_scan_status = HashMap::new();
-    for ni in net_infos {
-        let status = ConnectScanStatus {
-            retiries: 0,
-            data_recved: false,
-            receiver: None,
-            start: Instant::now(),
-            rtt_1: Duration::ZERO,
-            rtt_2: Duration::ZERO,
-            rtt_3: Duration::ZERO,
-            rtt_4: Duration::ZERO,
-            steps: ConnectScanSteps::SendStep1,
-            server_seq_1: 0,
-            server_ack_1: 0,
-            server_seq_2: 0,
-            server_ack_2: 0,
-        };
-        connnect_scan_status.insert(ni, status);
+
+    let mut retried_hm = HashMap::new();
+    let mut receiver_hm = HashMap::new();
+    let mut start_hm = HashMap::new();
+    let mut rtt_1_hm = HashMap::new();
+    let mut rtt_2_hm = HashMap::new();
+    let mut rtt_3_hm = HashMap::new();
+    let mut step_hm = HashMap::new();
+    let mut server_seq_1_hm = HashMap::new();
+    let mut server_ack_1_hm = HashMap::new();
+    let mut server_seq_2_hm = HashMap::new();
+    let mut server_ack_2_hm = HashMap::new();
+    let mut server_seq_3_hm = HashMap::new();
+    let mut server_ack_3_hm = HashMap::new();
+    for ni in &net_infos {
+        let mut tmp_retried_hm = HashMap::new();
+        let mut tmp_receiver_hm = HashMap::new();
+        let mut tmp_start_hm = HashMap::new();
+        let mut tmp_rtt_1_hm = HashMap::new();
+        let mut tmp_rtt_2_hm = HashMap::new();
+        let mut tmp_rtt_3_hm = HashMap::new();
+        let mut tmp_step_hm = HashMap::new();
+        let mut tmp_server_seq_1_hm = HashMap::new();
+        let mut tmp_server_ack_1_hm = HashMap::new();
+        let mut tmp_server_seq_2_hm = HashMap::new();
+        let mut tmp_server_ack_2_hm = HashMap::new();
+        let mut tmp_server_seq_3_hm = HashMap::new();
+        let mut tmp_server_ack_3_hm = HashMap::new();
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_retried_hm.insert(x, 0);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_receiver_hm.insert(x, None);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_start_hm.insert(x, Instant::now());
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_rtt_1_hm.insert(x, Duration::ZERO);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_rtt_2_hm.insert(x, Duration::ZERO);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_rtt_3_hm.insert(x, Duration::ZERO);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_step_hm.insert(x, ConnectScanSteps::SendStep1);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_server_seq_1_hm.insert(x, 0);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_server_ack_1_hm.insert(x, 0);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_server_seq_2_hm.insert(x, 0);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_server_ack_2_hm.insert(x, 0);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_server_seq_3_hm.insert(x, 0);
+        });
+        ni.dst_ports.iter().for_each(|&x| {
+            tmp_server_ack_3_hm.insert(x, 0);
+        });
+        retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+        receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+        start_hm.insert(ni.dst_addr, tmp_start_hm);
+        rtt_1_hm.insert(ni.dst_addr, tmp_rtt_1_hm);
+        rtt_2_hm.insert(ni.dst_addr, tmp_rtt_2_hm);
+        rtt_3_hm.insert(ni.dst_addr, tmp_rtt_3_hm);
+        step_hm.insert(ni.dst_addr, tmp_step_hm);
+        server_seq_1_hm.insert(ni.dst_addr, tmp_server_seq_1_hm);
+        server_ack_1_hm.insert(ni.dst_addr, tmp_server_ack_1_hm);
+        server_seq_2_hm.insert(ni.dst_addr, tmp_server_seq_2_hm);
+        server_ack_2_hm.insert(ni.dst_addr, tmp_server_ack_2_hm);
+        server_seq_3_hm.insert(ni.dst_addr, tmp_server_seq_3_hm);
+        server_ack_3_hm.insert(ni.dst_addr, tmp_server_ack_3_hm);
     }
-    let mut connect_scan_status_clone = connnect_scan_status.clone();
 
     let mut port_reports = Vec::new();
     loop {
+        println!("1");
         let mut all_done = true;
-        for (ni, status) in connnect_scan_status {
-            if status.retiries < max_retries && !status.data_recved {
-                match ni.inferred_dst_addr {
-                    IpAddr::V4(dst_ipv4) => {
-                        let dst_mac = ni.inferred_dst_mac;
-                        let dst_port = if ni.dst_ports.len() > 0 {
-                            ni.dst_ports[0]
-                        } else {
-                            return Err(PistolError::IdleScanNeedParamsError {
-                                params: String::from("dst_ports"),
-                            });
-                        };
-                        let src_ipv4 = match ni.inferred_src_addr {
-                            IpAddr::V4(src_ipv4) => src_ipv4,
-                            _ => return Err(PistolError::CanNotFoundSrcAddress),
-                        };
-                        let src_mac = ni.inferred_src_mac;
-                        let src_port = match ni.src_port {
-                            Some(s) => s,
-                            None => utils::random_port(),
-                        };
-                        let interface = &ni.interface;
-                        match status.steps {
-                            ConnectScanSteps::SendStep1 => {
-                                if status.retiries < max_retries && !status.data_recved {
+        for ni in &net_infos {
+            println!("2");
+            for dst_port in ni.dst_ports.clone() {
+                let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
+                println!("{:?}", tmp_retried_hm);
+                let retried = tmp_retried_hm[&dst_port];
+                if retried < max_retries {
+                    println!("3");
+                    match ni.inferred_dst_addr {
+                        IpAddr::V4(dst_ipv4) => {
+                            let dst_mac = ni.inferred_dst_mac;
+                            println!("4");
+                            let src_ipv4 = match ni.inferred_src_addr {
+                                IpAddr::V4(src_ipv4) => src_ipv4,
+                                _ => return Err(PistolError::CanNotFoundSrcAddress),
+                            };
+                            println!("5");
+                            let src_mac = ni.inferred_src_mac;
+                            let src_port = match ni.src_port {
+                                Some(s) => s,
+                                None => utils::random_port(),
+                            };
+                            let interface = &ni.interface;
+                            println!("6");
+                            let mut tmp_step_hm = step_hm[&ni.dst_addr].clone();
+                            let step = tmp_step_hm[&dst_port];
+                            println!("{:?}", step);
+                            match step {
+                                ConnectScanSteps::SendStep1 => {
+                                    println!("7");
                                     // send probe 1 packet and recv response
                                     let start = Instant::now();
                                     let receiver = tcp::send_connect_scan_packet_1(
@@ -928,30 +986,27 @@ fn connect_scan(
                                         "send connect scan packet 1 to {}:{}",
                                         dst_ipv4, dst_port
                                     );
-                                    let new_status = ConnectScanStatus {
-                                        retiries: status.retiries + 1,
-                                        data_recved: false,
-                                        receiver: Some(receiver),
-                                        start,
-                                        rtt_1: status.rtt_1,
-                                        rtt_2: status.rtt_2,
-                                        rtt_3: status.rtt_3,
-                                        rtt_4: status.rtt_4,
-                                        steps: ConnectScanSteps::RecvStep1,
-                                        server_seq_1: status.server_seq_1,
-                                        server_ack_1: status.server_ack_1,
-                                        server_seq_2: status.server_seq_2,
-                                        server_ack_2: status.server_ack_2,
-                                    };
-                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    // update retry times, receiver, start time and step
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
+                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
+                                    tmp_start_hm.insert(dst_port, start);
+                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep1);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+
                                     all_done = false;
                                 }
-                            }
-                            ConnectScanSteps::SendStep2 => {
-                                if status.retiries < max_retries && !status.data_recved {
+                                ConnectScanSteps::SendStep2 => {
                                     // send probe 2 packet but do not recv any response
-                                    let last_server_seq = status.server_seq_1;
-                                    let last_server_ack = status.server_ack_1;
+                                    let tmp_server_seq_1_hm = server_seq_1_hm[&ni.dst_addr].clone();
+                                    let tmp_server_ack_1_hm = server_ack_1_hm[&ni.dst_addr].clone();
+                                    let last_server_seq = tmp_server_seq_1_hm[&dst_port];
+                                    let last_server_ack = tmp_server_ack_1_hm[&dst_port];
+
                                     let start = Instant::now();
                                     let receiver = tcp::send_connect_scan_packet_2(
                                         dst_mac,
@@ -969,31 +1024,28 @@ fn connect_scan(
                                         "send connect scan packet 2 to {}:{}",
                                         dst_ipv4, dst_port
                                     );
-                                    let new_status = ConnectScanStatus {
-                                        retiries: status.retiries + 1,
-                                        data_recved: false,
-                                        receiver: Some(receiver),
-                                        start,
-                                        rtt_1: status.rtt_1,
-                                        rtt_2: status.rtt_2,
-                                        rtt_3: status.rtt_3,
-                                        rtt_4: status.rtt_4,
-                                        steps: ConnectScanSteps::RecvStep2,
-                                        server_seq_1: status.server_seq_1,
-                                        server_ack_1: status.server_ack_1,
-                                        server_seq_2: status.server_seq_2,
-                                        server_ack_2: status.server_ack_2,
-                                    };
-                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    // update retry times, receiver, start time and step
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
+                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
+                                    tmp_start_hm.insert(dst_port, start);
+                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep2);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+
                                     all_done = false;
                                 }
-                            }
-                            ConnectScanSteps::SendStep3 => {
-                                if status.retiries < max_retries && !status.data_recved {
+                                ConnectScanSteps::SendStep3 => {
                                     // send probe 3 packet and recv response
+                                    let tmp_server_seq_1_hm = server_seq_1_hm[&ni.dst_addr].clone();
+                                    let tmp_server_ack_1_hm = server_ack_1_hm[&ni.dst_addr].clone();
+                                    let last_client_seq = tmp_server_ack_1_hm[&dst_port];
+                                    let last_client_ack = tmp_server_seq_1_hm[&dst_port] + 1;
+
                                     let start = Instant::now();
-                                    let last_client_seq = status.server_ack_1;
-                                    let last_client_ack = status.server_seq_1 + 1;
                                     let receiver = tcp::send_connect_scan_packet_3(
                                         dst_mac,
                                         dst_ipv4,
@@ -1010,30 +1062,27 @@ fn connect_scan(
                                         "send connect scan packet 3 to {}:{}",
                                         dst_ipv4, dst_port
                                     );
-                                    let new_status = ConnectScanStatus {
-                                        retiries: status.retiries + 1,
-                                        data_recved: false,
-                                        receiver: Some(receiver),
-                                        start,
-                                        rtt_1: status.rtt_1,
-                                        rtt_2: status.rtt_2,
-                                        rtt_3: status.rtt_3,
-                                        rtt_4: status.rtt_4,
-                                        steps: ConnectScanSteps::RecvStep3,
-                                        server_seq_1: status.server_seq_1,
-                                        server_ack_1: status.server_ack_1,
-                                        server_seq_2: status.server_seq_2,
-                                        server_ack_2: status.server_ack_2,
-                                    };
-                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    // update retry times, receiver, start time and step
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
+                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
+                                    tmp_start_hm.insert(dst_port, start);
+                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep3);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+
                                     all_done = false;
                                 }
-                            }
-                            ConnectScanSteps::SendStep4 => {
-                                if status.retiries < max_retries && !status.data_recved {
+                                ConnectScanSteps::SendStep4 => {
                                     // send probe 4 packet but do not recv any response
-                                    let last_server_seq = status.server_seq_2;
-                                    let last_server_ack = status.server_ack_2;
+                                    let tmp_server_seq_2_hm = server_seq_2_hm[&ni.dst_addr].clone();
+                                    let tmp_server_ack_2_hm = server_ack_2_hm[&ni.dst_addr].clone();
+                                    let last_server_seq = tmp_server_seq_2_hm[&dst_port];
+                                    let last_server_ack = tmp_server_ack_2_hm[&dst_port];
+
                                     let start = Instant::now();
                                     let receiver = tcp::send_connect_scan_packet_4(
                                         dst_mac,
@@ -1051,32 +1100,28 @@ fn connect_scan(
                                         "send connect scan packet 4 to {}:{}",
                                         dst_ipv4, dst_port
                                     );
-                                    let new_status = ConnectScanStatus {
-                                        retiries: status.retiries + 1,
-                                        data_recved: false,
-                                        receiver: Some(receiver),
-                                        start,
-                                        rtt_1: status.rtt_1,
-                                        rtt_2: status.rtt_2,
-                                        rtt_3: status.rtt_3,
-                                        rtt_4: status.rtt_4,
-                                        steps: ConnectScanSteps::RecvStep4,
-                                        server_seq_1: status.server_seq_1,
-                                        server_ack_1: status.server_ack_1,
-                                        server_seq_2: status.server_seq_2,
-                                        server_ack_2: status.server_ack_2,
-                                    };
-                                    connect_scan_status_clone.insert(ni.clone(), new_status);
+                                    // update retry times, receiver, start time and step
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
+                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
+                                    tmp_start_hm.insert(dst_port, start);
+                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep4);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+
                                     all_done = false;
                                 }
+                                _ => (),
                             }
-                            _ => (),
                         }
-                    }
-                    IpAddr::V6(dst_ipv6) => {
-                        todo!()
-                    }
-                };
+                        IpAddr::V6(dst_ipv6) => {
+                            todo!()
+                        }
+                    };
+                }
             }
         }
 
@@ -1084,141 +1129,266 @@ fn connect_scan(
             break;
         }
 
-        connnect_scan_status = connect_scan_status_clone.clone();
-        for (ni, status) in connnect_scan_status {
-            match status.steps {
-                ConnectScanSteps::RecvStep1 => match status.receiver {
-                    Some(receiver) => {
-                        let start = status.start;
-                        let (conn_status, seq, ack, rtt) =
-                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                        println!("recv connect scan packet 1 from {}", ni.inferred_dst_addr);
-                        println!("{}", conn_status);
-                        if conn_status == ConnStatus::Next {
-                            let new_status = ConnectScanStatus {
-                                retiries: status.retiries,
-                                data_recved: true,
-                                receiver: None,
-                                start,
-                                rtt_1: rtt,
-                                rtt_2: status.rtt_2,
-                                rtt_3: status.rtt_3,
-                                rtt_4: status.rtt_4,
-                                steps: ConnectScanSteps::SendStep2,
-                                server_seq_1: seq,
-                                server_ack_1: ack,
-                                server_seq_2: status.server_seq_2,
-                                server_ack_2: status.server_ack_2,
-                            };
-                            connect_scan_status_clone.insert(ni.clone(), new_status);
-                        }
-                    }
-                    None => (),
-                },
-                ConnectScanSteps::RecvStep2 => match status.receiver {
-                    Some(receiver) => {
-                        let start = status.start;
-                        let (conn_status, seq, ack, rtt) =
-                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                        println!("recv connect scan packet 2 from {}", ni.inferred_dst_addr);
-                        if conn_status == ConnStatus::Next {
-                            let new_status = ConnectScanStatus {
-                                retiries: status.retiries,
-                                data_recved: true,
-                                receiver: None,
-                                start,
-                                rtt_1: status.rtt_1,
-                                rtt_2: rtt,
-                                rtt_3: status.rtt_3,
-                                rtt_4: status.rtt_4,
-                                steps: ConnectScanSteps::SendStep3,
-                                server_seq_1: status.server_seq_1,
-                                server_ack_1: status.server_ack_1,
-                                server_seq_2: seq,
-                                server_ack_2: ack,
-                            };
-                            connect_scan_status_clone.insert(ni.clone(), new_status);
-                        }
-                    }
-                    None => (),
-                },
-                ConnectScanSteps::RecvStep3 => match status.receiver {
-                    Some(receiver) => {
-                        let start = status.start;
-                        let (conn_status, seq, ack, rtt) =
-                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                        println!("recv connect scan packet 3 from {}", ni.inferred_dst_addr);
-                        if conn_status == ConnStatus::Next {
-                            let new_status = ConnectScanStatus {
-                                retiries: status.retiries,
-                                data_recved: true,
-                                receiver: None,
-                                start,
-                                rtt_1: status.rtt_1,
-                                rtt_2: status.rtt_2,
-                                rtt_3: rtt,
-                                rtt_4: status.rtt_4,
-                                steps: ConnectScanSteps::SendStep3,
-                                server_seq_1: status.server_seq_1,
-                                server_ack_1: status.server_ack_1,
-                                server_seq_2: seq,
-                                server_ack_2: ack,
-                            };
-                            connect_scan_status_clone.insert(ni.clone(), new_status);
-                        }
-                    }
-                    None => (),
-                },
-                ConnectScanSteps::RecvStep4 => match status.receiver {
-                    Some(receiver) => {
-                        let start = status.start;
-                        let (conn_status, _seq, _ack, rtt) =
-                            tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                        println!("recv connect scan packet 4 from {}", ni.inferred_dst_addr);
-                        if conn_status == ConnStatus::Next {
-                            let new_status = ConnectScanStatus {
-                                retiries: status.retiries,
-                                data_recved: true,
-                                receiver: None,
-                                start,
-                                rtt_1: status.rtt_1,
-                                rtt_2: status.rtt_2,
-                                rtt_3: status.rtt_3,
-                                rtt_4: rtt,
-                                steps: ConnectScanSteps::Done,
-                                server_seq_1: status.server_seq_1,
-                                server_ack_1: status.server_ack_1,
-                                server_seq_2: status.server_seq_2,
-                                server_ack_2: status.server_ack_2,
-                            };
-                            connect_scan_status_clone.insert(ni.clone(), new_status);
+        for ni in &net_infos {
+            for dst_port in ni.dst_ports.clone() {
+                let mut tmp_step_hm = step_hm[&ni.dst_addr].clone();
+                let step = tmp_step_hm[&dst_port];
+                let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
+                let receiver = tmp_receiver_hm[&dst_port].clone();
+                let tmp_start_hm = start_hm[&ni.dst_addr].clone();
+                let start = tmp_start_hm[&dst_port];
+                match step {
+                    ConnectScanSteps::RecvStep1 => match receiver {
+                        Some(receiver) => {
+                            let (conn_status, seq_1, ack_1, rtt_1) =
+                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                            println!("recv connect scan packet 1 from {}", ni.inferred_dst_addr);
+                            println!("{}", conn_status);
+                            match conn_status {
+                                ConnStatus::Next => {
+                                    let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
+                                    let retried = tmp_retried_hm[&dst_port];
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::SendStep2);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+                                    tmp_receiver_hm.insert(dst_port, None);
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_server_seq_1_hm =
+                                        server_seq_1_hm[&ni.dst_addr].clone();
+                                    let mut tmp_server_ack_1_hm =
+                                        server_ack_1_hm[&ni.dst_addr].clone();
+                                    tmp_server_seq_1_hm.insert(dst_port, seq_1);
+                                    tmp_server_ack_1_hm.insert(dst_port, ack_1);
+                                    server_seq_1_hm.insert(ni.dst_addr, tmp_server_seq_1_hm);
+                                    server_ack_1_hm.insert(ni.dst_addr, tmp_server_ack_1_hm);
+                                    let mut tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
+                                    tmp_rtt_1_hm.insert(dst_port, rtt_1);
+                                }
+                                ConnStatus::Stop => {
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
 
-                            let dst_addr = ni.inferred_dst_addr;
-                            let dst_port = if ni.dst_ports.len() > 0 {
-                                ni.dst_ports[0]
-                            } else {
-                                return Err(PistolError::IdleScanNeedParamsError {
-                                    params: String::from("dst_ports"),
-                                });
-                            };
-                            let addr_origin = ni.dst_addr;
-                            let port_report = PortReport {
-                                addr: dst_addr,
-                                addr_origin,
-                                port: dst_port,
-                                status: PortStatus::Open,
-                                cost: status.rtt_1 + status.rtt_2 + status.rtt_3 + rtt,
-                                cached: ni.cached,
-                            };
-                            port_reports.push(port_report);
+                                    let dst_addr = ni.inferred_dst_addr;
+                                    let addr_origin = ni.dst_addr;
+                                    let port_report = PortReport {
+                                        addr: dst_addr,
+                                        addr_origin,
+                                        port: dst_port,
+                                        status: PortStatus::Open,
+                                        cost: rtt_1,
+                                        cached: ni.cached,
+                                    };
+                                    port_reports.push(port_report);
+                                }
+                                ConnStatus::Retry => (),
+                            }
                         }
-                    }
-                    None => (),
-                },
-                _ => (),
+                        None => warn!(
+                            "recv connect scan packet 1 but receiver is None ({}:{})",
+                            ni.inferred_dst_addr, dst_port
+                        ),
+                    },
+                    ConnectScanSteps::RecvStep2 => match receiver {
+                        Some(receiver) => {
+                            let (conn_status, seq_2, ack_2, rtt_2) =
+                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                            println!("recv connect scan packet 2 from {}", ni.inferred_dst_addr);
+                            match conn_status {
+                                ConnStatus::Next => {
+                                    let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
+                                    let retried = tmp_retried_hm[&dst_port];
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::SendStep3);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+                                    tmp_receiver_hm.insert(dst_port, None);
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_server_seq_2_hm =
+                                        server_seq_2_hm[&ni.dst_addr].clone();
+                                    let mut tmp_server_ack_2_hm =
+                                        server_ack_2_hm[&ni.dst_addr].clone();
+                                    tmp_server_seq_2_hm.insert(dst_port, seq_2);
+                                    tmp_server_ack_2_hm.insert(dst_port, ack_2);
+                                    server_seq_2_hm.insert(ni.dst_addr, tmp_server_seq_2_hm);
+                                    server_ack_2_hm.insert(ni.dst_addr, tmp_server_ack_2_hm);
+                                    let mut tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
+                                    tmp_rtt_2_hm.insert(dst_port, rtt_2);
+                                }
+                                ConnStatus::Stop => {
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+
+                                    let dst_addr = ni.inferred_dst_addr;
+                                    let addr_origin = ni.dst_addr;
+                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
+                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
+                                    let port_report = PortReport {
+                                        addr: dst_addr,
+                                        addr_origin,
+                                        port: dst_port,
+                                        status: PortStatus::Open,
+                                        cost: rtt_1 + rtt_2,
+                                        cached: ni.cached,
+                                    };
+                                    port_reports.push(port_report);
+                                }
+                                ConnStatus::Retry => (),
+                            }
+                        }
+                        None => (),
+                    },
+                    ConnectScanSteps::RecvStep3 => match receiver {
+                        Some(receiver) => {
+                            let (conn_status, seq_3, ack_3, rtt_3) =
+                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                            println!("recv connect scan packet 3 from {}", ni.inferred_dst_addr);
+                            match conn_status {
+                                ConnStatus::Next => {
+                                    let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
+                                    let retried = tmp_retried_hm[&dst_port];
+                                    tmp_retried_hm.insert(dst_port, retried + 1);
+                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::SendStep4);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+                                    tmp_receiver_hm.insert(dst_port, None);
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+                                    let mut tmp_server_seq_3_hm =
+                                        server_seq_3_hm[&ni.dst_addr].clone();
+                                    let mut tmp_server_ack_3_hm =
+                                        server_ack_3_hm[&ni.dst_addr].clone();
+                                    tmp_server_seq_3_hm.insert(dst_port, seq_3);
+                                    tmp_server_ack_3_hm.insert(dst_port, ack_3);
+                                    server_seq_3_hm.insert(ni.dst_addr, tmp_server_seq_3_hm);
+                                    server_ack_3_hm.insert(ni.dst_addr, tmp_server_ack_3_hm);
+                                    let mut tmp_rtt_3_hm = rtt_3_hm[&ni.dst_addr].clone();
+                                    tmp_rtt_3_hm.insert(dst_port, rtt_3);
+                                }
+                                ConnStatus::Stop => {
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+
+                                    let dst_addr = ni.inferred_dst_addr;
+                                    let addr_origin = ni.dst_addr;
+                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
+                                    let tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
+                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
+                                    let rtt_2 = tmp_rtt_2_hm[&dst_port];
+                                    let port_report = PortReport {
+                                        addr: dst_addr,
+                                        addr_origin,
+                                        port: dst_port,
+                                        status: PortStatus::Open,
+                                        cost: rtt_1 + rtt_2 + rtt_3,
+                                        cached: ni.cached,
+                                    };
+                                    port_reports.push(port_report);
+                                }
+                                ConnStatus::Retry => (),
+                            }
+                        }
+                        None => (),
+                    },
+                    ConnectScanSteps::RecvStep4 => match receiver {
+                        Some(receiver) => {
+                            let (conn_status, _seq, _ack, rtt_4) =
+                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
+                            println!("recv connect scan packet 4 from {}", ni.inferred_dst_addr);
+                            match conn_status {
+                                ConnStatus::Next => {
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+                                    tmp_receiver_hm.insert(dst_port, None);
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+
+                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
+                                    let tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
+                                    let tmp_rtt_3_hm = rtt_3_hm[&ni.dst_addr].clone();
+                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
+                                    let rtt_2 = tmp_rtt_2_hm[&dst_port];
+                                    let rtt_3 = tmp_rtt_3_hm[&dst_port];
+                                    let dst_addr = ni.inferred_dst_addr;
+                                    let addr_origin = ni.dst_addr;
+                                    let port_report = PortReport {
+                                        addr: dst_addr,
+                                        addr_origin,
+                                        port: dst_port,
+                                        status: PortStatus::Open,
+                                        cost: rtt_1 + rtt_2 + rtt_3 + rtt_4,
+                                        cached: ni.cached,
+                                    };
+                                    port_reports.push(port_report);
+                                }
+                                ConnStatus::Stop => {
+                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
+                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
+                                    tmp_receiver_hm.insert(dst_port, None);
+                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
+
+                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
+                                    let tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
+                                    let tmp_rtt_3_hm = rtt_3_hm[&ni.dst_addr].clone();
+                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
+                                    let rtt_2 = tmp_rtt_2_hm[&dst_port];
+                                    let rtt_3 = tmp_rtt_3_hm[&dst_port];
+                                    let dst_addr = ni.inferred_dst_addr;
+                                    let addr_origin = ni.dst_addr;
+                                    let port_report = PortReport {
+                                        addr: dst_addr,
+                                        addr_origin,
+                                        port: dst_port,
+                                        status: PortStatus::Open,
+                                        cost: rtt_1 + rtt_2 + rtt_3 + rtt_4,
+                                        cached: ni.cached,
+                                    };
+                                    port_reports.push(port_report);
+                                }
+                                ConnStatus::Retry => (),
+                            }
+                        }
+                        None => (),
+                    },
+                    _ => (),
+                }
             }
         }
-        connnect_scan_status = connect_scan_status_clone.clone();
+    }
+
+    for ni in net_infos {
+        for dst_port in ni.dst_ports {
+            let mut exist = false;
+            for p in &port_reports {
+                if p.addr_origin == ni.dst_addr && p.port == dst_port {
+                    exist = true;
+                    break;
+                }
+            }
+            if !exist {
+                let rtt_1 = match rtt_1_hm[&ni.dst_addr].get(&dst_port) {
+                    Some(r) => *r,
+                    None => Duration::ZERO,
+                };
+                let rtt_2 = match rtt_2_hm[&ni.dst_addr].get(&dst_port) {
+                    Some(r) => *r,
+                    None => Duration::ZERO,
+                };
+                let rtt_3 = match rtt_3_hm[&ni.dst_addr].get(&dst_port) {
+                    Some(r) => *r,
+                    None => Duration::ZERO,
+                };
+                let dst_addr = ni.inferred_dst_addr;
+                let addr_origin = ni.dst_addr;
+                let port_report = PortReport {
+                    addr: dst_addr,
+                    addr_origin,
+                    port: dst_port,
+                    status: PortStatus::Closed,
+                    cost: rtt_1 + rtt_2 + rtt_3,
+                    cached: ni.cached,
+                };
+                port_reports.push(port_report);
+            }
+        }
     }
     port_scans.finish(port_reports);
     Ok(port_scans)

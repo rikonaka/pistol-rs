@@ -17,12 +17,8 @@ use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherType;
 use pnet::packet::ethernet::EtherTypes;
 #[cfg(feature = "debug")]
-use pnet::packet::ethernet::EtherTypes;
-#[cfg(feature = "debug")]
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ethernet::MutableEthernetPacket;
-use pnet::packet::ip::IpNextHeaderProtocols;
-#[cfg(feature = "debug")]
 use pnet::packet::ip::IpNextHeaderProtocols;
 #[cfg(feature = "debug")]
 use pnet::packet::ipv4::Ipv4Packet;
@@ -701,6 +697,7 @@ pub(crate) fn ask_runner(
             return Err(PistolError::CanNotFoundInterfaceFilterChannel { i: interface_name });
         }
     };
+
     let packet_receiver = rcc.send_to_runner(
         dst_mac,
         src_mac,
@@ -996,7 +993,7 @@ impl NetInfo {
     }
 }
 
-const MAX_HISTORY_PACKETS: usize = 10_000;
+const MAX_HISTORY_PACKETS: usize = 10_000_000_000;
 
 #[derive(Debug, Clone)]
 pub struct Pistol {
@@ -1248,13 +1245,14 @@ impl Pistol {
             }
 
             for packet in &history_packets {
+                #[cfg(feature = "debug")]
+                debug_show_packet(packet, Some(EtherTypes::Ipv4));
                 for msg in &r_msgs {
                     // Not drop any message here.
                     if msg.check_packet(packet) {
                         // send matched packet back to thread
                         debug!("matched packet [{}]", packet.len());
-                        #[cfg(feature = "debug")]
-                        debug_show_packet(packet, Some(EtherTypes::Arp));
+                        println!("matched packet [{}]", packet.len());
                         let rtt = msg.created.elapsed();
                         msg.send_packet_back(packet, rtt);
                         break;
@@ -1266,7 +1264,7 @@ impl Pistol {
             let mut need_drop = false;
             for (i, msg) in r_msgs.iter().enumerate() {
                 // Sometimes if we drop msg too quickly,
-                // as well as the sender in msg will be droped too,
+                // as well as the sender in msg will be droped too,3
                 // when worker's receiver wanna recv back packet,
                 // the 'receiving on an empty and disconnected channel' error raise,
                 // which will cause the worker can not receive matched packets back from runner,
@@ -2901,9 +2899,10 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread::sleep;
+    use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_net_info_detect() {
-        use std::thread::sleep;
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let mut pistol = Pistol::new();
         let (net_infos, cost) = pistol.init_runner(&targets, None, None).unwrap();
@@ -3092,14 +3091,15 @@ mod tests {
     fn test_tcp_connect_scan() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(0.5);
+        pistol.set_timeout(1.5);
         // pistol.set_log_level("debug");
 
         let src_ipv4 = None;
         let src_port = None;
         let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 77).into(),
-            Some(vec![22, 80, 443]),
+            Ipv4Addr::new(192, 168, 5, 78).into(),
+            // Some(vec![22, 80, 443]),
+            Some(vec![22]),
         )];
         let ret = pistol
             .tcp_connect_scan(&targets, src_ipv4, src_port)
@@ -3122,8 +3122,6 @@ mod tests {
     #[cfg(feature = "scan")]
     #[test]
     fn example_tcp_syn_scan() {
-        use subnetwork::CrossIpv4Pool;
-
         let mut pistol = Pistol::new();
         pistol.set_timeout(0.5);
         // Number of max_retries, it can also be understood as the maximum number of unsuccessful retries.

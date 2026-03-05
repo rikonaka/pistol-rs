@@ -2005,3 +2005,39 @@ pub(crate) fn send_connect_scan_packet(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_connect_scan_filter() {
+        let packet: [u8; 60] = [
+            0x0, 0xc, 0x29, 0xec, 0xd0, 0x37, 0x0, 0xc, 0x29, 0xc5, 0xf6, 0x99, 0x8, 0x0, 0x45,
+            0x0, 0x0, 0x2c, 0x0, 0x0, 0x40, 0x0, 0x40, 0x6, 0xaf, 0x2b, 0xc0, 0xa8, 0x5, 0x4d,
+            0xc0, 0xa8, 0x5, 0x3, 0x0, 0x16, 0x31, 0xe3, 0x1d, 0xd0, 0x4, 0x72, 0x51, 0xc3, 0x52,
+            0xb0, 0x60, 0x12, 0xfa, 0xf0, 0x18, 0xd6, 0x0, 0x0, 0x2, 0x4, 0x5, 0xb4, 0x0, 0x0,
+        ];
+
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 77);
+        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
+        let dst_port = 22;
+        let src_port = 12771;
+
+        let layer3 = Layer3Filter {
+            name: String::from("tcp connnect scan 1 layer3"),
+            layer2: None,
+            src_addr: Some(dst_ipv4.into()),
+            dst_addr: Some(src_ipv4.into()),
+        };
+        let layer4_tcp_udp = Layer4FilterTcpUdp {
+            name: String::from("tcp connnect scan 1 tcp_udp"),
+            layer3: Some(layer3.clone()),
+            src_port: Some(dst_port),
+            dst_port: Some(src_port),
+            flag: None,
+        };
+
+        let filter = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp);
+        println!("{}", filter.check(&packet));
+    }
+}
