@@ -167,7 +167,13 @@ pub(crate) fn recv_syn_scan_packet(
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
 ) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
+    let start_eval = Instant::now();
     let (eth_response, rtt) = get_response(receiver, start, timeout);
+    println!(
+        "get_response took {:.3}s",
+        start_eval.elapsed().as_secs_f64()
+    );
+
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2

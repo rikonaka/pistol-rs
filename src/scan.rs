@@ -1253,7 +1253,7 @@ fn scan(
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
     let mut port_scans = PortScans::new(max_retries);
-    let mut reports = Vec::new();
+    let reports = Arc::new(Mutex::new(Vec::new()));
 
     let mut scan_status = HashMap::new();
     for ni in net_infos {
@@ -1352,35 +1352,58 @@ fn scan(
         for (ni, hm) in scan_status {
             let dst_addr = ni.inferred_dst_addr;
             let cached = ni.cached;
-            let mut tmp_hm = scan_status_clone[&ni].clone();
+            let tmp_hm = Arc::new(Mutex::new(scan_status_clone[&ni].clone()));
+
+            let mut handles = Vec::new();
             for (dst_port, status) in hm {
                 let (retries, _data_recved, receiver, start) = status;
                 match receiver {
                     Some(receiver) => {
-                        let (port_status, has_response, rtt) = match dst_addr {
-                            IpAddr::V4(_) => scan_recv(method, start, timeout, receiver)?,
-                            IpAddr::V6(_) => scan_recv6(method, start, timeout, receiver)?,
-                        };
-                        if has_response == HasResponse::Yes {
-                            let addr_origin = ni.dst_addr;
-                            let report = PortReport {
-                                addr: dst_addr,
-                                addr_origin,
-                                port: dst_port,
-                                status: port_status,
-                                cost: rtt,
-                                cached,
+                        let tmp_hm = tmp_hm.clone();
+                        let reports = reports.clone();
+                        let h = thread::spawn(move || {
+                            let ret = match dst_addr {
+                                IpAddr::V4(_) => scan_recv(method, start, timeout, receiver),
+                                IpAddr::V6(_) => scan_recv6(method, start, timeout, receiver),
                             };
-                            reports.push(report);
-                            tmp_hm.insert(dst_port, (retries, true, None, start));
-                        } else {
-                            tmp_hm.insert(dst_port, (retries, false, None, start));
-                        }
+
+                            let mut tmp_hm = tmp_hm.lock().unwrap();
+                            if let Ok((port_status, has_response, rtt)) = ret {
+                                if has_response == HasResponse::Yes {
+                                    let addr_origin = ni.dst_addr;
+                                    let report = PortReport {
+                                        addr: dst_addr,
+                                        addr_origin,
+                                        port: dst_port,
+                                        status: port_status,
+                                        cost: rtt,
+                                        cached,
+                                    };
+
+                                    let mut reports = reports.lock().unwrap();
+                                    reports.push(report);
+                                    tmp_hm.insert(dst_port, (retries, true, None, start));
+                                } else {
+                                    tmp_hm.insert(dst_port, (retries, false, None, start));
+                                }
+                            }
+                        });
+                        handles.push(h);
                     }
                     None => (),
                 }
             }
-            scan_status_clone.insert(ni, tmp_hm);
+
+            for h in handles {
+                if let Err(e) = h.join() {
+                    eprintln!("thread panicked: {:?}", e);
+                }
+            }
+
+            let tmp_hm = tmp_hm
+                .lock()
+                .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
+            scan_status_clone.insert(ni, (*tmp_hm).clone());
         }
         scan_status = scan_status_clone.clone();
 
@@ -1389,7 +1412,10 @@ fn scan(
             start_eval.elapsed().as_secs_f32()
         );
     }
-    port_scans.finish(reports);
+    let reports = reports
+        .lock()
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
+    port_scans.finish((*reports).clone());
     Ok(port_scans)
 }
 
@@ -1629,7 +1655,7 @@ pub fn tcp_connect_scan(
 
     let reports = reports
         .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
     port_scans.finish((*reports).clone());
     Ok(port_scans)
 }

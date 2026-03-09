@@ -58,7 +58,7 @@ fn update_neighbor_cache(
     // release the lock when leaving the function
     let mut gncs = GLOBAL_NET_CACHES
         .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
     gncs.system_network_cache
         .update_neighbor_cache(addr, mac, rtt);
     debug!("update neighbor cache finish: {:?}", (*gncs));
@@ -589,7 +589,7 @@ pub(crate) fn get_default_route()
 -> Result<(Option<DefaultRoute>, Option<DefaultRoute>), PistolError> {
     let gncs = GLOBAL_NET_CACHES
         .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
     let snc = gncs.system_network_cache.clone();
     Ok((snc.default_route, snc.default_route6))
 }
@@ -598,7 +598,7 @@ pub(crate) fn get_default_route()
 pub(crate) fn search_route_table(dst_addr: IpAddr) -> Result<Option<RouteInfo>, PistolError> {
     let gncs = GLOBAL_NET_CACHES
         .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
     Ok(gncs.system_network_cache.search_route_table(dst_addr))
 }
 
@@ -606,7 +606,7 @@ pub(crate) fn search_route_table(dst_addr: IpAddr) -> Result<Option<RouteInfo>, 
 pub(crate) fn search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
     let gncs = GLOBAL_NET_CACHES
         .lock()
-        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
     Ok(gncs.system_network_cache.search_mac(dst_addr))
 }
 

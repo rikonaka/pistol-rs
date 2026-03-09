@@ -735,7 +735,7 @@ pub(crate) fn get_response(
             Ok((buff, rtt)) => (buff, rtt),
             Err(_e) => {
                 // Timeout is expected, so we don't log it as error.
-                let buff: Arc<[u8]> = Arc::new([]);
+                let buff = Arc::from([]);
                 (buff, Duration::ZERO)
             }
         }
@@ -744,7 +744,7 @@ pub(crate) fn get_response(
             Ok((buff, rtt)) => (buff, rtt),
             Err(e) => {
                 debug!("get_response recv error: {}", e);
-                let buff: Arc<[u8]> = Arc::new([]);
+                let buff = Arc::from([]);
                 (buff, Duration::ZERO)
             }
         }

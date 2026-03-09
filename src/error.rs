@@ -118,7 +118,7 @@ pub enum PistolError {
     #[error("pcapture error")]
     PcaptureError(#[from] pcapture::error::PcaptureError),
     #[error("try to lock some var failed: {e}")]
-    LockGlobalVarFailed { e: String },
+    LockVarFailed { e: String },
     #[error("tracing error")]
     SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
     #[error("input {v} is too loog to convert to u32")]

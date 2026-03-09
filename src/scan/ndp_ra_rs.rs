@@ -181,7 +181,7 @@ pub(crate) fn recv_ndp_rs_scan_response(
         Some(mac) => {
             let mut gncs = GLOBAL_NET_CACHES
                 .lock()
-                .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+                .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
             gncs.system_network_cache
                 .update_neighbor_cache(dst_ipv6.into(), mac, Some(rtt));
         }
@@ -190,7 +190,7 @@ pub(crate) fn recv_ndp_rs_scan_response(
             // we just set the mac to 00:00:00:00:00:00 to indicate the host is down.
             let mut gncs = GLOBAL_NET_CACHES
                 .lock()
-                .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+                .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
             gncs.system_network_cache.update_neighbor_cache(
                 dst_ipv6.into(),
                 MacAddr::zero(),
