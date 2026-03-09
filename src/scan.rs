@@ -24,8 +24,6 @@ use std::collections::HashMap;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::fmt;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use std::hash::Hash;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::IpAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::Ipv4Addr;
@@ -33,6 +31,10 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::Arc;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use std::sync::Mutex;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use std::thread;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -43,8 +45,6 @@ use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::error;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use tracing::warn;
 
 pub mod arp;
 pub mod ndp_ns;
@@ -77,8 +77,6 @@ use crate::scan::arp::send_arp_scan_packet;
 use crate::scan::ndp_ns::recv_ndp_ns_scan_response;
 #[cfg(feature = "scan")]
 use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use crate::scan::tcp::ConnStatus;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils;
 
@@ -591,10 +589,10 @@ pub fn mac_scan(
     Ok(rets)
 }
 
+/// Remove connect and idle scan from here.
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScanMethod {
-    Connect,
     Syn,
     Fin,
     Ack,
@@ -602,7 +600,6 @@ pub enum ScanMethod {
     Xmas,
     Window,
     Maimon,
-    Idle, // need ipv4 ip id and ipv4 only
     Udp,
 }
 
@@ -841,560 +838,6 @@ impl PortScans {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ConnectScanSteps {
-    SendStep1,
-    RecvStep1,
-    SendStep2,
-    RecvStep2,
-    SendStep3,
-    RecvStep3,
-    SendStep4,
-    RecvStep4,
-    Done,
-}
-
-#[cfg(any(feature = "scan", feature = "ping"))]
-fn connect_scan(
-    net_infos: Vec<NetInfo>,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScans, PistolError> {
-    let mut port_scans = PortScans::new(max_retries);
-
-    let mut retried_hm = HashMap::new();
-    let mut receiver_hm = HashMap::new();
-    let mut start_hm = HashMap::new();
-    let mut rtt_1_hm = HashMap::new();
-    let mut rtt_2_hm = HashMap::new();
-    let mut rtt_3_hm = HashMap::new();
-    let mut step_hm = HashMap::new();
-    let mut server_seq_1_hm = HashMap::new();
-    let mut server_ack_1_hm = HashMap::new();
-    let mut server_seq_2_hm = HashMap::new();
-    let mut server_ack_2_hm = HashMap::new();
-    let mut server_seq_3_hm = HashMap::new();
-    let mut server_ack_3_hm = HashMap::new();
-    for ni in &net_infos {
-        let mut tmp_retried_hm = HashMap::new();
-        let mut tmp_receiver_hm = HashMap::new();
-        let mut tmp_start_hm = HashMap::new();
-        let mut tmp_rtt_1_hm = HashMap::new();
-        let mut tmp_rtt_2_hm = HashMap::new();
-        let mut tmp_rtt_3_hm = HashMap::new();
-        let mut tmp_step_hm = HashMap::new();
-        let mut tmp_server_seq_1_hm = HashMap::new();
-        let mut tmp_server_ack_1_hm = HashMap::new();
-        let mut tmp_server_seq_2_hm = HashMap::new();
-        let mut tmp_server_ack_2_hm = HashMap::new();
-        let mut tmp_server_seq_3_hm = HashMap::new();
-        let mut tmp_server_ack_3_hm = HashMap::new();
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_retried_hm.insert(x, 0);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_receiver_hm.insert(x, None);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_start_hm.insert(x, Instant::now());
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_rtt_1_hm.insert(x, Duration::ZERO);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_rtt_2_hm.insert(x, Duration::ZERO);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_rtt_3_hm.insert(x, Duration::ZERO);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_step_hm.insert(x, ConnectScanSteps::SendStep1);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_server_seq_1_hm.insert(x, 0);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_server_ack_1_hm.insert(x, 0);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_server_seq_2_hm.insert(x, 0);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_server_ack_2_hm.insert(x, 0);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_server_seq_3_hm.insert(x, 0);
-        });
-        ni.dst_ports.iter().for_each(|&x| {
-            tmp_server_ack_3_hm.insert(x, 0);
-        });
-        retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-        receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-        start_hm.insert(ni.dst_addr, tmp_start_hm);
-        rtt_1_hm.insert(ni.dst_addr, tmp_rtt_1_hm);
-        rtt_2_hm.insert(ni.dst_addr, tmp_rtt_2_hm);
-        rtt_3_hm.insert(ni.dst_addr, tmp_rtt_3_hm);
-        step_hm.insert(ni.dst_addr, tmp_step_hm);
-        server_seq_1_hm.insert(ni.dst_addr, tmp_server_seq_1_hm);
-        server_ack_1_hm.insert(ni.dst_addr, tmp_server_ack_1_hm);
-        server_seq_2_hm.insert(ni.dst_addr, tmp_server_seq_2_hm);
-        server_ack_2_hm.insert(ni.dst_addr, tmp_server_ack_2_hm);
-        server_seq_3_hm.insert(ni.dst_addr, tmp_server_seq_3_hm);
-        server_ack_3_hm.insert(ni.dst_addr, tmp_server_ack_3_hm);
-    }
-
-    let mut port_reports = Vec::new();
-    loop {
-        println!("1");
-        let mut all_done = true;
-        for ni in &net_infos {
-            println!("2");
-            for dst_port in ni.dst_ports.clone() {
-                let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
-                println!("{:?}", tmp_retried_hm);
-                let retried = tmp_retried_hm[&dst_port];
-                if retried < max_retries {
-                    println!("3");
-                    match ni.inferred_dst_addr {
-                        IpAddr::V4(dst_ipv4) => {
-                            let dst_mac = ni.inferred_dst_mac;
-                            println!("4");
-                            let src_ipv4 = match ni.inferred_src_addr {
-                                IpAddr::V4(src_ipv4) => src_ipv4,
-                                _ => return Err(PistolError::CanNotFoundSrcAddress),
-                            };
-                            println!("5");
-                            let src_mac = ni.inferred_src_mac;
-                            let src_port = match ni.src_port {
-                                Some(s) => s,
-                                None => utils::random_port(),
-                            };
-                            let interface = &ni.interface;
-                            println!("6");
-                            let mut tmp_step_hm = step_hm[&ni.dst_addr].clone();
-                            let step = tmp_step_hm[&dst_port];
-                            println!("{:?}", step);
-                            match step {
-                                ConnectScanSteps::SendStep1 => {
-                                    println!("7");
-                                    // send probe 1 packet and recv response
-                                    let start = Instant::now();
-                                    let receiver = tcp::send_connect_scan_packet_1(
-                                        dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
-                                        interface, timeout,
-                                    )?;
-                                    println!(
-                                        "send connect scan packet 1 to {}:{}",
-                                        dst_ipv4, dst_port
-                                    );
-                                    // update retry times, receiver, start time and step
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
-                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
-                                    tmp_start_hm.insert(dst_port, start);
-                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep1);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    all_done = false;
-                                }
-                                ConnectScanSteps::SendStep2 => {
-                                    // send probe 2 packet but do not recv any response
-                                    let tmp_server_seq_1_hm = server_seq_1_hm[&ni.dst_addr].clone();
-                                    let tmp_server_ack_1_hm = server_ack_1_hm[&ni.dst_addr].clone();
-                                    let last_server_seq = tmp_server_seq_1_hm[&dst_port];
-                                    let last_server_ack = tmp_server_ack_1_hm[&dst_port];
-
-                                    let start = Instant::now();
-                                    let receiver = tcp::send_connect_scan_packet_2(
-                                        dst_mac,
-                                        dst_ipv4,
-                                        dst_port,
-                                        src_mac,
-                                        src_ipv4,
-                                        src_port,
-                                        last_server_seq,
-                                        last_server_ack,
-                                        interface,
-                                        timeout,
-                                    )?;
-                                    println!(
-                                        "send connect scan packet 2 to {}:{}",
-                                        dst_ipv4, dst_port
-                                    );
-                                    // update retry times, receiver, start time and step
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
-                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
-                                    tmp_start_hm.insert(dst_port, start);
-                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep2);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    all_done = false;
-                                }
-                                ConnectScanSteps::SendStep3 => {
-                                    // send probe 3 packet and recv response
-                                    let tmp_server_seq_1_hm = server_seq_1_hm[&ni.dst_addr].clone();
-                                    let tmp_server_ack_1_hm = server_ack_1_hm[&ni.dst_addr].clone();
-                                    let last_client_seq = tmp_server_ack_1_hm[&dst_port];
-                                    let last_client_ack = tmp_server_seq_1_hm[&dst_port] + 1;
-
-                                    let start = Instant::now();
-                                    let receiver = tcp::send_connect_scan_packet_3(
-                                        dst_mac,
-                                        dst_ipv4,
-                                        dst_port,
-                                        src_mac,
-                                        src_ipv4,
-                                        src_port,
-                                        last_client_seq,
-                                        last_client_ack,
-                                        interface,
-                                        timeout,
-                                    )?;
-                                    println!(
-                                        "send connect scan packet 3 to {}:{}",
-                                        dst_ipv4, dst_port
-                                    );
-                                    // update retry times, receiver, start time and step
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
-                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
-                                    tmp_start_hm.insert(dst_port, start);
-                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep3);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    all_done = false;
-                                }
-                                ConnectScanSteps::SendStep4 => {
-                                    // send probe 4 packet but do not recv any response
-                                    let tmp_server_seq_2_hm = server_seq_2_hm[&ni.dst_addr].clone();
-                                    let tmp_server_ack_2_hm = server_ack_2_hm[&ni.dst_addr].clone();
-                                    let last_server_seq = tmp_server_seq_2_hm[&dst_port];
-                                    let last_server_ack = tmp_server_ack_2_hm[&dst_port];
-
-                                    let start = Instant::now();
-                                    let receiver = tcp::send_connect_scan_packet_4(
-                                        dst_mac,
-                                        dst_ipv4,
-                                        dst_port,
-                                        src_mac,
-                                        src_ipv4,
-                                        src_port,
-                                        last_server_seq,
-                                        last_server_ack,
-                                        interface,
-                                        timeout,
-                                    )?;
-                                    println!(
-                                        "send connect scan packet 4 to {}:{}",
-                                        dst_ipv4, dst_port
-                                    );
-                                    // update retry times, receiver, start time and step
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
-                                    tmp_receiver_hm.insert(dst_port, Some(receiver));
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_start_hm = start_hm[&ni.dst_addr].clone();
-                                    tmp_start_hm.insert(dst_port, start);
-                                    start_hm.insert(ni.dst_addr, tmp_start_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::RecvStep4);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    all_done = false;
-                                }
-                                _ => (),
-                            }
-                        }
-                        IpAddr::V6(dst_ipv6) => {
-                            todo!()
-                        }
-                    };
-                }
-            }
-        }
-
-        if all_done {
-            break;
-        }
-
-        for ni in &net_infos {
-            for dst_port in ni.dst_ports.clone() {
-                let mut tmp_step_hm = step_hm[&ni.dst_addr].clone();
-                let step = tmp_step_hm[&dst_port];
-                let mut tmp_receiver_hm = receiver_hm[&ni.dst_addr].clone();
-                let receiver = tmp_receiver_hm[&dst_port].clone();
-                let tmp_start_hm = start_hm[&ni.dst_addr].clone();
-                let start = tmp_start_hm[&dst_port];
-                match step {
-                    ConnectScanSteps::RecvStep1 => match receiver {
-                        Some(receiver) => {
-                            let (conn_status, seq_1, ack_1, rtt_1) =
-                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                            println!("recv connect scan packet 1 from {}", ni.inferred_dst_addr);
-                            println!("{}", conn_status);
-                            match conn_status {
-                                ConnStatus::Next => {
-                                    let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
-                                    let retried = tmp_retried_hm[&dst_port];
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::SendStep2);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-                                    tmp_receiver_hm.insert(dst_port, None);
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_server_seq_1_hm =
-                                        server_seq_1_hm[&ni.dst_addr].clone();
-                                    let mut tmp_server_ack_1_hm =
-                                        server_ack_1_hm[&ni.dst_addr].clone();
-                                    tmp_server_seq_1_hm.insert(dst_port, seq_1);
-                                    tmp_server_ack_1_hm.insert(dst_port, ack_1);
-                                    server_seq_1_hm.insert(ni.dst_addr, tmp_server_seq_1_hm);
-                                    server_ack_1_hm.insert(ni.dst_addr, tmp_server_ack_1_hm);
-                                    let mut tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
-                                    tmp_rtt_1_hm.insert(dst_port, rtt_1);
-                                }
-                                ConnStatus::Stop => {
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    let dst_addr = ni.inferred_dst_addr;
-                                    let addr_origin = ni.dst_addr;
-                                    let port_report = PortReport {
-                                        addr: dst_addr,
-                                        addr_origin,
-                                        port: dst_port,
-                                        status: PortStatus::Open,
-                                        cost: rtt_1,
-                                        cached: ni.cached,
-                                    };
-                                    port_reports.push(port_report);
-                                }
-                                ConnStatus::Retry => (),
-                            }
-                        }
-                        None => warn!(
-                            "recv connect scan packet 1 but receiver is None ({}:{})",
-                            ni.inferred_dst_addr, dst_port
-                        ),
-                    },
-                    ConnectScanSteps::RecvStep2 => match receiver {
-                        Some(receiver) => {
-                            let (conn_status, seq_2, ack_2, rtt_2) =
-                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                            println!("recv connect scan packet 2 from {}", ni.inferred_dst_addr);
-                            match conn_status {
-                                ConnStatus::Next => {
-                                    let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
-                                    let retried = tmp_retried_hm[&dst_port];
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::SendStep3);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-                                    tmp_receiver_hm.insert(dst_port, None);
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_server_seq_2_hm =
-                                        server_seq_2_hm[&ni.dst_addr].clone();
-                                    let mut tmp_server_ack_2_hm =
-                                        server_ack_2_hm[&ni.dst_addr].clone();
-                                    tmp_server_seq_2_hm.insert(dst_port, seq_2);
-                                    tmp_server_ack_2_hm.insert(dst_port, ack_2);
-                                    server_seq_2_hm.insert(ni.dst_addr, tmp_server_seq_2_hm);
-                                    server_ack_2_hm.insert(ni.dst_addr, tmp_server_ack_2_hm);
-                                    let mut tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
-                                    tmp_rtt_2_hm.insert(dst_port, rtt_2);
-                                }
-                                ConnStatus::Stop => {
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    let dst_addr = ni.inferred_dst_addr;
-                                    let addr_origin = ni.dst_addr;
-                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
-                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
-                                    let port_report = PortReport {
-                                        addr: dst_addr,
-                                        addr_origin,
-                                        port: dst_port,
-                                        status: PortStatus::Open,
-                                        cost: rtt_1 + rtt_2,
-                                        cached: ni.cached,
-                                    };
-                                    port_reports.push(port_report);
-                                }
-                                ConnStatus::Retry => (),
-                            }
-                        }
-                        None => (),
-                    },
-                    ConnectScanSteps::RecvStep3 => match receiver {
-                        Some(receiver) => {
-                            let (conn_status, seq_3, ack_3, rtt_3) =
-                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                            println!("recv connect scan packet 3 from {}", ni.inferred_dst_addr);
-                            match conn_status {
-                                ConnStatus::Next => {
-                                    let mut tmp_retried_hm = retried_hm[&ni.dst_addr].clone();
-                                    let retried = tmp_retried_hm[&dst_port];
-                                    tmp_retried_hm.insert(dst_port, retried + 1);
-                                    retried_hm.insert(ni.dst_addr, tmp_retried_hm);
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::SendStep4);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-                                    tmp_receiver_hm.insert(dst_port, None);
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-                                    let mut tmp_server_seq_3_hm =
-                                        server_seq_3_hm[&ni.dst_addr].clone();
-                                    let mut tmp_server_ack_3_hm =
-                                        server_ack_3_hm[&ni.dst_addr].clone();
-                                    tmp_server_seq_3_hm.insert(dst_port, seq_3);
-                                    tmp_server_ack_3_hm.insert(dst_port, ack_3);
-                                    server_seq_3_hm.insert(ni.dst_addr, tmp_server_seq_3_hm);
-                                    server_ack_3_hm.insert(ni.dst_addr, tmp_server_ack_3_hm);
-                                    let mut tmp_rtt_3_hm = rtt_3_hm[&ni.dst_addr].clone();
-                                    tmp_rtt_3_hm.insert(dst_port, rtt_3);
-                                }
-                                ConnStatus::Stop => {
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-
-                                    let dst_addr = ni.inferred_dst_addr;
-                                    let addr_origin = ni.dst_addr;
-                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
-                                    let tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
-                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
-                                    let rtt_2 = tmp_rtt_2_hm[&dst_port];
-                                    let port_report = PortReport {
-                                        addr: dst_addr,
-                                        addr_origin,
-                                        port: dst_port,
-                                        status: PortStatus::Open,
-                                        cost: rtt_1 + rtt_2 + rtt_3,
-                                        cached: ni.cached,
-                                    };
-                                    port_reports.push(port_report);
-                                }
-                                ConnStatus::Retry => (),
-                            }
-                        }
-                        None => (),
-                    },
-                    ConnectScanSteps::RecvStep4 => match receiver {
-                        Some(receiver) => {
-                            let (conn_status, _seq, _ack, rtt_4) =
-                                tcp::recv_connect_scan_packet(start, timeout, receiver)?;
-                            println!("recv connect scan packet 4 from {}", ni.inferred_dst_addr);
-                            match conn_status {
-                                ConnStatus::Next => {
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-                                    tmp_receiver_hm.insert(dst_port, None);
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-
-                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
-                                    let tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
-                                    let tmp_rtt_3_hm = rtt_3_hm[&ni.dst_addr].clone();
-                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
-                                    let rtt_2 = tmp_rtt_2_hm[&dst_port];
-                                    let rtt_3 = tmp_rtt_3_hm[&dst_port];
-                                    let dst_addr = ni.inferred_dst_addr;
-                                    let addr_origin = ni.dst_addr;
-                                    let port_report = PortReport {
-                                        addr: dst_addr,
-                                        addr_origin,
-                                        port: dst_port,
-                                        status: PortStatus::Open,
-                                        cost: rtt_1 + rtt_2 + rtt_3 + rtt_4,
-                                        cached: ni.cached,
-                                    };
-                                    port_reports.push(port_report);
-                                }
-                                ConnStatus::Stop => {
-                                    tmp_step_hm.insert(dst_port, ConnectScanSteps::Done);
-                                    step_hm.insert(ni.dst_addr, tmp_step_hm);
-                                    tmp_receiver_hm.insert(dst_port, None);
-                                    receiver_hm.insert(ni.dst_addr, tmp_receiver_hm);
-
-                                    let tmp_rtt_1_hm = rtt_1_hm[&ni.dst_addr].clone();
-                                    let tmp_rtt_2_hm = rtt_2_hm[&ni.dst_addr].clone();
-                                    let tmp_rtt_3_hm = rtt_3_hm[&ni.dst_addr].clone();
-                                    let rtt_1 = tmp_rtt_1_hm[&dst_port];
-                                    let rtt_2 = tmp_rtt_2_hm[&dst_port];
-                                    let rtt_3 = tmp_rtt_3_hm[&dst_port];
-                                    let dst_addr = ni.inferred_dst_addr;
-                                    let addr_origin = ni.dst_addr;
-                                    let port_report = PortReport {
-                                        addr: dst_addr,
-                                        addr_origin,
-                                        port: dst_port,
-                                        status: PortStatus::Open,
-                                        cost: rtt_1 + rtt_2 + rtt_3 + rtt_4,
-                                        cached: ni.cached,
-                                    };
-                                    port_reports.push(port_report);
-                                }
-                                ConnStatus::Retry => (),
-                            }
-                        }
-                        None => (),
-                    },
-                    _ => (),
-                }
-            }
-        }
-    }
-
-    for ni in net_infos {
-        for dst_port in ni.dst_ports {
-            let mut exist = false;
-            for p in &port_reports {
-                if p.addr_origin == ni.dst_addr && p.port == dst_port {
-                    exist = true;
-                    break;
-                }
-            }
-            if !exist {
-                let rtt_1 = match rtt_1_hm[&ni.dst_addr].get(&dst_port) {
-                    Some(r) => *r,
-                    None => Duration::ZERO,
-                };
-                let rtt_2 = match rtt_2_hm[&ni.dst_addr].get(&dst_port) {
-                    Some(r) => *r,
-                    None => Duration::ZERO,
-                };
-                let rtt_3 = match rtt_3_hm[&ni.dst_addr].get(&dst_port) {
-                    Some(r) => *r,
-                    None => Duration::ZERO,
-                };
-                let dst_addr = ni.inferred_dst_addr;
-                let addr_origin = ni.dst_addr;
-                let port_report = PortReport {
-                    addr: dst_addr,
-                    addr_origin,
-                    port: dst_port,
-                    status: PortStatus::Closed,
-                    cost: rtt_1 + rtt_2 + rtt_3,
-                    cached: ni.cached,
-                };
-                port_reports.push(port_report);
-            }
-        }
-    }
-    port_scans.finish(port_reports);
-    Ok(port_scans)
-}
-
-#[derive(Debug, Clone, Copy)]
 enum IdleScanSteps {
     SendStep1,
     RecvStep1,
@@ -1518,7 +961,7 @@ fn idle_scan(
                                 start,
                                 rtt_1: status.rtt_1,
                                 rtt_2: status.rtt_2,
-                                steps: IdleScanSteps::RecvStep2,
+                                steps: IdleScanSteps::RecvStep1,
                                 zombie_ip_id_1: status.zombie_ip_id_1,
                             };
                             idle_scan_status_clone.insert(ni.clone(), new_status);
@@ -1720,7 +1163,6 @@ fn scan_send(
         ScanMethod::Udp => udp::send_udp_scan_packet(
             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
         ),
-        _ => unreachable!(),
     }
 }
 
@@ -1740,7 +1182,6 @@ fn scan_recv(
         ScanMethod::Window => tcp::recv_window_scan_packet(start, timeout, receiver),
         ScanMethod::Maimon => tcp::recv_maimon_scan_packet(start, timeout, receiver),
         ScanMethod::Udp => udp::recv_udp_scan_packet(start, timeout, receiver),
-        _ => unreachable!(),
     }
 }
 
@@ -1781,8 +1222,6 @@ fn scan_send6(
         ScanMethod::Udp => udp6::send_udp_scan_packet(
             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
         ),
-        ScanMethod::Idle => Err(PistolError::IpVersionNotMatch),
-        _ => unreachable!(),
     }
 }
 
@@ -1802,8 +1241,6 @@ fn scan_recv6(
         ScanMethod::Window => tcp6::recv_window_scan_packet(start, timeout, receiver),
         ScanMethod::Maimon => tcp6::recv_maimon_scan_packet(start, timeout, receiver),
         ScanMethod::Udp => udp6::recv_udp_scan_packet(start, timeout, receiver),
-        ScanMethod::Idle => Err(PistolError::IpVersionNotMatch),
-        _ => unreachable!(),
     }
 }
 
@@ -1811,34 +1248,12 @@ fn scan_recv6(
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn scan(
     net_infos: Vec<NetInfo>,
-    zombie_mac: Option<MacAddr>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    let mut pistol_port_scans = PortScans::new(max_retries);
+    let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
-
-    match method {
-        ScanMethod::Idle => {
-            let port_scans = idle_scan(
-                net_infos,
-                zombie_mac,
-                zombie_ipv4,
-                zombie_port,
-                timeout,
-                max_retries,
-            )?;
-            return Ok(port_scans);
-        }
-        ScanMethod::Connect => {
-            let port_scans = connect_scan(net_infos, timeout, max_retries)?;
-            return Ok(port_scans);
-        }
-        _ => (),
-    }
 
     let mut scan_status = HashMap::new();
     for ni in net_infos {
@@ -1962,43 +1377,8 @@ fn scan(
         }
         scan_status = scan_status_clone.clone();
     }
-    pistol_port_scans.finish(reports);
-    Ok(pistol_port_scans)
-}
-
-#[cfg(feature = "scan")]
-pub fn tcp_connect_scan(
-    net_infos: Vec<NetInfo>,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Connect,
-        timeout,
-        max_retries,
-    )
-}
-
-/// TCP connect() Scan, raw version.
-#[cfg(feature = "scan")]
-pub fn tcp_connect_scan_raw(
-    net_info: NetInfo,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Connect,
-        timeout,
-        max_retries,
-    )
+    port_scans.finish(reports);
+    Ok(port_scans)
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -2007,15 +1387,7 @@ pub fn tcp_syn_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Syn,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Syn, timeout, max_retries)
 }
 
 /// TCP SYN Scan, raw version.
@@ -2025,15 +1397,7 @@ pub fn tcp_syn_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Syn,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Syn, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2042,15 +1406,7 @@ pub fn tcp_fin_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Fin,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Fin, timeout, max_retries)
 }
 
 /// TCP FIN Scan, raw version.
@@ -2060,15 +1416,7 @@ pub fn tcp_fin_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Fin,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Fin, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2077,15 +1425,7 @@ pub fn tcp_ack_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Ack,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Ack, timeout, max_retries)
 }
 
 /// TCP ACK Scan, raw version.
@@ -2095,15 +1435,7 @@ pub fn tcp_ack_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Ack,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Ack, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2112,15 +1444,7 @@ pub fn tcp_null_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Null,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Null, timeout, max_retries)
 }
 
 /// TCP Null Scan, raw version.
@@ -2130,15 +1454,7 @@ pub fn tcp_null_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Null,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Null, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2147,15 +1463,7 @@ pub fn tcp_xmas_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Xmas,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Xmas, timeout, max_retries)
 }
 
 /// TCP Xmas Scan, raw version.
@@ -2165,15 +1473,7 @@ pub fn tcp_xmas_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Xmas,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Xmas, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2182,15 +1482,7 @@ pub fn tcp_window_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Window,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Window, timeout, max_retries)
 }
 
 /// TCP Window Scan, raw version.
@@ -2200,15 +1492,7 @@ pub fn tcp_window_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Window,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Window, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2217,15 +1501,7 @@ pub fn tcp_maimon_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Maimon,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Maimon, timeout, max_retries)
 }
 
 /// TCP Maimon Scan, raw version.
@@ -2235,15 +1511,7 @@ pub fn tcp_maimon_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Maimon,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Maimon, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
@@ -2255,12 +1523,11 @@ pub fn tcp_idle_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
+    idle_scan(
         net_infos,
         zombie_mac,
         zombie_ipv4,
         zombie_port,
-        ScanMethod::Idle,
         timeout,
         max_retries,
     )
@@ -2276,15 +1543,129 @@ pub fn tcp_idle_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
+    let net_infos = vec![net_info];
+    let mut port_scan = PortScan::new(max_retries);
+    let port_scans = idle_scan(
+        net_infos,
         zombie_mac,
         zombie_ipv4,
         zombie_port,
-        ScanMethod::Idle,
         timeout,
         max_retries,
-    )
+    )?;
+
+    let report = if port_scans.port_reports.len() > 0 {
+        Some(port_scans.port_reports[0].clone())
+    } else {
+        None
+    };
+    port_scan.finish(report);
+    Ok(port_scan)
+}
+
+#[cfg(feature = "scan")]
+pub fn tcp_connect_scan(
+    net_infos: Vec<NetInfo>,
+    timeout: Duration,
+    max_retries: usize,
+) -> Result<PortScans, PistolError> {
+    let mut port_scans = PortScans::new(max_retries);
+    let reports = Arc::new(Mutex::new(Vec::new()));
+    let mut handles = Vec::new();
+    for ni in &net_infos {
+        let dst_addr = ni.dst_addr;
+        let dst_ports = ni.dst_ports.clone();
+        let addr_origin = ni.dst_addr;
+        let cached = false;
+        for dst_port in dst_ports {
+            let reports = reports.clone();
+            let h = thread::spawn(move || {
+                for i in 0..max_retries {
+                    match tcp::send_connect_scan_packet(dst_addr, dst_port, timeout) {
+                        Ok((port_status, has_response, rtt)) => {
+                            let report = PortReport {
+                                addr: dst_addr,
+                                addr_origin,
+                                port: dst_port,
+                                status: port_status,
+                                cost: rtt,
+                                cached,
+                            };
+
+                            if has_response == HasResponse::Yes || i == max_retries - 1 {
+                                if let Ok(mut reports) = reports.lock() {
+                                    (*reports).push(report);
+                                }
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("tcp connect scan error: {}", e);
+                        }
+                    }
+                }
+            });
+            handles.push(h);
+        }
+    }
+
+    for h in handles {
+        if let Err(e) = h.join() {
+            error!("tcp connect scan thread join error: {:?}", e);
+        }
+    }
+
+    let reports = reports
+        .lock()
+        .map_err(|e| PistolError::LockGlobalVarFailed { e: e.to_string() })?;
+    port_scans.finish((*reports).clone());
+    Ok(port_scans)
+}
+
+/// TCP connect() Scan, raw version.
+#[cfg(feature = "scan")]
+pub fn tcp_connect_scan_raw(
+    net_info: NetInfo,
+    timeout: Duration,
+    max_retries: usize,
+) -> Result<PortScan, PistolError> {
+    let mut port_scan = PortScan::new(max_retries);
+    if net_info.dst_ports.len() == 0 {
+        return Err(PistolError::NoDstPortSpecified);
+    }
+
+    let dst_addr = net_info.dst_addr;
+    let dst_port = net_info.dst_ports[0];
+    let addr_origin = net_info.dst_addr;
+    let cached = false;
+
+    for i in 0..max_retries {
+        let (port_status, has_response, rtt) =
+            tcp::send_connect_scan_packet(dst_addr, dst_port, timeout)?;
+        if has_response == HasResponse::Yes || i == max_retries - 1 {
+            let report = PortReport {
+                addr: addr_origin,
+                addr_origin,
+                port: dst_port,
+                status: port_status,
+                cost: rtt,
+                cached,
+            };
+            port_scan.finish(Some(report));
+            return Ok(port_scan);
+        }
+    }
+
+    let report = PortReport {
+        addr: addr_origin,
+        addr_origin,
+        port: dst_port,
+        status: PortStatus::Closed,
+        cost: timeout,
+        cached,
+    };
+    port_scan.finish(Some(report));
+    Ok(port_scan)
 }
 
 #[cfg(feature = "scan")]
@@ -2293,15 +1674,7 @@ pub fn udp_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(
-        net_infos,
-        None,
-        None,
-        None,
-        ScanMethod::Udp,
-        timeout,
-        max_retries,
-    )
+    scan(net_infos, ScanMethod::Udp, timeout, max_retries)
 }
 
 /// UDP Scan, raw version.
@@ -2311,62 +1684,20 @@ pub fn udp_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(
-        net_info,
-        None,
-        None,
-        None,
-        ScanMethod::Udp,
-        timeout,
-        max_retries,
-    )
+    scan_raw(net_info, ScanMethod::Udp, timeout, max_retries)
 }
 
 #[cfg(feature = "scan")]
 fn scan_raw(
     net_info: NetInfo,
-    zombie_mac: Option<MacAddr>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    let mut ret = PortScan::new(max_retries);
+    let mut port_scan = PortScan::new(max_retries);
     if !net_info.valid {
-        ret.finish(None);
-        return Ok(ret);
-    }
-
-    match method {
-        ScanMethod::Idle => {
-            let port_scans = idle_scan(
-                vec![net_info],
-                zombie_mac,
-                zombie_ipv4,
-                zombie_port,
-                timeout,
-                max_retries,
-            )?;
-            let port_report = if port_scans.port_reports.len() > 0 {
-                Some(port_scans.port_reports[0].clone())
-            } else {
-                None
-            };
-            ret.finish(port_report);
-            return Ok(ret);
-        }
-        ScanMethod::Connect => {
-            let port_scans = connect_scan(vec![net_info], timeout, max_retries)?;
-            let port_report = if port_scans.port_reports.len() > 0 {
-                Some(port_scans.port_reports[0].clone())
-            } else {
-                None
-            };
-            ret.finish(port_report);
-            return Ok(ret);
-        }
-        _ => (),
+        port_scan.finish(None);
+        return Ok(port_scan);
     }
 
     let dst_mac = net_info.inferred_dst_mac;
@@ -2415,8 +1746,8 @@ fn scan_raw(
                         cost: rtt,
                         cached,
                     };
-                    ret.finish(Some(report));
-                    return Ok(ret);
+                    port_scan.finish(Some(report));
+                    return Ok(port_scan);
                 }
             }
         }
@@ -2446,14 +1777,14 @@ fn scan_raw(
                         cost: rtt,
                         cached,
                     };
-                    ret.finish(Some(report));
-                    return Ok(ret);
+                    port_scan.finish(Some(report));
+                    return Ok(port_scan);
                 }
             }
         }
     };
-    ret.finish(None);
-    Ok(ret)
+    port_scan.finish(None);
+    Ok(port_scan)
 }
 
 #[cfg(feature = "scan")]
@@ -2465,7 +1796,7 @@ mod tests {
     use std::str::FromStr;
     #[test]
     fn test_arp_scan_single() {
-        let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
+        let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)), None);
         let targets = vec![target];
         let timeout = Duration::from_secs_f32(10.0);
         let max_retries = 2;
@@ -2480,7 +1811,7 @@ mod tests {
     fn test_arp_scan_subnet() {
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         // println!("{}", targets.len());
-        // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77)), None);
+        // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)), None);
         // let target2 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 2)), None);
         // let target3 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)), None);
         // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
@@ -2526,7 +1857,7 @@ mod tests {
         let src_addr = None;
         let src_port = None;
         let timeout = Duration::new(1, 0);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 77);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
         let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
         let targets = vec![target];
@@ -2547,7 +1878,7 @@ mod tests {
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77));
+        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
         #[cfg(target_os = "linux")]
         let ports = vec![22, 80, 5432, 8080];
         #[cfg(target_os = "windows")]
@@ -2573,7 +1904,7 @@ mod tests {
         let src_port = Some(37888);
         let timeout = Duration::from_secs_f32(0.5);
         let max_retries = 1;
-        let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77));
+        let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
         let ports: Vec<u16> = (22..65535).collect();
         // let ports: Vec<u16> = (8000..9000).collect();
         // let ports: Vec<u16> = (22..200).collect();

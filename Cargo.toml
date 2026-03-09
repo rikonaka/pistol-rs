@@ -30,8 +30,8 @@ prettytable-rs = "0.10.0"
 tracing-subscriber = "0.3.22"
 pnet = { version = "0.35.0", features = ["serde"] }
 chrono = { version = "0.4.43", features = ["serde"] }
-serde = { version = "1.0.228", features = ["derive"] }
 bitcode = { version = "0.6.9", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
 pcapture = { version = "0.3.18", features = ["pcapng", "libpcap"] }
 
 [features]

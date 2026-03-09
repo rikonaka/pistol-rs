@@ -107,21 +107,33 @@ use crate::vs::PortService;
 
 pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
+/// Whether to cache the network information of the program runtime process to avoid repeated calculations.
+pub static CACHE_NET: bool = false;
+
 /// Cache the network information of the program runtime process to avoid repeated calculations.
 static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
     debug!("create global network cache");
-    let nc = match NetCache::load() {
-        Some(nc) => {
-            debug!("load network cache from file:\n{}", nc);
-            nc
-        }
-        None => {
-            debug!("create network cache from system network information");
-            NetCache {
-                system_network_cache: SystemNetCache::init()
-                    .expect("can not init the system net cache"),
-                created_at: Local::now(),
+    let nc = if CACHE_NET {
+        match NetCache::load() {
+            Some(nc) => {
+                debug!("load network cache from file:\n{}", nc);
+                nc
             }
+            None => {
+                debug!("create network cache from system network information");
+                NetCache {
+                    system_network_cache: SystemNetCache::init()
+                        .expect("can not init the system net cache"),
+                    created_at: Local::now(),
+                }
+            }
+        }
+    } else {
+        debug!("do not cache net to file");
+        NetCache {
+            system_network_cache: SystemNetCache::init()
+                .expect("can not init the system net cache"),
+            created_at: Local::now(),
         }
     };
     Arc::new(Mutex::new(nc))
@@ -1016,17 +1028,22 @@ impl Default for Pistol {
 
 impl Drop for Pistol {
     fn drop(&mut self) {
-        debug!("save network cache");
-        let gncs = match GLOBAL_NET_CACHES.lock() {
-            Ok(gncs) => gncs.clone(),
-            Err(e) => {
-                error!("failed to lock program network cache: {}", e);
-                return;
-            }
-        };
-        // serde cs and save to file
-        let nc_bytes = bitcode::serialize(&gncs).expect("convert network cache to bytes failed");
-        fs::write(NETWORK_CACHE_PATH, nc_bytes).expect("write network cache to file failed");
+        if CACHE_NET {
+            debug!("save network cache");
+            let gncs = match GLOBAL_NET_CACHES.lock() {
+                Ok(gncs) => gncs.clone(),
+                Err(e) => {
+                    error!("failed to lock program network cache: {}", e);
+                    return;
+                }
+            };
+            // serde cs and save to file
+            let nc_bytes =
+                bitcode::serialize(&gncs).expect("convert network cache to bytes failed");
+            fs::write(NETWORK_CACHE_PATH, nc_bytes).expect("write network cache to file failed");
+        } else {
+            debug!("network cache is disabled, skip saving");
+        }
     }
 }
 
@@ -1209,11 +1226,6 @@ impl Pistol {
         let mut history_packets: Vec<Arc<[u8]>> = Vec::new();
         let mut r_msgs = Vec::new();
         loop {
-            // For my developed machine,
-            // the average time to loop one time is about 55ms.
-            #[cfg(feature = "debug")]
-            let loop_start = Instant::now();
-
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
             let packets = cap.fetch_as_vec()?;
@@ -1292,12 +1304,6 @@ impl Pistol {
                 "receiver [{}] has {} msgs to process",
                 interface_name,
                 r_msgs.len()
-            );
-
-            #[cfg(feature = "debug")]
-            println!(
-                "runner loop cost: {:.2}ms",
-                loop_start.elapsed().as_secs_f64() * 1000.0
             );
         }
     }
@@ -1543,6 +1549,8 @@ impl Pistol {
     /// The big downside is that this sort of scan is easily detectable and filterable.
     /// The target hosts logs will show a bunch of connection and error messages
     /// for the services which take the connection and then have it immediately shutdown.
+    /// Note: this method will use multiple threads to send packets in parallel,
+    /// so it very cause a expansive system cost.
     #[cfg(feature = "scan")]
     pub fn tcp_connect_scan(
         &mut self,
@@ -1550,9 +1558,28 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        // we do not need to get mac info for tcp connect scan,
+        // since we will use the operating system's TCP stack to send packets.
+        let mut net_infos = Vec::new();
+        for t in targets {
+            let net_info = NetInfo {
+                inferred_dst_mac: MacAddr::zero(),
+                inferred_src_mac: MacAddr::zero(),
+                inferred_dst_addr: t.addr,
+                inferred_src_addr: src_addr.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+                dst_addr: t.addr,
+                src_addr: src_addr,
+                dst_ports: t.ports.clone(),
+                src_port,
+                interface: fake_interface(),
+                cached: false,
+                cost: Duration::ZERO,
+                valid: true,
+            };
+            net_infos.push(net_info);
+        }
         let mut ret = scan::tcp_connect_scan(net_infos, self.timeout, self.max_retries)?;
-        ret.layer2_cost = dur;
+        ret.layer2_cost = Duration::ZERO;
         Ok(ret)
     }
     /// The raw version of tcp_connect_scan function.
@@ -1568,9 +1595,24 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        // we do not need to get mac info for tcp connect scan,
+        // since we will use the operating system's TCP stack to send packets.
+        let net_info = NetInfo {
+            inferred_dst_mac: MacAddr::zero(),
+            inferred_src_mac: MacAddr::zero(),
+            inferred_dst_addr: dst_addr,
+            inferred_src_addr: src_addr.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            dst_addr: dst_addr,
+            src_addr: src_addr,
+            dst_ports: vec![dst_port],
+            src_port,
+            interface: fake_interface(),
+            cached: false,
+            cost: Duration::ZERO,
+            valid: true,
+        };
         let mut ret = scan::tcp_connect_scan_raw(net_info, self.timeout, self.max_retries)?;
-        ret.layer2_cost = dur;
+        ret.layer2_cost = Duration::ZERO;
         Ok(ret)
     }
     /// TCP FIN Scan.
@@ -2925,7 +2967,7 @@ mod tests {
         let nc = NetCache::load();
         if let Some(nc) = nc {
             let nbs = nc.system_network_cache.neighbors;
-            let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 77));
+            let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
             let nb = nbs[&dst_addr];
             let mac = nb.mac;
             println!("{}", mac);
@@ -3046,7 +3088,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 77).into(),
+            Ipv4Addr::new(192, 168, 5, 78).into(),
             Some(vec![22]),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
@@ -3058,13 +3100,15 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(0.5);
-        pistol.set_log_level("debug");
+        // pistol.set_log_level("debug");
 
         let src_ipv4 = None;
         let src_port = None;
+        let dst_ports: Vec<u16> = (22..10240).collect();
         let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 77).into(),
-            Some(vec![22, 80, 443]),
+            Ipv4Addr::new(192, 168, 5, 78).into(),
+            // Some(vec![22, 80, 443]),
+            Some(dst_ports),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
@@ -3096,10 +3140,13 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
+
+        let dst_ports: Vec<u16> = (22..10240).collect();
+
         let targets = vec![Target::new(
             Ipv4Addr::new(192, 168, 5, 78).into(),
             // Some(vec![22, 80, 443]),
-            Some(vec![22]),
+            Some(dst_ports),
         )];
         let ret = pistol
             .tcp_connect_scan(&targets, src_ipv4, src_port)
