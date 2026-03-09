@@ -1236,10 +1236,6 @@ impl Pistol {
             );
 
             for packet in packets {
-                // #[cfg(feature = "debug")]
-                // debug_show_packet(packet, None);
-                // #[cfg(feature = "debug")]
-                // debug_show_packet(packet, Some(EtherTypes::Arp));
                 history_packets.push(Arc::from(packet));
             }
 
@@ -1264,7 +1260,6 @@ impl Pistol {
                     if msg.check_packet(packet) {
                         // send matched packet back to thread
                         debug!("matched packet [{}]", packet.len());
-                        println!("matched packet [{}]", packet.len());
                         let rtt = msg.created.elapsed();
                         msg.send_packet_back(packet, rtt);
                         break;

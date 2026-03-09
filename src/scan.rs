@@ -1269,6 +1269,7 @@ fn scan(
     let mut scan_status_clone = scan_status.clone();
 
     loop {
+        let start_eval = Instant::now();
         let mut all_done = true;
         for (ni, hm) in scan_status {
             let dst_mac = ni.inferred_dst_mac;
@@ -1337,10 +1338,16 @@ fn scan(
             }
         }
 
+        println!(
+            "send all packet: {:.2}s",
+            start_eval.elapsed().as_secs_f32()
+        );
+
         if all_done {
             break;
         }
 
+        let start_eval = Instant::now();
         scan_status = scan_status_clone.clone();
         for (ni, hm) in scan_status {
             let dst_addr = ni.inferred_dst_addr;
@@ -1376,6 +1383,17 @@ fn scan(
             scan_status_clone.insert(ni, tmp_hm);
         }
         scan_status = scan_status_clone.clone();
+
+        let mut all_cost = 0.0;
+        for c in costs {
+            all_cost += c.as_secs_f64();
+        }
+        println!("all cost: {:.2}s", all_cost);
+
+        println!(
+            "recv all packet: {:.2}s",
+            start_eval.elapsed().as_secs_f32()
+        );
     }
     port_scans.finish(reports);
     Ok(port_scans)
