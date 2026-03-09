@@ -1384,12 +1384,6 @@ fn scan(
         }
         scan_status = scan_status_clone.clone();
 
-        let mut all_cost = 0.0;
-        for c in costs {
-            all_cost += c.as_secs_f64();
-        }
-        println!("all cost: {:.2}s", all_cost);
-
         println!(
             "recv all packet: {:.2}s",
             start_eval.elapsed().as_secs_f32()
