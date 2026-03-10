@@ -1,8 +1,5 @@
-use crossbeam::channel::Receiver;
 use pnet::datalink::MacAddr;
-use pnet::packet::Packet;
-use pnet::packet::ethernet::EtherTypes;
-use pnet::packet::ethernet::EthernetPacket;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Type;
@@ -16,13 +13,8 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::GLOBAL_NET_CACHES;
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::ICMPV6_RA_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -32,23 +24,10 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
 use crate::layer::find_interface_by_src_ip;
-use crate::scan::HasResponse;
 
-fn get_mac_from_ndp_rs(buff: &[u8]) -> Option<MacAddr> {
-    // return mac address from ndp
-    match EthernetPacket::new(buff) {
-        Some(ethernet_packet) => {
-            let mac = ethernet_packet.get_source();
-            Some(mac)
-        }
-        None => None,
-    }
-}
-
-pub(crate) fn send_ndp_ra_scan_packet(
+pub(crate) fn build_ndp_ra_scan_packet(
     src_ipv6: Ipv6Addr,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(MacAddr, NetworkInterface, Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // router solicitation
     let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
@@ -117,7 +96,7 @@ pub(crate) fn send_ndp_ra_scan_packet(
     icmpv6_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {
-        name: String::from("ndp_ns layer3").to_string(),
+        name: String::from("ndp_ns layer3"),
         layer2: None,
         src_addr: None,
         dst_addr: None,
@@ -142,73 +121,6 @@ pub(crate) fn send_ndp_ra_scan_packet(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
-    let ether_type = EtherTypes::Ipv6;
-    let interface_name = interface.name;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
-}
-
-pub(crate) fn recv_ndp_rs_scan_response(
-    dst_ipv6: Ipv6Addr,
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(Option<MacAddr>, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
-    let has_response = if eth_response.len() > 0 {
-        HasResponse::Yes
-    } else {
-        HasResponse::No
-    };
-    let mac = if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        let eth_payload = eth_packet.payload();
-        let mac = get_mac_from_ndp_rs(eth_payload);
-        mac
-    } else {
-        None
-    };
-    match mac {
-        Some(mac) => {
-            let mut gncs = GLOBAL_NET_CACHES
-                .lock()
-                .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-            gncs.system_network_cache
-                .update_neighbor_cache(dst_ipv6.into(), mac, Some(rtt));
-        }
-        None => {
-            // this case may happen when the target host is down or the arp response packet is lost,
-            // we just set the mac to 00:00:00:00:00:00 to indicate the host is down.
-            let mut gncs = GLOBAL_NET_CACHES
-                .lock()
-                .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-            gncs.system_network_cache.update_neighbor_cache(
-                dst_ipv6.into(),
-                MacAddr::zero(),
-                Some(rtt),
-            );
-        }
-    }
-
-    Ok((mac, has_response, rtt))
-}
-
-#[cfg(feature = "scan")]
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_localtion() {
-        let l = Location::caller().to_string();
-        println!("{}", l);
-    }
+    Ok((dst_mac, interface, ipv6_buff, vec![filter]))
 }

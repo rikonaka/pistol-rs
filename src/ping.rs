@@ -303,14 +303,14 @@ fn ping_send(
     interface: &NetworkInterface,
     method: PingMethods,
     timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
-            let receiver = tcp::send_syn_scan_packet(
+            let receiver = tcp::build_syn_scan_packet(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
             )?;
             Ok(receiver)
@@ -320,7 +320,7 @@ fn ping_send(
                 Some(p) => p,
                 None => ACK_PING_DEFAULT_PORT,
             };
-            let receiver = tcp::send_ack_scan_packet(
+            let receiver = tcp::build_ack_scan_packet(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
             )?;
             Ok(receiver)
@@ -330,25 +330,25 @@ fn ping_send(
                 Some(p) => p,
                 None => UDP_PING_DEFAULT_PORT,
             };
-            let receiver = udp::send_udp_scan_packet(
+            let receiver = udp::build_udp_scan_packet(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
             )?;
             Ok(receiver)
         }
         PingMethods::IcmpEcho => {
-            let receiver = icmp::send_icmp_echo_packet(
+            let receiver = icmp::build_icmp_echo_packet(
                 dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
             )?;
             Ok(receiver)
         }
         PingMethods::IcmpTimeStamp => {
-            let receiver = icmp::send_icmp_timestamp_packet(
+            let receiver = icmp::build_icmp_timestamp_packet(
                 dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
             )?;
             Ok(receiver)
         }
         PingMethods::IcmpAddressMask => {
-            let receiver = icmp::send_icmp_address_mask_packet(
+            let receiver = icmp::build_icmp_address_mask_packet(
                 dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
             )?;
             Ok(receiver)
@@ -369,11 +369,11 @@ fn ping_recv(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
+) -> Result<PingStatus, PistolError> {
     match method {
         PingMethods::Syn => {
             let (port_status, data_recv_status, rtt) =
-                tcp::recv_syn_scan_packet(start, timeout, receiver)?;
+                tcp::parse_syn_scan_packet(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -382,7 +382,7 @@ fn ping_recv(
         }
         PingMethods::Ack => {
             let (port_status, data_recv_status, rtt) =
-                tcp::recv_ack_scan_packet(start, timeout, receiver)?;
+                tcp::parse_ack_scan_response(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -391,7 +391,7 @@ fn ping_recv(
         }
         PingMethods::Udp => {
             let (port_status, data_recv_status, rtt) =
-                udp::recv_udp_scan_packet(start, timeout, receiver)?;
+                udp::parse_udp_scan_response(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Open => PingStatus::Up,
                 // PortStatus::OpenOrFiltered => PingStatus::Up,
@@ -401,17 +401,17 @@ fn ping_recv(
         }
         PingMethods::IcmpEcho => {
             let (ping_status, data_recv_status, rtt) =
-                icmp::recv_icmp_echo_packet(start, timeout, receiver)?;
+                icmp::parse_icmp_echo_response(start, timeout, receiver)?;
             Ok((ping_status, data_recv_status, rtt))
         }
         PingMethods::IcmpTimeStamp => {
             let (ping_status, data_recv_status, rtt) =
-                icmp::recv_icmp_timestamp_packet(start, timeout, receiver)?;
+                icmp::parse_icmp_timestamp_response(start, timeout, receiver)?;
             Ok((ping_status, data_recv_status, rtt))
         }
         PingMethods::IcmpAddressMask => {
             let (ping_status, data_recv_status, rtt) =
-                icmp::recv_icmp_address_mask_packet(start, timeout, receiver)?;
+                icmp::parse_icmp_address_mask_response(start, timeout, receiver)?;
             Ok((ping_status, data_recv_status, rtt))
         }
         PingMethods::Icmpv6Echo => Err(PistolError::PingDetectionMethodError {
@@ -432,14 +432,14 @@ fn ping_send6(
     interface: &NetworkInterface,
     method: PingMethods,
     timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     match method {
         PingMethods::Syn => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
-            let receiver = tcp6::send_syn_scan_packet(
+            let receiver = tcp6::build_syn_scan_packet(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
             )?;
             Ok(receiver)
@@ -449,7 +449,7 @@ fn ping_send6(
                 Some(p) => p,
                 None => ACK_PING_DEFAULT_PORT,
             };
-            let receiver = tcp6::send_ack_scan_packet(
+            let receiver = tcp6::build_ack_scan_packet(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
             )?;
             Ok(receiver)
@@ -489,11 +489,11 @@ fn ping_recv6(
     start: Instant,
     timeout: Duration,
     receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PingStatus, HasResponse, Duration), PistolError> {
+) -> Result<PingStatus, PistolError> {
     match method {
         PingMethods::Syn => {
             let (port_status, data_recv_status, rtt) =
-                tcp6::recv_syn_scan_packet(start, timeout, receiver)?;
+                tcp6::parse_syn_scan_response(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -502,7 +502,7 @@ fn ping_recv6(
         }
         PingMethods::Ack => {
             let (port_status, data_recv_status, rtt) =
-                tcp6::recv_ack_scan_packet(start, timeout, receiver)?;
+                tcp6::parse_ack_scan_response(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Unfiltered => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -511,7 +511,7 @@ fn ping_recv6(
         }
         PingMethods::Udp => {
             let (port_status, data_recv_status, rtt) =
-                udp6::recv_udp_scan_packet(start, timeout, receiver)?;
+                udp6::parse_udp_scan_response(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Open => PingStatus::Up,
                 PortStatus::OpenOrFiltered => PingStatus::Up,
@@ -530,7 +530,7 @@ fn ping_recv6(
         }
         PingMethods::Icmpv6Echo => {
             let (ping_status, data_recv_status, rtt) =
-                icmpv6::recv_icmpv6_ping_packet(start, timeout, receiver)?;
+                icmpv6::parse_icmpv6_ping_response(start, timeout, receiver)?;
             Ok((ping_status, data_recv_status, rtt))
         }
     }
@@ -727,12 +727,12 @@ pub fn ping_raw(
                 let (status, rtt) = match method {
                     PingMethods::Syn => {
                         let start = Instant::now();
-                        let receiver = tcp::send_syn_scan_packet(
+                        let receiver = tcp::build_syn_scan_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
                             timeout,
                         )?;
                         let (port_status, _data_recv_status, rtt) =
-                            tcp::recv_syn_scan_packet(start, timeout, receiver)?;
+                            tcp::parse_syn_scan_packet(start, timeout, receiver)?;
                         match port_status {
                             PortStatus::Open => (PingStatus::Up, rtt),
                             _ => (PingStatus::Down, rtt),
@@ -740,12 +740,12 @@ pub fn ping_raw(
                     }
                     PingMethods::Ack => {
                         let start = Instant::now();
-                        let receiver = tcp::send_ack_scan_packet(
+                        let receiver = tcp::build_ack_scan_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
                             timeout,
                         )?;
                         let (port_status, _data_recv_status, rtt) =
-                            tcp::recv_ack_scan_packet(start, timeout, receiver)?;
+                            tcp::parse_ack_scan_response(start, timeout, receiver)?;
                         match port_status {
                             PortStatus::Unfiltered => (PingStatus::Up, rtt),
                             _ => (PingStatus::Down, rtt),
@@ -753,12 +753,12 @@ pub fn ping_raw(
                     }
                     PingMethods::Udp => {
                         let start = Instant::now();
-                        let receiver = udp::send_udp_scan_packet(
+                        let receiver = udp::build_udp_scan_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface,
                             timeout,
                         )?;
                         let (ret, _data_recv_status, rtt) =
-                            udp::recv_udp_scan_packet(start, timeout, receiver)?;
+                            udp::parse_udp_scan_response(start, timeout, receiver)?;
                         match ret {
                             PortStatus::Open => (PingStatus::Up, rtt),
                             // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
@@ -767,29 +767,29 @@ pub fn ping_raw(
                     }
                     PingMethods::IcmpEcho => {
                         let start = Instant::now();
-                        let receiver = icmp::send_icmp_echo_packet(
+                        let receiver = icmp::build_icmp_echo_packet(
                             dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
                         )?;
                         let (ping_status, _data_recv_status, rtt) =
-                            icmp::recv_icmp_echo_packet(start, timeout, receiver)?;
+                            icmp::parse_icmp_echo_response(start, timeout, receiver)?;
                         (ping_status, rtt)
                     }
                     PingMethods::IcmpTimeStamp => {
                         let start = Instant::now();
-                        let receiver = icmp::send_icmp_timestamp_packet(
+                        let receiver = icmp::build_icmp_timestamp_packet(
                             dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
                         )?;
                         let (ping_status, _data_recv_status, rtt) =
-                            icmp::recv_icmp_timestamp_packet(start, timeout, receiver)?;
+                            icmp::parse_icmp_timestamp_response(start, timeout, receiver)?;
                         (ping_status, rtt)
                     }
                     PingMethods::IcmpAddressMask => {
                         let start = Instant::now();
-                        let receiver = icmp::send_icmp_address_mask_packet(
+                        let receiver = icmp::build_icmp_address_mask_packet(
                             dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
                         )?;
                         let (ping_status, _data_recv_status, rtt) =
-                            icmp::recv_icmp_address_mask_packet(start, timeout, receiver)?;
+                            icmp::parse_icmp_address_mask_response(start, timeout, receiver)?;
                         (ping_status, rtt)
                     }
                     PingMethods::Icmpv6Echo => {
@@ -836,12 +836,12 @@ pub fn ping_raw(
                 let (status, rtt) = match method {
                     PingMethods::Syn => {
                         let start = Instant::now();
-                        let receiver = tcp6::send_syn_scan_packet(
+                        let receiver = tcp6::build_syn_scan_packet(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             timeout,
                         )?;
                         let (port_status, _data_recv_status, rtt) =
-                            tcp6::recv_syn_scan_packet(start, timeout, receiver)?;
+                            tcp6::parse_syn_scan_response(start, timeout, receiver)?;
                         match port_status {
                             PortStatus::Open => (PingStatus::Up, rtt),
                             _ => (PingStatus::Down, rtt),
@@ -849,12 +849,12 @@ pub fn ping_raw(
                     }
                     PingMethods::Ack => {
                         let start = Instant::now();
-                        let receiver = tcp6::send_ack_scan_packet(
+                        let receiver = tcp6::build_ack_scan_packet(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             timeout,
                         )?;
                         let (port_status, _data_recv_status, rtt) =
-                            tcp6::recv_ack_scan_packet(start, timeout, receiver)?;
+                            tcp6::parse_ack_scan_response(start, timeout, receiver)?;
                         match port_status {
                             PortStatus::Unfiltered => (PingStatus::Up, rtt),
                             _ => (PingStatus::Down, rtt),
@@ -867,7 +867,7 @@ pub fn ping_raw(
                             timeout,
                         )?;
                         let (port_status, _data_recv_status, rtt) =
-                            udp6::recv_udp_scan_packet(start, timeout, receiver)?;
+                            udp6::parse_udp_scan_response(start, timeout, receiver)?;
                         match port_status {
                             PortStatus::Open => (PingStatus::Up, rtt),
                             // PortStatus::OpenOrFiltered => (PingStatus::Up, rtt),
@@ -887,7 +887,7 @@ pub fn ping_raw(
                             dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, timeout,
                         )?;
                         let (ret, _data_recv_status, rtt) =
-                            icmpv6::recv_icmpv6_ping_packet(start, timeout, receiver)?;
+                            icmpv6::parse_icmpv6_ping_response(start, timeout, receiver)?;
                         (ret, rtt)
                     }
                 };

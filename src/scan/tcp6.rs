@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -18,12 +15,8 @@ use rand::RngExt;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
@@ -33,7 +26,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::scan::HasResponse;
 use crate::scan::PortStatus;
 
 // const TCP_FLAGS_CWR_MASK: u8 = 0b10000000;
@@ -48,16 +40,12 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 const TCP_DATA_SIZE: usize = 0;
 const HOP_LIMIT: u8 = 255;
 
-pub(crate) fn send_syn_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_syn_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -135,28 +123,11 @@ pub(crate) fn send_syn_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_syn_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_syn_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -164,50 +135,48 @@ pub(crate) fn recv_syn_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
-                            // tcp syn/ack response
-                            return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                        } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
+                                // tcp syn/ack response
+                                return Ok(PortStatus::Open);
+                            } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, HasResponse::No, rtt))
+    Ok(PortStatus::Filtered)
 }
 
-pub(crate) fn send_fin_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_fin_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -285,29 +254,11 @@ pub(crate) fn send_fin_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_fin_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_fin_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -315,50 +266,48 @@ pub(crate) fn recv_fin_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
-                            // tcp syn/ack response
-                            return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                        } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst packet
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
+                                // tcp syn/ack response
+                                return Ok(PortStatus::Open);
+                            } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst packet
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }
 
-pub(crate) fn send_ack_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_ack_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -436,28 +385,11 @@ pub(crate) fn send_ack_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_ack_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_ack_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -465,47 +397,45 @@ pub(crate) fn recv_ack_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Unfiltered, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Unfiltered);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, HasResponse::No, rtt))
+    Ok(PortStatus::Filtered)
 }
 
-pub(crate) fn send_null_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_null_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -583,28 +513,11 @@ pub(crate) fn send_null_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_null_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_null_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -612,47 +525,45 @@ pub(crate) fn recv_null_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }
 
-pub(crate) fn send_xmas_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_xmas_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -730,28 +641,11 @@ pub(crate) fn send_xmas_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_xmas_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_xmas_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -759,47 +653,45 @@ pub(crate) fn recv_xmas_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }
 
 pub(crate) fn send_window_scan_packet(
-    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -877,28 +769,13 @@ pub(crate) fn send_window_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_window_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_window_scan_response(
+    eth_response: Arc<[u8]>,
+) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -906,52 +783,50 @@ pub(crate) fn recv_window_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            if tcp_packet.get_window() > 0 {
-                                // tcp rst response with non-zero window field
-                                return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                            } else {
-                                // tcp rst response with zero window field
-                                return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ipv6_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                if tcp_packet.get_window() > 0 {
+                                    // tcp rst response with non-zero window field
+                                    return Ok(PortStatus::Open);
+                                } else {
+                                    // tcp rst response with zero window field
+                                    return Ok(PortStatus::Closed);
+                                }
                             }
                         }
                     }
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes.contains(&icmpv6_code) {
+                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                    return Ok(PortStatus::Filtered);
+                                }
                             }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, HasResponse::No, rtt))
+    Ok(PortStatus::Filtered)
 }
 
-pub(crate) fn send_maimon_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_maimon_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -1029,28 +904,13 @@ pub(crate) fn send_maimon_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_maimon_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_maimon_scan_response(
+    eth_response: Arc<[u8]>,
+) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -1065,7 +925,7 @@ pub(crate) fn recv_maimon_scan_packet(
                         let tcp_flags = tcp_packet.get_flags();
                         if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
                             // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
+                            return Ok(PortStatus::Closed);
                         }
                     }
                 }
@@ -1076,7 +936,7 @@ pub(crate) fn recv_maimon_scan_packet(
                         if icmpv6_type == Icmpv6Types::DestinationUnreachable {
                             if codes.contains(&icmpv6_code) {
                                 // icmpv6 unreachable error (type 1, code 1, 3, or 4)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+                                return Ok(PortStatus::Filtered);
                             }
                         }
                     }
@@ -1086,5 +946,5 @@ pub(crate) fn recv_maimon_scan_packet(
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }

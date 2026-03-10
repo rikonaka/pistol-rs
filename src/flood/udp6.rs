@@ -1,6 +1,3 @@
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
-use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::udp::MutableUdpPacket;
@@ -8,9 +5,7 @@ use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
 
-use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::UDP_HEADER_SIZE;
@@ -19,15 +14,11 @@ const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub fn send_udp_flood_packet(
-    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    retransmit: usize,
-) -> Result<usize, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -64,21 +55,6 @@ pub fn send_udp_flood_packet(
     let checksum = ipv6_checksum(&udp_header.to_immutable(), &src_ipv6, &dst_ipv6);
     udp_header.set_checksum(checksum);
 
-    // very short timeout for flood attack
-    let timeout = Duration::from_secs_f32(0.01);
-    let ether_type = EtherTypes::Ipv6;
-    let interface_name = interface.name.clone();
     let ipv6_buff = Arc::new(ipv6_buff);
-    let ipv6_buff_len = ipv6_buff.len();
-    let _receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        Vec::new(),
-        timeout,
-        retransmit,
-    )?;
-    Ok(ipv6_buff_len * retransmit)
+    Ok(ipv6_buff)
 }

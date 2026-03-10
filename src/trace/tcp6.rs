@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -17,12 +14,8 @@ use rand::RngExt;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
@@ -43,17 +36,13 @@ const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
 const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
 
-pub(crate) fn send_syn_trace_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_syn_trace_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
     hop_limit: u8,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ipv6 header
     let mut ipv6_buff =
@@ -147,48 +136,32 @@ pub(crate) fn send_syn_trace_packet(
     };
     let filter_2 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_syn_trace_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(HopStatus, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
-
+pub(crate) fn parse_syn_trace_response(eth_response: Arc<[u8]>) -> Result<HopStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Tcp => {
-                    let ret_ip = ipv6_packet.get_source();
-                    return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Tcp => {
                         let ret_ip = ipv6_packet.get_source();
-                        if icmpv6_type == Icmpv6Types::TimeExceeded {
-                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
+                        return Ok(HopStatus::RecvReply(ret_ip.into()));
+                    }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let ret_ip = ipv6_packet.get_source();
+                            if icmpv6_type == Icmpv6Types::TimeExceeded {
+                                return Ok(HopStatus::TimeExceeded(ret_ip.into()));
+                            }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
-    Ok((HopStatus::NoResponse, rtt))
+    Ok(HopStatus::NoResponse)
 }

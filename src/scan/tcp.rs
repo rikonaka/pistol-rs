@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -12,7 +9,6 @@ use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::packet::ipv4::checksum;
 use pnet::packet::tcp;
 use pnet::packet::tcp::MutableTcpPacket;
 use pnet::packet::tcp::TcpFlags;
@@ -28,11 +24,8 @@ use std::net::TcpStream;
 use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -42,7 +35,6 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::TCP_HEADER_SIZE;
-use crate::scan::HasResponse;
 use crate::scan::PortStatus;
 
 const TCP_DATA_SIZE: usize = 0;
@@ -57,16 +49,12 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_SYN_MASK: u8 = 0b00000010;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
 
-pub(crate) fn send_syn_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_syn_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -146,34 +134,11 @@ pub(crate) fn send_syn_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_syn_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let start_eval = Instant::now();
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
-    println!(
-        "get_response took {:.3}s",
-        start_eval.elapsed().as_secs_f64()
-    );
-
+pub(crate) fn parse_syn_scan_packet(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -184,50 +149,48 @@ pub(crate) fn recv_syn_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
-                            // tcp syn/ack response
-                            return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                        } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
+                                // tcp syn/ack response
+                                return Ok(PortStatus::Open);
+                            } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, HasResponse::No, rtt))
+    Ok(PortStatus::Filtered)
 }
 
-pub(crate) fn send_fin_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_fin_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -307,28 +270,11 @@ pub(crate) fn send_fin_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_fin_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_fin_scan_packet(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -339,50 +285,48 @@ pub(crate) fn recv_fin_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
-                            // tcp syn/ack response
-                            return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                        } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst packet
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags == (TcpFlags::SYN | TcpFlags::ACK) {
+                                // tcp syn/ack response
+                                return Ok(PortStatus::Open);
+                            } else if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst packet
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }
 
-pub(crate) fn send_ack_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_ack_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -463,28 +407,11 @@ pub(crate) fn send_ack_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
     let ip_buff = Arc::new(ip_buff);
-    let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_ack_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_ack_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -495,47 +422,45 @@ pub(crate) fn recv_ack_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Unfiltered, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Unfiltered);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, HasResponse::No, rtt))
+    Ok(PortStatus::Filtered)
 }
 
-pub(crate) fn send_null_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_null_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -615,28 +540,11 @@ pub(crate) fn send_null_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_null_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_null_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -647,47 +555,45 @@ pub(crate) fn recv_null_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }
 
-pub(crate) fn send_xmas_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_xmas_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -768,28 +674,11 @@ pub(crate) fn send_xmas_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_xmas_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_xmas_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -800,47 +689,45 @@ pub(crate) fn recv_xmas_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }
 
-pub(crate) fn send_window_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_window_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -920,28 +807,13 @@ pub(crate) fn send_window_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_window_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_window_scan_response(
+    eth_response: Arc<[u8]>,
+) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -952,52 +824,50 @@ pub(crate) fn recv_window_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            if tcp_packet.get_window() > 0 {
-                                // tcp rst response with non-zero window field
-                                return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                            } else {
-                                // tcp rst response with zero window field
-                                return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                if tcp_packet.get_window() > 0 {
+                                    // tcp rst response with non-zero window field
+                                    return Ok(PortStatus::Open);
+                                } else {
+                                    // tcp rst response with zero window field
+                                    return Ok(PortStatus::Closed);
+                                }
                             }
                         }
                     }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
                             }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::Filtered, HasResponse::No, rtt))
+    Ok(PortStatus::Filtered)
 }
 
-pub(crate) fn send_maimon_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_maimon_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
@@ -1077,28 +947,13 @@ pub(crate) fn send_maimon_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_maimon_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_maimon_scan_response(
+    eth_response: Arc<[u8]>,
+) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -1109,373 +964,37 @@ pub(crate) fn recv_maimon_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // tcp rst response
-                            return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Tcp => {
+                        if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
+                            let tcp_flags = tcp_packet.get_flags();
+                            if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
+                                // tcp rst response
+                                return Ok(PortStatus::Closed);
                             }
                         }
                     }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes.contains(&icmp_code) {
+                                    // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
-}
-
-fn forge_syn_packet(
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
-) -> Result<Arc<[u8]>, PistolError> {
-    let mut rng = rand::rng();
-    // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE];
-    let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: Location::caller().to_string(),
-            });
-        }
-    };
-    ip_header.set_version(4);
-    ip_header.set_header_length(5);
-    ip_header.set_source(src_ipv4);
-    ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_DATA_SIZE) as u16);
-    let id = rng.random();
-    ip_header.set_identification(id);
-    ip_header.set_flags(Ipv4Flags::DontFragment);
-    ip_header.set_ttl(TTL);
-    ip_header.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-    let c = checksum(&ip_header.to_immutable());
-    ip_header.set_checksum(c);
-
-    // tcp header
-    let mut tcp_header = match MutableTcpPacket::new(&mut ip_buff[IPV4_HEADER_SIZE..]) {
-        Some(p) => p,
-        None => {
-            return Err(PistolError::BuildPacketError {
-                location: Location::caller().to_string(),
-            });
-        }
-    };
-    tcp_header.set_source(src_port);
-    tcp_header.set_destination(dst_port);
-    tcp_header.set_sequence(rng.random());
-    tcp_header.set_acknowledgement(rng.random());
-    tcp_header.set_reserved(0);
-    tcp_header.set_flags(TcpFlags::SYN);
-    tcp_header.set_urgent_ptr(0);
-    tcp_header.set_window(1024);
-    tcp_header.set_data_offset(5);
-    let checksum = ipv4_checksum(&tcp_header.to_immutable(), &src_ipv4, &dst_ipv4);
-    tcp_header.set_checksum(checksum);
-
-    Ok(Arc::new(ip_buff))
-}
-
-/// Step 1: probe the zombie's ip id.
-pub(crate) fn send_idle_scan_packet_1(
-    _dst_mac: MacAddr,
-    dst_ipv4: Ipv4Addr,
-    _dst_port: u16,
-    src_mac: MacAddr,
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
-    zombie_mac: MacAddr,
-    zombie_ipv4: Ipv4Addr,
-    zombie_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
-    // 1. probe the zombie's ip id
-    let layer3_zombie = Layer3Filter {
-        name: String::from("tcp zombie scan layer3 1"),
-        layer2: None,
-        src_addr: Some(zombie_ipv4.into()),
-        dst_addr: Some(src_ipv4.into()),
-    };
-    let layer4_tcp_udp_zombie = Layer4FilterTcpUdp {
-        name: String::from("tcp zombie scan tcp_udp 1"),
-        layer3: Some(layer3_zombie.clone()),
-        src_port: Some(zombie_port),
-        dst_port: Some(src_port),
-        flag: None,
-    };
-    // set the icmp payload matchs
-    let payload_ip = PayloadMatchIp {
-        src_addr: Some(src_ipv4.into()),
-        dst_addr: Some(dst_ipv4.into()),
-    };
-    let payload_tcpudp = PayloadMatchTcpUdp {
-        layer3: Some(payload_ip),
-        src_port: Some(src_port),
-        dst_port: Some(zombie_port),
-    };
-    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp_zombie = Layer4FilterIcmp {
-        name: String::from("tcp zombie scan icmp 1"),
-        layer3: Some(layer3_zombie.clone()),
-        icmp_type: None,
-        icmp_code: None,
-        payload: Some(payload),
-    };
-
-    let filter_zombie_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_zombie));
-    let filter_zombie_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp_zombie));
-
-    let ip_buff_1 = forge_syn_packet(zombie_ipv4, zombie_port, src_ipv4, src_port)?;
-
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(
-        interface_name,
-        zombie_mac,
-        src_mac,
-        ip_buff_1,
-        ether_type,
-        vec![filter_zombie_1, filter_zombie_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
-}
-
-/// Step 2: forge a syn packet from the zombie to the target, and ignore the response.
-pub(crate) fn send_idle_scan_packet_2(
-    dst_mac: MacAddr,
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-    src_mac: MacAddr,
-    _src_ipv4: Ipv4Addr,
-    _src_port: u16,
-    _zombie_mac: MacAddr,
-    zombie_ipv4: Ipv4Addr,
-    zombie_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<(), PistolError> {
-    // 2. forge a syn packet from the zombie to the target
-    let ip_buff_2 = forge_syn_packet(dst_ipv4, dst_port, zombie_ipv4, zombie_port)?;
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
-    // ignore the response
-    let _receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff_2,
-        ether_type,
-        Vec::new(),
-        timeout,
-        0,
-    )?;
-    Ok(())
-}
-
-/// Step 3: probe the zombie's ip id again,
-/// if the ip id increased by 2, the port is open,
-/// if the ip id only increased by 1, the port is closed or filtered.
-pub(crate) fn send_idle_scan_packet_3(
-    dst_mac: MacAddr,
-    dst_ipv4: Ipv4Addr,
-    dst_port: u16,
-    src_mac: MacAddr,
-    src_ipv4: Ipv4Addr,
-    src_port: u16,
-    _zombie_mac: MacAddr,
-    zombie_ipv4: Ipv4Addr,
-    zombie_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
-    // 4. probe the zombie's ip id again
-    let layer3 = Layer3Filter {
-        name: String::from("tcp zombie scan layer 2"),
-        layer2: None,
-        src_addr: Some(dst_ipv4.into()),
-        dst_addr: Some(src_ipv4.into()),
-    };
-    let layer4_tcp_udp = Layer4FilterTcpUdp {
-        name: String::from("tcp zombie scan tcp_udp 2"),
-        layer3: Some(layer3.clone()),
-        src_port: Some(dst_port),
-        dst_port: Some(src_port),
-        flag: None,
-    };
-    // set the icmp payload matchs
-    let payload_ip = PayloadMatchIp {
-        src_addr: Some(src_ipv4.into()),
-        dst_addr: Some(dst_ipv4.into()),
-    };
-    let payload_tcpudp = PayloadMatchTcpUdp {
-        layer3: Some(payload_ip),
-        src_port: Some(src_port),
-        dst_port: Some(dst_port),
-    };
-    let payload = PayloadMatch::PayloadMatchTcpUdp(payload_tcpudp);
-    let layer4_icmp = Layer4FilterIcmp {
-        name: String::from("tcp zombie scan icmp 2"),
-        layer3: Some(layer3),
-        icmp_type: None,
-        icmp_code: None,
-        payload: Some(payload),
-    };
-    let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
-    let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
-
-    let ip_buff_3 = forge_syn_packet(zombie_ipv4, zombie_port, src_ipv4, src_port)?;
-
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff_3,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
-}
-
-pub(crate) fn recv_idle_scan_packet_1(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration, u16), PistolError> {
-    let (eth_response, rtt_1) = get_response(receiver, start, timeout);
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
-    let mut zombie_ip_id_1 = 0;
-    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // 2. zombie return rst packet, get this packet ip id
-                            zombie_ip_id_1 = ip_packet.get_identification();
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                // dst is unreachable ignore this port
-                                return Ok((
-                                    PortStatus::Unreachable,
-                                    HasResponse::Yes,
-                                    rtt_1,
-                                    zombie_ip_id_1,
-                                ));
-                            }
-                        }
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-    Ok((PortStatus::Open, HasResponse::Yes, rtt_1, zombie_ip_id_1))
-}
-
-pub(crate) fn recv_idle_scan_packet_2(
-    zombie_ipv4: Ipv4Addr,
-    zombie_port: u16,
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-    rtt_1: Duration,
-    zombie_ip_id_1: u16,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt_2) = get_response(receiver, start, timeout);
-    // same as recv_idle_scan_packet_1
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
-    let mut zombie_ip_id_2 = 0;
-    let rtt = (rtt_1 + rtt_2) / 2;
-    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Tcp => {
-                    if let Some(tcp_packet) = TcpPacket::new(ip_packet.payload()) {
-                        let tcp_flags = tcp_packet.get_flags();
-                        if tcp_flags & TCP_FLAGS_RST_MASK == TcpFlags::RST {
-                            // 5. zombie return rst packet again, get this packet ip id
-                            zombie_ip_id_2 = ip_packet.get_identification();
-                        }
-                    }
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes.contains(&icmp_code) {
-                                // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
-                                // dst is unreachable ignore this port
-                                return Ok((PortStatus::Unreachable, HasResponse::Yes, rtt));
-                            }
-                        }
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-
-    if zombie_ip_id_1 == 0 && zombie_ip_id_2 == 0 {
-        return Err(PistolError::IdleScanAllZeroError {
-            zombie_ipv4,
-            zombie_port,
-        });
-    } else if zombie_ip_id_2 - zombie_ip_id_1 >= 2 {
-        Ok((PortStatus::Open, HasResponse::Yes, rtt))
-    } else {
-        Ok((PortStatus::ClosedOrFiltered, HasResponse::No, rtt))
-    }
+    Ok(PortStatus::OpenOrFiltered)
 }
 
 /// For both IPv4 and IPv6 target.
@@ -1483,23 +1002,14 @@ pub(crate) fn send_connect_scan_packet(
     dst_addr: IpAddr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let start_time = Instant::now();
-    match dst_addr {
-        IpAddr::V4(dst_ipv4) => {
-            let addr = SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port));
-            match TcpStream::connect_timeout(&addr, timeout) {
-                Ok(_) => Ok((PortStatus::Open, HasResponse::Yes, start_time.elapsed())),
-                Err(_) => Ok((PortStatus::Closed, HasResponse::No, start_time.elapsed())),
-            }
-        }
-        IpAddr::V6(dst_ipv6) => {
-            let addr = SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0));
-            match TcpStream::connect_timeout(&addr, timeout) {
-                Ok(_) => Ok((PortStatus::Open, HasResponse::Yes, start_time.elapsed())),
-                Err(_) => Ok((PortStatus::Closed, HasResponse::No, start_time.elapsed())),
-            }
-        }
+) -> Result<PortStatus, PistolError> {
+    let addr = match dst_addr {
+        IpAddr::V4(dst_ipv4) => SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port)),
+        IpAddr::V6(dst_ipv6) => SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0)),
+    };
+    match TcpStream::connect_timeout(&addr, timeout) {
+        Ok(_) => Ok(PortStatus::Open),
+        Err(_) => Ok(PortStatus::Closed),
     }
 }
 

@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -15,12 +12,8 @@ use pnet::packet::udp::ipv6_checksum;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
@@ -30,22 +23,17 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::scan::HasResponse;
 use crate::scan::PortStatus;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 255;
 
 pub(crate) fn send_udp_scan_packet(
-    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -116,28 +104,11 @@ pub(crate) fn send_udp_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_udp_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_udp_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes_1 = vec![
         Icmpv6Code(4), // port unreachable
     ];
@@ -147,30 +118,32 @@ pub(crate) fn recv_udp_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Udp => {
-                    // any udp response from target port (unusual)
-                    return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let icmpv6_code = icmpv6_packet.get_icmpv6_code();
-                        if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes_1.contains(&icmpv6_code) {
-                                // icmpv6 port unreachable error (type 1, code 4)
-                                return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                            } else if codes_2.contains(&icmpv6_code) {
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Udp => {
+                        // any udp response from target port (unusual)
+                        return Ok(PortStatus::Open);
+                    }
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let icmpv6_code = icmpv6_packet.get_icmpv6_code();
+                            if icmpv6_type == Icmpv6Types::DestinationUnreachable {
+                                if codes_1.contains(&icmpv6_code) {
+                                    // icmpv6 port unreachable error (type 1, code 4)
+                                    return Ok(PortStatus::Closed);
+                                } else if codes_2.contains(&icmpv6_code) {
+                                    return Ok(PortStatus::Filtered);
+                                }
                             }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }

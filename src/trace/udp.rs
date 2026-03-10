@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -17,12 +14,8 @@ use pnet::packet::udp::ipv4_checksum;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -36,18 +29,14 @@ use crate::trace::HopStatus;
 
 const UDP_DATA_SIZE: usize = 32;
 
-pub(crate) fn send_udp_trace_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_udp_trace_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
     ip_id: u16,
     ttl: u8,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
@@ -147,55 +136,39 @@ pub(crate) fn send_udp_trace_packet(
     };
     let filter_3 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2, filter_3],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2, filter_3]))
 }
 
-pub(crate) fn recv_udp_trace_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(HopStatus, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
-
+pub(crate) fn parse_udp_trace_response(eth_response: Arc<[u8]>) -> Result<HopStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => {
-                    // any udp response from target port (unusual)
-                    let ret_ip = ip_packet.get_source();
-                    return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Udp => {
+                        // any udp response from target port (unusual)
                         let ret_ip = ip_packet.get_source();
-                        if icmp_type == IcmpTypes::TimeExceeded {
-                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
-                        } else if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if icmp_code == IcmpCode(3) {
-                                // icmp type 3, code 3 (port unreachable)
-                                return Ok((HopStatus::Unreachable(ret_ip.into()), rtt));
+                        return Ok(HopStatus::RecvReply(ret_ip.into()));
+                    }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            let ret_ip = ip_packet.get_source();
+                            if icmp_type == IcmpTypes::TimeExceeded {
+                                return Ok(HopStatus::TimeExceeded(ret_ip.into()));
+                            } else if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if icmp_code == IcmpCode(3) {
+                                    // icmp type 3, code 3 (port unreachable)
+                                    return Ok(HopStatus::Unreachable(ret_ip.into()));
+                                }
                             }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
-    Ok((HopStatus::NoResponse, rtt))
+    Ok(HopStatus::NoResponse)
 }

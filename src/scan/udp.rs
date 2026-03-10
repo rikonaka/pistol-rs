@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -18,12 +15,8 @@ use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -33,22 +26,17 @@ use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIp;
 use crate::layer::PayloadMatchTcpUdp;
 use crate::layer::UDP_HEADER_SIZE;
-use crate::scan::HasResponse;
 use crate::scan::PortStatus;
 
 const UDP_DATA_SIZE: usize = 0;
 const TTL: u8 = 64;
 
-pub(crate) fn send_udp_scan_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_udp_scan_packet(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
@@ -123,28 +111,11 @@ pub(crate) fn send_udp_scan_packet(
     let filter_1 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv4;
     let ip_buff = Arc::new(ip_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_udp_scan_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(PortStatus, HasResponse, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
+pub(crate) fn parse_udp_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes_1 = vec![
         destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
     ];
@@ -157,31 +128,33 @@ pub(crate) fn recv_udp_scan_packet(
     ];
 
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-            match ip_packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => {
-                    // any udp response from target port (unusual)
-                    return Ok((PortStatus::Open, HasResponse::Yes, rtt));
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                        let icmp_type = icmp_packet.get_icmp_type();
-                        let icmp_code = icmp_packet.get_icmp_code();
-                        if icmp_type == IcmpTypes::DestinationUnreachable {
-                            if codes_1.contains(&icmp_code) {
-                                // icmp port unreachable error (type 3, code 3)
-                                return Ok((PortStatus::Closed, HasResponse::Yes, rtt));
-                            } else if codes_2.contains(&icmp_code) {
-                                // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
-                                return Ok((PortStatus::Filtered, HasResponse::Yes, rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                match ip_packet.get_next_level_protocol() {
+                    IpNextHeaderProtocols::Udp => {
+                        // any udp response from target port (unusual)
+                        return Ok(PortStatus::Open);
+                    }
+                    IpNextHeaderProtocols::Icmp => {
+                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                            let icmp_type = icmp_packet.get_icmp_type();
+                            let icmp_code = icmp_packet.get_icmp_code();
+                            if icmp_type == IcmpTypes::DestinationUnreachable {
+                                if codes_1.contains(&icmp_code) {
+                                    // icmp port unreachable error (type 3, code 3)
+                                    return Ok(PortStatus::Closed);
+                                } else if codes_2.contains(&icmp_code) {
+                                    // other icmp unreachable errors (type 3, code 1, 2, 9, 10, or 13)
+                                    return Ok(PortStatus::Filtered);
+                                }
                             }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
     // no response received (even after retransmissions)
-    Ok((PortStatus::OpenOrFiltered, HasResponse::No, rtt))
+    Ok(PortStatus::OpenOrFiltered)
 }

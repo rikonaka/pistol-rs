@@ -919,7 +919,7 @@ mod tests {
         let dst_port = 8080;
         let src_port = 29450;
         let layer3 = Layer3Filter {
-            name: String::from("test layer3").to_string(),
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
@@ -958,7 +958,7 @@ mod tests {
         let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
         let src_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap();
         let layer3 = Layer3Filter {
-            name: String::from("test layer3").to_string(),
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
@@ -981,7 +981,7 @@ mod tests {
         let src_port = 45982;
         let dst_port = 33434;
         let layer3 = Layer3Filter {
-            name: String::from("test layer3").to_string(),
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: None,
             dst_addr: Some(src_ipv4.into()),
@@ -1027,7 +1027,7 @@ mod tests {
         let dst_port = 80;
 
         let layer3 = Layer3Filter {
-            name: String::from("test layer3").to_string(),
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: None, // usually this is the address of the router, not the address of the target machine.
             dst_addr: Some(src_ipv4.into()),
@@ -1072,7 +1072,7 @@ mod tests {
         let dst_port = 80;
 
         let layer3 = Layer3Filter {
-            name: String::from("test layer3").to_string(),
+            name: String::from("test layer3"),
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),

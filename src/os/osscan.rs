@@ -1,6 +1,8 @@
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
+use crossbeam::channel::Receiver;
+use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
@@ -16,12 +18,13 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
+use tracing::error;
 
 use crate::IpCheckMethods;
 use crate::NetInfo;
-use crate::ask_runner;
+use crate::RecvMsg;
+use crate::SendMsg;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
@@ -262,6 +265,13 @@ pub fn get_scan_line(
     info_str
 }
 
+#[derive(Debug, Clone)]
+struct ProbeStatus {
+    pub retried: usize,
+    pub recved: bool,
+    pub start: Instant,
+}
+
 fn send_seq_probes(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
@@ -270,6 +280,9 @@ fn send_seq_probes(
     src_ipv4: Ipv4Addr,
     interface: &NetworkInterface,
     timeout: Duration,
+    to_send: Sender<SendMsg>,
+    to_recv: Sender<RecvMsg>,
+    get_response: Receiver<(Arc<[u8]>, Duration)>,
 ) -> Result<SEQRR, PistolError> {
     let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
@@ -318,8 +331,12 @@ fn send_seq_probes(
     let mut send_status = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
-        send_status.insert(t, (0, false, None, Instant::now()));
+        let status = ProbeStatus {
+            retried: 0,
+            recved: false,
+            start: Instant::now(),
+        };
+        send_status.insert(t, status);
     }
 
     let ether_type = EtherTypes::Ipv4;
@@ -330,20 +347,33 @@ fn send_seq_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let filter = &filter_hm[i];
-            let (retiries, recved, _receiver, _start) = &send_status[&i];
-            if *retiries < PROBE_MAX_RETIRIES && !recved {
-                let start = Instant::now();
-                let receiver = ask_runner(
-                    interface_name.clone(),
+            let mut status = send_status[&i];
+            let retried = status.retried;
+            let recved = status.recved;
+            if retried < PROBE_MAX_RETIRIES && !recved {
+                let created = Instant::now();
+                let send_msg = SendMsg {
                     dst_mac,
                     src_mac,
-                    buff.clone(),
+                    ether_payload: buff.clone(),
                     ether_type,
-                    vec![filter.clone()],
-                    timeout,
-                    0,
-                )?;
-                send_status_clone.insert(*i, (retiries + 1, *recved, Some(receiver), start));
+                    retransmit: 1,
+                };
+                let recv_msg = RecvMsg {
+                    filters: vec![filter.clone()],
+                    created,
+                    elapsed: timeout,
+                };
+
+                if let Err(e) = to_send.send(send_msg) {
+                    error!("send os probe seq send msg failed: {}", e);
+                }
+                if let Err(e) = to_recv.send(recv_msg) {
+                    error!("send os probe seq recv msg failed: {}", e);
+                }
+
+                status.retried = retried + 1;
+                send_status_clone.insert(*i, status);
                 all_done = false;
             }
 

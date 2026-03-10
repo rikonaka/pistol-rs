@@ -1,4 +1,3 @@
-use pnet::packet::ethernet::EtherType;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use thiserror::Error;
@@ -99,8 +98,6 @@ pub enum PistolError {
     IpVersionNotMatch,
     #[error("can not found the interface filter channel {i}")]
     CanNotFoundInterfaceFilterChannel { i: String },
-    #[error("unsupported loopback protocol: {proto}")]
-    UnsupportedLoopbackProtocol { proto: EtherType },
     #[error("no loopback protocol")]
     NoLoopbackProtocol,
 

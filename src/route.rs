@@ -27,12 +27,12 @@ use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::layer::multicast_mac;
 use crate::scan::HasResponse;
-use crate::scan::arp::recv_arp_scan_response;
-use crate::scan::arp::send_arp_scan_packet;
-use crate::scan::ndp_ns::recv_ndp_ns_scan_response;
-use crate::scan::ndp_ns::send_ndp_ns_scan_packet;
-use crate::scan::ndp_ra_rs::recv_ndp_rs_scan_response;
-use crate::scan::ndp_ra_rs::send_ndp_ra_scan_packet;
+use crate::scan::arp::parse_arp_scan_response;
+use crate::scan::arp::build_arp_scan_packet;
+use crate::scan::ndp_ns::parse_ndp_ns_scan_response;
+use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
+use crate::scan::ndp_rs::recv_ndp_rs_scan_response;
+use crate::scan::ndp_rs::build_ndp_ra_scan_packet;
 
 #[cfg(any(
     target_os = "linux",
@@ -620,7 +620,7 @@ fn recv_neighbor_detect_packet(
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let (mac, has_response, rtt) =
-                recv_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
+                parse_arp_scan_response(dst_ipv4, start, timeout, receiver)?;
             let mac = match mac {
                 Some(dst_mac) => {
                     update_neighbor_cache(dst_addr, dst_mac, Some(rtt))?;
@@ -638,7 +638,7 @@ fn recv_neighbor_detect_packet(
             let (mac, has_response, rtt) = if is_route {
                 recv_ndp_rs_scan_response(dst_ipv6, start, timeout, receiver)?
             } else {
-                recv_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?
+                parse_ndp_ns_scan_response(dst_ipv6, start, timeout, receiver)?
             };
             let mac = match mac {
                 Some(dst_mac) => {
@@ -662,7 +662,7 @@ fn send_neighbor_detect_packet(
     interface: NetworkInterface,
     timeout: Duration,
     is_route: bool,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
     let interface_name = interface.name;
     match dst_addr {
@@ -672,7 +672,7 @@ fn send_neighbor_detect_packet(
                 IpAddr::V4(src) => src,
                 _ => return Err(PistolError::CanNotFoundSrcAddress),
             };
-            let receiver = send_arp_scan_packet(
+            let receiver = build_arp_scan_packet(
                 dst_mac,
                 dst_ipv4,
                 src_mac,
@@ -691,10 +691,10 @@ fn send_neighbor_detect_packet(
             let dst_ipv6 = dst_ipv6_ext.link_multicast();
             let dst_mac = multicast_mac(dst_ipv6);
             if is_route {
-                let receiver = send_ndp_ra_scan_packet(src_ipv6, timeout)?;
+                let receiver = build_ndp_ra_scan_packet(src_ipv6, timeout)?;
                 Ok(receiver)
             } else {
-                let receiver = send_ndp_ns_scan_packet(
+                let receiver = build_ndp_ns_scan_packet(
                     dst_mac,
                     dst_ipv6,
                     src_mac,

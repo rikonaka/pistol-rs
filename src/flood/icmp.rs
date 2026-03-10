@@ -1,6 +1,4 @@
 use chrono::Utc;
-use pnet::datalink::NetworkInterface;
-use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::icmp;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpType;
@@ -10,14 +8,11 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::MutableIpv4Packet;
-use pnet::util::MacAddr;
 use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
 
-use crate::ask_runner;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
@@ -25,14 +20,10 @@ use crate::layer::IPV4_HEADER_SIZE;
 const ICMP_DATA_SIZE: usize = 16;
 const TTL: u8 = 64;
 
-pub fn send_icmp_flood_packet(
-    dst_mac: MacAddr,
+pub fn build_icmp_flood_packet(
     dst_ipv4: Ipv4Addr,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    interface: &NetworkInterface,
-    retransmit: usize,
-) -> Result<usize, PistolError> {
+) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
@@ -91,22 +82,6 @@ pub fn send_icmp_flood_packet(
     let checksum = icmp::checksum(&icmp_header.to_immutable());
     icmp_header.set_checksum(checksum);
 
-    // very short timeout for flood attack
-    let timeout = Duration::from_secs_f32(0.01);
-    let ether_type = EtherTypes::Ipv4;
-    let interface_name = interface.name.clone();
-    // ignore receiver, because we don't care about the response in flood attack
-    let ip_buff_len = ip_buff.len();
     let ip_buff = Arc::new(ip_buff);
-    let _receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ip_buff,
-        ether_type,
-        Vec::new(),
-        timeout,
-        retransmit,
-    )?;
-    Ok(ip_buff_len * retransmit)
+    Ok(ip_buff)
 }

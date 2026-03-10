@@ -1,6 +1,3 @@
-use crossbeam::channel::Receiver;
-use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -16,12 +13,8 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
-use crate::ask_runner;
 use crate::error::PistolError;
-use crate::get_response;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -34,17 +27,13 @@ use crate::trace::HopStatus;
 
 const ICMPV6_DATA_SIZE: usize = 32;
 
-pub(crate) fn send_icmpv6_trace_packet(
-    dst_mac: MacAddr,
+pub(crate) fn build_icmpv6_trace_packet(
     dst_ipv6: Ipv6Addr,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface: &NetworkInterface,
     hop_limit: u8,
     icmpv6_id: u16,
     seq: u16,
-    timeout: Duration,
-) -> Result<Receiver<(Arc<[u8]>, Duration)>, PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -136,46 +125,32 @@ pub(crate) fn send_icmpv6_trace_packet(
     };
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let interface_name = interface.name.clone();
-    let ether_type = EtherTypes::Ipv6;
     let ipv6_buff = Arc::new(ipv6_buff);
-    let receiver = ask_runner(
-        interface_name,
-        dst_mac,
-        src_mac,
-        ipv6_buff,
-        ether_type,
-        vec![filter_1, filter_2],
-        timeout,
-        0,
-    )?;
-    Ok(receiver)
+    Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn recv_icmpv6_trace_packet(
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<(HopStatus, Duration), PistolError> {
-    let (eth_response, rtt) = get_response(receiver, start, timeout);
-
+pub(crate) fn parse_icmpv6_trace_response(
+    eth_response: Arc<[u8]>,
+) -> Result<HopStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Icmpv6 => {
-                    if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
-                        let icmpv6_type = icmpv6_packet.get_icmpv6_type();
-                        let ret_ip = ipv6_packet.get_source();
-                        if icmpv6_type == Icmpv6Types::TimeExceeded {
-                            return Ok((HopStatus::TimeExceeded(ret_ip.into()), rtt));
-                        } else if icmpv6_type == Icmpv6Types::EchoReply {
-                            return Ok((HopStatus::RecvReply(ret_ip.into()), rtt));
+        if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
+            if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
+                match ipv6_packet.get_next_header() {
+                    IpNextHeaderProtocols::Icmpv6 => {
+                        if let Some(icmpv6_packet) = Icmpv6Packet::new(ipv6_packet.payload()) {
+                            let icmpv6_type = icmpv6_packet.get_icmpv6_type();
+                            let ret_ip = ipv6_packet.get_source();
+                            if icmpv6_type == Icmpv6Types::TimeExceeded {
+                                return Ok(HopStatus::TimeExceeded(ret_ip.into()));
+                            } else if icmpv6_type == Icmpv6Types::EchoReply {
+                                return Ok(HopStatus::RecvReply(ret_ip.into()));
+                            }
                         }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }
-    Ok((HopStatus::NoResponse, rtt))
+    Ok(HopStatus::NoResponse)
 }

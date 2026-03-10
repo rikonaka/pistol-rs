@@ -198,22 +198,22 @@ fn ipv4_flood_thread(
         let interface = interface.clone();
         thread::spawn(move || {
             let ret = match method {
-                FloodMethods::Icmp => icmp::send_icmp_flood_packet(
+                FloodMethods::Icmp => icmp::build_icmp_flood_packet(
                     dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, retransmit,
                 ),
-                FloodMethods::Syn => tcp::send_syn_flood_packet(
+                FloodMethods::Syn => tcp::build_syn_flood_packet(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                     retransmit,
                 ),
-                FloodMethods::Ack => tcp::send_ack_flood_packet(
+                FloodMethods::Ack => tcp::build_ack_flood_packet(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                     retransmit,
                 ),
-                FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet(
+                FloodMethods::AckPsh => tcp::build_ack_psh_flood_packet(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                     retransmit,
                 ),
-                FloodMethods::Udp => udp::send_udp_flood_packet(
+                FloodMethods::Udp => udp::build_udp_flood_packet(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                     retransmit,
                 ),
@@ -260,15 +260,15 @@ fn ipv6_flood_thread(
                 FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(
                     dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, retransmit,
                 ),
-                FloodMethods::Syn => tcp6::send_syn_flood_packet(
+                FloodMethods::Syn => tcp6::build_syn_flood_packet(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                     retransmit,
                 ),
-                FloodMethods::Ack => tcp6::send_ack_flood_packet(
+                FloodMethods::Ack => tcp6::build_ack_flood_packet(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                     retransmit,
                 ),
-                FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet(
+                FloodMethods::AckPsh => tcp6::build_ack_psh_flood_packet(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                     retransmit,
                 ),
@@ -447,22 +447,22 @@ pub fn flood_raw(
 
                 for &dst_port in &net_info.dst_ports {
                     let ret = match method {
-                        FloodMethods::Icmp => icmp::send_icmp_flood_packet(
+                        FloodMethods::Icmp => icmp::build_icmp_flood_packet(
                             dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, retransmit,
                         ),
-                        FloodMethods::Syn => tcp::send_syn_flood_packet(
+                        FloodMethods::Syn => tcp::build_syn_flood_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             retransmit,
                         ),
-                        FloodMethods::Ack => tcp::send_ack_flood_packet(
+                        FloodMethods::Ack => tcp::build_ack_flood_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             retransmit,
                         ),
-                        FloodMethods::AckPsh => tcp::send_ack_psh_flood_packet(
+                        FloodMethods::AckPsh => tcp::build_ack_psh_flood_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             retransmit,
                         ),
-                        FloodMethods::Udp => udp::send_udp_flood_packet(
+                        FloodMethods::Udp => udp::build_udp_flood_packet(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             retransmit,
                         ),
@@ -509,15 +509,15 @@ pub fn flood_raw(
                         FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(
                             dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, retransmit,
                         ),
-                        FloodMethods::Syn => tcp6::send_syn_flood_packet(
+                        FloodMethods::Syn => tcp6::build_syn_flood_packet(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             retransmit,
                         ),
-                        FloodMethods::Ack => tcp6::send_ack_flood_packet(
+                        FloodMethods::Ack => tcp6::build_ack_flood_packet(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             retransmit,
                         ),
-                        FloodMethods::AckPsh => tcp6::send_ack_psh_flood_packet(
+                        FloodMethods::AckPsh => tcp6::build_ack_psh_flood_packet(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
                             retransmit,
                         ),
