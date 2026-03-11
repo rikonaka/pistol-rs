@@ -138,7 +138,7 @@ pub(crate) fn build_syn_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_syn_scan_packet(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_syn_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -274,7 +274,7 @@ pub(crate) fn build_fin_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_fin_scan_packet(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_fin_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2

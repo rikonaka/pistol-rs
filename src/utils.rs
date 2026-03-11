@@ -41,6 +41,13 @@ pub fn random_port_range(start: u16, end: u16) -> u16 {
     rng.random_range(start..=end)
 }
 
+/// Returns the random id.
+pub(crate) fn random_recv_msg_id() -> u64 {
+    let mut rng = rand::rng();
+    let id: u64 = rng.random();
+    id
+}
+
 pub(crate) fn time_to_string(cost: Duration) -> String {
     if cost.as_secs_f32() > 1.0 {
         format!("{:.2}s", cost.as_secs_f32())

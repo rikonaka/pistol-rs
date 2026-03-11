@@ -66,6 +66,8 @@ pub enum PistolError {
     NoDstPortSpecified,
     #[error("arp scan address {addr} not match")]
     AttackAddressNotMatch { addr: IpAddr },
+    #[error("can not parse ethernet packet")]
+    CanNotParseEthernetPacket,
 
     /* SERVICE DETECT ERROR */
     #[error("parse int error")]

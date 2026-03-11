@@ -76,6 +76,13 @@ pub mod packet6;
 #[cfg(feature = "os")]
 pub mod rr;
 
+#[derive(Debug, Clone)]
+struct ProbeStatus {
+    id: u64,
+    retried: usize,
+    recved: bool,
+}
+
 #[cfg(feature = "os")]
 #[derive(Debug, Clone)]
 pub struct OsInfo {
@@ -439,7 +446,11 @@ pub fn os_detect(
                 let dst_ports = ni.dst_ports.clone();
                 let src_ipv4 = match ni.inferred_src_addr {
                     IpAddr::V4(src) => src,
-                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
+                    _ => {
+                        return Err(PistolError::AttackAddressNotMatch {
+                            addr: ni.inferred_src_addr,
+                        });
+                    }
                 };
 
                 let nmap_os_db = get_nmap_os_db()?;
@@ -491,7 +502,11 @@ pub fn os_detect(
                 let dst_ports = ni.dst_ports.clone();
                 let src_ipv6 = match ni.inferred_src_addr {
                     IpAddr::V6(src) => src,
-                    _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
+                    _ => {
+                        return Err(PistolError::AttackAddressNotMatch {
+                            addr: ni.inferred_src_addr,
+                        });
+                    }
                 };
 
                 let linear = gen_linear()?;

@@ -373,7 +373,7 @@ fn ping_recv(
     match method {
         PingMethods::Syn => {
             let (port_status, data_recv_status, rtt) =
-                tcp::parse_syn_scan_packet(start, timeout, receiver)?;
+                tcp::parse_syn_scan_response(start, timeout, receiver)?;
             let ping_status = match port_status {
                 PortStatus::Open => PingStatus::Up,
                 _ => PingStatus::Down,
@@ -732,7 +732,7 @@ pub fn ping_raw(
                             timeout,
                         )?;
                         let (port_status, _data_recv_status, rtt) =
-                            tcp::parse_syn_scan_packet(start, timeout, receiver)?;
+                            tcp::parse_syn_scan_response(start, timeout, receiver)?;
                         match port_status {
                             PortStatus::Open => (PingStatus::Up, rtt),
                             _ => (PingStatus::Down, rtt),

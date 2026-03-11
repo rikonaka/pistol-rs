@@ -559,6 +559,7 @@ struct SendMsg {
 
 #[derive(Debug, Clone)]
 struct RecvMsg {
+    id: u64,                         // unique id for this recv msg,
     filters: Vec<Arc<PacketFilter>>, // runner receive filters to match
     created: Instant,                // create time, used to drop if exceed timeout
     elapsed: Duration,               // elapsed time, used to drop if exceed timeout
@@ -576,16 +577,10 @@ impl RecvMsg {
     }
 }
 
-#[derive(Debug, Clone)]
-struct PistolMsg {
-    smsg: SendMsg, // send all packets once to runner
-    rmsg: RecvMsg, // receive filters and packet sender
-}
-
-#[derive(Debug, Clone)]
-struct RunnerCommunicationChannel {
-    sender: Sender<PistolMsg>,
-    receiver: Receiver<PistolMsg>,
+struct RecvResponse {
+    id: u64,
+    data: Arc<[u8]>,
+    rtt: Duration,
 }
 
 struct RunnerInput {
@@ -1093,7 +1088,7 @@ impl Pistol {
     fn recv(
         interface_name: String,
         receiver: Receiver<RecvMsg>,
-        push_response: Sender<(Arc<[u8]>, Duration)>,
+        push_response: Sender<RecvResponse>,
     ) -> Result<(), PistolError> {
         debug!("start receiver for interface_name: {}", interface_name);
         let mut cap = Capture::new(&interface_name)?;
@@ -1146,7 +1141,12 @@ impl Pistol {
                         // send matched packet back to thread
                         debug!("matched packet [{}]", packet.len());
                         let rtt = msg.created.elapsed();
-                        push_response.send((packet.clone(), rtt));
+                        let recv_response = RecvResponse {
+                            id: msg.id,
+                            data: packet.clone(),
+                            rtt,
+                        };
+                        push_response.send(recv_response);
                         break;
                     }
                 }

@@ -23,7 +23,6 @@ use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Types;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
-use pnet::packet::icmpv6::ndp::RouterSolicitPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ipv6::Ipv6Packet;
@@ -80,8 +79,12 @@ pub mod udp6;
 use crate::GLOBAL_NET_CACHES;
 #[cfg(feature = "scan")]
 use crate::NetInfo;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::PacketFilter;
 #[cfg(feature = "scan")]
 use crate::RecvMsg;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::RecvResponse;
 #[cfg(feature = "scan")]
 use crate::SendMsg;
 #[cfg(feature = "scan")]
@@ -99,6 +102,8 @@ use crate::scan::arp::build_arp_scan_packet;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::utils;
+#[cfg(feature = "scan")]
+use crate::utils::random_recv_msg_id;
 
 /// This structure is used to indicate whether the program has data received or no data received.
 /// For example, in UDP scan, if no data is received, the status returned is open_or_filtered.
@@ -242,8 +247,8 @@ fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
-    to_send: Sender<SendMsg>,
     to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
     get_response: Receiver<(Arc<[u8]>, Duration)>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     debug!("start arp scan to {}", dst_ipv4);
@@ -280,8 +285,14 @@ pub fn arp_scan_raw(
     match src_ipv4 {
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
-            let created = Instant::now();
             let (arp_buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
+
+            let recv_msg = RecvMsg {
+                id: random_recv_msg_id(),
+                filters,
+                created: Instant::now(),
+                elapsed: timeout,
+            };
             let send_msg = SendMsg {
                 dst_mac,
                 src_mac,
@@ -289,16 +300,11 @@ pub fn arp_scan_raw(
                 ether_type: EtherTypes::Arp,
                 retransmit: 0,
             };
-            if let Err(e) = to_send.send(send_msg) {
-                error!("send arp scan msg error: {}", e);
-            }
-            let recv_msg = RecvMsg {
-                filters,
-                created,
-                elapsed: timeout,
-            };
             if let Err(e) = to_recv.send(recv_msg) {
                 error!("send arp scan recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send arp scan msg error: {}", e);
             }
 
             let (eth_response, rtt) = match get_response.recv_timeout(timeout) {
@@ -322,8 +328,8 @@ pub fn arp_scan_raw(
 fn arp_scan_thread(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
-    to_send: Sender<SendMsg>,
     to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
 ) -> Result<(), PistolError> {
     debug!("start arp scan thread to {}", dst_ipv4);
 
@@ -360,8 +366,14 @@ fn arp_scan_thread(
         Some(src_ipv4) => {
             debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
             // only send here
-            let created = Instant::now();
             let (arp_buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
+
+            let recv_msg = RecvMsg {
+                id: random_recv_msg_id(),
+                filters,
+                created: Instant::now(),
+                elapsed: timeout,
+            };
             let send_msg = SendMsg {
                 dst_mac,
                 src_mac,
@@ -369,16 +381,12 @@ fn arp_scan_thread(
                 ether_type: EtherTypes::Arp,
                 retransmit: 0,
             };
-            if let Err(e) = to_send.send(send_msg) {
-                error!("send arp scan msg error: {}", e);
-            }
-            let recv_msg = RecvMsg {
-                filters,
-                created,
-                elapsed: timeout,
-            };
+
             if let Err(e) = to_recv.send(recv_msg) {
                 error!("send arp scan recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send arp scan msg error: {}", e);
             }
             Ok(())
         }
@@ -390,8 +398,8 @@ fn arp_scan_thread(
 pub fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
-    to_send: Sender<SendMsg>,
     to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
     get_response: Receiver<(Arc<[u8]>, Duration)>,
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let interface = match find_interface_by_dst_ip(dst_ipv6.into()) {
@@ -428,9 +436,14 @@ pub fn ndp_ns_scan_raw(
     match src_ipv6 {
         Some(src_ipv6) => {
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-            let created = Instant::now();
-
             let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+
+            let recv_msg = RecvMsg {
+                id: random_recv_msg_id(),
+                filters,
+                created: Instant::now(),
+                elapsed: timeout,
+            };
             let send_msg = SendMsg {
                 dst_mac,
                 src_mac,
@@ -438,16 +451,12 @@ pub fn ndp_ns_scan_raw(
                 ether_type: EtherTypes::Ipv6,
                 retransmit: 0,
             };
-            if let Err(e) = to_send.send(send_msg) {
-                error!("send arp scan msg error: {}", e);
-            }
-            let recv_msg = RecvMsg {
-                filters,
-                created,
-                elapsed: timeout,
-            };
+
             if let Err(e) = to_recv.send(recv_msg) {
                 error!("send arp scan recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send arp scan msg error: {}", e);
             }
 
             let (eth_response, rtt) = match get_response.recv_timeout(timeout) {
@@ -471,8 +480,8 @@ pub fn ndp_ns_scan_raw(
 pub fn ndp_ns_scan_thread(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
-    to_send: Sender<SendMsg>,
     to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
 ) -> Result<(), PistolError> {
     let interface = match find_interface_by_dst_ip(dst_ipv6.into()) {
         Some(i) => i,
@@ -510,6 +519,13 @@ pub fn ndp_ns_scan_thread(
             debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
             let created = Instant::now();
             let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+
+            let recv_msg = RecvMsg {
+                id: random_recv_msg_id(),
+                filters,
+                created,
+                elapsed: timeout,
+            };
             let send_msg = SendMsg {
                 dst_mac,
                 src_mac,
@@ -517,16 +533,12 @@ pub fn ndp_ns_scan_thread(
                 ether_type: EtherTypes::Ipv6,
                 retransmit: 0,
             };
-            if let Err(e) = to_send.send(send_msg) {
-                error!("send arp scan msg error: {}", e);
-            }
-            let recv_msg = RecvMsg {
-                filters,
-                created,
-                elapsed: timeout,
-            };
+
             if let Err(e) = to_recv.send(recv_msg) {
                 error!("send arp scan recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send arp scan msg error: {}", e);
             }
             Ok(())
         }
@@ -667,7 +679,7 @@ pub fn mac_scan(
                         debug!("arp scan packets: #{}/{}", retried + 1, max_retries);
                         // retry to send arp scan packet and recv response
                         let start = Instant::now();
-                        arp_scan_thread(dst_ipv4, timeout, to_send, to_recv)?;
+                        arp_scan_thread(dst_ipv4, timeout, to_recv, to_send)?;
 
                         let status = MacScanStatus {
                             retried: retried + 1,
@@ -681,7 +693,7 @@ pub fn mac_scan(
                         debug!("ndp_ns scan packets: #{}/{}", retried + 1, max_retries);
                         // retry to send ndp_ns scan packet and recv response
                         let start = Instant::now();
-                        ndp_ns_scan_thread(dst_ipv6, timeout, to_send, to_recv)?;
+                        ndp_ns_scan_thread(dst_ipv6, timeout, to_recv, to_send)?;
 
                         let status = MacScanStatus {
                             retried: retried + 1,
@@ -1025,392 +1037,97 @@ impl PortScans {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum IdleScanSteps {
-    SendStep1,
-    RecvStep1,
-    SendStep2,
-    RecvStep2,
-    Done,
-}
-
-#[derive(Debug, Clone)]
-struct IdleScanStatus {
-    retiries: usize,
-    data_recved: bool,
-    receiver: Option<Receiver<(Arc<[u8]>, Duration)>>,
-    start: Instant,
-    rtt_1: Duration,
-    rtt_2: Duration,
-    steps: IdleScanSteps,
-    zombie_ip_id_1: u16,
-}
-
-#[cfg(any(feature = "scan", feature = "ping"))]
-fn idle_scan(
-    net_infos: Vec<NetInfo>,
-    zombie_mac: Option<MacAddr>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScans, PistolError> {
-    let mut port_scans = PortScans::new(max_retries);
-    let zombie_mac = match zombie_mac {
-        Some(zm) => zm,
-        None => {
-            return Err(PistolError::IdleScanNeedParamsError {
-                params: String::from("zombie_mac"),
-            });
-        }
-    };
-    let zombie_ipv4 = match zombie_ipv4 {
-        Some(zi) => zi,
-        None => {
-            return Err(PistolError::IdleScanNeedParamsError {
-                params: String::from("zombie_ipv4"),
-            });
-        }
-    };
-    let zombie_port = match zombie_port {
-        Some(zp) => zp,
-        None => {
-            return Err(PistolError::IdleScanNeedParamsError {
-                params: String::from("zombie_port"),
-            });
-        }
-    };
-
-    let mut idle_scan_status = HashMap::new();
-    for ni in net_infos {
-        let status = IdleScanStatus {
-            retiries: 0,
-            data_recved: false,
-            receiver: None,
-            start: Instant::now(),
-            rtt_1: Duration::ZERO,
-            rtt_2: Duration::ZERO,
-            steps: IdleScanSteps::SendStep1,
-            zombie_ip_id_1: 0,
-        };
-        idle_scan_status.insert(ni, status);
-    }
-    let mut idle_scan_status_clone = idle_scan_status.clone();
-
-    let mut port_reports = Vec::new();
-    loop {
-        let mut all_done = true;
-        for (ni, status) in idle_scan_status {
-            if status.retiries < max_retries && !status.data_recved {
-                let dst_mac = ni.inferred_dst_mac;
-                let dst_ipv4 = match ni.inferred_dst_addr {
-                    IpAddr::V4(dst_ipv4) => dst_ipv4,
-                    _ => return Err(PistolError::IdleScanNotSupportIpVersion),
-                };
-                let dst_port = if ni.dst_ports.len() > 0 {
-                    ni.dst_ports[0]
-                } else {
-                    return Err(PistolError::IdleScanNeedParamsError {
-                        params: String::from("dst_ports"),
-                    });
-                };
-                let src_ipv4 = match ni.inferred_src_addr {
-                    IpAddr::V4(src_ipv4) => src_ipv4,
-                    _ => return Err(PistolError::CanNotFoundSrcAddress),
-                };
-                let src_mac = ni.inferred_src_mac;
-                let src_port = match ni.src_port {
-                    Some(s) => s,
-                    None => utils::random_port(),
-                };
-                let interface = &ni.interface;
-                match status.steps {
-                    IdleScanSteps::SendStep1 => {
-                        if status.retiries < max_retries && !status.data_recved {
-                            // send probe 1 packet and recv response
-                            let start = Instant::now();
-                            let receiver = tcp::send_idle_scan_packet_1(
-                                dst_mac,
-                                dst_ipv4,
-                                dst_port,
-                                src_mac,
-                                src_ipv4,
-                                src_port,
-                                zombie_mac,
-                                zombie_ipv4,
-                                zombie_port,
-                                interface,
-                                timeout,
-                            )?;
-                            let new_status = IdleScanStatus {
-                                retiries: status.retiries + 1,
-                                data_recved: false,
-                                receiver: Some(receiver),
-                                start,
-                                rtt_1: status.rtt_1,
-                                rtt_2: status.rtt_2,
-                                steps: IdleScanSteps::RecvStep1,
-                                zombie_ip_id_1: status.zombie_ip_id_1,
-                            };
-                            idle_scan_status_clone.insert(ni.clone(), new_status);
-                            all_done = false;
-                        }
-                    }
-                    IdleScanSteps::SendStep2 => {
-                        if status.retiries < max_retries && !status.data_recved {
-                            // send probe 2 packet but do not recv any response
-                            tcp::send_idle_scan_packet_2(
-                                dst_mac,
-                                dst_ipv4,
-                                dst_port,
-                                src_mac,
-                                src_ipv4,
-                                src_port,
-                                zombie_mac,
-                                zombie_ipv4,
-                                zombie_port,
-                                interface,
-                                timeout,
-                            )?;
-
-                            // send probe 3 packet and recv response
-                            let start = Instant::now();
-                            let receiver = tcp::send_idle_scan_packet_3(
-                                dst_mac,
-                                dst_ipv4,
-                                dst_port,
-                                src_mac,
-                                src_ipv4,
-                                src_port,
-                                zombie_mac,
-                                zombie_ipv4,
-                                zombie_port,
-                                interface,
-                                timeout,
-                            )?;
-                            let new_status = IdleScanStatus {
-                                retiries: status.retiries + 1,
-                                data_recved: false,
-                                receiver: Some(receiver),
-                                start,
-                                rtt_1: status.rtt_1,
-                                rtt_2: status.rtt_2,
-                                steps: IdleScanSteps::RecvStep2,
-                                zombie_ip_id_1: status.zombie_ip_id_1,
-                            };
-                            idle_scan_status_clone.insert(ni.clone(), new_status);
-                            all_done = false;
-                        }
-                    }
-                    _ => (),
-                }
-            }
-        }
-
-        if all_done {
-            break;
-        }
-
-        idle_scan_status = idle_scan_status_clone.clone();
-        for (ni, status) in idle_scan_status {
-            match status.steps {
-                IdleScanSteps::RecvStep1 => match status.receiver {
-                    Some(receiver) => {
-                        let start = status.start;
-                        let (port_status, has_response, rtt_1, zombie_ip_id_1) =
-                            tcp::recv_idle_scan_packet_1(start, timeout, receiver)?;
-                        let data_recved = match has_response {
-                            HasResponse::Yes => true,
-                            HasResponse::No => false,
-                        };
-                        if port_status == PortStatus::Open {
-                            let new_status = IdleScanStatus {
-                                retiries: status.retiries,
-                                data_recved,
-                                receiver: None,
-                                start,
-                                rtt_1,
-                                rtt_2: status.rtt_2,
-                                steps: IdleScanSteps::SendStep2,
-                                zombie_ip_id_1,
-                            };
-                            idle_scan_status_clone.insert(ni, new_status);
-                        } else {
-                            let new_status = IdleScanStatus {
-                                retiries: status.retiries,
-                                data_recved,
-                                receiver: None,
-                                start,
-                                rtt_1,
-                                rtt_2: status.rtt_2,
-                                steps: IdleScanSteps::Done,
-                                zombie_ip_id_1,
-                            };
-                            idle_scan_status_clone.insert(ni, new_status);
-                        }
-                    }
-                    None => (),
-                },
-                IdleScanSteps::RecvStep2 => match status.receiver {
-                    Some(receiver) => {
-                        let start = status.start;
-                        let rtt_1 = status.rtt_1;
-                        let zombie_ip_id_1 = status.zombie_ip_id_1;
-                        let (port_status, has_response, rtt_2) = tcp::recv_idle_scan_packet_2(
-                            zombie_ipv4,
-                            zombie_port,
-                            start,
-                            timeout,
-                            receiver,
-                            rtt_1,
-                            zombie_ip_id_1,
-                        )?;
-
-                        let dst_addr = ni.inferred_dst_addr;
-                        let dst_port = if ni.dst_ports.len() > 0 {
-                            ni.dst_ports[0]
-                        } else {
-                            return Err(PistolError::IdleScanNeedParamsError {
-                                params: String::from("dst_ports"),
-                            });
-                        };
-                        let addr_origin = ni.dst_addr;
-                        let report = PortReport {
-                            addr: dst_addr,
-                            addr_origin,
-                            port: dst_port,
-                            status: port_status,
-                            cost: rtt_1 + rtt_2,
-                            cached: ni.cached,
-                        };
-                        port_reports.push(report);
-
-                        let data_recved = match has_response {
-                            HasResponse::Yes => true,
-                            HasResponse::No => false,
-                        };
-                        let new_status = IdleScanStatus {
-                            retiries: status.retiries,
-                            data_recved,
-                            receiver: None,
-                            start,
-                            rtt_1,
-                            rtt_2,
-                            steps: IdleScanSteps::Done,
-                            zombie_ip_id_1: status.zombie_ip_id_1,
-                        };
-                        idle_scan_status_clone.insert(ni, new_status);
-                    }
-                    None => (),
-                },
-                _ => (),
-            }
-        }
-        idle_scan_status = idle_scan_status_clone.clone();
-    }
-    port_scans.finish(port_reports);
-    Ok(port_scans)
-}
-
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn build_scan_buff(
-    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
     method: ScanMethod,
-    timeout: Duration,
 ) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // The connect scan and idle scan need to send more than one packets,
     // so we put them other functions instead of here.
     match method {
-        ScanMethod::Syn => tcp::build_syn_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Fin => tcp::build_fin_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Ack => tcp::build_ack_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Null => tcp::build_null_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Xmas => tcp::build_xmas_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Window => tcp::build_window_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Maimon => tcp::build_maimon_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
-        ScanMethod::Udp => udp::build_udp_scan_packet(
-            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-        ),
+        ScanMethod::Syn => tcp::build_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Fin => tcp::build_fin_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Ack => tcp::build_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Null => tcp::build_null_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Xmas => tcp::build_xmas_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Window => tcp::build_window_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Maimon => tcp::build_maimon_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
+        ScanMethod::Udp => udp::build_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port),
     }
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-fn scan_send6(
-    dst_mac: MacAddr,
+fn build_scan_buff6(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
-    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
     method: ScanMethod,
-    timeout: Duration,
 ) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     match method {
-        ScanMethod::Syn => tcp6::build_syn_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Fin => tcp6::build_fin_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Ack => tcp6::build_ack_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Null => tcp6::build_null_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Xmas => tcp6::build_xmas_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Window => tcp6::send_window_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Maimon => tcp6::build_maimon_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
-        ScanMethod::Udp => udp6::send_udp_scan_packet(
-            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, timeout,
-        ),
+        ScanMethod::Syn => tcp6::build_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
+        ScanMethod::Fin => tcp6::build_fin_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
+        ScanMethod::Ack => tcp6::build_ack_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
+        ScanMethod::Null => tcp6::build_null_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
+        ScanMethod::Xmas => tcp6::build_xmas_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
+        ScanMethod::Window => tcp6::send_window_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
+        ScanMethod::Maimon => {
+            tcp6::build_maimon_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)
+        }
+        ScanMethod::Udp => udp6::send_udp_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
     }
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-fn scan_recv6(
-    method: ScanMethod,
-    start: Instant,
-    timeout: Duration,
-    receiver: Receiver<(Arc<[u8]>, Duration)>,
-) -> Result<PortStatus, PistolError> {
-    match method {
-        ScanMethod::Syn => tcp6::parse_syn_scan_response(start, timeout, receiver),
-        ScanMethod::Fin => tcp6::parse_fin_scan_response(start, timeout, receiver),
-        ScanMethod::Ack => tcp6::parse_ack_scan_response(start, timeout, receiver),
-        ScanMethod::Null => tcp6::parse_null_scan_response(start, timeout, receiver),
-        ScanMethod::Xmas => tcp6::parse_xmas_scan_response(start, timeout, receiver),
-        ScanMethod::Window => tcp6::parse_window_scan_response(start, timeout, receiver),
-        ScanMethod::Maimon => tcp6::parse_maimon_scan_response(start, timeout, receiver),
-        ScanMethod::Udp => udp6::parse_udp_scan_response(start, timeout, receiver),
+fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
+    fn parse_ipv4(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
+        match method {
+            ScanMethod::Syn => tcp::parse_syn_scan_response(eth_response),
+            ScanMethod::Fin => tcp::parse_fin_scan_response(eth_response),
+            ScanMethod::Ack => tcp::parse_ack_scan_response(eth_response),
+            ScanMethod::Null => tcp::parse_null_scan_response(eth_response),
+            ScanMethod::Xmas => tcp::parse_xmas_scan_response(eth_response),
+            ScanMethod::Window => tcp::parse_window_scan_response(eth_response),
+            ScanMethod::Maimon => tcp::parse_maimon_scan_response(eth_response),
+            ScanMethod::Udp => udp::parse_udp_scan_response(eth_response),
+        }
     }
+    fn parse_ipv6(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
+        match method {
+            ScanMethod::Syn => tcp6::parse_syn_scan_response(eth_response),
+            ScanMethod::Fin => tcp6::parse_fin_scan_response(eth_response),
+            ScanMethod::Ack => tcp6::parse_ack_scan_response(eth_response),
+            ScanMethod::Null => tcp6::parse_null_scan_response(eth_response),
+            ScanMethod::Xmas => tcp6::parse_xmas_scan_response(eth_response),
+            ScanMethod::Window => tcp6::parse_window_scan_response(eth_response),
+            ScanMethod::Maimon => tcp6::parse_maimon_scan_response(eth_response),
+            ScanMethod::Udp => udp6::parse_udp_scan_response(eth_response),
+        }
+    }
+    match EthernetPacket::new(eth_response.as_ref()) {
+        Some(eth_packet) => match eth_packet.get_ethertype() {
+            EtherTypes::Ipv4 => parse_ipv4(eth_response, method),
+            EtherTypes::Ipv6 => parse_ipv6(eth_response, method),
+            _ => {
+                debug!(
+                    "skip non-ipv4/ipv6 packet with ethertype {:?}",
+                    eth_packet.get_ethertype()
+                );
+                Err(PistolError::CanNotParseEthernetPacket)
+            }
+        },
+        None => Err(PistolError::CanNotParseEthernetPacket),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ScanStatus {
+    id: u64,
+    retried: usize,
+    recved: bool,
 }
 
 /// General scan function.
@@ -1420,6 +1137,9 @@ fn scan(
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
     let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
@@ -1430,7 +1150,12 @@ fn scan(
         if ni.valid {
             let mut hm = HashMap::new();
             for p in ni.dst_ports.clone() {
-                hm.insert(p, (0, false, None, Instant::now()));
+                let status = ScanStatus {
+                    id: 0,
+                    retried: 0,
+                    recved: false,
+                };
+                hm.insert(p, status);
             }
             scan_status.insert(ni, hm);
         }
@@ -1461,17 +1186,38 @@ fn scan(
                     };
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
-                        let (retries, data_recved, _receiver, _start) = status;
-                        if retries < max_retries && !data_recved {
-                            let start = Instant::now();
-                            let receiver = build_scan_buff(
-                                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
-                                interface, method, timeout,
-                            )?;
-                            tmp_hm.insert(
-                                dst_port,
-                                (retries + 1, data_recved, Some(receiver), start),
-                            );
+                        let mut status = status.clone();
+                        let retried = status.retried;
+                        let recved = status.recved;
+                        if retried < max_retries && !recved {
+                            let (buff, filters) =
+                                build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
+
+                            let recv_msg_id = random_recv_msg_id();
+                            let recv_msg = RecvMsg {
+                                id: recv_msg_id,
+                                filters,
+                                created: Instant::now(),
+                                elapsed: timeout,
+                            };
+                            let send_msg = SendMsg {
+                                dst_mac,
+                                src_mac,
+                                ether_payload: buff.clone(),
+                                ether_type: EtherTypes::Ipv4,
+                                retransmit: retried,
+                            };
+
+                            if let Err(e) = to_recv.send(recv_msg) {
+                                error!("send scan recv msg error: {}", e);
+                            }
+                            if let Err(e) = to_send.send(send_msg) {
+                                error!("send scan packet error: {}", e);
+                            }
+
+                            status.retried = retried + 1;
+                            status.id = recv_msg_id;
+                            tmp_hm.insert(dst_port, status);
                             all_done = false;
                         }
                     }
@@ -1488,17 +1234,38 @@ fn scan(
                     };
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
-                        let (retries, data_recved, _receiver, _start) = status;
-                        if retries < max_retries && !data_recved {
+                        let retried = status.retried;
+                        let recved = status.recved;
+                        if retried < max_retries && !recved {
                             let start = Instant::now();
-                            let receiver = scan_send6(
-                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
-                                interface, method, timeout,
-                            )?;
-                            tmp_hm.insert(
-                                dst_port,
-                                (retries + 1, data_recved, Some(receiver), start),
-                            );
+                            let (buff, filters) =
+                                build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
+
+                            let recv_msg_id = random_recv_msg_id();
+                            let recv_msg = RecvMsg {
+                                id: recv_msg_id,
+                                filters,
+                                created: Instant::now(),
+                                elapsed: timeout,
+                            };
+                            let send_msg = SendMsg {
+                                dst_mac,
+                                src_mac,
+                                ether_payload: buff.clone(),
+                                ether_type: EtherTypes::Ipv6,
+                                retransmit: retried,
+                            };
+
+                            if let Err(e) = to_recv.send(recv_msg) {
+                                error!("send scan recv msg error: {}", e);
+                            }
+                            if let Err(e) = to_send.send(send_msg) {
+                                error!("send scan packet error: {}", e);
+                            }
+
+                            status.retried = retried + 1;
+                            status.id = recv_msg_id;
+                            tmp_hm.insert(dst_port, status);
                             all_done = false;
                         }
                     }
@@ -1516,6 +1283,44 @@ fn scan(
             break;
         }
 
+        scan_status = scan_status_clone.clone();
+        let mut responses = Vec::new();
+        let start_recv = Instant::now();
+        let timeout_5ms = Duration::from_millis(5);
+        loop {
+            if start_recv.elapsed() > timeout {
+                break;
+            }
+            match get_response.recv_timeout(timeout_5ms) {
+                Ok(recv_response) => {
+                    responses.push(recv_response);
+                }
+                Err(_e) => {
+                    // timeout error is expected
+                    continue;
+                }
+            };
+        }
+
+        for (ni, hm) in scan_status {
+            let mut tmp_hm = scan_status_clone[&ni].clone();
+            for (dst_port, status) in hm {
+                for response in &responses {
+                    if response.id == status.id {
+                        let status = status.clone();
+                        status.recved = true;
+                        tmp_hm.insert(dst_port, status);
+                    }
+                }
+            }
+            scan_status_clone.insert(ni, tmp_hm);
+        }
+
+        for response in &responses {
+            let eth_response = response.data.clone();
+            parse_response(eth_response, method)?;
+        }
+
         let start_eval = Instant::now();
         scan_status = scan_status_clone.clone();
         for (ni, hm) in scan_status {
@@ -1524,12 +1329,11 @@ fn scan(
             let mut tmp_hm = scan_status_clone[&ni].clone();
 
             for (dst_port, status) in hm {
-                let (retries, _data_recved, receiver, start) = status;
                 match receiver {
                     Some(receiver) => {
                         let ret = match dst_addr {
                             IpAddr::V4(_) => scan_recv(method, start, timeout, receiver),
-                            IpAddr::V6(_) => scan_recv6(method, start, timeout, receiver),
+                            IpAddr::V6(_) => parse_response6(method, start, timeout, receiver),
                         };
 
                         if let Ok((port_status, has_response, rtt)) = ret {
@@ -1949,12 +1753,12 @@ fn scan_raw(
             };
             for _ in 0..max_retries {
                 let start = Instant::now();
-                let receiver = scan_send6(
+                let receiver = build_scan_buff6(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, method,
                     timeout,
                 )?;
                 let (port_status, has_response, rtt) =
-                    scan_recv6(method, start, timeout, receiver)?;
+                    parse_response6(method, start, timeout, receiver)?;
                 if has_response == HasResponse::Yes {
                     let report = PortReport {
                         addr: dst_addr,

