@@ -2,6 +2,12 @@
 use chrono::DateTime;
 #[cfg(any(feature = "trace", feature = "os"))]
 use chrono::Local;
+#[cfg(feature = "trace")]
+use crossbeam::channel::Receiver;
+#[cfg(feature = "trace")]
+use crossbeam::channel::Sender;
+#[cfg(any(feature = "trace", feature = "os"))]
+use pnet::packet::ethernet::EtherTypes;
 #[cfg(any(feature = "trace", feature = "os"))]
 use prettytable::Cell;
 #[cfg(any(feature = "trace", feature = "os"))]
@@ -23,13 +29,25 @@ use std::time::Duration;
 use std::time::Instant;
 #[cfg(any(feature = "trace", feature = "os"))]
 use tracing::debug;
+#[cfg(any(feature = "trace", feature = "os"))]
+use tracing::error;
 
 #[cfg(feature = "trace")]
 use crate::NetInfo;
+#[cfg(feature = "trace")]
+use crate::RecvMsg;
+#[cfg(feature = "trace")]
+use crate::RecvResponse;
+#[cfg(feature = "trace")]
+use crate::SendMsg;
 #[cfg(any(feature = "trace", feature = "os"))]
 use crate::error::PistolError;
 #[cfg(feature = "trace")]
-use crate::utils;
+use crate::utils::random_port_range;
+#[cfg(feature = "trace")]
+use crate::utils::random_recv_msg_id;
+#[cfg(feature = "trace")]
+use crate::utils::time_to_string;
 
 #[cfg(any(feature = "trace", feature = "os"))]
 pub mod icmp;
@@ -84,7 +102,7 @@ impl fmt::Display for Trace {
 
         let addr_str = format!("{}", self.addr);
         let hops_str = format!("{}", self.hops);
-        let rtt_str = utils::time_to_string(self.cost);
+        let rtt_str = time_to_string(self.cost);
         table.add_row(row![c -> addr_str, c -> hops_str, c -> rtt_str]);
 
         let summary1 = format!(
@@ -120,7 +138,13 @@ impl Trace {
 
 /// The default target port is 80 if not specified.
 #[cfg(feature = "trace")]
-pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn syn_trace(
+    net_info: NetInfo,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(net_info.inferred_dst_addr);
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
@@ -151,34 +175,68 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
             }
             let mut last_response_ttl = 0;
             for ttl in 1..=30 {
-                let random_src_port = utils::random_port_range(1000, 65535);
-                // let random_src_port = 61234; // debug use
+                let random_src_port = random_port_range(1000, 65535);
                 let start = Instant::now();
-                let receiver = tcp::build_syn_trace_packet(
-                    dst_mac,
+                let (buff, filters) = tcp::build_syn_trace_packet(
                     dst_ipv4,
                     dst_port,
-                    src_mac,
                     src_ipv4,
                     random_src_port,
-                    interface,
                     ip_id,
                     ttl,
-                    timeout,
                 )?;
-                let (hop_status, rtt) = tcp::parse_syn_trace_response(start, timeout, receiver)?;
-                ip_id += 1;
-                match hop_status {
-                    HopStatus::TimeExceeded(_) => {
-                        last_response_ttl = ttl;
+
+                let recv_msg_id = random_recv_msg_id();
+                let recv_msg = RecvMsg {
+                    id: recv_msg_id,
+                    filters,
+                    created: Instant::now(),
+                    elapsed: timeout,
+                };
+                let send_msg = SendMsg {
+                    dst_mac,
+                    src_mac,
+                    ether_payload: buff.clone(),
+                    ether_type: EtherTypes::Ipv4,
+                    retransmit: 0,
+                };
+                if let Err(e) = to_recv.send(recv_msg) {
+                    error!("send scan recv msg error: {}", e);
+                }
+                if let Err(e) = to_send.send(send_msg) {
+                    error!("send scan packet error: {}", e);
+                }
+
+                match get_response.recv_timeout(timeout) {
+                    Ok(r) => {
+                        if r.id == recv_msg_id && r.data.len() > 0 {
+                            ip_id += 1;
+                            let hop_status = tcp::parse_syn_trace_response(r.data)?;
+                            match hop_status {
+                                HopStatus::TimeExceeded(_) => {
+                                    // continue to next ttl,
+                                    // but record the last ttl that receive time exceeded response.
+                                    last_response_ttl = ttl;
+                                }
+                                HopStatus::RecvReply(_) => {
+                                    // tcp rst packet, means packet arrive the target machine
+                                    debug!(
+                                        "ttl: {}, {:?} - {:.2}s",
+                                        ttl,
+                                        hop_status,
+                                        r.rtt.as_secs_f64()
+                                    );
+                                    trace.finish(ttl);
+                                    return Ok(trace);
+                                }
+                                _ => (),
+                            }
+                        }
                     }
-                    HopStatus::RecvReply(_) => {
-                        // tcp rst packet, means packet arrive the target machine
-                        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
-                        trace.finish(ttl);
-                        return Ok(trace);
+                    Err(_e) => {
+                        debug!("recv timeout for ttl: {}, filters: {:?}", ttl, filters);
+                        break;
                     }
-                    _ => (),
                 }
             }
             debug!("last ttl: {}", last_response_ttl);
@@ -304,7 +362,8 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
                     hop_limit as u16,
                     timeout,
                 )?;
-                let (hop_status, rtt) = icmpv6::parse_icmpv6_trace_response(start, timeout, receiver)?;
+                let (hop_status, rtt) =
+                    icmpv6::parse_icmpv6_trace_response(start, timeout, receiver)?;
                 match hop_status {
                     HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
                     // recv echo reply, means packet arrive the target machine

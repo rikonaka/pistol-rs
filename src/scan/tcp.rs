@@ -24,6 +24,7 @@ use std::net::TcpStream;
 use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
@@ -1002,14 +1003,15 @@ pub(crate) fn send_connect_scan_packet(
     dst_addr: IpAddr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<PortStatus, PistolError> {
+) -> Result<(PortStatus, Duration), PistolError> {
+    let start = Instant::now();
     let addr = match dst_addr {
         IpAddr::V4(dst_ipv4) => SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port)),
         IpAddr::V6(dst_ipv6) => SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0)),
     };
     match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(_) => Ok(PortStatus::Open),
-        Err(_) => Ok(PortStatus::Closed),
+        Ok(_) => Ok((PortStatus::Open, start.elapsed())),
+        Err(_) => Ok((PortStatus::Closed, start.elapsed())),
     }
 }
 

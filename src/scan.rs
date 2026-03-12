@@ -10,8 +10,6 @@ use crossbeam::channel::Sender;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use pnet::datalink::NetworkInterface;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::Packet;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::arp::ArpPacket;
@@ -1083,7 +1081,8 @@ fn build_scan_buff6(
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
-    fn parse_ipv4(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
+    let parse_ipv4 = || -> Result<PortStatus, PistolError> {
+        let eth_response = eth_response.clone();
         match method {
             ScanMethod::Syn => tcp::parse_syn_scan_response(eth_response),
             ScanMethod::Fin => tcp::parse_fin_scan_response(eth_response),
@@ -1094,8 +1093,9 @@ fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortSta
             ScanMethod::Maimon => tcp::parse_maimon_scan_response(eth_response),
             ScanMethod::Udp => udp::parse_udp_scan_response(eth_response),
         }
-    }
-    fn parse_ipv6(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
+    };
+    let parse_ipv6 = || -> Result<PortStatus, PistolError> {
+        let eth_response = eth_response.clone();
         match method {
             ScanMethod::Syn => tcp6::parse_syn_scan_response(eth_response),
             ScanMethod::Fin => tcp6::parse_fin_scan_response(eth_response),
@@ -1106,11 +1106,11 @@ fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortSta
             ScanMethod::Maimon => tcp6::parse_maimon_scan_response(eth_response),
             ScanMethod::Udp => udp6::parse_udp_scan_response(eth_response),
         }
-    }
+    };
     match EthernetPacket::new(eth_response.as_ref()) {
         Some(eth_packet) => match eth_packet.get_ethertype() {
-            EtherTypes::Ipv4 => parse_ipv4(eth_response, method),
-            EtherTypes::Ipv6 => parse_ipv6(eth_response, method),
+            EtherTypes::Ipv4 => parse_ipv4(),
+            EtherTypes::Ipv6 => parse_ipv6(),
             _ => {
                 debug!(
                     "skip non-ipv4/ipv6 packet with ethertype {:?}",
@@ -1173,7 +1173,6 @@ fn scan(
                 Some(s) => s,
                 None => utils::random_port(),
             };
-            let interface = &ni.interface;
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
                     let src_ipv4 = match ni.inferred_src_addr {
@@ -1234,10 +1233,10 @@ fn scan(
                     };
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
+                        let mut status = status.clone();
                         let retried = status.retried;
                         let recved = status.recved;
                         if retried < max_retries && !recved {
-                            let start = Instant::now();
                             let (buff, filters) =
                                 build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
@@ -1283,7 +1282,6 @@ fn scan(
             break;
         }
 
-        scan_status = scan_status_clone.clone();
         let mut responses = Vec::new();
         let start_recv = Instant::now();
         let timeout_5ms = Duration::from_millis(5);
@@ -1302,67 +1300,32 @@ fn scan(
             };
         }
 
-        for (ni, hm) in scan_status {
-            let mut tmp_hm = scan_status_clone[&ni].clone();
-            for (dst_port, status) in hm {
-                for response in &responses {
+        scan_status = scan_status_clone.clone();
+        for response in &responses {
+            for (ni, hm) in &scan_status {
+                let mut tmp_hm = scan_status[&ni].clone();
+                for (&dst_port, status) in hm {
                     if response.id == status.id {
-                        let status = status.clone();
+                        let mut status = status.clone();
                         status.recved = true;
                         tmp_hm.insert(dst_port, status);
-                    }
-                }
-            }
-            scan_status_clone.insert(ni, tmp_hm);
-        }
 
-        for response in &responses {
-            let eth_response = response.data.clone();
-            parse_response(eth_response, method)?;
-        }
-
-        let start_eval = Instant::now();
-        scan_status = scan_status_clone.clone();
-        for (ni, hm) in scan_status {
-            let dst_addr = ni.inferred_dst_addr;
-            let cached = ni.cached;
-            let mut tmp_hm = scan_status_clone[&ni].clone();
-
-            for (dst_port, status) in hm {
-                match receiver {
-                    Some(receiver) => {
-                        let ret = match dst_addr {
-                            IpAddr::V4(_) => scan_recv(method, start, timeout, receiver),
-                            IpAddr::V6(_) => parse_response6(method, start, timeout, receiver),
+                        let port_status = parse_response(response.data.clone(), method)?;
+                        let report = PortReport {
+                            addr: ni.inferred_dst_addr,
+                            addr_origin: ni.dst_addr,
+                            port: dst_port,
+                            status: port_status,
+                            cost: response.rtt,
+                            cached: ni.cached,
                         };
-
-                        if let Ok((port_status, has_response, rtt)) = ret {
-                            if has_response == HasResponse::Yes {
-                                let addr_origin = ni.dst_addr;
-                                let report = PortReport {
-                                    addr: dst_addr,
-                                    addr_origin,
-                                    port: dst_port,
-                                    status: port_status,
-                                    cost: rtt,
-                                    cached,
-                                };
-
-                                reports.push(report);
-                                tmp_hm.insert(dst_port, (retries, true, None, start));
-                            } else {
-                                tmp_hm.insert(dst_port, (retries, false, None, start));
-                            }
-                        }
+                        reports.push(report);
                     }
-                    None => (),
                 }
+                scan_status_clone.insert(ni.clone(), tmp_hm);
             }
-
-            scan_status_clone.insert(ni, tmp_hm);
         }
         scan_status = scan_status_clone.clone();
-
         println!(
             "recv all packet: {:.2}s",
             start_eval.elapsed().as_secs_f32()
@@ -1372,13 +1335,151 @@ fn scan(
     Ok(port_scans)
 }
 
+#[cfg(feature = "scan")]
+fn scan_raw(
+    net_info: NetInfo,
+    method: ScanMethod,
+    timeout: Duration,
+    max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<PortScan, PistolError> {
+    let mut port_scan = PortScan::new(max_retries);
+    if !net_info.valid {
+        port_scan.finish(None);
+        return Ok(port_scan);
+    }
+
+    let dst_mac = net_info.inferred_dst_mac;
+    let dst_addr = net_info.inferred_dst_addr;
+    let src_mac = net_info.inferred_src_mac;
+    let addr_origin = net_info.dst_addr;
+    let src_port = match net_info.src_port {
+        Some(s) => s,
+        None => utils::random_port(),
+    };
+
+    let dst_port = if net_info.dst_ports.len() > 0 {
+        net_info.dst_ports[0]
+    } else {
+        return Err(PistolError::NoDstPortSpecified);
+    };
+
+    // dst_addr may change during the processing.
+    // It is only used here to determine whether the target is ipv4 or ipv6.
+    // The real dst_addr is inferred from infer_addr.
+    let cached = net_info.cached;
+    for _ in 0..max_retries {
+        let recv_msg_id = random_recv_msg_id();
+        match dst_addr {
+            IpAddr::V4(dst_ipv4) => {
+                let src_ipv4 = match net_info.inferred_src_addr {
+                    IpAddr::V4(s) => s,
+                    _ => {
+                        return Err(PistolError::AttackAddressNotMatch {
+                            addr: net_info.inferred_src_addr,
+                        });
+                    }
+                };
+                let (buff, filters) =
+                    build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
+
+                let recv_msg = RecvMsg {
+                    id: recv_msg_id,
+                    filters,
+                    created: Instant::now(),
+                    elapsed: timeout,
+                };
+                let send_msg = SendMsg {
+                    dst_mac,
+                    src_mac,
+                    ether_payload: buff.clone(),
+                    ether_type: EtherTypes::Ipv4,
+                    retransmit: 0,
+                };
+                if let Err(e) = to_recv.send(recv_msg) {
+                    error!("send scan recv msg error: {}", e);
+                }
+                if let Err(e) = to_send.send(send_msg) {
+                    error!("send scan packet error: {}", e);
+                }
+            }
+            IpAddr::V6(dst_ipv6) => {
+                let src_ipv6 = match net_info.inferred_src_addr {
+                    IpAddr::V6(s) => s,
+                    _ => {
+                        return Err(PistolError::AttackAddressNotMatch {
+                            addr: net_info.inferred_src_addr,
+                        });
+                    }
+                };
+                let (buff, filters) =
+                    build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
+
+                let recv_msg = RecvMsg {
+                    id: recv_msg_id,
+                    filters,
+                    created: Instant::now(),
+                    elapsed: timeout,
+                };
+                let send_msg = SendMsg {
+                    dst_mac,
+                    src_mac,
+                    ether_payload: buff.clone(),
+                    ether_type: EtherTypes::Ipv4,
+                    retransmit: 0,
+                };
+                if let Err(e) = to_recv.send(recv_msg) {
+                    error!("send scan recv msg error: {}", e);
+                }
+                if let Err(e) = to_send.send(send_msg) {
+                    error!("send scan packet error: {}", e);
+                }
+            }
+        }
+
+        match get_response.recv_timeout(timeout) {
+            Ok(r) => {
+                if r.id == recv_msg_id && r.data.len() > 0 {
+                    let port_status = parse_response(r.data.clone(), method)?;
+                    let report = PortReport {
+                        addr: dst_addr,
+                        addr_origin,
+                        port: dst_port,
+                        status: port_status,
+                        cost: r.rtt,
+                        cached,
+                    };
+                    port_scan.finish(Some(report));
+                    return Ok(port_scan);
+                }
+            }
+            Err(_e) => (),
+        }
+    }
+    port_scan.finish(None);
+    Ok(port_scan)
+}
+
 #[cfg(any(feature = "scan", feature = "ping"))]
 pub fn tcp_syn_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Syn, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Syn,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP SYN Scan, raw version.
@@ -1387,8 +1488,19 @@ pub fn tcp_syn_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Syn, timeout, max_retries)
+    scan_raw(
+        net_info,
+        ScanMethod::Syn,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 #[cfg(feature = "scan")]
@@ -1396,8 +1508,19 @@ pub fn tcp_fin_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Fin, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Fin,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP FIN Scan, raw version.
@@ -1406,8 +1529,19 @@ pub fn tcp_fin_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Fin, timeout, max_retries)
+    scan_raw(
+        net_info,
+        ScanMethod::Fin,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 #[cfg(feature = "scan")]
@@ -1415,8 +1549,19 @@ pub fn tcp_ack_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Ack, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Ack,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP ACK Scan, raw version.
@@ -1425,8 +1570,19 @@ pub fn tcp_ack_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Ack, timeout, max_retries)
+    scan_raw(
+        net_info,
+        ScanMethod::Ack,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 #[cfg(feature = "scan")]
@@ -1434,8 +1590,19 @@ pub fn tcp_null_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Null, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Null,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP Null Scan, raw version.
@@ -1444,8 +1611,19 @@ pub fn tcp_null_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Null, timeout, max_retries)
+    scan_raw(
+        net_info,
+        ScanMethod::Null,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 #[cfg(feature = "scan")]
@@ -1453,8 +1631,19 @@ pub fn tcp_xmas_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Xmas, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Xmas,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP Xmas Scan, raw version.
@@ -1463,8 +1652,19 @@ pub fn tcp_xmas_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Xmas, timeout, max_retries)
+    scan_raw(
+        net_info,
+        ScanMethod::Xmas,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 #[cfg(feature = "scan")]
@@ -1472,8 +1672,19 @@ pub fn tcp_window_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Window, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Window,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP Window Scan, raw version.
@@ -1482,8 +1693,19 @@ pub fn tcp_window_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Window, timeout, max_retries)
+    scan_raw(
+        net_info,
+        ScanMethod::Window,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 #[cfg(feature = "scan")]
@@ -1491,8 +1713,19 @@ pub fn tcp_maimon_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Maimon, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Maimon,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// TCP Maimon Scan, raw version.
@@ -1501,57 +1734,19 @@ pub fn tcp_maimon_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Maimon, timeout, max_retries)
-}
-
-#[cfg(feature = "scan")]
-pub fn tcp_idle_scan(
-    net_infos: Vec<NetInfo>,
-    zombie_mac: Option<MacAddr>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScans, PistolError> {
-    idle_scan(
-        net_infos,
-        zombie_mac,
-        zombie_ipv4,
-        zombie_port,
+    scan_raw(
+        net_info,
+        ScanMethod::Maimon,
         timeout,
         max_retries,
+        to_recv,
+        to_send,
+        get_response,
     )
-}
-
-/// TCP Idle Scan, raw version.
-#[cfg(feature = "scan")]
-pub fn tcp_idle_scan_raw(
-    net_info: NetInfo,
-    zombie_mac: Option<MacAddr>,
-    zombie_ipv4: Option<Ipv4Addr>,
-    zombie_port: Option<u16>,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let net_infos = vec![net_info];
-    let mut port_scan = PortScan::new(max_retries);
-    let port_scans = idle_scan(
-        net_infos,
-        zombie_mac,
-        zombie_ipv4,
-        zombie_port,
-        timeout,
-        max_retries,
-    )?;
-
-    let report = if port_scans.port_reports.len() > 0 {
-        Some(port_scans.port_reports[0].clone())
-    } else {
-        None
-    };
-    port_scan.finish(report);
-    Ok(port_scan)
 }
 
 #[cfg(feature = "scan")]
@@ -1573,17 +1768,17 @@ pub fn tcp_connect_scan(
             let h = thread::spawn(move || {
                 for i in 0..max_retries {
                     match tcp::send_connect_scan_packet(dst_addr, dst_port, timeout) {
-                        Ok((port_status, has_response, rtt)) => {
-                            let report = PortReport {
-                                addr: dst_addr,
-                                addr_origin,
-                                port: dst_port,
-                                status: port_status,
-                                cost: rtt,
-                                cached,
-                            };
+                        Ok((port_status, rtt)) => {
+                            if port_status == PortStatus::Open || i == max_retries - 1 {
+                                let report = PortReport {
+                                    addr: dst_addr,
+                                    addr_origin,
+                                    port: dst_port,
+                                    status: port_status,
+                                    cost: rtt,
+                                    cached,
+                                };
 
-                            if has_response == HasResponse::Yes || i == max_retries - 1 {
                                 if let Ok(mut reports) = reports.lock() {
                                     (*reports).push(report);
                                 }
@@ -1631,9 +1826,8 @@ pub fn tcp_connect_scan_raw(
     let cached = false;
 
     for i in 0..max_retries {
-        let (port_status, has_response, rtt) =
-            tcp::send_connect_scan_packet(dst_addr, dst_port, timeout)?;
-        if has_response == HasResponse::Yes || i == max_retries - 1 {
+        let (port_status, rtt) = tcp::send_connect_scan_packet(dst_addr, dst_port, timeout)?;
+        if port_status == PortStatus::Open || i == max_retries - 1 {
             let report = PortReport {
                 addr: addr_origin,
                 addr_origin,
@@ -1664,8 +1858,19 @@ pub fn udp_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Udp, timeout, max_retries)
+    scan(
+        net_infos,
+        ScanMethod::Udp,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }
 
 /// UDP Scan, raw version.
@@ -1674,308 +1879,17 @@ pub fn udp_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Udp, timeout, max_retries)
-}
-
-#[cfg(feature = "scan")]
-fn scan_raw(
-    net_info: NetInfo,
-    method: ScanMethod,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let mut port_scan = PortScan::new(max_retries);
-    if !net_info.valid {
-        port_scan.finish(None);
-        return Ok(port_scan);
-    }
-
-    let dst_mac = net_info.inferred_dst_mac;
-    let dst_addr = net_info.inferred_dst_addr;
-    let src_mac = net_info.inferred_src_mac;
-    let addr_origin = net_info.dst_addr;
-    let interface = &net_info.interface;
-    let src_port = match net_info.src_port {
-        Some(s) => s,
-        None => utils::random_port(),
-    };
-
-    let dst_port = if net_info.dst_ports.len() > 0 {
-        net_info.dst_ports[0]
-    } else {
-        return Err(PistolError::NoDstPortSpecified);
-    };
-
-    // dst_addr may change during the processing.
-    // It is only used here to determine whether the target is ipv4 or ipv6.
-    // The real dst_addr is inferred from infer_addr.
-    let cached = net_info.cached;
-    match dst_addr {
-        IpAddr::V4(dst_ipv4) => {
-            let src_ipv4 = match net_info.inferred_src_addr {
-                IpAddr::V4(s) => s,
-                _ => {
-                    return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.inferred_src_addr,
-                    });
-                }
-            };
-            for _ in 0..max_retries {
-                let start = Instant::now();
-                let receiver = build_scan_buff(
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, method,
-                    timeout,
-                )?;
-                let (port_status, has_response, rtt) = scan_recv(method, start, timeout, receiver)?;
-                if has_response == HasResponse::Yes {
-                    let report = PortReport {
-                        addr: dst_addr,
-                        addr_origin,
-                        port: dst_port,
-                        status: port_status,
-                        cost: rtt,
-                        cached,
-                    };
-                    port_scan.finish(Some(report));
-                    return Ok(port_scan);
-                }
-            }
-        }
-        IpAddr::V6(dst_ipv6) => {
-            let src_ipv6 = match net_info.inferred_src_addr {
-                IpAddr::V6(s) => s,
-                _ => {
-                    return Err(PistolError::AttackAddressNotMatch {
-                        addr: net_info.inferred_src_addr,
-                    });
-                }
-            };
-            for _ in 0..max_retries {
-                let start = Instant::now();
-                let receiver = build_scan_buff6(
-                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, interface, method,
-                    timeout,
-                )?;
-                let (port_status, has_response, rtt) =
-                    parse_response6(method, start, timeout, receiver)?;
-                if has_response == HasResponse::Yes {
-                    let report = PortReport {
-                        addr: dst_addr,
-                        addr_origin,
-                        port: dst_port,
-                        status: port_status,
-                        cost: rtt,
-                        cached,
-                    };
-                    port_scan.finish(Some(report));
-                    return Ok(port_scan);
-                }
-            }
-        }
-    };
-    port_scan.finish(None);
-    Ok(port_scan)
-}
-
-#[cfg(feature = "scan")]
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Pistol;
-    use crate::Target;
-    use std::str::FromStr;
-    #[test]
-    fn test_arp_scan_single() {
-        let target = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)), None);
-        let targets = vec![target];
-        let timeout = Duration::from_secs_f32(10.0);
-        let max_retries = 2;
-
-        let mut pistol = Pistol::new();
-        pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_arp_scan_subnet() {
-        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
-        // println!("{}", targets.len());
-        // let target1 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)), None);
-        // let target2 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 2)), None);
-        // let target3 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)), None);
-        // let target4 = Target::new(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 4)), None);
-        // let targets = vec![target1, target2, target3, target4];
-        // let targets = vec![target1];
-        let timeout = Duration::from_secs_f32(1.5);
-        let max_retries = 2;
-
-        let mut pistol = Pistol::new();
-        pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_ndp_ns_scan_subnet() {
-        let targets = Target::from_subnet6("fe80::20c:29ff:fe5b:bd5c/126", None).unwrap();
-        let timeout = Duration::from_secs_f32(1.5);
-        let max_retries = 2;
-
-        let mut pistol = Pistol::new();
-        pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_ndp_ns_scan_single() {
-        let dst_ipv6 = Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap();
-        let target = Target::new(dst_ipv6.into(), None);
-        let targets = vec![target];
-        let timeout = Duration::from_secs_f32(0.5);
-        let max_retries = 2;
-
-        let mut pistol = Pistol::new();
-        pistol.set_log_level("debug");
-        pistol.init_runners_without_net_infos().unwrap();
-        let ret = mac_scan(&targets, timeout, max_retries).unwrap();
-        println!("{}", ret);
-    }
-    #[test]
-    fn test_tcp_connect_scan() {
-        let src_addr = None;
-        let src_port = None;
-        let timeout = Duration::new(1, 0);
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 31, 1);
-        let target = Target::new(dst_ipv4.into(), Some(vec![22, 80, 443]));
-        let targets = vec![target];
-        let max_retries = 2;
-
-        let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-
-        let ret = tcp_connect_scan(net_infos, timeout, max_retries).unwrap();
-        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
-    }
-    #[test]
-    fn test_tcp_syn_scan() {
-        let src_addr = None;
-        let src_port = None;
-        let timeout = Duration::new(1, 0);
-        let max_retries = 2;
-        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(10, 179, 252, 233));
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
-        #[cfg(target_os = "linux")]
-        let ports = vec![22, 80, 5432, 8080];
-        #[cfg(target_os = "windows")]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 129));
-        #[cfg(target_os = "windows")]
-        let ports = vec![22, 80, 3389, 8080];
-        #[cfg(target_os = "freebsd")]
-        let addr1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 4));
-        #[cfg(target_os = "freebsd")]
-        let ports = vec![22, 80, 3389, 8080];
-
-        let target1 = Target::new(addr1, Some(ports));
-        let targets = vec![target1];
-        let mut pistol = Pistol::new();
-        pistol.set_log_level("debug");
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_syn_scan(net_infos, timeout, max_retries).unwrap();
-        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
-    }
-    #[test]
-    fn test_tcp_syn_scan_performance() {
-        let src_addr = None;
-        let src_port = Some(37888);
-        let timeout = Duration::from_secs_f32(0.5);
-        let max_retries = 1;
-        let addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
-        let ports: Vec<u16> = (22..65535).collect();
-        // let ports: Vec<u16> = (8000..9000).collect();
-        // let ports: Vec<u16> = (22..200).collect();
-        // let ports: Vec<u16> = (22..101).collect();
-
-        let target = Target::new(addr, Some(ports));
-        let targets = vec![target];
-
-        let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_syn_scan(net_infos, timeout, max_retries).unwrap();
-        for r in &ret.port_reports {
-            match r.status {
-                PortStatus::Open => println!("{}:{} -> open", r.addr, r.port),
-                _ => (),
-            }
-        }
-
-        let total = ret.finish_time - ret.start_time;
-        println!(
-            "layer2: {:.2}s, total: {:.2}s",
-            dur.as_secs_f32(),
-            total.as_seconds_f32()
-        );
-        // println!("{}", ret);
-    }
-    #[test]
-    fn test_tcp_fin_scan() {
-        let src_addr = None;
-        let src_port = None;
-        let timeout = Duration::new(1, 0);
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let targets = vec![target];
-        let max_retries = 2;
-        let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_fin_scan(net_infos, timeout, max_retries).unwrap();
-        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
-    }
-    #[test]
-    fn test_tcp_ack_scan() {
-        let src_addr = None;
-        let src_port = None;
-        let timeout = Duration::new(1, 0);
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let targets = vec![target];
-        let max_retries = 2;
-        let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_ack_scan(net_infos, timeout, max_retries).unwrap();
-        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
-    }
-    #[test]
-    fn test_tcp_null_scan() {
-        let src_addr = None;
-        let src_port = None;
-        let timeout = Duration::new(1, 0);
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443]));
-        let targets = vec![target];
-        let max_retries = 2;
-        let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = tcp_null_scan(net_infos, timeout, max_retries).unwrap();
-        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
-    }
-    #[test]
-    fn test_udp_scan() {
-        let src_addr = None;
-        let src_port = None;
-        let timeout = Duration::new(1, 0);
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 5));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 443, 8080, 8081]));
-        let targets = vec![target];
-        let max_retries = 2;
-        let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, src_addr, src_port).unwrap();
-        let ret = udp_scan(net_infos, timeout, max_retries).unwrap();
-        println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
-    }
+    scan_raw(
+        net_info,
+        ScanMethod::Udp,
+        timeout,
+        max_retries,
+        to_recv,
+        to_send,
+        get_response,
+    )
 }

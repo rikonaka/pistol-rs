@@ -858,8 +858,8 @@ pub struct Pistol {
     max_retries: usize,
     to_senders: HashMap<String, Sender<SendMsg>>,
     to_receivers: HashMap<String, Sender<RecvMsg>>,
-    push_response: Sender<(Arc<[u8]>, Duration)>,
-    get_response: Receiver<(Arc<[u8]>, Duration)>,
+    push_response: Sender<RecvResponse>,
+    get_response: Receiver<RecvResponse>,
 }
 
 impl Default for Pistol {
