@@ -1111,10 +1111,10 @@ fn send_u1_probe(
             retransmit: 1,
         };
         if let Err(e) = to_recv.send(recv_msg) {
-            error!("send os probe ecn recv msg failed: {}", e);
+            error!("send os probe u1 recv msg failed: {}", e);
         }
         if let Err(e) = to_send.send(send_msg) {
-            error!("send os probe ecn send msg failed: {}", e);
+            error!("send os probe u1 send msg failed: {}", e);
         }
 
         match get_response.recv_timeout(timeout) {

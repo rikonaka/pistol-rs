@@ -4,6 +4,10 @@ use chrono::DateTime;
 #[cfg(feature = "os")]
 use chrono::Local;
 #[cfg(feature = "os")]
+use crossbeam::channel::Receiver;
+#[cfg(feature = "os")]
+use crossbeam::channel::Sender;
+#[cfg(feature = "os")]
 use prettytable::Cell;
 #[cfg(feature = "os")]
 use prettytable::Row;
@@ -45,6 +49,12 @@ use zip::ZipArchive;
 #[cfg(feature = "os")]
 use crate::NetInfo;
 #[cfg(feature = "os")]
+use crate::RecvMsg;
+#[cfg(feature = "os")]
+use crate::RecvResponse;
+#[cfg(feature = "os")]
+use crate::SendMsg;
+#[cfg(feature = "os")]
 use crate::error::PistolError;
 #[cfg(feature = "os")]
 use crate::os::dbparser::NmapOsDb;
@@ -57,7 +67,9 @@ use crate::os::osscan6::Fingerprint6;
 #[cfg(feature = "os")]
 use crate::os::osscan6::os_probe_thread6;
 #[cfg(feature = "os")]
-use crate::utils;
+use crate::utils::random_port_range;
+#[cfg(feature = "os")]
+use crate::utils::time_to_string;
 
 #[cfg(feature = "os")]
 pub mod dbparser;
@@ -232,7 +244,7 @@ impl fmt::Display for OsDetects {
         for (addr, detect) in btm_addr {
             match detect {
                 DetectReport::V4(o) => {
-                    let time_cost_str = utils::time_to_string(o.cost);
+                    let time_cost_str = time_to_string(o.cost);
                     let addr_str = format!("{}", addr);
                     total_cost += o.cost.as_secs_f32();
                     if o.alive {
@@ -257,7 +269,7 @@ impl fmt::Display for OsDetects {
                     }
                 }
                 DetectReport::V6(o) => {
-                    let time_cost_str = utils::time_to_string(o.cost);
+                    let time_cost_str = time_to_string(o.cost);
                     let addr_str = format!("{}", addr);
                     total_cost += o.cost.as_secs_f32();
                     if o.alive {
@@ -285,8 +297,8 @@ impl fmt::Display for OsDetects {
             }
         }
         let avg_cost = total_cost / self.detect_reports.len() as f32;
-        let total_cost_str = utils::time_to_string(Duration::from_secs_f32(total_cost));
-        let avg_cost_str = utils::time_to_string(Duration::from_secs_f32(avg_cost));
+        let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost));
+        let avg_cost_str = time_to_string(Duration::from_secs_f32(avg_cost));
         let summary = format!(
             "total used time: {}, avg time cost: {}",
             total_cost_str, avg_cost_str,
@@ -420,6 +432,9 @@ pub fn os_detect(
     threads: usize,
     timeout: Duration,
     top_k: usize,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
 ) -> Result<OsDetects, PistolError> {
     let (tx, rx) = channel();
     let pool = ThreadPool::new(threads);
@@ -473,6 +488,9 @@ pub fn os_detect(
                             nmap_os_db,
                             top_k,
                             timeout,
+                            to_recv,
+                            to_send,
+                            get_response,
                         );
                         os_detect_ret
                     } else {
@@ -530,6 +548,9 @@ pub fn os_detect(
                             top_k,
                             linear,
                             timeout,
+                            to_recv,
+                            to_send,
+                            get_response,
                         );
                         os_detect_ret
                     } else {

@@ -890,7 +890,7 @@ impl PacketFilter {
     }
 }
 
-pub(crate) fn multicast_mac(ip: Ipv6Addr) -> MacAddr {
+pub(crate) fn ipv6_multicast_mac(ip: Ipv6Addr) -> MacAddr {
     let ip = ip.octets();
     // 33:33:FF:xx:xx:xx
     MacAddr::new(0x33, 0x33, 0xFF, ip[13], ip[14], ip[15])

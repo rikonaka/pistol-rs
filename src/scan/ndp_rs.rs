@@ -1,5 +1,4 @@
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::icmpv6;
 use pnet::packet::icmpv6::Icmpv6Code;
 use pnet::packet::icmpv6::Icmpv6Type;
@@ -23,26 +22,14 @@ use crate::layer::PacketFilter;
 use crate::layer::PayloadMatch;
 use crate::layer::PayloadMatchIcmpv6;
 use crate::layer::PayloadMatchIp;
-use crate::layer::find_interface_by_src_ip;
 
 pub(crate) fn build_ndp_ra_scan_packet(
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-) -> Result<(MacAddr, NetworkInterface, Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(MacAddr, Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // router solicitation
     let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
-    // let route_addr_1 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
-    let interface = match find_interface_by_src_ip(src_ipv6.into()) {
-        Some(i) => i,
-        None => {
-            return Err(PistolError::CanNotFoundInterface {
-                i: format!("ipv6 src interface_name({})", src_ipv6),
-            });
-        }
-    };
-    let src_mac = match interface.mac {
-        Some(m) => m,
-        None => return Err(PistolError::CanNotFoundSrcMacAddress),
-    };
+    // let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
 
     // ipv6
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_RA_HEADER_SIZE];
@@ -122,5 +109,5 @@ pub(crate) fn build_ndp_ra_scan_packet(
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
     let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ipv6_buff = Arc::new(ipv6_buff);
-    Ok((dst_mac, interface, ipv6_buff, vec![filter]))
+    Ok((dst_mac, ipv6_buff, vec![filter]))
 }

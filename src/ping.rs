@@ -47,9 +47,11 @@ use crate::NetInfo;
 #[cfg(feature = "ping")]
 use crate::error::PistolError;
 #[cfg(feature = "ping")]
-use crate::scan::PortStatus;
+use crate::layer::PacketFilter;
 #[cfg(feature = "ping")]
 use crate::scan::HasResponse;
+#[cfg(feature = "ping")]
+use crate::scan::PortStatus;
 #[cfg(feature = "ping")]
 use crate::scan::tcp;
 #[cfg(feature = "ping")]
@@ -293,7 +295,7 @@ pub enum PingMethods {
 }
 
 #[cfg(feature = "ping")]
-fn ping_send(
+fn build_ping_buff(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
@@ -310,48 +312,39 @@ fn ping_send(
                 Some(p) => p,
                 None => SYN_PING_DEFAULT_PORT,
             };
-            let receiver = tcp::build_syn_scan_packet(
-                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-            )?;
-            Ok(receiver)
+            let (buff, filters) =
+                tcp::build_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
+            Ok((buff, filters))
         }
         PingMethods::Ack => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => ACK_PING_DEFAULT_PORT,
             };
-            let receiver = tcp::build_ack_scan_packet(
-                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-            )?;
-            Ok(receiver)
+            let (buff, filters) =
+                tcp::build_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
+            Ok((buff, filters))
         }
         PingMethods::Udp => {
             let dst_port = match dst_port {
                 Some(p) => p,
                 None => UDP_PING_DEFAULT_PORT,
             };
-            let receiver = udp::build_udp_scan_packet(
-                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, interface, timeout,
-            )?;
-            Ok(receiver)
+            let (buff, filters) =
+                udp::build_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
+            Ok((buff, filters))
         }
         PingMethods::IcmpEcho => {
-            let receiver = icmp::build_icmp_echo_packet(
-                dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
-            )?;
-            Ok(receiver)
+            let (buff, filters) = icmp::build_icmp_echo_packet(dst_ipv4, src_ipv4)?;
+            Ok((buff, filters))
         }
         PingMethods::IcmpTimeStamp => {
-            let receiver = icmp::build_icmp_timestamp_packet(
-                dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
-            )?;
-            Ok(receiver)
+            let (buff, filters) = icmp::build_icmp_timestamp_packet(dst_ipv4, src_ipv4)?;
+            Ok((buff, filters))
         }
         PingMethods::IcmpAddressMask => {
-            let receiver = icmp::build_icmp_address_mask_packet(
-                dst_mac, dst_ipv4, src_mac, src_ipv4, interface, timeout,
-            )?;
-            Ok(receiver)
+            let (buff, filters) = icmp::build_icmp_address_mask_packet(dst_ipv4, src_ipv4)?;
+            Ok((buff, filters))
         }
         PingMethods::Icmpv6Echo => {
             return Err(PistolError::PingDetectionMethodError {
@@ -577,7 +570,11 @@ fn ping(
                     };
                     let src_ipv4 = match ni.inferred_src_addr {
                         IpAddr::V4(src) => src,
-                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
+                        _ => {
+                            return Err(PistolError::AttackAddressNotMatch {
+                                addr: ni.inferred_src_addr,
+                            });
+                        }
                     };
 
                     let no_port_vec = vec![
@@ -594,7 +591,7 @@ fn ping(
 
                     if retries < max_retries && !data_recved {
                         let start = Instant::now();
-                        let receiver = ping_send(
+                        let receiver = build_ping_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, &interface,
                             method, timeout,
                         )?;
@@ -608,7 +605,11 @@ fn ping(
                 IpAddr::V6(dst_ipv6) => {
                     let src_ipv6 = match ni.inferred_src_addr {
                         IpAddr::V6(src) => src,
-                        _ => return Err(PistolError::AttackAddressNotMatch { addr: ni.inferred_src_addr }),
+                        _ => {
+                            return Err(PistolError::AttackAddressNotMatch {
+                                addr: ni.inferred_src_addr,
+                            });
+                        }
                     };
                     let src_port = match src_port {
                         Some(p) => p,

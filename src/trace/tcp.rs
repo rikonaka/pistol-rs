@@ -145,24 +145,26 @@ pub(crate) fn build_syn_trace_packet(
 }
 
 pub(crate) fn parse_syn_trace_response(eth_response: Arc<[u8]>) -> Result<HopStatus, PistolError> {
-    if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
-        if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
-            if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
-                match ip_packet.get_next_level_protocol() {
-                    IpNextHeaderProtocols::Tcp => {
-                        let ret_ip = ip_packet.get_source();
-                        return Ok(HopStatus::RecvReply(ret_ip.into()));
-                    }
-                    IpNextHeaderProtocols::Icmp => {
-                        if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
-                            let icmp_type = icmp_packet.get_icmp_type();
-                            let ret_ip = ip_packet.get_source();
-                            if icmp_type == IcmpTypes::TimeExceeded {
-                                return Ok(HopStatus::TimeExceeded(ret_ip.into()));
+    if eth_response.len() > 0 {
+        if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
+            if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
+                if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
+                    match ip_packet.get_next_level_protocol() {
+                        IpNextHeaderProtocols::Tcp => {
+                            let addr = ip_packet.get_source();
+                            return Ok(HopStatus::RecvReply(addr.into()));
+                        }
+                        IpNextHeaderProtocols::Icmp => {
+                            if let Some(icmp_packet) = IcmpPacket::new(ip_packet.payload()) {
+                                let icmp_type = icmp_packet.get_icmp_type();
+                                let addr = ip_packet.get_source();
+                                if icmp_type == IcmpTypes::TimeExceeded {
+                                    return Ok(HopStatus::TimeExceeded(addr.into()));
+                                }
                             }
                         }
+                        _ => (),
                     }
-                    _ => (),
                 }
             }
         }

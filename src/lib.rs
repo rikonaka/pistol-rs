@@ -706,9 +706,9 @@ impl NetInfo {
         let infer_mac_outputs = infer_macs(im_inputs, timeout, max_retries)?;
 
         let imo = infer_mac_outputs[&inferred_dst_addr].clone();
-        let dst_mac = imo.dst_mac;
+        let dst_mac = imo.inferred_dst_mac;
         let dst_ports = input.dst_ports.clone();
-        let src_interface = imo.src_interface;
+        let src_interface = imo.inferred_interface;
         if dst_mac == MacAddr::zero()
             && !inferred_dst_addr.is_loopback()
             && !inferred_src_addr.is_loopback()
@@ -786,9 +786,9 @@ impl NetInfo {
         let imo = infer_macs(im_inputs, timeout, max_retries)?;
 
         for (inferred_dst_addr, imo) in imo {
-            let inferred_dst_mac = imo.dst_mac;
+            let inferred_dst_mac = imo.inferred_dst_mac;
             let dst_ports = dst_ports_hm[&inferred_dst_addr].clone();
-            let src_interface = imo.src_interface;
+            let src_interface = imo.inferred_interface;
             let inferred_src_addr = inferred_src_addr_hm[&inferred_dst_addr];
             if inferred_dst_mac == MacAddr::zero()
                 && !inferred_dst_addr.is_loopback()
@@ -866,7 +866,7 @@ impl Default for Pistol {
     fn default() -> Self {
         let to_senders = HashMap::new();
         let to_receivers = HashMap::new();
-        let (push_response, get_response) = unbounded::<(Arc<[u8]>, Duration)>();
+        let (push_response, get_response) = unbounded::<RecvResponse>();
         Pistol {
             interface_name: None,
             log_level: None,

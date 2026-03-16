@@ -92,7 +92,7 @@ use crate::error::PistolError;
 #[cfg(feature = "scan")]
 use crate::layer::find_interface_by_dst_ip;
 #[cfg(any(feature = "scan", feature = "ping"))]
-use crate::layer::multicast_mac;
+use crate::layer::ipv6_multicast_mac;
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[cfg(feature = "scan")]
 use crate::scan::arp::build_arp_scan_packet;
@@ -296,7 +296,7 @@ pub fn arp_scan_raw(
                 src_mac,
                 ether_payload: arp_buff,
                 ether_type: EtherTypes::Arp,
-                retransmit: 0,
+                retransmit: 1,
             };
             if let Err(e) = to_recv.send(recv_msg) {
                 error!("send arp scan recv msg error: {}", e);
@@ -377,7 +377,7 @@ fn arp_scan_thread(
                 src_mac,
                 ether_payload: arp_buff,
                 ether_type: EtherTypes::Arp,
-                retransmit: 0,
+                retransmit: 1,
             };
 
             if let Err(e) = to_recv.send(recv_msg) {
@@ -415,7 +415,7 @@ pub fn ndp_ns_scan_raw(
 
     let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
     let dst_ipv6 = dst_ipv6_ext.link_multicast();
-    let dst_mac = multicast_mac(dst_ipv6);
+    let dst_mac = ipv6_multicast_mac(dst_ipv6);
 
     let mut src_ipv6 = None;
     for ipn in &interface.ips {
@@ -447,7 +447,7 @@ pub fn ndp_ns_scan_raw(
                 src_mac,
                 ether_payload: ndp_ns_buff,
                 ether_type: EtherTypes::Ipv6,
-                retransmit: 0,
+                retransmit: 1,
             };
 
             if let Err(e) = to_recv.send(recv_msg) {
@@ -496,7 +496,7 @@ pub fn ndp_ns_scan_thread(
 
     let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
     let dst_ipv6 = dst_ipv6_ext.link_multicast();
-    let dst_mac = multicast_mac(dst_ipv6);
+    let dst_mac = ipv6_multicast_mac(dst_ipv6);
 
     let mut src_ipv6 = None;
     for ipn in &interface.ips {
@@ -529,7 +529,7 @@ pub fn ndp_ns_scan_thread(
                 src_mac,
                 ether_payload: ndp_ns_buff,
                 ether_type: EtherTypes::Ipv6,
-                retransmit: 0,
+                retransmit: 1,
             };
 
             if let Err(e) = to_recv.send(recv_msg) {
@@ -560,7 +560,7 @@ fn update_neighbor_cache(addr: IpAddr, mac: MacAddr, rtt: Duration) -> Result<()
     Ok(())
 }
 
-fn parse_mac_scan_response(eth_response: Arc<[u8]>) -> Option<(IpAddr, MacAddr)> {
+pub(crate) fn parse_mac_scan_response(eth_response: Arc<[u8]>) -> Option<(IpAddr, MacAddr)> {
     if eth_response.len() == 0 {
         return None;
     }
@@ -1396,7 +1396,7 @@ fn scan_raw(
                     src_mac,
                     ether_payload: buff.clone(),
                     ether_type: EtherTypes::Ipv4,
-                    retransmit: 0,
+                    retransmit: 1,
                 };
                 if let Err(e) = to_recv.send(recv_msg) {
                     error!("send scan recv msg error: {}", e);
@@ -1428,7 +1428,7 @@ fn scan_raw(
                     src_mac,
                     ether_payload: buff.clone(),
                     ether_type: EtherTypes::Ipv4,
-                    retransmit: 0,
+                    retransmit: 1,
                 };
                 if let Err(e) = to_recv.send(recv_msg) {
                     error!("send scan recv msg error: {}", e);

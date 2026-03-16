@@ -6,6 +6,8 @@ use chrono::Local;
 use crossbeam::channel::Receiver;
 #[cfg(feature = "trace")]
 use crossbeam::channel::Sender;
+#[cfg(feature = "trace")]
+use pnet::datalink::MacAddr;
 #[cfg(any(feature = "trace", feature = "os"))]
 use pnet::packet::ethernet::EtherTypes;
 #[cfg(any(feature = "trace", feature = "os"))]
@@ -23,6 +25,11 @@ use rand::RngExt;
 use std::fmt;
 #[cfg(any(feature = "trace", feature = "os"))]
 use std::net::IpAddr;
+#[cfg(any(feature = "trace", feature = "os"))]
+use std::net::Ipv4Addr;
+#[cfg(any(feature = "trace", feature = "os"))]
+use std::net::Ipv6Addr;
+use std::thread::sleep;
 #[cfg(any(feature = "trace", feature = "os"))]
 use std::time::Duration;
 #[cfg(feature = "trace")]
@@ -136,6 +143,184 @@ impl Trace {
     }
 }
 
+const TRACE_MAX_RETRY: u8 = 3;
+const TRACE_RETRY_INTERVAL: f32 = 0.5;
+const TRACE_MAX_HOPS: u8 = 30;
+
+fn syn_trace_ipv4(
+    dst_mac: MacAddr,
+    dst_ipv4: Ipv4Addr,
+    dst_port: u16,
+    src_mac: MacAddr,
+    src_ipv4: Ipv4Addr,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
+    let mut trace = Trace::new(dst_ipv4.into());
+    let mut rng = rand::rng();
+    let mut ip_id: u16 = rng.random();
+    // ensure that this u16 does not overflow
+    if ip_id >= u16::MAX - 30 {
+        ip_id -= 30
+    }
+    let mut last_response_ttl = 0;
+    for ttl in 1..=TRACE_MAX_HOPS {
+        let random_src_port = random_port_range(1000, 65535);
+        let (buff, filters) =
+            tcp::build_syn_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
+
+        for _ in 0..TRACE_MAX_RETRY {
+            let recv_msg_id = random_recv_msg_id();
+            let recv_msg = RecvMsg {
+                id: recv_msg_id,
+                filters: filters.clone(),
+                created: Instant::now(),
+                elapsed: timeout,
+            };
+            let send_msg = SendMsg {
+                dst_mac,
+                src_mac,
+                ether_payload: buff.clone(),
+                ether_type: EtherTypes::Ipv4,
+                retransmit: 1,
+            };
+
+            if let Err(e) = to_recv.send(recv_msg) {
+                error!("send trace recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send trace packet error: {}", e);
+            }
+
+            let recv_response = match get_response.recv_timeout(timeout) {
+                Ok(r) => {
+                    if r.id == recv_msg_id && r.data.len() > 0 {
+                        r
+                    } else {
+                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    // The timeout error, means no response for this ttl, continue to next ttl.
+                    debug!("ipv4 syn trace recv timeout for ttl: {}", ttl);
+                    // wait for a while before retrying
+                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                    continue;
+                }
+            };
+            let hop_status = tcp::parse_syn_trace_response(recv_response.data)?;
+            match hop_status {
+                HopStatus::TimeExceeded(_addr) => {
+                    // route returned packet
+                    last_response_ttl = ttl;
+                    // break the retry loop
+                    break;
+                }
+                HopStatus::RecvReply(_) => {
+                    // tcp rst packet, means packet arrive the target machine
+                    debug!(
+                        "ttl: {}, {:?} - {:.2}s",
+                        ttl,
+                        hop_status,
+                        recv_response.rtt.as_secs_f64()
+                    );
+                    trace.finish(ttl);
+                    return Ok(trace);
+                }
+                _ => break, // if any response has received, break the retry loop, and continue to next ttl.
+            }
+        }
+        ip_id += 1;
+    }
+    debug!("last ttl: {}", last_response_ttl);
+    trace.finish(last_response_ttl);
+    Ok(trace)
+}
+
+fn syn_trace_ipv6(
+    dst_mac: MacAddr,
+    dst_ipv6: Ipv6Addr,
+    dst_port: u16,
+    src_mac: MacAddr,
+    src_ipv6: Ipv6Addr,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
+    let mut trace = Trace::new(dst_ipv6.into());
+    let mut last_response_hop_limit = 0;
+    for hop_limit in 1..=TRACE_MAX_HOPS {
+        let random_src_port = random_port_range(1000, 65535);
+        let (buff, filters) =
+            tcp6::build_syn_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
+
+        for _ in 0..TRACE_MAX_RETRY {
+            let recv_msg_id = random_recv_msg_id();
+            let recv_msg = RecvMsg {
+                id: recv_msg_id,
+                filters: filters.clone(),
+                created: Instant::now(),
+                elapsed: timeout,
+            };
+            let send_msg = SendMsg {
+                dst_mac,
+                src_mac,
+                ether_payload: buff.clone(),
+                ether_type: EtherTypes::Ipv6,
+                retransmit: 1,
+            };
+            if let Err(e) = to_recv.send(recv_msg) {
+                error!("send trace recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send trace packet error: {}", e);
+            }
+
+            let recv_response = match get_response.recv_timeout(timeout) {
+                Ok(r) => {
+                    if r.id == recv_msg_id && r.data.len() > 0 {
+                        r
+                    } else {
+                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    debug!("ipv6 syn trace recv timeout for hop limit: {}", hop_limit);
+                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                    continue;
+                }
+            };
+            let hop_status = tcp6::parse_syn_trace_response(recv_response.data)?;
+            match hop_status {
+                HopStatus::TimeExceeded(_addr) => {
+                    last_response_hop_limit = hop_limit;
+                    break;
+                }
+                HopStatus::RecvReply(_addr) => {
+                    debug!(
+                        "hop_limit: {}, {:?} - {:.2}s",
+                        hop_limit,
+                        hop_status,
+                        recv_response.rtt.as_secs_f64()
+                    );
+                    // tcp rst packet, means packet arrive the target machine
+                    trace.finish(hop_limit);
+                    return Ok(trace);
+                }
+                _ => break,
+            }
+        }
+    }
+    debug!("last hop limit: {}", last_response_hop_limit);
+    trace.finish(last_response_hop_limit);
+    Ok(trace)
+}
+
 /// The default target port is 80 if not specified.
 #[cfg(feature = "trace")]
 pub fn syn_trace(
@@ -145,7 +330,6 @@ pub fn syn_trace(
     to_send: Sender<SendMsg>,
     get_response: Receiver<RecvResponse>,
 ) -> Result<Trace, PistolError> {
-    let mut trace = Trace::new(net_info.inferred_dst_addr);
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let dst_port = if net_info.dst_ports.len() > 0 {
@@ -154,7 +338,6 @@ pub fn syn_trace(
         80
     };
     let src_mac = net_info.inferred_src_mac;
-    let interface = &net_info.interface;
 
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -166,82 +349,17 @@ pub fn syn_trace(
                     });
                 }
             };
-
-            let mut rng = rand::rng();
-            let mut ip_id: u16 = rng.random();
-            // ensure that this u16 does not overflow
-            if ip_id >= u16::MAX - 30 {
-                ip_id -= 30
-            }
-            let mut last_response_ttl = 0;
-            for ttl in 1..=30 {
-                let random_src_port = random_port_range(1000, 65535);
-                let start = Instant::now();
-                let (buff, filters) = tcp::build_syn_trace_packet(
-                    dst_ipv4,
-                    dst_port,
-                    src_ipv4,
-                    random_src_port,
-                    ip_id,
-                    ttl,
-                )?;
-
-                let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RecvMsg {
-                    id: recv_msg_id,
-                    filters,
-                    created: Instant::now(),
-                    elapsed: timeout,
-                };
-                let send_msg = SendMsg {
-                    dst_mac,
-                    src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type: EtherTypes::Ipv4,
-                    retransmit: 0,
-                };
-                if let Err(e) = to_recv.send(recv_msg) {
-                    error!("send scan recv msg error: {}", e);
-                }
-                if let Err(e) = to_send.send(send_msg) {
-                    error!("send scan packet error: {}", e);
-                }
-
-                match get_response.recv_timeout(timeout) {
-                    Ok(r) => {
-                        if r.id == recv_msg_id && r.data.len() > 0 {
-                            ip_id += 1;
-                            let hop_status = tcp::parse_syn_trace_response(r.data)?;
-                            match hop_status {
-                                HopStatus::TimeExceeded(_) => {
-                                    // continue to next ttl,
-                                    // but record the last ttl that receive time exceeded response.
-                                    last_response_ttl = ttl;
-                                }
-                                HopStatus::RecvReply(_) => {
-                                    // tcp rst packet, means packet arrive the target machine
-                                    debug!(
-                                        "ttl: {}, {:?} - {:.2}s",
-                                        ttl,
-                                        hop_status,
-                                        r.rtt.as_secs_f64()
-                                    );
-                                    trace.finish(ttl);
-                                    return Ok(trace);
-                                }
-                                _ => (),
-                            }
-                        }
-                    }
-                    Err(_e) => {
-                        debug!("recv timeout for ttl: {}, filters: {:?}", ttl, filters);
-                        break;
-                    }
-                }
-            }
-            debug!("last ttl: {}", last_response_ttl);
-            trace.finish(last_response_ttl);
-            Ok(trace)
+            syn_trace_ipv4(
+                dst_mac,
+                dst_ipv4,
+                dst_port,
+                src_mac,
+                src_ipv4,
+                timeout,
+                to_recv,
+                to_send,
+                get_response,
+            )
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match net_info.inferred_src_addr {
@@ -252,59 +370,208 @@ pub fn syn_trace(
                     });
                 }
             };
-
-            let mut last_response_hop_limit = 0;
-            for hop_limit in 1..=30 {
-                let random_src_port = utils::random_port_range(1000, 65535);
-                let start = Instant::now();
-                let receiver = tcp6::build_syn_trace_packet(
-                    dst_mac,
-                    dst_ipv6,
-                    dst_port,
-                    src_mac,
-                    src_ipv6,
-                    random_src_port,
-                    interface,
-                    hop_limit,
-                    timeout,
-                )?;
-                let (hop_status, rtt) = tcp6::parse_syn_trace_response(start, timeout, receiver)?;
-                match hop_status {
-                    HopStatus::TimeExceeded(_) => {
-                        last_response_hop_limit = hop_limit;
-                    }
-                    HopStatus::RecvReply(_) => {
-                        debug!(
-                            "hop_limit: {}, {:?} - {:.2}s",
-                            hop_limit,
-                            hop_status,
-                            rtt.as_secs_f64()
-                        );
-                        // tcp rst packet, means packet arrive the target machine
-                        trace.finish(hop_limit);
-                        return Ok(trace);
-                    }
-                    _ => (),
-                }
-            }
-            debug!("last hop limit: {}", last_response_hop_limit);
-            trace.finish(last_response_hop_limit);
-            Ok(trace)
+            syn_trace_ipv6(
+                dst_mac,
+                dst_ipv6,
+                dst_port,
+                src_mac,
+                src_ipv6,
+                timeout,
+                to_recv,
+                to_send,
+                get_response,
+            )
         }
     }
 }
 
-#[cfg(any(feature = "trace", feature = "os"))]
-pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
-    let mut trace = Trace::new(net_info.inferred_dst_addr);
+fn icmp_trace_ipv4(
+    dst_mac: MacAddr,
+    dst_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
+    src_ipv4: Ipv4Addr,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
+    let mut trace = Trace::new(dst_ipv4.into());
+    let mut rng = rand::rng();
+    let mut ip_id = rng.random();
+    let icmp_id: u16 = rng.random();
+    if ip_id >= u16::MAX - 30 {
+        ip_id -= 30;
+    }
+    let mut last_response_ttl = 0;
+    for ttl in 1..=TRACE_MAX_HOPS {
+        let (buff, filters) =
+            icmp::send_icmp_trace_packet(dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16)?;
+
+        for _ in 0..TRACE_MAX_RETRY {
+            let recv_msg_id = random_recv_msg_id();
+            let recv_msg = RecvMsg {
+                id: recv_msg_id,
+                filters: filters.clone(),
+                created: Instant::now(),
+                elapsed: timeout,
+            };
+            let send_msg = SendMsg {
+                dst_mac,
+                src_mac,
+                ether_payload: buff.clone(),
+                ether_type: EtherTypes::Ipv4,
+                retransmit: 1,
+            };
+            if let Err(e) = to_recv.send(recv_msg) {
+                error!("send trace recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send trace packet error: {}", e);
+            }
+
+            let recv_response = match get_response.recv_timeout(timeout) {
+                Ok(r) => {
+                    if r.id == recv_msg_id && r.data.len() > 0 {
+                        r
+                    } else {
+                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    debug!("icmp trace recv timeout for ttl: {}", ttl);
+                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                    continue;
+                }
+            };
+
+            let hop_status = icmp::parse_icmp_trace_response(recv_response.data)?;
+            match hop_status {
+                HopStatus::TimeExceeded(_addr) => {
+                    last_response_ttl = ttl;
+                    break;
+                }
+                HopStatus::RecvReply(_addr) => {
+                    // recv echo reply, means packet arrive the target machine
+                    debug!(
+                        "ttl: {}, {:?} - {:.2}s",
+                        ttl,
+                        hop_status,
+                        recv_response.rtt.as_secs_f64()
+                    );
+                    trace.finish(ttl);
+                    return Ok(trace);
+                }
+                _ => break,
+            }
+        }
+        ip_id += 1;
+    }
+    debug!("last ttl: {}", last_response_ttl);
+    trace.finish(last_response_ttl);
+    Ok(trace)
+}
+
+fn icmp_trace_ipv6(
+    dst_mac: MacAddr,
+    dst_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
+    src_ipv6: Ipv6Addr,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
+    let mut trace = Trace::new(dst_ipv6.into());
     let mut rng = rand::rng();
     let icmp_id: u16 = rng.random();
 
+    let mut last_response_hop_limit = 0;
+    for hop_limit in 1..=TRACE_MAX_HOPS {
+        let (buff, filters) = icmpv6::build_icmpv6_trace_packet(
+            dst_ipv6,
+            src_ipv6,
+            hop_limit,
+            icmp_id,
+            hop_limit as u16,
+        )?;
+
+        for _ in 0..TRACE_MAX_RETRY {
+            let recv_msg_id = random_recv_msg_id();
+            let recv_msg = RecvMsg {
+                id: recv_msg_id,
+                filters: filters.clone(),
+                created: Instant::now(),
+                elapsed: timeout,
+            };
+            let send_msg = SendMsg {
+                dst_mac,
+                src_mac,
+                ether_payload: buff.clone(),
+                ether_type: EtherTypes::Ipv6,
+                retransmit: 1,
+            };
+            if let Err(e) = to_recv.send(recv_msg) {
+                error!("send trace recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send trace packet error: {}", e);
+            }
+
+            let recv_response = match get_response.recv_timeout(timeout) {
+                Ok(r) => {
+                    if r.id == recv_msg_id && r.data.len() > 0 {
+                        r
+                    } else {
+                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    debug!("ipv6 icmp trace recv timeout for hop limit: {}", hop_limit);
+                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                    continue;
+                }
+            };
+
+            let hop_status = icmpv6::parse_icmpv6_trace_response(recv_response.data)?;
+            match hop_status {
+                HopStatus::TimeExceeded(_addr) => {
+                    last_response_hop_limit = hop_limit;
+                    break;
+                }
+                // recv echo reply, means packet arrive the target machine
+                HopStatus::RecvReply(_addr) => {
+                    debug!(
+                        "hop_limit: {}, {:?} - {:.2}s",
+                        hop_limit,
+                        hop_status,
+                        recv_response.rtt.as_secs_f64()
+                    );
+                    trace.finish(hop_limit);
+                    return Ok(trace);
+                }
+                _ => break,
+            }
+        }
+    }
+    debug!("last hop limit: {}", last_response_hop_limit);
+    trace.finish(last_response_hop_limit);
+    Ok(trace)
+}
+
+#[cfg(any(feature = "trace", feature = "os"))]
+pub fn icmp_trace(
+    net_info: NetInfo,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
-    let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match src_addr {
@@ -313,33 +580,16 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let mut ip_id = rng.random();
-            if ip_id >= u16::MAX - 30 {
-                ip_id -= 30;
-            }
-            let mut last_response_ttl = 0;
-            for ttl in 1..=30 {
-                let start = Instant::now();
-                let receiver = icmp::send_icmp_trace_packet(
-                    dst_mac, dst_ipv4, src_mac, src_ipv4, interface, ip_id, ttl, icmp_id,
-                    ttl as u16, timeout,
-                )?;
-                let (hop_status, rtt) = icmp::parse_icmp_trace_response(start, timeout, receiver)?;
-                ip_id += 1;
-                match hop_status {
-                    HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
-                    // recv echo reply, means packet arrive the target machine
-                    HopStatus::RecvReply(_) => {
-                        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
-                        trace.finish(ttl);
-                        return Ok(trace);
-                    }
-                    _ => (),
-                }
-            }
-            debug!("last ttl: {}", last_response_ttl);
-            trace.finish(last_response_ttl);
-            Ok(trace)
+            icmp_trace_ipv4(
+                dst_mac,
+                dst_ipv4,
+                src_mac,
+                src_ipv4,
+                timeout,
+                to_recv,
+                to_send,
+                get_response,
+            )
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match src_addr {
@@ -348,53 +598,203 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let mut last_response_hop_limit = 0;
-            for hop_limit in 1..=30 {
-                let start = Instant::now();
-                let receiver = icmpv6::build_icmpv6_trace_packet(
-                    dst_mac,
-                    dst_ipv6,
-                    src_mac,
-                    src_ipv6,
-                    interface,
-                    hop_limit,
-                    icmp_id,
-                    hop_limit as u16,
-                    timeout,
-                )?;
-                let (hop_status, rtt) =
-                    icmpv6::parse_icmpv6_trace_response(start, timeout, receiver)?;
-                match hop_status {
-                    HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
-                    // recv echo reply, means packet arrive the target machine
-                    HopStatus::RecvReply(_) => {
-                        debug!(
-                            "hop_limit: {}, {:?} - {:.2}s",
-                            hop_limit,
-                            hop_status,
-                            rtt.as_secs_f64()
-                        );
-                        trace.finish(hop_limit);
-                        return Ok(trace);
-                    }
-                    _ => (),
-                }
-            }
-            debug!("last hop limit: {}", last_response_hop_limit);
-            trace.finish(last_response_hop_limit);
-            Ok(trace)
+            icmp_trace_ipv6(
+                dst_mac,
+                dst_ipv6,
+                src_mac,
+                src_ipv6,
+                timeout,
+                to_recv,
+                to_send,
+                get_response,
+            )
         }
     }
 }
 
+fn udp_trace_ipv4(
+    dst_mac: MacAddr,
+    dst_ipv4: Ipv4Addr,
+    src_mac: MacAddr,
+    src_ipv4: Ipv4Addr,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
+    let mut trace = Trace::new(dst_ipv4.into());
+    let mut rng = rand::rng();
+    let mut ip_id: u16 = rng.random();
+    if ip_id >= u16::MAX - 30 {
+        ip_id -= 30;
+    }
+    let mut last_response_ttl = 0;
+    for ttl in 1..=30 {
+        let random_src_port = random_port_range(1000, 65535);
+        let dst_port = START_PORT + (ttl - 1) as u16;
+        let (buff, filters) =
+            udp::build_udp_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
+
+        for _ in 0..TRACE_MAX_RETRY {
+            let recv_msg_id = random_recv_msg_id();
+            let recv_msg = RecvMsg {
+                id: recv_msg_id,
+                filters: filters.clone(),
+                created: Instant::now(),
+                elapsed: timeout,
+            };
+            let send_msg = SendMsg {
+                dst_mac,
+                src_mac,
+                ether_payload: buff.clone(),
+                ether_type: EtherTypes::Ipv4,
+                retransmit: 1,
+            };
+            if let Err(e) = to_recv.send(recv_msg) {
+                error!("send trace recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send trace packet error: {}", e);
+            }
+
+            let recv_response = match get_response.recv_timeout(timeout) {
+                Ok(r) => {
+                    if r.id == recv_msg_id && r.data.len() > 0 {
+                        r
+                    } else {
+                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    debug!("ipv4 udp trace recv timeout for ttl: {}", ttl);
+                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                    continue;
+                }
+            };
+
+            let hop_status = udp::parse_udp_trace_response(recv_response.data)?;
+            match hop_status {
+                HopStatus::TimeExceeded(_addr) => {
+                    last_response_ttl = ttl;
+                    break;
+                }
+                // icmpunreachable, means packet arrive the target machine
+                HopStatus::RecvReply(_addr) | HopStatus::Unreachable(_addr) => {
+                    debug!(
+                        "ttl: {}, {:?} - {:.2}s",
+                        ttl,
+                        hop_status,
+                        recv_response.rtt.as_secs_f64()
+                    );
+                    trace.finish(ttl);
+                    return Ok(trace);
+                }
+                _ => break,
+            }
+        }
+        ip_id += 1;
+    }
+    debug!("last ttl: {}", last_response_ttl);
+    trace.finish(last_response_ttl);
+    Ok(trace)
+}
+
+fn udp_trace_ipv6(
+    dst_mac: MacAddr,
+    dst_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
+    src_ipv6: Ipv6Addr,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
+    let mut trace = Trace::new(dst_ipv6.into());
+
+    let mut last_response_hop_limit = 0;
+    for hop_limit in 1..=30 {
+        let random_src_port = random_port_range(1000, 65535);
+        let dst_port = START_PORT + (hop_limit - 1) as u16;
+        let (buff, filters) =
+            udp6::build_udp_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
+
+        for _ in 0..TRACE_MAX_RETRY {
+            let recv_msg_id = random_recv_msg_id();
+            let recv_msg = RecvMsg {
+                id: recv_msg_id,
+                filters: filters.clone(),
+                created: Instant::now(),
+                elapsed: timeout,
+            };
+            let send_msg = SendMsg {
+                dst_mac,
+                src_mac,
+                ether_payload: buff.clone(),
+                ether_type: EtherTypes::Ipv6,
+                retransmit: 1,
+            };
+            if let Err(e) = to_recv.send(recv_msg) {
+                error!("send trace recv msg error: {}", e);
+            }
+            if let Err(e) = to_send.send(send_msg) {
+                error!("send trace packet error: {}", e);
+            }
+
+            let recv_response = match get_response.recv_timeout(timeout) {
+                Ok(r) => {
+                    if r.id == recv_msg_id && r.data.len() > 0 {
+                        r
+                    } else {
+                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                        continue;
+                    }
+                }
+                Err(_e) => {
+                    debug!("ipv6 udp trace recv timeout for hop limit: {}", hop_limit);
+                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
+                    continue;
+                }
+            };
+
+            let hop_status = udp6::recv_udp_trace_packet(recv_response.data)?;
+            match hop_status {
+                HopStatus::TimeExceeded(_addr) => {
+                    last_response_hop_limit = hop_limit;
+                    break;
+                }
+                HopStatus::RecvReply(_addr) | HopStatus::Unreachable(_addr) => {
+                    // icmp unreachable, means packet arrive the target machine
+                    debug!(
+                        "hop limit: {}, {:?} - {:.2}s",
+                        hop_limit,
+                        hop_status,
+                        recv_response.rtt.as_secs_f64()
+                    );
+                    trace.finish(hop_limit);
+                    return Ok(trace);
+                }
+                _ => break,
+            }
+        }
+    }
+    debug!("last hop limit: {}", last_response_hop_limit);
+    trace.finish(last_response_hop_limit);
+    Ok(trace)
+}
+
 #[cfg(feature = "trace")]
-pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
-    let mut trace = Trace::new(net_info.inferred_dst_addr);
+pub fn udp_trace(
+    net_info: NetInfo,
+    timeout: Duration,
+    to_recv: Sender<RecvMsg>,
+    to_send: Sender<SendMsg>,
+    get_response: Receiver<RecvResponse>,
+) -> Result<Trace, PistolError> {
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
-    let interface = &net_info.interface;
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match src_addr {
@@ -403,44 +803,16 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let mut rng = rand::rng();
-            let mut ip_id: u16 = rng.random();
-            if ip_id >= u16::MAX - 30 {
-                ip_id -= 30;
-            }
-            let mut last_response_ttl = 0;
-            for ttl in 1..=30 {
-                let random_src_port = utils::random_port_range(1000, 65535);
-                let dst_port = START_PORT + (ttl - 1) as u16;
-                let start = Instant::now();
-                let receiver = udp::build_udp_trace_packet(
-                    dst_mac,
-                    dst_ipv4,
-                    dst_port,
-                    src_mac,
-                    src_ipv4,
-                    random_src_port,
-                    interface,
-                    ip_id,
-                    ttl,
-                    timeout,
-                )?;
-                let (hop_status, rtt) = udp::parse_udp_trace_response(start, timeout, receiver)?;
-                ip_id += 1;
-                match hop_status {
-                    HopStatus::TimeExceeded(_) => last_response_ttl = ttl,
-                    // icmpunreachable, means packet arrive the target machine
-                    HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
-                        debug!("ttl: {}, {:?} - {:.2}s", ttl, hop_status, rtt.as_secs_f64());
-                        trace.finish(ttl);
-                        return Ok(trace);
-                    }
-                    _ => (),
-                }
-            }
-            debug!("last ttl: {}", last_response_ttl);
-            trace.finish(last_response_ttl);
-            Ok(trace)
+            udp_trace_ipv4(
+                dst_mac,
+                dst_ipv4,
+                src_mac,
+                src_ipv4,
+                timeout,
+                to_recv,
+                to_send,
+                get_response,
+            )
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match src_addr {
@@ -449,119 +821,16 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let mut last_response_hop_limit = 0;
-            for hop_limit in 1..=30 {
-                let random_src_port = utils::random_port_range(1000, 65535);
-                let dst_port = START_PORT + (hop_limit - 1) as u16;
-                let start = Instant::now();
-                let receiver = udp6::build_udp_trace_packet(
-                    dst_mac,
-                    dst_ipv6,
-                    dst_port,
-                    src_mac,
-                    src_ipv6,
-                    random_src_port,
-                    interface,
-                    hop_limit,
-                    timeout,
-                )?;
-                let (hop_status, rtt) = udp6::recv_udp_trace_packet(start, timeout, receiver)?;
-                match hop_status {
-                    HopStatus::TimeExceeded(_) => last_response_hop_limit = hop_limit,
-                    // icmpunreachable, means packet arrive the target machine
-                    HopStatus::RecvReply(_) | HopStatus::Unreachable(_) => {
-                        debug!(
-                            "hop limit: {}, {:?} - {:.2}s",
-                            hop_limit,
-                            hop_status,
-                            rtt.as_secs_f64()
-                        );
-                        trace.finish(hop_limit);
-                        return Ok(trace);
-                    }
-                    _ => (),
-                }
-            }
-            debug!("last hop limit: {}", last_response_hop_limit);
-            trace.finish(last_response_hop_limit);
-            Ok(trace)
+            udp_trace_ipv6(
+                dst_mac,
+                dst_ipv6,
+                src_mac,
+                src_ipv6,
+                timeout,
+                to_recv,
+                to_send,
+                get_response,
+            )
         }
-    }
-}
-
-#[cfg(feature = "trace")]
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Pistol;
-    use std::net::Ipv4Addr;
-    use std::net::Ipv6Addr;
-    use std::str::FromStr;
-    #[test]
-    fn test_get_hops_syn() {
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
-        let dst_addr = IpAddr::V4(Ipv4Addr::new(182, 61, 244, 181));
-        let dst_ports = vec![];
-        let src_addr = Some(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)));
-        let src_port = None;
-        let timeout = Duration::from_secs_f64(5.0);
-
-        let mut pistol = Pistol::new();
-        let (net_info, _dur) = pistol
-            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
-            .unwrap();
-        let trace = syn_trace(net_info, timeout).unwrap();
-        println!("{}", trace);
-    }
-    #[test]
-    fn test_get_hops_icmp() {
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
-        let dst_addr = IpAddr::V4(Ipv4Addr::new(182, 61, 244, 181));
-        let dst_ports = vec![];
-        let src_addr = Some(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)));
-        let src_port = None;
-        let timeout = Duration::from_secs_f64(5.0);
-
-        let mut pistol = Pistol::new();
-        let (net_info, _dur) = pistol
-            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
-            .unwrap();
-        let trace = icmp_trace(net_info, timeout).unwrap();
-        println!("{}", trace);
-    }
-    #[test]
-    fn test_get_hops_udp() {
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 3);
-        let dst_addr = IpAddr::V4(Ipv4Addr::new(182, 61, 244, 181));
-        let dst_ports = vec![];
-        let src_addr = Some(IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)));
-        let src_port = None;
-        let timeout = Duration::from_secs_f64(5.0);
-
-        let mut pistol = Pistol::new();
-        let (net_info, _dur) = pistol
-            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
-            .unwrap();
-        let trace = udp_trace(net_info, timeout).unwrap();
-        println!("{}", trace);
-    }
-    #[test]
-    fn test_get_hops_udp6() {
-        let dst_addr = IpAddr::V6(Ipv6Addr::from_str("fe80::20c:29ff:fe2c:9e4").unwrap());
-        let dst_ports = vec![];
-        let src_addr = Some(IpAddr::V6(
-            Ipv6Addr::from_str("fe80::20c:29ff:fe5b:bd5c").unwrap(),
-        ));
-        let src_port = None;
-        let timeout = Duration::from_secs_f64(5.0);
-
-        let mut pistol = Pistol::new();
-        let (net_info, _dur) = pistol
-            .init_runner_raw(dst_addr, dst_ports, src_addr, src_port)
-            .unwrap();
-        let trace = udp_trace(net_info, timeout).unwrap();
-        println!("{}", trace);
     }
 }
