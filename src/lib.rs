@@ -98,7 +98,6 @@ use crate::scan::MacScans;
 use crate::scan::PortScan;
 #[cfg(feature = "scan")]
 use crate::scan::PortScans;
-use crate::scan::tcp;
 #[cfg(feature = "trace")]
 use crate::trace::Trace;
 #[cfg(feature = "vs")]
@@ -549,23 +548,25 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 ];
 
 #[derive(Debug, Clone)]
-struct SendMsg {
-    dst_mac: MacAddr,         // destination mac address
-    src_mac: MacAddr,         // source mac address
-    ether_payload: Arc<[u8]>, // the layer3 packet to send
-    ether_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
-    retransmit: usize,        // how many times to retransmit the packet, 0 means no retransmission
+struct SRequest {
+    interface_name: String, // the interface to send the packet, e.g., eth0
+    dst_mac: MacAddr,       // destination mac address
+    src_mac: MacAddr,       // source mac address
+    eth_payload: Arc<[u8]>, // the layer3 packet to send
+    eth_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
+    retransmit: usize,      // how many times to retransmit the packet, 0 means no retransmission
 }
 
 #[derive(Debug, Clone)]
-struct RecvMsg {
-    id: u64,                         // unique id for this recv msg,
+struct RRequest {
+    interface_name: String, // the interface to receive the packet, e.g., eth0
+    id: u64,                // unique id for this recv msg,
     filters: Vec<Arc<PacketFilter>>, // runner receive filters to match
-    created: Instant,                // create time, used to drop if exceed timeout
-    elapsed: Duration,               // elapsed time, used to drop if exceed timeout
+    created: Instant,       // create time, used to drop if exceed timeout
+    elapsed: Duration,      // elapsed time, used to drop if exceed timeout
 }
 
-impl RecvMsg {
+impl RRequest {
     fn check_packet(&self, received_packet: &[u8]) -> bool {
         for filter in &self.filters {
             if filter.check(received_packet) {
@@ -577,12 +578,15 @@ impl RecvMsg {
     }
 }
 
-struct RecvResponse {
+/// The response from receiver to runner, which contains the matched packet and the round-trip time (RTT).
+#[derive(Debug, Clone)]
+struct RResponse {
     id: u64,
     data: Arc<[u8]>,
     rtt: Duration,
 }
 
+#[derive(Debug, Clone)]
 struct RunnerInput {
     interface_name: String,
     dst_mac: MacAddr,
@@ -630,7 +634,7 @@ struct NetInfo {
     dst_ports: Vec<u16>,
     /// User input source port.
     src_port: Option<u16>,
-    interface: NetworkInterface,
+    interface_name: String,
     /// Whether the network information is cached or inferred.
     cached: bool,
     cost: Duration,
@@ -648,7 +652,7 @@ impl fmt::Display for NetInfo {
                 self.inferred_dst_addr,
                 self.inferred_src_addr,
                 self.dst_ports,
-                self.interface.name
+                self.interface_name
             );
             write!(f, "{}", output)
         } else {
@@ -663,7 +667,6 @@ impl fmt::Display for NetInfo {
 
 impl NetInfo {
     fn invalid() -> Self {
-        let fake_interface = fake_interface();
         NetInfo {
             inferred_dst_mac: MacAddr::zero(),
             inferred_src_mac: MacAddr::zero(),
@@ -673,13 +676,18 @@ impl NetInfo {
             src_addr: None,
             dst_ports: Vec::new(),
             src_port: None,
-            interface: fake_interface,
+            interface_name: String::new(),
             cached: true,
             cost: Duration::ZERO,
             valid: false,
         }
     }
-    fn detect(input: &NetInfoInput) -> Result<Self, PistolError> {
+    fn detect(
+        input: &NetInfoInput,
+        push_rd: Sender<RRequest>,
+        push_sd: Sender<SRequest>,
+        get_response: Receiver<RResponse>,
+    ) -> Result<Self, PistolError> {
         let dst_addr = input.dst_addr;
         let src_addr = input.src_addr;
         debug!("infer dst_addr({})...", dst_addr);
@@ -703,7 +711,14 @@ impl NetInfo {
         // and we don't want to wait too long for the response.
         let timeout = Duration::from_secs_f32(0.5);
         let max_retries = 2;
-        let infer_mac_outputs = infer_macs(im_inputs, timeout, max_retries)?;
+        let infer_mac_outputs = infer_macs(
+            im_inputs,
+            timeout,
+            max_retries,
+            push_rd,
+            push_sd,
+            get_response,
+        )?;
 
         let imo = infer_mac_outputs[&inferred_dst_addr].clone();
         let dst_mac = imo.inferred_dst_mac;
@@ -722,29 +737,33 @@ impl NetInfo {
         } else {
             let src_port = input.src_port;
             let cached = imo.cached;
-            match src_interface.mac {
-                Some(src_mac) => {
-                    let ni = Self {
-                        inferred_dst_mac: dst_mac,
-                        inferred_src_mac: src_mac,
-                        inferred_dst_addr,
-                        inferred_src_addr,
-                        dst_addr,
-                        src_addr,
-                        dst_ports,
-                        src_port,
-                        interface: src_interface,
-                        cached,
-                        cost: Duration::ZERO,
-                        valid: true,
-                    };
-                    Ok(ni)
-                }
-                None => Err(PistolError::CanNotFoundSrcMacAddress),
-            }
+            let src_mac = src_interface
+                .mac
+                .ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+            let interface_name = src_interface.name.clone();
+            let ni = Self {
+                inferred_dst_mac: dst_mac,
+                inferred_src_mac: src_mac,
+                inferred_dst_addr,
+                inferred_src_addr,
+                dst_addr,
+                src_addr,
+                dst_ports,
+                src_port,
+                interface_name,
+                cached,
+                cost: Duration::ZERO,
+                valid: true,
+            };
+            Ok(ni)
         }
     }
-    fn detects(inputs: Vec<NetInfoInput>) -> Result<Vec<Self>, PistolError> {
+    fn detects(
+        inputs: Vec<NetInfoInput>,
+        push_rd: Sender<RRequest>,
+        push_sd: Sender<SRequest>,
+        get_response: Receiver<RResponse>,
+    ) -> Result<Vec<Self>, PistolError> {
         let mut rets = Vec::new();
         let mut inferred_src_addr_hm = HashMap::new();
         let mut im_inputs = Vec::new();
@@ -783,7 +802,14 @@ impl NetInfo {
         // and we don't want to wait too long for the response.
         let timeout = Duration::from_secs_f32(0.5);
         let max_retries = 2;
-        let imo = infer_macs(im_inputs, timeout, max_retries)?;
+        let imo = infer_macs(
+            im_inputs,
+            timeout,
+            max_retries,
+            push_rd,
+            push_sd,
+            get_response,
+        )?;
 
         for (inferred_dst_addr, imo) in imo {
             let inferred_dst_mac = imo.inferred_dst_mac;
@@ -815,32 +841,31 @@ impl NetInfo {
                 }
                 let src_port = src_port_hm[&inferred_dst_addr];
                 let cached = imo.cached;
-                match src_interface.mac {
-                    Some(inferred_src_mac) => {
-                        let dst_addr = dst_addr_hm[&inferred_dst_addr];
-                        let src_addr = src_addr_hm[&inferred_dst_addr];
-                        debug!(
-                            "inferred_dst_addr({}) of dst_addr({})",
-                            inferred_dst_addr, dst_addr,
-                        );
-                        let ni = Self {
-                            inferred_dst_mac,
-                            inferred_src_mac,
-                            inferred_dst_addr,
-                            inferred_src_addr,
-                            dst_addr,
-                            src_addr,
-                            dst_ports,
-                            src_port,
-                            interface: src_interface,
-                            cached,
-                            cost: Duration::ZERO,
-                            valid: true,
-                        };
-                        rets.push(ni);
-                    }
-                    None => return Err(PistolError::CanNotFoundSrcMacAddress),
-                }
+                let inferred_src_mac = src_interface
+                    .mac
+                    .ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+                let interface_name = src_interface.name.clone();
+                let dst_addr = dst_addr_hm[&inferred_dst_addr];
+                let src_addr = src_addr_hm[&inferred_dst_addr];
+                debug!(
+                    "inferred_dst_addr({}) of dst_addr({})",
+                    inferred_dst_addr, dst_addr,
+                );
+                let ni = Self {
+                    inferred_dst_mac,
+                    inferred_src_mac,
+                    inferred_dst_addr,
+                    inferred_src_addr,
+                    dst_addr,
+                    src_addr,
+                    dst_ports,
+                    src_port,
+                    interface_name,
+                    cached,
+                    cost: Duration::ZERO,
+                    valid: true,
+                };
+                rets.push(ni);
             }
         }
 
@@ -856,26 +881,40 @@ pub struct Pistol {
     log_level: Option<Level>,
     timeout: Duration,
     max_retries: usize,
-    to_senders: HashMap<String, Sender<SendMsg>>,
-    to_receivers: HashMap<String, Sender<RecvMsg>>,
-    push_response: Sender<RecvResponse>,
-    get_response: Receiver<RecvResponse>,
+    /// For multi-interface send.
+    push_sders: HashMap<String, Sender<SRequest>>,
+    /// For multi-interface recv.
+    to_receivers: HashMap<String, Sender<RRequest>>,
+    push_response: Sender<RResponse>,
+    get_response: Receiver<RResponse>,
+    /// Send smsg to domain.
+    push_sd: Sender<SRequest>,
+    get_sd: Receiver<SRequest>,
+    /// Send rmsg to domain.
+    push_rd: Sender<RRequest>,
+    get_rd: Receiver<RRequest>,
 }
 
 impl Default for Pistol {
     fn default() -> Self {
-        let to_senders = HashMap::new();
+        let push_sders = HashMap::new();
         let to_receivers = HashMap::new();
-        let (push_response, get_response) = unbounded::<RecvResponse>();
+        let (push_response, get_response) = unbounded::<RResponse>();
+        let (push_sd, get_sd) = unbounded::<SRequest>();
+        let (push_rd, get_rd) = unbounded::<RRequest>();
         Pistol {
             interface_name: None,
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
             max_retries: 2, // default 2 max_retries
-            to_senders,
+            push_sders,
             to_receivers,
             push_response,
             get_response,
+            push_sd,
+            get_sd,
+            push_rd,
+            get_rd,
         }
     }
 }
@@ -968,10 +1007,12 @@ impl Pistol {
     }
     fn send(
         interface_name: String,
-        receiver: Receiver<SendMsg>,
+        receiver: Receiver<SRequest>,
         timeout: Duration,
     ) -> Result<(), PistolError> {
         debug!("start sender for interface_name: {}", interface_name);
+
+        // layer2 channel
         let config = datalink::Config {
             write_buffer_size: ETHERNET_BUFF_SIZE,
             read_buffer_size: ETHERNET_BUFF_SIZE,
@@ -997,6 +1038,7 @@ impl Pistol {
             Err(e) => return Err(e.into()),
         };
 
+        // layer3 channel
         let (mut loopback_sender_ipv4, _receiver) =
             transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv4))?;
         let (mut loopback_sender_ipv6, _receiver) =
@@ -1012,10 +1054,10 @@ impl Pistol {
             };
             if smsg.dst_mac == smsg.src_mac {
                 // This case is for loopback interface.
-                let mut ether_payload = smsg.ether_payload.to_vec();
-                match smsg.ether_type {
+                let mut eth_payload = smsg.eth_payload.to_vec();
+                match smsg.eth_type {
                     EtherTypes::Ipv4 => {
-                        let mut packet = MutableIpv4Packet::new(&mut ether_payload).ok_or(
+                        let mut packet = MutableIpv4Packet::new(&mut eth_payload).ok_or(
                             PistolError::BuildPacketError {
                                 location: Location::caller().to_string(),
                             },
@@ -1025,7 +1067,7 @@ impl Pistol {
                         loopback_sender_ipv4.send_to(packet, loopback_addr_ipv4.into())?;
                     }
                     EtherTypes::Ipv6 => {
-                        let mut packet = MutableIpv6Packet::new(&mut ether_payload).ok_or(
+                        let mut packet = MutableIpv6Packet::new(&mut eth_payload).ok_or(
                             PistolError::BuildPacketError {
                                 location: Location::caller().to_string(),
                             },
@@ -1037,15 +1079,15 @@ impl Pistol {
                     _ => {
                         error!(
                             "unsupported ether_type for loopback packet: {}, drop it",
-                            smsg.ether_type
+                            smsg.eth_type
                         );
                     }
                 };
             } else {
-                let payload = smsg.ether_payload;
+                let payload = smsg.eth_payload;
                 let dst_mac = smsg.dst_mac;
                 let src_mac = smsg.src_mac;
-                let ether_type = smsg.ether_type;
+                let ether_type = smsg.eth_type;
                 let retransmit = smsg.retransmit;
 
                 let payload_len = payload.len();
@@ -1087,8 +1129,8 @@ impl Pistol {
     }
     fn recv(
         interface_name: String,
-        receiver: Receiver<RecvMsg>,
-        push_response: Sender<RecvResponse>,
+        receiver: Receiver<RRequest>,
+        push_response: Sender<RResponse>,
     ) -> Result<(), PistolError> {
         debug!("start receiver for interface_name: {}", interface_name);
         let mut cap = Capture::new(&interface_name)?;
@@ -1141,7 +1183,7 @@ impl Pistol {
                         // send matched packet back to thread
                         debug!("matched packet [{}]", packet.len());
                         let rtt = msg.created.elapsed();
-                        let recv_response = RecvResponse {
+                        let recv_response = RResponse {
                             id: msg.id,
                             data: packet.clone(),
                             rtt,
@@ -1191,8 +1233,8 @@ impl Pistol {
         &self,
         timeout: Duration,
         interface_name: String,
-        sm_receiver: Receiver<SendMsg>,
-        rm_receiver: Receiver<RecvMsg>,
+        sm_receiver: Receiver<SRequest>,
+        rm_receiver: Receiver<RRequest>,
     ) {
         let interface_name_sender = interface_name.clone();
         let interface_name_receiver = interface_name.clone();
@@ -1202,17 +1244,54 @@ impl Pistol {
         let _recv_handle =
             thread::spawn(move || Self::recv(interface_name_receiver, rm_receiver, push_response));
     }
+    fn domain(
+        &self,
+        get_rd: Receiver<RRequest>,
+        get_sd: Receiver<SRequest>,
+    ) -> Result<(), PistolError> {
+        let timeout_5ms = Duration::from_millis(5);
+        let to_receivers = self.to_receivers.clone();
+        let push_sders = self.push_sders.clone();
+        let _h = thread::spawn(move || {
+            loop {
+                match get_rd.recv_timeout(timeout_5ms) {
+                    Ok(r) => {
+                        let sender = to_receivers[&r.interface_name].clone();
+                        if let Err(e) = sender.send(r) {
+                            error!("pistol domain distribute recv msg failed: {}", e)
+                        }
+                    }
+                    Err(_e) => (),
+                }
+                match get_sd.recv_timeout(timeout_5ms) {
+                    Ok(s) => {
+                        let sender = push_sders[&s.interface_name].clone();
+                        if let Err(e) = sender.send(s) {
+                            error!("pistol domain distribute send msg failed: {}", e)
+                        }
+                    }
+                    Err(_e) => (),
+                }
+            }
+        });
+        Ok(())
+    }
     /// Initialize multiple runners for multiple targets without source address info.
     /// For mac scan like function which does not need mac info.
     fn init_runners_without_net_infos(&mut self) -> Result<(), PistolError> {
         self.init_logger()?;
         for ni in interfaces() {
-            let (sm_sender, sm_receiver) = unbounded::<SendMsg>();
-            let (rm_sender, rm_receiver) = unbounded::<RecvMsg>();
-            self.to_senders.insert(ni.name.clone(), sm_sender);
+            let (sm_sender, sm_receiver) = unbounded::<SRequest>();
+            let (rm_sender, rm_receiver) = unbounded::<RRequest>();
+            self.push_sders.insert(ni.name.clone(), sm_sender);
             self.to_receivers.insert(ni.name.clone(), rm_sender);
             self.runner(self.timeout, ni.name, sm_receiver, rm_receiver);
         }
+
+        let get_rd = self.get_rd.clone();
+        let get_sd = self.get_sd.clone();
+        self.domain(get_rd, get_sd)?;
+
         Ok(())
     }
     /// Initialize multiple runners for multiple targets.
@@ -1227,12 +1306,12 @@ impl Pistol {
         // start runners and listen on all interfaces,
         // since we don't know which interface will be used for each target,
         // we need to listen on all interfaces.
-        for ni in interfaces() {
-            let (sm_sender, sm_receiver) = unbounded::<SendMsg>();
-            let (rm_sender, rm_receiver) = unbounded::<RecvMsg>();
-            self.to_senders.insert(ni.name.clone(), sm_sender);
-            self.to_receivers.insert(ni.name.clone(), rm_sender);
-            self.runner(self.timeout, ni.name, sm_receiver, rm_receiver);
+        for i in interfaces() {
+            let (s_s_msg, r_s_msg) = unbounded::<SRequest>();
+            let (s_r_msg, r_r_msg) = unbounded::<RRequest>();
+            self.push_sders.insert(i.name.clone(), s_s_msg);
+            self.to_receivers.insert(i.name.clone(), s_r_msg);
+            self.runner(self.timeout, i.name, r_s_msg, r_r_msg);
         }
 
         let mut net_info_inputs = Vec::new();
@@ -1248,7 +1327,11 @@ impl Pistol {
             net_info_inputs.push(input);
         }
 
-        let net_infos = NetInfo::detects(net_info_inputs)?;
+        let push_rd = self.push_rd.clone();
+        let push_sd = self.push_sd.clone();
+        let get_response = self.get_response.clone();
+
+        let net_infos = NetInfo::detects(net_info_inputs, push_rd, push_sd, get_response)?;
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
@@ -1265,9 +1348,9 @@ impl Pistol {
         // since we don't know which interface will be used for each target,
         // we need to listen on all interfaces.
         for ni in interfaces() {
-            let (sm_sender, sm_receiver) = unbounded::<SendMsg>();
-            let (rm_sender, rm_receiver) = unbounded::<RecvMsg>();
-            self.to_senders.insert(ni.name.clone(), sm_sender);
+            let (sm_sender, sm_receiver) = unbounded::<SRequest>();
+            let (rm_sender, rm_receiver) = unbounded::<RRequest>();
+            self.push_sders.insert(ni.name.clone(), sm_sender);
             self.to_receivers.insert(ni.name.clone(), rm_sender);
             self.runner(self.timeout, ni.name, sm_receiver, rm_receiver);
         }
@@ -1278,7 +1361,12 @@ impl Pistol {
             src_addr,
             src_port,
         };
-        let net_info = NetInfo::detect(&input)?;
+
+        let push_rd = self.push_rd.clone();
+        let push_sd = self.push_sd.clone();
+        let get_response = self.get_response.clone();
+
+        let net_info = NetInfo::detect(&input, push_rd, push_sd, get_response)?;
         Ok((net_info, now.elapsed()))
     }
     /* Scan */
@@ -1336,7 +1424,14 @@ impl Pistol {
     #[cfg(feature = "scan")]
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
         self.init_runners_without_net_infos();
-        scan::mac_scan(targets, self.timeout, self.max_retries)
+        scan::mac_scan(
+            targets,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )
     }
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
@@ -1347,7 +1442,13 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
         self.init_runners_without_net_infos();
-        scan::arp_scan_raw(dst_ipv4, self.timeout)
+        scan::arp_scan_raw(
+            dst_ipv4,
+            self.timeout,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )
     }
     /// The raw version of ndp_ns_scan function.
     /// It sends an NDP Neighbor Solicitation to the target IPv6 address and waits for a reply.
@@ -1359,7 +1460,13 @@ impl Pistol {
         dst_ipv6: Ipv6Addr,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
         self.init_runners_without_net_infos();
-        scan::ndp_ns_scan_raw(dst_ipv6, self.timeout)
+        scan::ndp_ns_scan_raw(
+            dst_ipv6,
+            self.timeout,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )
     }
     /// TCP ACK Scan.
     /// This scan is different than the others discussed so far in
@@ -1378,7 +1485,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_ack_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1396,7 +1510,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_ack_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1438,7 +1559,7 @@ impl Pistol {
                 src_addr: src_addr,
                 dst_ports: t.ports.clone(),
                 src_port,
-                interface: fake_interface(),
+                interface_name: String::new(),
                 cached: false,
                 cost: Duration::ZERO,
                 valid: true,
@@ -1473,7 +1594,7 @@ impl Pistol {
             src_addr: src_addr,
             dst_ports: vec![dst_port],
             src_port,
-            interface: fake_interface(),
+            interface_name: String::new(),
             cached: false,
             cost: Duration::ZERO,
             valid: true,
@@ -1506,7 +1627,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_fin_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1523,88 +1651,13 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_fin_scan_raw(net_info, self.timeout, self.max_retries)?;
-        ret.layer2_cost = dur;
-        Ok(ret)
-    }
-    /// TCP Idle Scan.
-    /// In 1998, security researcher Antirez (who also wrote the hping2 tool used in parts of this book)
-    /// posted to the Bugtraq mailing list an ingenious new port scanning technique.
-    /// Idle scan, as it has become known, allows for completely blind port scanning.
-    /// Attackers can actually scan a target
-    /// without sending a single packet to the target from their own IP address!
-    /// Instead, a clever side-channel attack allows for the scan to be bounced off a dumb "zombie host".
-    /// Intrusion detection system (IDS) reports will finger the innocent zombie as the attacker.
-    /// Besides being extraordinarily stealthy,
-    /// this scan type permits discovery of IP-based trust relationships between machines.
-    #[cfg(feature = "scan")]
-    pub fn tcp_idle_scan(
-        &mut self,
-        targets: &[Target],
-        src_ipv4: Option<Ipv4Addr>,
-        src_port: Option<u16>,
-        zombie_ipv4: Ipv4Addr,
-        zombie_port: u16,
-    ) -> Result<PortScans, PistolError> {
-        let src_addr = match src_ipv4 {
-            Some(ipv4) => Some(IpAddr::V4(ipv4)),
-            None => None,
-        };
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let zombie_net_info_input = NetInfoInput {
-            dst_addr: zombie_ipv4.into(),
-            dst_ports: vec![zombie_port],
-            src_addr,
-            src_port,
-        };
-        let zommbie_net_info = NetInfo::detect(&zombie_net_info_input)?;
-        let zombie_mac = zommbie_net_info.inferred_dst_mac;
-        let mut ret = scan::tcp_idle_scan(
-            net_infos,
-            Some(zombie_mac),
-            Some(zombie_ipv4),
-            Some(zombie_port),
-            self.timeout,
-            self.max_retries,
-        )?;
-        ret.layer2_cost = dur;
-        Ok(ret)
-    }
-    /// The raw version of tcp_idle_scan function.
-    /// It performs a TCP idle scan on the specified destination address and port using a zombie host.
-    /// The function sends packets to the zombie host to determine the port status of the target host
-    /// without directly interacting with the target host.
-    #[cfg(feature = "scan")]
-    pub fn tcp_idle_scan_raw(
-        &mut self,
-        dst_ipv4: Ipv4Addr,
-        dst_port: u16,
-        src_ipv4: Option<Ipv4Addr>,
-        src_port: Option<u16>,
-        zombie_ipv4: Ipv4Addr,
-        zombie_port: u16,
-    ) -> Result<PortScan, PistolError> {
-        let dst_addr = IpAddr::V4(dst_ipv4);
-        let src_addr = match src_ipv4 {
-            Some(ipv4) => Some(IpAddr::V4(ipv4)),
-            None => None,
-        };
-        let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let zombie_net_info_input = NetInfoInput {
-            dst_addr: zombie_ipv4.into(),
-            dst_ports: vec![zombie_port],
-            src_addr,
-            src_port,
-        };
-        let zombie_net_info = NetInfo::detect(&zombie_net_info_input)?;
-        let zombie_mac = zombie_net_info.inferred_dst_mac;
-        let mut ret = scan::tcp_idle_scan_raw(
+        let mut ret = scan::tcp_fin_scan_raw(
             net_info,
-            Some(zombie_mac),
-            Some(zombie_ipv4),
-            Some(zombie_port),
             self.timeout,
             self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1624,7 +1677,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_maimon_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_maimon_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1641,7 +1701,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_maimon_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_maimon_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1661,7 +1728,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_null_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_null_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1678,7 +1752,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_null_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_null_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1704,7 +1785,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_syn_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_syn_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1721,7 +1809,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_syn_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_syn_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1742,7 +1837,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_window_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_window_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1759,7 +1861,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_window_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_window_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1778,7 +1887,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_xmas_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_xmas_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1795,7 +1911,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::tcp_xmas_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_xmas_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1819,7 +1942,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = scan::udp_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::udp_scan(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1837,7 +1967,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = scan::udp_scan_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = scan::udp_scan_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1869,7 +2006,14 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::icmp_address_mask_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_address_mask_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1889,7 +2033,14 @@ impl Pistol {
             None => None,
         };
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_address_mask_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_address_mask_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1911,7 +2062,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::icmp_echo_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_echo_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1926,7 +2084,14 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_echo_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_echo_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1955,7 +2120,14 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::icmp_timestamp_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_timestamp_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1975,7 +2147,14 @@ impl Pistol {
             None => None,
         };
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_timestamp_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_timestamp_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1991,7 +2170,14 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = ping::icmp_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2018,7 +2204,14 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::icmpv6_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmpv6_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2034,7 +2227,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_ack_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2052,7 +2252,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_ack_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2068,7 +2275,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_syn_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2086,7 +2300,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_syn_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2102,7 +2323,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = ping::udp_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::udp_ping(
+            net_infos,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2120,7 +2348,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::udp_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let mut ret = ping::udp_ping_raw(
+            net_info,
+            self.timeout,
+            self.max_retries,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2137,7 +2372,13 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<Trace, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = trace::icmp_trace(net_info, self.timeout)?;
+        let mut ret = trace::icmp_trace(
+            net_info,
+            self.timeout,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2156,7 +2397,13 @@ impl Pistol {
     ) -> Result<Trace, PistolError> {
         let dst_port = dst_port.unwrap_or(80);
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = trace::syn_trace(net_info, self.timeout)?;
+        let mut ret = trace::syn_trace(
+            net_info,
+            self.timeout,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2172,7 +2419,13 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<Trace, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = trace::udp_trace(net_info, self.timeout)?;
+        let mut ret = trace::udp_trace(
+            net_info,
+            self.timeout,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2195,13 +2448,12 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        threads: usize,
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
         let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::icmp_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        let mut ret = flood::icmp_flood(net_infos, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }

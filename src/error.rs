@@ -47,8 +47,12 @@ pub enum PistolError {
     /* PING ERROR */
     #[error("The target {target} does not support this detection method {method}")]
     PingDetectionMethodError { target: IpAddr, method: String },
+    #[error("can not parse ping response")]
+    PingParseResponseError,
 
     /* SCAN ERROR */
+    #[error("can not found the loopback interface, please check your network connection")]
+    CanNotFoundLoopbackInterface,
     #[error(
         "idle scan zombie {zombie_ipv4} port {zombie_port} cannot be used because IP ID sequence class is all zeros, try another proxy"
     )]

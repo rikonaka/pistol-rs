@@ -4,7 +4,6 @@ use chrono::Utc;
 use crossbeam::channel::Receiver;
 use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::ethernet::EtherTypes;
 use rand::RngExt;
 use std::collections::HashMap;
@@ -20,16 +19,16 @@ use tracing::error;
 
 use crate::IpCheckMethods;
 use crate::NetInfo;
-use crate::RecvMsg;
-use crate::RecvResponse;
-use crate::SendMsg;
+use crate::RRequest;
+use crate::RResponse;
+use crate::SRequest;
 use crate::error::PistolError;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
 use crate::layer::Layer4FilterTcpUdp;
 use crate::layer::PacketFilter;
+use crate::os::LoopStatus;
 use crate::os::OsInfo;
-use crate::os::ProbeStatus;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::operator::icmp_cd;
 use crate::os::operator::icmp_dfi;
@@ -272,10 +271,11 @@ fn send_seq_probes(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<SEQRR, PistolError> {
     let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
@@ -324,8 +324,8 @@ fn send_seq_probes(
     let mut send_status = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
-            id: random_recv_msg_id(),
+        let status = LoopStatus {
+            id: 0,
             retried: 0,
             recved: false,
         };
@@ -343,28 +343,32 @@ fn send_seq_probes(
             let recved = status.recved;
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
-                let recv_msg = RecvMsg {
-                    id: status.id,
+                let recv_msg_id = random_recv_msg_id();
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
+                    id: recv_msg_id,
                     filters: vec![filter],
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
 
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe seq recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe seq send msg failed: {}", e);
                 }
 
                 status.retried = retried + 1;
+                status.id = recv_msg_id;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }
@@ -460,10 +464,11 @@ fn send_ie_probes(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<IERR, PistolError> {
     let mut rng = rand::rng();
     let id_1 = rng.random();
@@ -493,7 +498,7 @@ fn send_ie_probes(
     let mut send_status = HashMap::new();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
+        let status = LoopStatus {
             id: random_recv_msg_id(),
             retried: 0,
             recved: false,
@@ -511,24 +516,26 @@ fn send_ie_probes(
             let retired = status.retried;
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter.clone()],
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
 
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe ie recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe ie send msg failed: {}", e);
                 }
 
@@ -604,10 +611,11 @@ fn send_ecn_probe(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<ECNRR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -633,24 +641,26 @@ fn send_ecn_probe(
 
     let recv_msg_id = random_recv_msg_id();
     for _ in 0..PROBE_MAX_RETIRIES {
-        let recv_msg = RecvMsg {
+        let recv_msg = RRequest {
+            interface_name: interface_name.clone(),
             id: recv_msg_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
-        let send_msg = SendMsg {
+        let send_msg = SRequest {
+            interface_name: interface_name.clone(),
             dst_mac,
             src_mac,
-            ether_payload: buff.clone(),
-            ether_type,
+            eth_payload: buff.clone(),
+            eth_type: ether_type,
             retransmit: 1,
         };
 
-        if let Err(e) = to_recv.send(recv_msg) {
+        if let Err(e) = push_rd.send(recv_msg) {
             error!("send os probe ecn recv msg failed: {}", e);
         }
-        if let Err(e) = to_send.send(send_msg) {
+        if let Err(e) = push_sd.send(send_msg) {
             error!("send os probe ecn send msg failed: {}", e);
         }
 
@@ -692,10 +702,11 @@ fn send_tx_probes(
     dst_closed_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<TXRR, PistolError> {
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
@@ -788,7 +799,7 @@ fn send_tx_probes(
     let mut send_status = HashMap::new();
     for t in 2..=7 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
+        let status = LoopStatus {
             id: random_recv_msg_id(),
             retried: 0,
             recved: false,
@@ -808,23 +819,25 @@ fn send_tx_probes(
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let filter = filter_hm[i].clone();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter],
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe tx recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe tx send msg failed: {}", e);
                 }
 
@@ -920,10 +933,11 @@ fn send_u1_probe(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<U1RR, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -949,23 +963,25 @@ fn send_u1_probe(
     let ether_type = EtherTypes::Ipv4;
     for _ in 0..PROBE_MAX_RETIRIES {
         let start = Instant::now();
-        let recv_msg = RecvMsg {
+        let recv_msg = RRequest {
+            interface_name: interface_name.clone(),
             id: recv_msg_id,
             filters: vec![filter.clone()],
             created: start,
             elapsed: timeout,
         };
-        let send_msg = SendMsg {
+        let send_msg = SRequest {
+            interface_name: interface_name.clone(),
             dst_mac,
             src_mac,
-            ether_payload: buff.clone(),
-            ether_type,
+            eth_payload: buff.clone(),
+            eth_type: ether_type,
             retransmit: 1,
         };
-        if let Err(e) = to_recv.send(recv_msg) {
+        if let Err(e) = push_rd.send(recv_msg) {
             error!("send os probe u1 recv msg failed: {}", e);
         }
-        if let Err(e) = to_send.send(send_msg) {
+        if let Err(e) = push_sd.send(send_msg) {
             error!("send os probe u1 send msg failed: {}", e);
         }
 
@@ -1007,10 +1023,11 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<AllPacketRR, PistolError> {
     debug!("sending SEQ probe");
     let seq = send_seq_probes(
@@ -1019,9 +1036,10 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending IE probe");
@@ -1030,9 +1048,10 @@ fn send_all_probes(
         dst_ipv4,
         src_mac,
         src_ipv4,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending ECN probe");
@@ -1042,9 +1061,10 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending TX probe");
@@ -1055,9 +1075,10 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv4,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending U1 probe");
@@ -1067,9 +1088,10 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv4,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
 
@@ -2173,13 +2195,13 @@ pub fn os_probe_thread(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    interface: &NetworkInterface,
+    interface_name: String,
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {
     debug!("send all probes now");
     let ap = send_all_probes(
@@ -2190,9 +2212,10 @@ pub fn os_probe_thread(
         dst_closed_udp_port,
         src_mac,
         src_ipv4,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("send all probes done");
@@ -2210,12 +2233,12 @@ pub fn os_probe_thread(
         src_addr: Some(src_ipv4.into()),
         dst_ports: Vec::new(),
         src_port: None,
-        interface: interface.clone(),
+        interface_name: interface_name.clone(),
         cached: true,
         cost: Duration::ZERO,
         valid: true,
     };
-    let trace = icmp_trace(icmp_trace_net_info, timeout)?;
+    let trace = icmp_trace(icmp_trace_net_info, timeout, push_rd, push_sd, get_response)?;
     let htops = trace.hops;
     let scan = get_scan_line(
         dst_mac,

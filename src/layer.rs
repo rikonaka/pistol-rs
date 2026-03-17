@@ -100,6 +100,7 @@ pub(crate) fn find_interface_by_src_ip(src_addr: IpAddr) -> Option<NetworkInterf
     None
 }
 
+/*
 pub(crate) fn find_interface_by_dst_ip(dst_addr: IpAddr) -> Option<NetworkInterface> {
     for interface in interfaces() {
         for ip in &interface.ips {
@@ -111,6 +112,7 @@ pub(crate) fn find_interface_by_dst_ip(dst_addr: IpAddr) -> Option<NetworkInterf
     }
     None
 }
+*/
 
 pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {

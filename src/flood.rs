@@ -53,11 +53,17 @@ pub mod udp6;
 #[cfg(feature = "flood")]
 use crate::NetInfo;
 #[cfg(feature = "flood")]
-use crate::SendMsg;
+use crate::SRequest;
 #[cfg(feature = "flood")]
 use crate::error::PistolError;
 #[cfg(feature = "flood")]
-use crate::utils;
+use crate::utils::random_ipv4_addr;
+#[cfg(feature = "flood")]
+use crate::utils::random_ipv6_addr;
+#[cfg(feature = "flood")]
+use crate::utils::random_port;
+#[cfg(feature = "flood")]
+use crate::utils::time_to_string;
 
 #[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
@@ -122,7 +128,7 @@ impl fmt::Display for Floods {
         let mut i = 1;
         for (addr, report) in btm_addr {
             let time_cost = report.cost;
-            let time_cost_str = utils::time_to_string(time_cost);
+            let time_cost_str = time_to_string(time_cost);
             let time_cost = time_cost.as_secs_f64();
             let (size_str, traffic_str) = if report.send_size as f64 / BYTES_PER_GB as f64 > 1.0 {
                 let v = report.send_size as f64 / BYTES_PER_GB as f64;
@@ -191,9 +197,10 @@ fn ipv4_flood_thread(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    interface_name: String,
     method: FloodMethods,
     retransmit: usize,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<usize, PistolError> {
     let buff = match method {
         FloodMethods::Icmp => icmp::build_icmp_flood_packet(dst_ipv4, src_ipv4)?,
@@ -205,15 +212,16 @@ fn ipv4_flood_thread(
         FloodMethods::Udp => udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?,
     };
 
-    let send_msg = SendMsg {
+    let send_msg = SRequest {
+        interface_name: interface_name.clone(),
         dst_mac,
         src_mac,
-        ether_payload: buff.clone(),
-        ether_type: EtherTypes::Ipv4,
+        eth_payload: buff.clone(),
+        eth_type: EtherTypes::Ipv4,
         retransmit,
     };
-    if let Err(e) = to_send.send(send_msg) {
-        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
+    if let Err(e) = push_sd.send(send_msg) {
+        error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
     }
 
     let send_buff_size = buff.len() * retransmit;
@@ -228,9 +236,10 @@ fn ipv6_flood_thread(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
+    interface_name: String,
     method: FloodMethods,
     retransmit: usize,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<usize, PistolError> {
     let buff = match method {
         FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(dst_ipv6, src_ipv6)?,
@@ -242,15 +251,16 @@ fn ipv6_flood_thread(
         FloodMethods::Udp => udp6::send_udp_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?,
     };
 
-    let send_msg = SendMsg {
+    let send_msg = SRequest {
+        interface_name: interface_name.clone(),
         dst_mac,
         src_mac,
-        ether_payload: buff.clone(),
-        ether_type: EtherTypes::Ipv4,
+        eth_payload: buff.clone(),
+        eth_type: EtherTypes::Ipv4,
         retransmit,
     };
-    if let Err(e) = to_send.send(send_msg) {
-        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
+    if let Err(e) = push_sd.send(send_msg) {
+        error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
     }
 
     let send_buff_size = buff.len() * retransmit;
@@ -264,7 +274,7 @@ fn flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     let mut pistol_floods = Floods::new();
     let (tx, rx) = channel();
@@ -278,28 +288,37 @@ fn flood(
                         let dst_mac = ni.inferred_dst_mac;
                         let src_mac = ni.inferred_src_mac;
                         let src_ipv4 = match fake_src {
-                            true => utils::random_ipv4_addr(),
+                            true => random_ipv4_addr(),
                             false => match ni.inferred_src_addr {
                                 IpAddr::V4(src_ipv4) => src_ipv4,
-                                _ => utils::random_ipv4_addr(),
+                                _ => random_ipv4_addr(),
                             },
                         };
                         let src_port = match fake_src {
-                            true => utils::random_port(),
+                            true => random_port(),
                             false => match ni.src_port {
                                 Some(port) => port,
-                                None => utils::random_port(),
+                                None => random_port(),
                             },
                         };
                         let dst_addr = ni.inferred_dst_addr;
 
                         let tx = tx.clone();
-                        let to_send = to_send.clone();
+                        let push_sd = push_sd.clone();
+                        let interface_name = ni.interface_name.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv4_flood_thread(
-                                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, method,
-                                retransmit, to_send,
+                                dst_mac,
+                                dst_ipv4,
+                                dst_port,
+                                src_mac,
+                                src_ipv4,
+                                src_port,
+                                interface_name,
+                                method,
+                                retransmit,
+                                push_sd,
                             );
                             if let Err(e) = tx.send((dst_addr, ret, start_time)) {
                                 error!("failed to send to tx on func flood: {}", e);
@@ -315,28 +334,37 @@ fn flood(
                         let dst_mac = ni.inferred_dst_mac;
                         let src_mac = ni.inferred_src_mac;
                         let src_ipv6 = match fake_src {
-                            true => utils::random_ipv6_addr(),
+                            true => random_ipv6_addr(),
                             false => match ni.inferred_src_addr {
                                 IpAddr::V6(src_ipv6) => src_ipv6,
-                                _ => utils::random_ipv6_addr(),
+                                _ => random_ipv6_addr(),
                             },
                         };
                         let src_port = match fake_src {
-                            true => utils::random_port(),
+                            true => random_port(),
                             false => match ni.src_port {
                                 Some(port) => port,
-                                None => utils::random_port(),
+                                None => random_port(),
                             },
                         };
                         let dst_addr = ni.inferred_dst_addr;
 
                         let tx = tx.clone();
-                        let to_send = to_send.clone();
+                        let push_sd = push_sd.clone();
+                        let interface_name = ni.interface_name.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv6_flood_thread(
-                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, method,
-                                retransmit, to_send,
+                                dst_mac,
+                                dst_ipv6,
+                                dst_port,
+                                src_mac,
+                                src_ipv6,
+                                src_port,
+                                interface_name,
+                                method,
+                                retransmit,
+                                push_sd,
                             );
                             if let Err(e) = tx.send((dst_addr, ret, start_time)) {
                                 error!("failed to send to tx on func flood: {}", e);
@@ -377,7 +405,7 @@ pub(crate) fn flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
     let mut flood = Flood::new();
     let start = Instant::now();
@@ -391,17 +419,17 @@ pub(crate) fn flood_raw(
             let mut total_send_buff_size = 0;
             for _ in 0..repeat {
                 let src_ipv4 = match fake_src {
-                    true => utils::random_ipv4_addr(),
+                    true => random_ipv4_addr(),
                     false => match src_addr {
                         IpAddr::V4(src_ipv4) => src_ipv4,
-                        _ => utils::random_ipv4_addr(),
+                        _ => random_ipv4_addr(),
                     },
                 };
                 let src_port = match fake_src {
-                    true => utils::random_port(),
+                    true => random_port(),
                     false => match src_port {
                         Some(src_port) => src_port,
-                        None => utils::random_port(),
+                        None => random_port(),
                     },
                 };
 
@@ -421,15 +449,17 @@ pub(crate) fn flood_raw(
                             udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
                         }
                     };
-                    let send_msg = SendMsg {
+                    let interface_name = net_info.interface_name.clone();
+                    let send_msg = SRequest {
+                        interface_name,
                         dst_mac,
                         src_mac,
-                        ether_payload: buff.clone(),
-                        ether_type: EtherTypes::Ipv4,
+                        eth_payload: buff.clone(),
+                        eth_type: EtherTypes::Ipv4,
                         retransmit,
                     };
-                    if let Err(e) = to_send.send(send_msg) {
-                        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
+                    if let Err(e) = push_sd.send(send_msg) {
+                        error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
                     }
 
                     let send_buff_size = buff.len() * retransmit;
@@ -449,17 +479,17 @@ pub(crate) fn flood_raw(
             let mut total_send_buff_size = 0;
             for _ in 0..repeat {
                 let src_ipv6 = match fake_src {
-                    true => utils::random_ipv6_addr(),
+                    true => random_ipv6_addr(),
                     false => match src_addr {
                         IpAddr::V6(src_ipv6) => src_ipv6,
-                        _ => utils::random_ipv6_addr(),
+                        _ => random_ipv6_addr(),
                     },
                 };
                 let src_port = match fake_src {
-                    true => utils::random_port(),
+                    true => random_port(),
                     false => match src_port {
                         Some(src_port) => src_port,
-                        None => utils::random_port(),
+                        None => random_port(),
                     },
                 };
 
@@ -480,15 +510,17 @@ pub(crate) fn flood_raw(
                         }
                     };
 
-                    let send_msg = SendMsg {
+                    let interface_name = net_info.interface_name.clone();
+                    let send_msg = SRequest {
+                        interface_name,
                         dst_mac,
                         src_mac,
-                        ether_payload: buff.clone(),
-                        ether_type: EtherTypes::Ipv4,
+                        eth_payload: buff.clone(),
+                        eth_type: EtherTypes::Ipv4,
                         retransmit,
                     };
-                    if let Err(e) = to_send.send(send_msg) {
-                        error!("failed to send to to_send on func ipv4_flood_thread: {}", e);
+                    if let Err(e) = push_sd.send(send_msg) {
+                        error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
                     }
                     let send_buff_size = buff.len() * retransmit;
                     total_send_buff_size += send_buff_size;
@@ -512,7 +544,7 @@ pub(crate) fn icmp_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
@@ -520,7 +552,7 @@ pub(crate) fn icmp_flood(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -530,7 +562,7 @@ pub(crate) fn icmp_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
     flood_raw(
         net_info,
@@ -538,7 +570,7 @@ pub(crate) fn icmp_flood_raw(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -548,7 +580,7 @@ pub(crate) fn tcp_syn_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
@@ -556,7 +588,7 @@ pub(crate) fn tcp_syn_flood(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -566,7 +598,7 @@ pub(crate) fn tcp_syn_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
     flood_raw(
         net_info,
@@ -574,7 +606,7 @@ pub(crate) fn tcp_syn_flood_raw(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -584,7 +616,7 @@ pub(crate) fn tcp_ack_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
@@ -592,7 +624,7 @@ pub(crate) fn tcp_ack_flood(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -602,7 +634,7 @@ pub(crate) fn tcp_ack_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
     flood_raw(
         net_info,
@@ -610,7 +642,7 @@ pub(crate) fn tcp_ack_flood_raw(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -620,7 +652,7 @@ pub(crate) fn tcp_ack_psh_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
@@ -628,7 +660,7 @@ pub(crate) fn tcp_ack_psh_flood(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -638,7 +670,7 @@ pub(crate) fn tcp_ack_psh_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
     flood_raw(
         net_info,
@@ -646,7 +678,7 @@ pub(crate) fn tcp_ack_psh_flood_raw(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -656,7 +688,7 @@ pub(crate) fn udp_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
@@ -664,7 +696,7 @@ pub(crate) fn udp_flood(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -674,7 +706,7 @@ pub(crate) fn udp_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    to_send: Sender<SendMsg>,
+    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
     flood_raw(
         net_info,
@@ -682,7 +714,7 @@ pub(crate) fn udp_flood_raw(
         retransmit,
         repeat,
         fake_src,
-        to_send,
+        push_sd,
     )
 }
 
@@ -703,8 +735,8 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.init_runner(&targets, None, None).unwrap();
-        let to_send = pistol.to_senders["ens33"].clone();
-        let ret = tcp_syn_flood(net_infos, retransmit, repeat, true, to_send).unwrap();
+        let push_sd = pistol.push_sders["ens33"].clone();
+        let ret = tcp_syn_flood(net_infos, retransmit, repeat, true, push_sd).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
 }

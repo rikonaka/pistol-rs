@@ -42,11 +42,11 @@ use tracing::error;
 #[cfg(feature = "trace")]
 use crate::NetInfo;
 #[cfg(feature = "trace")]
-use crate::RecvMsg;
+use crate::RRequest;
 #[cfg(feature = "trace")]
-use crate::RecvResponse;
+use crate::RResponse;
 #[cfg(feature = "trace")]
-use crate::SendMsg;
+use crate::SRequest;
 #[cfg(any(feature = "trace", feature = "os"))]
 use crate::error::PistolError;
 #[cfg(feature = "trace")]
@@ -153,10 +153,11 @@ fn syn_trace_ipv4(
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -173,24 +174,26 @@ fn syn_trace_ipv4(
 
         for _ in 0..TRACE_MAX_RETRY {
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff.clone(),
-                ether_type: EtherTypes::Ipv4,
+                eth_payload: buff.clone(),
+                eth_type: EtherTypes::Ipv4,
                 retransmit: 1,
             };
 
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 error!("send trace packet error: {}", e);
             }
 
@@ -246,10 +249,11 @@ fn syn_trace_ipv6(
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv6.into());
     let mut last_response_hop_limit = 0;
@@ -260,23 +264,25 @@ fn syn_trace_ipv6(
 
         for _ in 0..TRACE_MAX_RETRY {
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff.clone(),
-                ether_type: EtherTypes::Ipv6,
+                eth_payload: buff.clone(),
+                eth_type: EtherTypes::Ipv6,
                 retransmit: 1,
             };
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 error!("send trace packet error: {}", e);
             }
 
@@ -326,9 +332,9 @@ fn syn_trace_ipv6(
 pub fn syn_trace(
     net_info: NetInfo,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
@@ -349,15 +355,17 @@ pub fn syn_trace(
                     });
                 }
             };
+            let interface_name = net_info.interface_name.clone();
             syn_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
                 dst_port,
                 src_mac,
                 src_ipv4,
+                interface_name,
                 timeout,
-                to_recv,
-                to_send,
+                push_rd,
+                push_sd,
                 get_response,
             )
         }
@@ -370,15 +378,17 @@ pub fn syn_trace(
                     });
                 }
             };
+            let interface_name = net_info.interface_name.clone();
             syn_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
                 dst_port,
                 src_mac,
                 src_ipv6,
+                interface_name,
                 timeout,
-                to_recv,
-                to_send,
+                push_rd,
+                push_sd,
                 get_response,
             )
         }
@@ -390,10 +400,11 @@ fn icmp_trace_ipv4(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -409,23 +420,25 @@ fn icmp_trace_ipv4(
 
         for _ in 0..TRACE_MAX_RETRY {
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff.clone(),
-                ether_type: EtherTypes::Ipv4,
+                eth_payload: buff.clone(),
+                eth_type: EtherTypes::Ipv4,
                 retransmit: 1,
             };
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 error!("send trace packet error: {}", e);
             }
 
@@ -477,10 +490,11 @@ fn icmp_trace_ipv6(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv6.into());
     let mut rng = rand::rng();
@@ -498,23 +512,25 @@ fn icmp_trace_ipv6(
 
         for _ in 0..TRACE_MAX_RETRY {
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff.clone(),
-                ether_type: EtherTypes::Ipv6,
+                eth_payload: buff.clone(),
+                eth_type: EtherTypes::Ipv6,
                 retransmit: 1,
             };
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 error!("send trace packet error: {}", e);
             }
 
@@ -564,9 +580,9 @@ fn icmp_trace_ipv6(
 pub fn icmp_trace(
     net_info: NetInfo,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
@@ -580,14 +596,16 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
+            let interface_name = net_info.interface_name.clone();
             icmp_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
                 src_mac,
                 src_ipv4,
+                interface_name,
                 timeout,
-                to_recv,
-                to_send,
+                push_rd,
+                push_sd,
                 get_response,
             )
         }
@@ -598,14 +616,16 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
+            let interface_name = net_info.interface_name.clone();
             icmp_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
                 src_mac,
                 src_ipv6,
+                interface_name,
                 timeout,
-                to_recv,
-                to_send,
+                push_rd,
+                push_sd,
                 get_response,
             )
         }
@@ -617,10 +637,11 @@ fn udp_trace_ipv4(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -637,23 +658,25 @@ fn udp_trace_ipv4(
 
         for _ in 0..TRACE_MAX_RETRY {
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff.clone(),
-                ether_type: EtherTypes::Ipv4,
+                eth_payload: buff.clone(),
+                eth_type: EtherTypes::Ipv4,
                 retransmit: 1,
             };
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 error!("send trace packet error: {}", e);
             }
 
@@ -705,10 +728,11 @@ fn udp_trace_ipv6(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv6.into());
 
@@ -721,23 +745,25 @@ fn udp_trace_ipv6(
 
         for _ in 0..TRACE_MAX_RETRY {
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff.clone(),
-                ether_type: EtherTypes::Ipv6,
+                eth_payload: buff.clone(),
+                eth_type: EtherTypes::Ipv6,
                 retransmit: 1,
             };
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 error!("send trace packet error: {}", e);
             }
 
@@ -787,9 +813,9 @@ fn udp_trace_ipv6(
 pub fn udp_trace(
     net_info: NetInfo,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
@@ -803,14 +829,16 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
+            let interface_name = net_info.interface_name.clone();
             udp_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
                 src_mac,
                 src_ipv4,
+                interface_name,
                 timeout,
-                to_recv,
-                to_send,
+                push_rd,
+                push_sd,
                 get_response,
             )
         }
@@ -821,14 +849,16 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
+            let interface_name = net_info.interface_name.clone();
             udp_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
                 src_mac,
                 src_ipv6,
+                interface_name,
                 timeout,
-                to_recv,
-                to_send,
+                push_rd,
+                push_sd,
                 get_response,
             )
         }

@@ -1,7 +1,6 @@
 use crossbeam::channel::Receiver;
 use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::icmpv6::Icmpv6Type;
 use std::collections::HashMap;
@@ -17,17 +16,17 @@ use tracing::error;
 use tracing::warn;
 
 use crate::NetInfo;
-use crate::RecvMsg;
-use crate::RecvResponse;
-use crate::SendMsg;
+use crate::RRequest;
+use crate::RResponse;
+use crate::SRequest;
 use crate::error::PistolError;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
 use crate::layer::PacketFilter;
 use crate::os::Linear;
+use crate::os::LoopStatus;
 use crate::os::OsInfo6;
-use crate::os::ProbeStatus;
 use crate::os::operator6::apply_scale;
 use crate::os::operator6::vectorize;
 use crate::os::osscan::get_scan_line;
@@ -523,11 +522,12 @@ fn send_seq_probes(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
     scan_start: Instant,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<SEQRR6, PistolError> {
     let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
@@ -574,7 +574,7 @@ fn send_seq_probes(
     let mut send_status = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
+        let status = LoopStatus {
             id: random_recv_msg_id(),
             retried: 0,
             recved: false,
@@ -595,23 +595,25 @@ fn send_seq_probes(
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let created = Instant::now();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter],
                     created,
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe seq recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe seq send msg failed: {}", e);
                 }
 
@@ -734,11 +736,12 @@ fn send_ie_probes(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
     scan_start: Instant,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<IERR6, PistolError> {
     let buff_1 = packet6::ie_packet_1_layer3(dst_ipv6, src_ipv6)?;
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
@@ -790,7 +793,7 @@ fn send_ie_probes(
     let mut send_status = HashMap::new();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
+        let status = LoopStatus {
             id: random_recv_msg_id(),
             retried: 0,
             recved: false,
@@ -810,23 +813,25 @@ fn send_ie_probes(
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: status.id,
                     filters: filters.clone(),
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe ie recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe ie send msg failed: {}", e);
                 }
 
@@ -913,11 +918,12 @@ fn send_nx_probes(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
     scan_start: Instant,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<NXRR6, PistolError> {
     let buff_1 = packet6::ni_packet_layer3(dst_ipv6, src_ipv6)?;
     let buff_2 = packet6::ns_packet_layer3(dst_ipv6, src_ipv6, src_mac)?;
@@ -943,7 +949,7 @@ fn send_nx_probes(
     let mut send_status = HashMap::new();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
+        let status = LoopStatus {
             id: random_recv_msg_id(),
             retried: 0,
             recved: false,
@@ -963,23 +969,25 @@ fn send_nx_probes(
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter.clone()],
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe nx recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe nx send msg failed: {}", e);
                 }
 
@@ -1067,11 +1075,12 @@ fn send_u1_probe(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
     scan_start: Instant,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<U1RR6, PistolError> {
     let src_port = random_port();
     let buff = packet6::udp_packet_layer3(dst_ipv6, dst_closed_udp_port, src_ipv6, src_port)?;
@@ -1097,23 +1106,25 @@ fn send_u1_probe(
     let recv_msg_id = random_recv_msg_id();
     for _ in 0..PROBE_MAX_RETIRIES {
         let st = scan_start.elapsed();
-        let recv_msg = RecvMsg {
+        let recv_msg = RRequest {
+            interface_name: interface_name.clone(),
             id: recv_msg_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
-        let send_msg = SendMsg {
+        let send_msg = SRequest {
+            interface_name: interface_name.clone(),
             dst_mac,
             src_mac,
-            ether_payload: buff.clone(),
-            ether_type,
+            eth_payload: buff.clone(),
+            eth_type: ether_type,
             retransmit: 1,
         };
-        if let Err(e) = to_recv.send(recv_msg) {
+        if let Err(e) = push_rd.send(recv_msg) {
             error!("send os probe u1 recv msg failed: {}", e);
         }
-        if let Err(e) = to_send.send(send_msg) {
+        if let Err(e) = push_sd.send(send_msg) {
             error!("send os probe u1 send msg failed: {}", e);
         }
 
@@ -1162,11 +1173,12 @@ fn send_tecn_probe(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
     start_time: Instant,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<TECNRR6, PistolError> {
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -1192,23 +1204,25 @@ fn send_tecn_probe(
     let ether_type = EtherTypes::Ipv6;
     let recv_msg_id = random_recv_msg_id();
     for _ in 0..PROBE_MAX_RETIRIES {
-        let recv_msg = RecvMsg {
+        let recv_msg = RRequest {
+            interface_name: interface_name.clone(),
             id: recv_msg_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
-        let send_msg = SendMsg {
+        let send_msg = SRequest {
+            interface_name: interface_name.clone(),
             dst_mac,
             src_mac,
-            ether_payload: buff.clone(),
-            ether_type,
+            eth_payload: buff.clone(),
+            eth_type: ether_type,
             retransmit: 1,
         };
-        if let Err(e) = to_recv.send(recv_msg) {
+        if let Err(e) = push_rd.send(recv_msg) {
             error!("send os probe ecn recv msg failed: {}", e);
         }
-        if let Err(e) = to_send.send(send_msg) {
+        if let Err(e) = push_sd.send(send_msg) {
             error!("send os probe ecn send msg failed: {}", e);
         }
         match get_response.recv_timeout(timeout) {
@@ -1257,11 +1271,12 @@ fn send_tx_probes(
     dst_closed_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
     scan_start: Instant,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<TXRR6, PistolError> {
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
@@ -1349,7 +1364,7 @@ fn send_tx_probes(
     let mut send_status = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = ProbeStatus {
+        let status = LoopStatus {
             id: random_recv_msg_id(),
             retried: 0,
             recved: false,
@@ -1370,23 +1385,25 @@ fn send_tx_probes(
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let start = Instant::now();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter],
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff.clone(),
-                    ether_type,
+                    eth_payload: buff.clone(),
+                    eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     error!("send os probe tx recv msg failed: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     error!("send os probe tx send msg failed: {}", e);
                 }
 
@@ -1509,10 +1526,11 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    interface_name: String,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<AllPacketRR6, PistolError> {
     let scan_start = Instant::now();
     debug!("sending SEQ probe");
@@ -1522,10 +1540,11 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
         scan_start,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending IE probe");
@@ -1534,10 +1553,11 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
         scan_start,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending NX probe");
@@ -1546,10 +1566,11 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
         scan_start,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending U1 probe");
@@ -1559,10 +1580,11 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
         scan_start,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending TECN probe");
@@ -1572,10 +1594,11 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
         scan_start,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("sending TX probe");
@@ -1586,10 +1609,11 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
         scan_start,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
 
@@ -1680,13 +1704,13 @@ pub fn os_probe_thread6(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface: &NetworkInterface,
+    interface_name: String,
     top_k: usize,
     linear: Linear,
     timeout: Duration,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<(Fingerprint6, Vec<OsInfo6>), PistolError> {
     debug!("send all probes now");
     let ap = send_all_probes(
@@ -1697,9 +1721,10 @@ pub fn os_probe_thread6(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
+        interface_name.clone(),
         timeout,
-        to_recv.clone(),
-        to_send.clone(),
+        push_rd.clone(),
+        push_sd.clone(),
         get_response.clone(),
     )?;
     debug!("send all probes done");
@@ -1714,12 +1739,12 @@ pub fn os_probe_thread6(
         src_addr: Some(src_ipv6.into()),
         dst_ports: Vec::new(),
         src_port: None,
-        interface: interface.clone(),
+        interface_name: interface_name.clone(),
         cached: true,
         cost: Duration::ZERO,
         valid: true,
     };
-    let trace = icmp_trace(icmp_trace_net_info, timeout)?;
+    let trace = icmp_trace(icmp_trace_net_info, timeout, push_rd, push_sd, get_response)?;
     let hops = trace.hops;
     // form get_scan_line function
     let scan = get_scan_line(

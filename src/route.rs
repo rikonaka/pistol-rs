@@ -22,9 +22,9 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::GLOBAL_NET_CACHES;
-use crate::RecvMsg;
-use crate::RecvResponse;
-use crate::SendMsg;
+use crate::RRequest;
+use crate::RResponse;
+use crate::SRequest;
 use crate::error::PistolError;
 use crate::fake_interface;
 use crate::layer::find_interface_by_index;
@@ -618,10 +618,11 @@ fn send_neighbor_detect_packet(
     interface: NetworkInterface,
     timeout: Duration,
     is_route: bool,
-    to_recv: Sender<RecvMsg>,
-    to_send: Sender<SendMsg>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
 ) -> Result<u64, PistolError> {
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+    let interface_name = interface.name.clone();
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let dst_mac = MacAddr::broadcast();
@@ -632,24 +633,26 @@ fn send_neighbor_detect_packet(
             let (buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
 
             let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RecvMsg {
+            let recv_msg = RRequest {
+                interface_name: interface_name.clone(),
                 id: recv_msg_id,
                 filters,
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SendMsg {
+            let send_msg = SRequest {
+                interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
-                ether_payload: buff,
-                ether_type: EtherTypes::Arp,
+                eth_payload: buff,
+                eth_type: EtherTypes::Arp,
                 retransmit: 1,
             };
 
-            if let Err(e) = to_recv.send(recv_msg) {
+            if let Err(e) = push_rd.send(recv_msg) {
                 warn!("send recv_msg error: {}", e);
             }
-            if let Err(e) = to_send.send(send_msg) {
+            if let Err(e) = push_sd.send(send_msg) {
                 warn!("send send_msg error: {}", e);
             }
             Ok(recv_msg_id)
@@ -664,24 +667,26 @@ fn send_neighbor_detect_packet(
             if is_route {
                 let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
                 let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: recv_msg_id,
                     filters,
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff,
-                    ether_type: EtherTypes::Arp,
+                    eth_payload: buff,
+                    eth_type: EtherTypes::Arp,
                     retransmit: 1,
                 };
 
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     warn!("send recv_msg error: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     warn!("send send_msg error: {}", e);
                 }
                 Ok(recv_msg_id)
@@ -689,24 +694,26 @@ fn send_neighbor_detect_packet(
                 let dst_mac = ipv6_multicast_mac(dst_ipv6);
                 let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
                 let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RecvMsg {
+                let recv_msg = RRequest {
+                    interface_name: interface_name.clone(),
                     id: recv_msg_id,
                     filters,
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SendMsg {
+                let send_msg = SRequest {
+                    interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    ether_payload: buff,
-                    ether_type: EtherTypes::Arp,
+                    eth_payload: buff,
+                    eth_type: EtherTypes::Arp,
                     retransmit: 1,
                 };
 
-                if let Err(e) = to_recv.send(recv_msg) {
+                if let Err(e) = push_rd.send(recv_msg) {
                     warn!("send recv_msg error: {}", e);
                 }
-                if let Err(e) = to_send.send(send_msg) {
+                if let Err(e) = push_sd.send(send_msg) {
                     warn!("send send_msg error: {}", e);
                 }
                 Ok(recv_msg_id)
@@ -778,7 +785,6 @@ struct InferStatus {
     src_addr: IpAddr,
     cached: bool,
     rtt: Duration,
-    start: Instant,
     is_route: bool,
     target: IpAddr,
     retried: usize,
@@ -789,12 +795,12 @@ pub(crate) fn infer_macs(
     inputs: Vec<InferMacInput>,
     timeout: Duration,
     max_retries: usize,
-    to_send: Sender<SendMsg>,
-    to_recv: Sender<RecvMsg>,
-    get_response: Receiver<RecvResponse>,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
     let mut infer_status = HashMap::new();
-    let mut recv_status = HashMap::new();
+    let mut recv_msg_ids = Vec::new();
 
     for it in inputs {
         let src_addr = it.inferred_src_addr;
@@ -807,7 +813,6 @@ pub(crate) fn infer_macs(
                 src_addr,
                 cached: true,
                 rtt: Duration::ZERO,
-                start: Instant::now(),
                 is_route: false,
                 target: dst_addr,
                 retried: 0,
@@ -828,7 +833,6 @@ pub(crate) fn infer_macs(
                 src_addr,
                 cached: false,
                 rtt: Duration::ZERO,
-                start: Instant::now(),
                 is_route: false,
                 target: dst_addr,
                 retried: 0,
@@ -848,8 +852,8 @@ pub(crate) fn infer_macs(
                 continue;
             }
 
-            let to_recv = to_recv.clone();
-            let to_send = to_send.clone();
+            let push_rd = push_rd.clone();
+            let push_sd = push_sd.clone();
             match status.route_via {
                 Some(route_via) => {
                     match route_via {
@@ -875,21 +879,19 @@ pub(crate) fn infer_macs(
                                     };
 
                                     let src_addr = status.src_addr;
-                                    let start = Instant::now();
                                     let recv_msg_id = send_neighbor_detect_packet(
                                         dst_addr,
                                         src_addr,
                                         src_interface,
                                         timeout,
                                         false,
-                                        to_recv,
-                                        to_send,
+                                        push_rd,
+                                        push_sd,
                                     )?;
 
-                                    recv_status.insert(recv_msg_id, dst_addr);
+                                    recv_msg_ids.push(recv_msg_id);
 
                                     let mut status_clone = status.clone();
-                                    status_clone.start = start;
                                     status_clone.cached = false;
                                     status_clone.is_route = false;
                                     status_clone.target = dst_addr;
@@ -924,20 +926,18 @@ pub(crate) fn infer_macs(
                                 None => {
                                     let src_addr = status.src_addr;
                                     let src_interface = status.interface.clone();
-                                    let start = Instant::now();
                                     let recv_msg_id = send_neighbor_detect_packet(
                                         via_addr,
                                         src_addr,
                                         src_interface,
                                         timeout,
                                         true,
-                                        to_recv,
-                                        to_send,
+                                        push_rd,
+                                        push_sd,
                                     )?;
-                                    recv_status.insert(recv_msg_id, dst_addr);
+                                    recv_msg_ids.push(recv_msg_id);
 
                                     let mut status_clone = status.clone();
-                                    status_clone.start = start;
                                     status_clone.cached = false;
                                     status_clone.is_route = true;
                                     status_clone.target = via_addr;
@@ -962,20 +962,18 @@ pub(crate) fn infer_macs(
                         None => {
                             let src_addr = status.src_addr;
                             let src_interface = status.interface.clone();
-                            let start = Instant::now();
                             let recv_msg_id = send_neighbor_detect_packet(
                                 dst_addr,
                                 src_addr,
                                 src_interface,
                                 timeout,
                                 false,
-                                to_recv,
-                                to_send,
+                                push_rd,
+                                push_sd,
                             )?;
-                            recv_status.insert(recv_msg_id, dst_addr);
+                            recv_msg_ids.push(recv_msg_id);
 
                             let mut status_clone = status.clone();
-                            status_clone.start = start;
                             status_clone.cached = false;
                             status_clone.is_route = false;
                             status_clone.target = dst_addr;
@@ -1002,7 +1000,7 @@ pub(crate) fn infer_macs(
             }
             let recv_response = match get_response.recv_timeout(timeout_5ms) {
                 Ok(r) => {
-                    if recv_status.contains_key(&r.id) {
+                    if recv_msg_ids.contains(&r.id) {
                         r
                     } else {
                         continue;
@@ -1037,6 +1035,7 @@ pub(crate) fn infer_macs(
     Ok(rets)
 }
 
+/// Returns (inferred_dst_addr, inferred_src_addr).
 /// The source address is inferred from the target address.
 /// When the target address is a loopback address,
 /// it is mapped to an internal private address
@@ -1046,67 +1045,68 @@ pub(crate) fn infer_addr(
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
 ) -> Result<Option<(IpAddr, IpAddr)>, PistolError> {
+    if let Some(src_addr) = src_addr {
+        return Ok(Some((dst_addr, src_addr)));
+    }
+
     if dst_addr.is_loopback() || is_local_machine_ip(dst_addr) {
         let loopback_addr = match dst_addr {
-            IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+            IpAddr::V4(_addr) => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(_addr) => IpAddr::V6(Ipv6Addr::LOCALHOST),
         };
         return Ok(Some((loopback_addr, loopback_addr)));
-    } else {
-        if let Some(src_addr) = src_addr {
-            return Ok(Some((dst_addr, src_addr)));
-        }
-        match search_route_table(dst_addr)? {
-            Some(route_info) => {
-                // Try to get the interface for sending through the system routing table,
-                // and then get the IP on it through the interface.
-                for ipn in route_info.dev.ips {
-                    match ipn.ip() {
-                        IpAddr::V4(src_ipv4) => {
-                            if dst_addr.is_ipv4() && !src_ipv4.is_loopback() {
-                                return Ok(Some((dst_addr, src_ipv4.into())));
-                            }
+    }
+
+    match search_route_table(dst_addr)? {
+        Some(route_info) => {
+            // Try to get the interface for sending through the system routing table,
+            // and then get the IP on it through the interface.
+            for ipn in route_info.dev.ips {
+                match ipn.ip() {
+                    IpAddr::V4(src_ipv4) => {
+                        if dst_addr.is_ipv4() && !src_ipv4.is_loopback() {
+                            return Ok(Some((dst_addr, src_ipv4.into())));
                         }
-                        IpAddr::V6(src_ipv6) => {
-                            if dst_addr.is_ipv6() && !src_ipv6.is_loopback() {
-                                return Ok(Some((dst_addr, src_ipv6.into())));
-                            }
+                    }
+                    IpAddr::V6(src_ipv6) => {
+                        if dst_addr.is_ipv6() && !src_ipv6.is_loopback() {
+                            return Ok(Some((dst_addr, src_ipv6.into())));
                         }
                     }
                 }
             }
-            None => {
-                // When the above methods do not work,
-                // try to find an IP address in the same subnet as the target address
-                // in the local interface as the source address.
-                for interface in interfaces() {
-                    for ipn in interface.ips {
-                        if ipn.contains(dst_addr) {
-                            let src_addr = ipn.ip();
-                            return Ok(Some((dst_addr, src_addr)));
-                        }
+        }
+        None => {
+            // When the above methods do not work,
+            // try to find an IP address in the same subnet as the target address
+            // in the local interface as the source address.
+            for interface in interfaces() {
+                for ipn in interface.ips {
+                    if ipn.contains(dst_addr) {
+                        let src_addr = ipn.ip();
+                        return Ok(Some((dst_addr, src_addr)));
                     }
                 }
-                // Finally, if we really can't find the source address,
-                // transform it to the address in the same network segment as the default route.
-                let (default_route, default_route6) = get_default_route()?;
-                let dr = if dst_addr.is_ipv4() {
-                    match default_route {
-                        Some(dr_ipv4) => dr_ipv4,
-                        None => return Err(PistolError::CanNotFoundRouterAddress),
-                    }
-                } else {
-                    match default_route6 {
-                        Some(dr_ipv6) => dr_ipv6,
-                        None => return Err(PistolError::CanNotFoundRouterAddress),
-                    }
-                };
-                for interface in interfaces() {
-                    for ipn in interface.ips {
-                        if ipn.contains(dr.via) {
-                            let src_addr = ipn.ip();
-                            return Ok(Some((dst_addr, src_addr)));
-                        }
+            }
+            // Finally, if we really can't find the source address,
+            // transform it to the address in the same network segment as the default route.
+            let (default_route, default_route6) = get_default_route()?;
+            let dr = if dst_addr.is_ipv4() {
+                match default_route {
+                    Some(dr_ipv4) => dr_ipv4,
+                    None => return Err(PistolError::CanNotFoundRouterAddress),
+                }
+            } else {
+                match default_route6 {
+                    Some(dr_ipv6) => dr_ipv6,
+                    None => return Err(PistolError::CanNotFoundRouterAddress),
+                }
+            };
+            for interface in interfaces() {
+                for ipn in interface.ips {
+                    if ipn.contains(dr.via) {
+                        let src_addr = ipn.ip();
+                        return Ok(Some((dst_addr, src_addr)));
                     }
                 }
             }
