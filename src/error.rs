@@ -51,6 +51,8 @@ pub enum PistolError {
     PingParseResponseError,
 
     /* SCAN ERROR */
+    #[error("parse int error")]
+    BitcodeError(#[from] bitcode::Error),
     #[error("can not found the loopback interface, please check your network connection")]
     CanNotFoundLoopbackInterface,
     #[error(

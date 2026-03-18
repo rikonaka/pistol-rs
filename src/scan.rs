@@ -1,5 +1,7 @@
 /* Scan */
 #[cfg(any(feature = "scan", feature = "ping"))]
+use bitcode;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::DateTime;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::Local;
@@ -9,6 +11,7 @@ use crossbeam::channel::Receiver;
 use crossbeam::channel::Sender;
 #[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
+#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::datalink::NetworkInterface;
 #[cfg(feature = "scan")]
 use pnet::datalink::interfaces;
@@ -41,6 +44,8 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::fmt;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use std::fs;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::IpAddr;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -106,6 +111,8 @@ use crate::utils::random_recv_msg_id;
 #[cfg(feature = "scan")]
 use crate::utils::time_to_string;
 
+const NMAP_MAC_PREFIXES_BIN_PATH: &str = "./src/db/nmap-mac-prefixes.bin";
+
 fn update_neighbor_cache(addr: IpAddr, mac: MacAddr, rtt: Duration) -> Result<(), PistolError> {
     let mut gncs = GLOBAL_NET_CACHES
         .lock()
@@ -120,7 +127,8 @@ fn update_neighbor_cache(addr: IpAddr, mac: MacAddr, rtt: Duration) -> Result<()
 pub struct MacReport {
     pub addr: IpAddr,
     pub mac: Option<MacAddr>,
-    pub ouis: String, // productions organization name
+    /// Productions organization name.
+    pub oui: String,
     pub rtt: Duration,
 }
 
@@ -158,7 +166,7 @@ impl fmt::Display for MacScans {
             match report.mac {
                 Some(mac) => {
                     table.add_row(
-                        row![c -> i, c -> report.addr, c -> mac, c -> report.ouis, c -> time_cost_str],
+                        row![c -> i, c -> report.addr, c -> mac, c -> report.oui, c -> time_cost_str],
                     );
                     i += 1;
                     alive_hosts += 1;
@@ -201,37 +209,6 @@ impl MacScans {
 }
 
 #[cfg(feature = "scan")]
-#[derive(Debug, Clone)]
-pub struct NmapMacPrefix {
-    pub prefix: String,
-    pub ouis: String,
-}
-
-#[cfg(feature = "scan")]
-fn get_nmap_mac_prefixes() -> Vec<NmapMacPrefix> {
-    let nmap_mac_prefixes_file = include_str!("./db/nmap-mac-prefixes");
-    let mut nmap_mac_prefixes = Vec::new();
-    for l in nmap_mac_prefixes_file.lines() {
-        nmap_mac_prefixes.push(l.to_string());
-    }
-
-    let mut ret = Vec::new();
-    for p in nmap_mac_prefixes {
-        if !p.contains("#") {
-            let p_split: Vec<String> = p.split(" ").map(|s| s.to_string()).collect();
-            if p_split.len() >= 2 {
-                let ouis_slice = p_split[1..].to_vec();
-                let n = NmapMacPrefix {
-                    prefix: p_split[0].to_string(),
-                    ouis: ouis_slice.join(" "),
-                };
-                ret.push(n);
-            }
-        }
-    }
-    ret
-}
-
 fn loopback_interface() -> Result<NetworkInterface, PistolError> {
     for interface in interfaces() {
         if interface.is_loopback() {
@@ -242,6 +219,7 @@ fn loopback_interface() -> Result<NetworkInterface, PistolError> {
 }
 
 /// mac scan target is only can be localnet address.
+#[cfg(feature = "scan")]
 fn mac_scan_found_interface(dst_addr: IpAddr) -> Result<NetworkInterface, PistolError> {
     if dst_addr.is_loopback() {
         return loopback_interface();
@@ -633,6 +611,13 @@ pub(crate) fn parse_mac_scan_response(eth_response: Arc<[u8]>) -> Option<(IpAddr
     None
 }
 
+fn get_nmap_mac_prefixes() -> Result<HashMap<String, String>, PistolError> {
+    let nmap_mac_prefixes_bytes = fs::read(NMAP_MAC_PREFIXES_BIN_PATH)?;
+    let nmap_mac_prefixes: HashMap<String, String> =
+        bitcode::deserialize(&nmap_mac_prefixes_bytes)?;
+    Ok(nmap_mac_prefixes)
+}
+
 #[cfg(feature = "scan")]
 pub fn mac_scan(
     targets: &[Target],
@@ -642,7 +627,6 @@ pub fn mac_scan(
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
 ) -> Result<MacScans, PistolError> {
-    let nmap_mac_prefixes = get_nmap_mac_prefixes();
     let mut rets = MacScans::new(max_retries);
 
     let mut loop_status = HashMap::new();
@@ -659,6 +643,7 @@ pub fn mac_scan(
     loop {
         let mut rrq_id_hm = HashMap::new();
         let mut all_done = true;
+        #[cfg(feature = "debug")]
         let send_start_time = Instant::now();
         for (dst_addr, status) in loop_status {
             let retried = status.retried;
@@ -697,6 +682,7 @@ pub fn mac_scan(
             }
         }
 
+        #[cfg(feature = "debug")]
         println!(
             "send mac scan packets cost: {:.2}s",
             send_start_time.elapsed().as_secs_f32()
@@ -707,8 +693,9 @@ pub fn mac_scan(
         }
 
         loop_status = loop_status_clone.clone();
-        let timeout_10ms = Duration::from_millis(50);
+        let timeout_10ms = Duration::from_millis(10);
         let recv_start_time = Instant::now();
+
         loop {
             if recv_start_time.elapsed() > timeout {
                 break;
@@ -732,53 +719,30 @@ pub fn mac_scan(
             }
         }
 
+        #[cfg(feature = "debug")]
         println!(
             "recv mac scan responses cost: {:.2}s",
             recv_start_time.elapsed().as_secs_f32()
         );
     }
 
+    let nmap_mac_prefixes = get_nmap_mac_prefixes()?;
     let mut mac_scan_reports = Vec::new();
     for (target_addr, (target_mac, rtt)) in mac_scan_rets {
-        let mut target_ouis = String::new();
-        let mut mac_prefix = String::new();
-        let m0 = format!("{:X}", target_mac.0);
-        let m1 = format!("{:X}", target_mac.1);
-        let m2 = format!("{:X}", target_mac.2);
-        // m0
-        let i = if m0.len() < 2 { 2 - m0.len() } else { 0 };
-        if i > 0 {
-            for _ in 0..i {
-                mac_prefix += "0";
-            }
-        }
-        mac_prefix += &m0;
-        // m1
-        let i = if m1.len() < 2 { 2 - m1.len() } else { 0 };
-        if i > 0 {
-            for _ in 0..i {
-                mac_prefix += "0";
-            }
-        }
-        mac_prefix += &m1;
-        // m2
-        let i = if m2.len() < 2 { 2 - m2.len() } else { 0 };
-        if i > 0 {
-            for _ in 0..i {
-                mac_prefix += "0";
-            }
-        }
-        mac_prefix += &m2;
+        let mac_prefix = format!(
+            "{:02X}{:02X}{:02X}",
+            target_mac.0, target_mac.1, target_mac.2
+        );
         // println!("{}", mac_prefix);
-        for p in &nmap_mac_prefixes {
-            if mac_prefix == p.prefix {
-                target_ouis = p.ouis.to_string();
-            }
-        }
+        let target_oui = match nmap_mac_prefixes.get(&mac_prefix) {
+            Some(oui) => oui.to_owned(),
+            None => String::from("unknown"),
+        };
+
         let mr = MacReport {
             addr: target_addr,
             mac: Some(target_mac),
-            ouis: target_ouis,
+            oui: target_oui,
             rtt,
         };
         mac_scan_reports.push(mr);
@@ -1289,12 +1253,12 @@ fn scan(
 
         let mut responses = Vec::new();
         let start_recv = Instant::now();
-        let timeout_5ms = Duration::from_millis(5);
+        let timeout_10ms = Duration::from_millis(10);
         loop {
             if start_recv.elapsed() > timeout {
                 break;
             }
-            match get_response.recv_timeout(timeout_5ms) {
+            match get_response.recv_timeout(timeout_10ms) {
                 Ok(recv_response) => {
                     responses.push(recv_response);
                 }
@@ -1903,4 +1867,72 @@ pub fn udp_scan_raw(
         push_sd,
         get_response,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use regex::Regex;
+    fn parse_nmap_mac_prefixes<'a>() -> Result<HashMap<&'a str, &'a str>, PistolError> {
+        let db_file = include_str!("./db/nmap-mac-prefixes");
+        let mut lines = Vec::new();
+        for line in db_file.lines() {
+            lines.push(line);
+        }
+
+        let re = Regex::new(r"^(?P<prefix>[0-9A-F]+)\s(?P<oui>.+)")?;
+
+        let mut ret = HashMap::new();
+        for line in lines {
+            if line.starts_with("#") {
+                continue;
+            }
+            match re.captures(line) {
+                Some(caps) => {
+                    let prefix = caps.name("prefix").map_or("", |m| m.as_str());
+                    let oui = caps.name("oui").map_or("", |m| m.as_str());
+
+                    ret.insert(prefix, oui);
+                }
+                None => {
+                    println!("nmap mac prefixes line: [{}] no match", line);
+                }
+            }
+        }
+        Ok(ret)
+    }
+    #[test]
+    fn write_and_load_nmap_mac_prefixes() {
+        let parse_start = Instant::now();
+        let st = parse_nmap_mac_prefixes().unwrap();
+        // parse nmap-mac-prefixes: 0.27s
+        println!(
+            "parse nmap-mac-prefixes: {:.2}s",
+            parse_start.elapsed().as_secs_f32()
+        );
+        let st_bytes = bitcode::serialize(&st).unwrap();
+        fs::write(NMAP_MAC_PREFIXES_BIN_PATH, st_bytes).unwrap();
+
+        let load_start = Instant::now();
+        match fs::read(NMAP_MAC_PREFIXES_BIN_PATH) {
+            Ok(bytes) => {
+                let st_a: HashMap<String, String> = match bitcode::deserialize(&bytes) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        debug!("failed to parse network cache from file: {}, delete it", e);
+                        HashMap::new()
+                    }
+                };
+                // lost cost: 0.03s, len: 49058
+                println!(
+                    "lost cost: {:.2}s, len: {}",
+                    load_start.elapsed().as_secs_f32(),
+                    st_a.len(),
+                );
+            }
+            Err(e) => {
+                error!("failed to read nmap-mac-prefixes.bin from file: {}", e);
+            }
+        };
+    }
 }

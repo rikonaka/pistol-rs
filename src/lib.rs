@@ -166,7 +166,7 @@ impl NetCache {
         let nc_bytes = match fs::read(NETWORK_CACHE_PATH) {
             Ok(bytes) => bytes,
             Err(e) => {
-                error!(
+                warn!(
                     "failed to read network cache from file, create a new one: {}",
                     e
                 );
@@ -177,7 +177,7 @@ impl NetCache {
         let nc: NetCache = match bitcode::deserialize(&nc_bytes) {
             Ok(v) => v,
             Err(e) => {
-                debug!("failed to parse network cache from file: {}, delete it", e);
+                warn!("failed to parse network cache from file: {}, delete it", e);
                 fs::remove_file(NETWORK_CACHE_PATH).expect("delete invalid network cache failed");
                 return None;
             }
@@ -1034,9 +1034,9 @@ impl Pistol {
         let loopback_addr_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
         let loopback_addr_ipv6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
 
-        let timeout_5ms = Duration::from_millis(5);
+        let timeout_10ms = Duration::from_millis(10);
         loop {
-            let smsg = match receiver.recv_timeout(timeout_5ms) {
+            let smsg = match receiver.recv_timeout(timeout_10ms) {
                 Ok(s) => s,
                 Err(_e) => continue,
             };
@@ -1126,7 +1126,7 @@ impl Pistol {
         cap.set_promiscuous_mode(true);
         // cap.set_immediate_mode(true);
 
-        let timeout_5ms = Duration::from_millis(5);
+        let timeout_10ms = Duration::from_millis(10);
 
         // The history_packets is used to store recently received packets,
         // which will be matched with new filters when they arrive.
@@ -1156,19 +1156,20 @@ impl Pistol {
             }
 
             loop {
-                match receiver.recv_timeout(timeout_5ms) {
+                match receiver.recv_timeout(timeout_10ms) {
                     Ok(r) => r_msgs.push(r),
                     Err(_) => break,
                 }
             }
 
             for packet in &history_packets {
-                #[cfg(feature = "debug")]
-                debug_show_packet(packet, Some(EtherTypes::Ipv4));
                 for msg in &r_msgs {
                     // Not drop any message here.
                     if msg.check_packet(packet) {
+                        #[cfg(feature = "debug")]
+                        debug_show_packet(packet, Some(EtherTypes::Arp));
                         // send matched packet back to thread
+                        println!("matched packet [{}]", packet.len());
                         debug!("matched packet [{}]", packet.len());
                         let rtt = msg.created.elapsed();
                         let recv_response = RResponse {
@@ -1395,7 +1396,7 @@ impl Pistol {
     /// +------------+---------------+-------------------+------------+------------+
     /// |     4      | 192.168.5.254 | 00:50:56:e1:a8:e6 |   VMware   |  477.67ms  |
     /// +------------+---------------+-------------------+------------+------------+
-    /// | total cost: 1.70s, avg cost: 425.92ms, alive hosts: 4                    |
+    /// | total cost: 1.65s, avg cost: 425.92ms, alive hosts: 4                    |
     /// +------------+---------------+-------------------+------------+------------+
     /// ```
     /// arp-scan:

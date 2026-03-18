@@ -993,12 +993,12 @@ pub(crate) fn infer_macs(
         }
 
         let recv_start = Instant::now();
-        let timeout_5ms = Duration::from_millis(5);
+        let timeout_10ms = Duration::from_millis(10);
         loop {
             if recv_start.elapsed() > timeout {
                 break;
             }
-            let recv_response = match get_response.recv_timeout(timeout_5ms) {
+            let recv_response = match get_response.recv_timeout(timeout_10ms) {
                 Ok(r) => {
                     if recv_msg_ids.contains(&r.id) {
                         r
