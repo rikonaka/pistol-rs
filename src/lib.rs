@@ -1133,7 +1133,12 @@ impl Pistol {
         // This is to avoid missing packets that arrive before filters,
         // since libpcap will not loss any packets,
         // we can store all received packets in memory and match them with new filters when they arrive.
-        let mut history_packets: Vec<Arc<[u8]>> = Vec::new();
+        struct HistoryPacket {
+            data: Arc<[u8]>,
+            processed: bool,
+        }
+
+        let mut history_packets: Vec<HistoryPacket> = Vec::new();
         let mut r_msgs = Vec::new();
         loop {
             // Fetch packets first, then check if there are new filters to match,
@@ -1146,7 +1151,11 @@ impl Pistol {
             );
 
             for packet in packets {
-                history_packets.push(Arc::from(packet));
+                let hp = HistoryPacket {
+                    data: Arc::from(packet),
+                    processed: false,
+                };
+                history_packets.push(hp);
             }
 
             if history_packets.len() > MAX_HISTORY_PACKETS {
@@ -1162,24 +1171,28 @@ impl Pistol {
                 }
             }
 
-            for packet in &history_packets {
+            for packet in &mut history_packets {
+                if packet.processed {
+                    continue;
+                }
                 for msg in &r_msgs {
                     // Not drop any message here.
-                    if msg.check_packet(packet) {
+                    if msg.check_packet(&packet.data) {
                         #[cfg(feature = "debug")]
-                        debug_show_packet(packet, Some(EtherTypes::Arp));
+                        debug_show_packet(&packet.data, Some(EtherTypes::Arp));
                         // send matched packet back to thread
-                        println!("matched packet [{}]", packet.len());
-                        debug!("matched packet [{}]", packet.len());
+                        println!("matched packet [{}]", packet.data.len());
+                        debug!("matched packet [{}]", packet.data.len());
                         let rtt = msg.created.elapsed();
                         let recv_response = RResponse {
                             id: msg.id,
-                            data: packet.clone(),
+                            data: packet.data.clone(),
                             rtt,
                         };
                         if let Err(e) = push_response.send(recv_response) {
                             error!("receiver [{}] send response failed: {}", interface_name, e)
                         }
+                        packet.processed = true;
                         break;
                     }
                 }
