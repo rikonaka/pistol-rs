@@ -632,15 +632,15 @@ fn send_neighbor_detect_packet(
             };
             let (buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
 
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters,
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -649,13 +649,13 @@ fn send_neighbor_detect_packet(
                 retransmit: 1,
             };
 
-            if let Err(e) = push_rd.send(recv_msg) {
-                warn!("send recv_msg error: {}", e);
+            if let Err(e) = push_rd.send(rrq) {
+                warn!("send rrq error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
-                warn!("send send_msg error: {}", e);
+            if let Err(e) = push_sd.send(srq) {
+                warn!("send srq error: {}", e);
             }
-            Ok(recv_msg_id)
+            Ok(rrq_id)
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match src_addr {
@@ -666,15 +666,15 @@ fn send_neighbor_detect_packet(
             let dst_ipv6 = dst_ipv6_ext.link_multicast();
             if is_route {
                 let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-                let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RRequest {
+                let rrq_id = random_recv_msg_id();
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: recv_msg_id,
+                    id: rrq_id,
                     filters,
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -683,25 +683,25 @@ fn send_neighbor_detect_packet(
                     retransmit: 1,
                 };
 
-                if let Err(e) = push_rd.send(recv_msg) {
-                    warn!("send recv_msg error: {}", e);
+                if let Err(e) = push_rd.send(rrq) {
+                    warn!("send rrq error: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
-                    warn!("send send_msg error: {}", e);
+                if let Err(e) = push_sd.send(srq) {
+                    warn!("send srq error: {}", e);
                 }
-                Ok(recv_msg_id)
+                Ok(rrq_id)
             } else {
                 let dst_mac = ipv6_multicast_mac(dst_ipv6);
                 let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-                let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RRequest {
+                let rrq_id = random_recv_msg_id();
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: recv_msg_id,
+                    id: rrq_id,
                     filters,
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -710,13 +710,13 @@ fn send_neighbor_detect_packet(
                     retransmit: 1,
                 };
 
-                if let Err(e) = push_rd.send(recv_msg) {
-                    warn!("send recv_msg error: {}", e);
+                if let Err(e) = push_rd.send(rrq) {
+                    warn!("send rrq error: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
-                    warn!("send send_msg error: {}", e);
+                if let Err(e) = push_sd.send(srq) {
+                    warn!("send srq error: {}", e);
                 }
-                Ok(recv_msg_id)
+                Ok(rrq_id)
             }
         }
     }
@@ -879,7 +879,7 @@ pub(crate) fn infer_macs(
                                     };
 
                                     let src_addr = status.src_addr;
-                                    let recv_msg_id = send_neighbor_detect_packet(
+                                    let rrq_id = send_neighbor_detect_packet(
                                         dst_addr,
                                         src_addr,
                                         src_interface,
@@ -889,7 +889,7 @@ pub(crate) fn infer_macs(
                                         push_sd,
                                     )?;
 
-                                    recv_msg_ids.push(recv_msg_id);
+                                    recv_msg_ids.push(rrq_id);
 
                                     let mut status_clone = status.clone();
                                     status_clone.cached = false;
@@ -926,7 +926,7 @@ pub(crate) fn infer_macs(
                                 None => {
                                     let src_addr = status.src_addr;
                                     let src_interface = status.interface.clone();
-                                    let recv_msg_id = send_neighbor_detect_packet(
+                                    let rrq_id = send_neighbor_detect_packet(
                                         via_addr,
                                         src_addr,
                                         src_interface,
@@ -935,7 +935,7 @@ pub(crate) fn infer_macs(
                                         push_rd,
                                         push_sd,
                                     )?;
-                                    recv_msg_ids.push(recv_msg_id);
+                                    recv_msg_ids.push(rrq_id);
 
                                     let mut status_clone = status.clone();
                                     status_clone.cached = false;
@@ -962,7 +962,7 @@ pub(crate) fn infer_macs(
                         None => {
                             let src_addr = status.src_addr;
                             let src_interface = status.interface.clone();
-                            let recv_msg_id = send_neighbor_detect_packet(
+                            let rrq_id = send_neighbor_detect_packet(
                                 dst_addr,
                                 src_addr,
                                 src_interface,
@@ -971,7 +971,7 @@ pub(crate) fn infer_macs(
                                 push_rd,
                                 push_sd,
                             )?;
-                            recv_msg_ids.push(recv_msg_id);
+                            recv_msg_ids.push(rrq_id);
 
                             let mut status_clone = status.clone();
                             status_clone.cached = false;

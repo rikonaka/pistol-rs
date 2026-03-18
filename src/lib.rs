@@ -587,18 +587,6 @@ struct RResponse {
 }
 
 #[derive(Debug, Clone)]
-struct RunnerInput {
-    interface_name: String,
-    dst_mac: MacAddr,
-    src_mac: MacAddr,
-    ether_payload: Arc<[u8]>,
-    ether_type: EtherType,
-    filters: Vec<Arc<PacketFilter>>,
-    elapsed: Duration,
-    retransmit: usize,
-}
-
-#[derive(Debug, Clone)]
 struct NetInfoInput {
     dst_addr: IpAddr,
     dst_ports: Vec<u16>,
@@ -1188,7 +1176,9 @@ impl Pistol {
                             data: packet.clone(),
                             rtt,
                         };
-                        push_response.send(recv_response);
+                        if let Err(e) = push_response.send(recv_response) {
+                            error!("receiver [{}] send response failed: {}", interface_name, e)
+                        }
                         break;
                     }
                 }
@@ -1276,9 +1266,9 @@ impl Pistol {
         });
         Ok(())
     }
-    /// Initialize multiple runners for multiple targets without source address info.
+    /// Initialize domain and multiple runners for multiple targets without source address info.
     /// For mac scan like function which does not need mac info.
-    fn init_runners_without_net_infos(&mut self) -> Result<(), PistolError> {
+    fn init_domain_without_net_infos(&mut self) -> Result<(), PistolError> {
         self.init_logger()?;
         for ni in interfaces() {
             let (sm_sender, sm_receiver) = unbounded::<SRequest>();
@@ -1294,8 +1284,8 @@ impl Pistol {
 
         Ok(())
     }
-    /// Initialize multiple runners for multiple targets.
-    fn init_runner(
+    /// Initialize domain and multiple runners for multiple targets.
+    fn init_domain(
         &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
@@ -1382,8 +1372,8 @@ impl Pistol {
     ///     pistol.set_threads(512);
     ///     // set the timeout same as `arp-scan`
     ///     pistol.set_timeout(0.5);
+    ///     // set the max_retries same as `arp-scan`
     ///     pistol.set_max_retries(2);
-    ///     // pistol.set_log_level("debug");
     ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
     ///     let ret = pistol.mac_scan(&targets).unwrap();
     ///     println!("{}", ret);
@@ -1392,21 +1382,21 @@ impl Pistol {
     /// Compare the speed with arp-scan.
     /// pistol:
     /// ```
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// |                    Mac Scans (max_retries:2)                   |
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// |  seq   |     addr      |        mac        |  oui   |    rtt    |
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// |   1    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 76.720 ms |
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// |   2    |  192.168.5.2  | 00:50:56:e6:2f:9d | VMware | 76.693 ms |
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// |   3    | 192.168.5.77  | 00:0c:29:c5:f6:99 | VMware | 66.379 ms |
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// |   4    | 192.168.5.254 | 00:50:56:e2:f6:79 | VMware | 16.302 ms |
-    /// +--------+---------------+-------------------+--------+-----------+
-    /// | total cost: 1.206s, avg cost: 0.005s, alive hosts: 4            |
-    /// +--------+---------------+-------------------+--------+-----------+
+    /// +------------+---------------+-------------------+------------+------------+
+    /// |                        Mac Scans (max_retries:2)                         |
+    /// +------------+---------------+-------------------+------------+------------+
+    /// |    seq     |     addr      |        mac        |    oui     |    rtt     |
+    /// +------------+---------------+-------------------+------------+------------+
+    /// |     1      |  192.168.5.1  | 00:50:56:c0:00:08 |   VMware   |  489.36ms  |
+    /// +------------+---------------+-------------------+------------+------------+
+    /// |     2      |  192.168.5.2  | 00:50:56:ea:b6:ec |   VMware   |  492.57ms  |
+    /// +------------+---------------+-------------------+------------+------------+
+    /// |     3      | 192.168.5.78  | 00:0c:29:cf:62:2f |   VMware   |  500.18ms  |
+    /// +------------+---------------+-------------------+------------+------------+
+    /// |     4      | 192.168.5.254 | 00:50:56:e1:a8:e6 |   VMware   |  477.67ms  |
+    /// +------------+---------------+-------------------+------------+------------+
+    /// | total cost: 1.70s, avg cost: 425.92ms, alive hosts: 4                    |
+    /// +------------+---------------+-------------------+------------+------------+
     /// ```
     /// arp-scan:
     /// ```
@@ -1415,7 +1405,7 @@ impl Pistol {
     /// Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
     /// 192.168.5.1     00:50:56:c0:00:08       VMware, Inc.
     /// 192.168.5.2     00:50:56:e6:2f:9d       VMware, Inc.
-    /// 192.168.5.77    00:0c:29:c5:f6:99       VMware, Inc.
+    /// 192.168.5.78    00:0c:29:cf:62:2f       VMware, Inc.
     /// 192.168.5.254   00:50:56:e0:d3:bb       VMware, Inc.
     ///
     /// 8 packets received by filter, 0 packets dropped by kernel
@@ -1423,7 +1413,7 @@ impl Pistol {
     /// ```
     #[cfg(feature = "scan")]
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
-        self.init_runners_without_net_infos();
+        self.init_domain_without_net_infos()?;
         scan::mac_scan(
             targets,
             self.timeout,
@@ -1441,7 +1431,7 @@ impl Pistol {
         &mut self,
         dst_ipv4: Ipv4Addr,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        self.init_runners_without_net_infos();
+        self.init_domain_without_net_infos()?;
         scan::arp_scan_raw(
             dst_ipv4,
             self.timeout,
@@ -1459,7 +1449,7 @@ impl Pistol {
         &mut self,
         dst_ipv6: Ipv6Addr,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        self.init_runners_without_net_infos();
+        self.init_domain_without_net_infos()?;
         scan::ndp_ns_scan_raw(
             dst_ipv6,
             self.timeout,
@@ -1484,7 +1474,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_ack_scan(
             net_infos,
             self.timeout,
@@ -1626,7 +1616,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan(
             net_infos,
             self.timeout,
@@ -1676,7 +1666,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan(
             net_infos,
             self.timeout,
@@ -1727,7 +1717,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan(
             net_infos,
             self.timeout,
@@ -1784,7 +1774,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan(
             net_infos,
             self.timeout,
@@ -1836,7 +1826,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan(
             net_infos,
             self.timeout,
@@ -1886,7 +1876,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan(
             net_infos,
             self.timeout,
@@ -1941,7 +1931,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = scan::udp_scan(
             net_infos,
             self.timeout,
@@ -2005,7 +1995,7 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_address_mask_ping(
             net_infos,
             self.timeout,
@@ -2061,7 +2051,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_echo_ping(
             net_infos,
             self.timeout,
@@ -2119,7 +2109,7 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_timestamp_ping(
             net_infos,
             self.timeout,
@@ -2203,7 +2193,7 @@ impl Pistol {
             Some(ipv6) => Some(IpAddr::V6(ipv6)),
             None => None,
         };
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::icmpv6_ping(
             net_infos,
             self.timeout,
@@ -2226,7 +2216,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::tcp_ack_ping(
             net_infos,
             self.timeout,
@@ -2274,7 +2264,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::tcp_syn_ping(
             net_infos,
             self.timeout,
@@ -2322,7 +2312,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
         let mut ret = ping::udp_ping(
             net_infos,
             self.timeout,
@@ -2452,8 +2442,14 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::icmp_flood(net_infos, retransmit, repeat, fake_src)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let mut ret = flood::icmp_flood(
+            net_infos,
+            retransmit,
+            repeat,
+            fake_src,
+            self.push_sd.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2469,7 +2465,8 @@ impl Pistol {
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![], src_addr, None)?;
-        let mut ret = flood::icmp_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        let mut ret =
+            flood::icmp_flood_raw(net_info, retransmit, repeat, fake_src, self.push_sd.clone())?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2491,13 +2488,18 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        threads: usize,
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::tcp_ack_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let mut ret = flood::tcp_ack_flood(
+            net_infos,
+            retransmit,
+            repeat,
+            fake_src,
+            self.push_sd.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2515,7 +2517,8 @@ impl Pistol {
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = flood::tcp_ack_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        let mut ret =
+            flood::tcp_ack_flood_raw(net_info, retransmit, repeat, fake_src, self.push_sd.clone())?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2538,13 +2541,18 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        threads: usize,
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::tcp_ack_psh_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let mut ret = flood::tcp_ack_psh_flood(
+            net_infos,
+            retransmit,
+            repeat,
+            fake_src,
+            self.push_sd.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2563,7 +2571,13 @@ impl Pistol {
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = flood::tcp_ack_psh_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_ack_psh_flood_raw(
+            net_info,
+            retransmit,
+            repeat,
+            fake_src,
+            self.push_sd.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2578,13 +2592,18 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        threads: usize,
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::tcp_syn_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let mut ret = flood::tcp_syn_flood(
+            net_infos,
+            retransmit,
+            repeat,
+            fake_src,
+            self.push_sd.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2602,7 +2621,8 @@ impl Pistol {
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = flood::tcp_syn_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        let mut ret =
+            flood::tcp_syn_flood_raw(net_info, retransmit, repeat, fake_src, self.push_sd.clone())?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2618,13 +2638,18 @@ impl Pistol {
         targets: &[Target],
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        threads: usize,
         retransmit: usize,
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, src_addr, src_port)?;
-        let mut ret = flood::udp_flood(net_infos, threads, retransmit, repeat, fake_src)?;
+        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let mut ret = flood::udp_flood(
+            net_infos,
+            retransmit,
+            repeat,
+            fake_src,
+            self.push_sd.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2642,7 +2667,8 @@ impl Pistol {
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
         let (net_info, dur) = self.init_runner_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = flood::udp_flood_raw(net_info, retransmit, repeat, fake_src)?;
+        let mut ret =
+            flood::udp_flood_raw(net_info, retransmit, repeat, fake_src, self.push_sd.clone())?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2668,8 +2694,16 @@ impl Pistol {
         threads: usize,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
-        let (net_infos, dur) = self.init_runner(targets, None, None)?;
-        let mut ret = os::os_detect(net_infos, threads, self.timeout, top_k)?;
+        let (net_infos, dur) = self.init_domain(targets, None, None)?;
+        let mut ret = os::os_detect(
+            net_infos,
+            threads,
+            self.timeout,
+            top_k,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2693,7 +2727,14 @@ impl Pistol {
             None,
             None,
         )?;
-        let mut ret = os::os_detect_raw(net_info, self.timeout, top_k)?;
+        let mut ret = os::os_detect_raw(
+            net_info,
+            self.timeout,
+            top_k,
+            self.push_rd.clone(),
+            self.push_sd.clone(),
+            self.get_response.clone(),
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -3066,7 +3107,7 @@ mod tests {
     fn test_net_info_detect() {
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let mut pistol = Pistol::new();
-        let (net_infos, cost) = pistol.init_runner(&targets, None, None).unwrap();
+        let (net_infos, cost) = pistol.init_domain(&targets, None, None).unwrap();
         println!(
             "net_infos len: {}, cost: {:.2}s",
             net_infos.len(),
@@ -3185,13 +3226,26 @@ mod tests {
     }
     #[cfg(feature = "scan")]
     #[test]
-    fn test_mac_scan() {
+    fn test_mac_scan_single() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
         // pistol.set_log_level("debug");
 
         let targets = vec![Target::new(Ipv4Addr::new(192, 168, 5, 254).into(), None)];
+        let ret = pistol.mac_scan(&targets).unwrap();
+        println!("{}", ret);
+    }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn test_mac_scan_multi() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(0.5);
+        pistol.set_max_retries(2);
+        // pistol.set_log_level("debug");
+
+        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -3278,6 +3332,7 @@ mod tests {
         let mut pistol = Pistol::new();
         // set the timeout same as `arp-scan`
         pistol.set_timeout(0.5);
+        // set the max_retries same as `arp-scan`
         pistol.set_max_retries(2);
         // pistol.set_log_level("debug");
 

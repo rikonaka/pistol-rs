@@ -595,14 +595,14 @@ fn send_seq_probes(
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let created = Instant::now();
-                let recv_msg = RRequest {
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter],
                     created,
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -610,10 +610,10 @@ fn send_seq_probes(
                     eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = push_rd.send(recv_msg) {
+                if let Err(e) = push_rd.send(rrq) {
                     error!("send os probe seq recv msg failed: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
+                if let Err(e) = push_sd.send(srq) {
                     error!("send os probe seq send msg failed: {}", e);
                 }
 
@@ -813,14 +813,14 @@ fn send_ie_probes(
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
-                let recv_msg = RRequest {
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: status.id,
                     filters: filters.clone(),
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -828,10 +828,10 @@ fn send_ie_probes(
                     eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = push_rd.send(recv_msg) {
+                if let Err(e) = push_rd.send(rrq) {
                     error!("send os probe ie recv msg failed: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
+                if let Err(e) = push_sd.send(srq) {
                     error!("send os probe ie send msg failed: {}", e);
                 }
 
@@ -969,14 +969,14 @@ fn send_nx_probes(
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
-                let recv_msg = RRequest {
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter.clone()],
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -984,10 +984,10 @@ fn send_nx_probes(
                     eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = push_rd.send(recv_msg) {
+                if let Err(e) = push_rd.send(rrq) {
                     error!("send os probe nx recv msg failed: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
+                if let Err(e) = push_sd.send(srq) {
                     error!("send os probe nx send msg failed: {}", e);
                 }
 
@@ -1103,17 +1103,17 @@ fn send_u1_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let ether_type = EtherTypes::Ipv6;
-    let recv_msg_id = random_recv_msg_id();
+    let rrq_id = random_recv_msg_id();
     for _ in 0..PROBE_MAX_RETIRIES {
         let st = scan_start.elapsed();
-        let recv_msg = RRequest {
+        let rrq = RRequest {
             interface_name: interface_name.clone(),
-            id: recv_msg_id,
+            id: rrq_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
-        let send_msg = SRequest {
+        let srq = SRequest {
             interface_name: interface_name.clone(),
             dst_mac,
             src_mac,
@@ -1121,10 +1121,10 @@ fn send_u1_probe(
             eth_type: ether_type,
             retransmit: 1,
         };
-        if let Err(e) = push_rd.send(recv_msg) {
+        if let Err(e) = push_rd.send(rrq) {
             error!("send os probe u1 recv msg failed: {}", e);
         }
-        if let Err(e) = push_sd.send(send_msg) {
+        if let Err(e) = push_sd.send(srq) {
             error!("send os probe u1 send msg failed: {}", e);
         }
 
@@ -1133,7 +1133,7 @@ fn send_u1_probe(
                 let id = recv_response.id;
                 let response = recv_response.data;
                 let rtt = recv_response.rtt;
-                if recv_msg_id == id && response.len() > 0 {
+                if rrq_id == id && response.len() > 0 {
                     let rr = RequestResponse {
                         request: buff.clone(),
                         response,
@@ -1202,16 +1202,16 @@ fn send_tecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
     let ether_type = EtherTypes::Ipv6;
-    let recv_msg_id = random_recv_msg_id();
+    let rrq_id = random_recv_msg_id();
     for _ in 0..PROBE_MAX_RETIRIES {
-        let recv_msg = RRequest {
+        let rrq = RRequest {
             interface_name: interface_name.clone(),
-            id: recv_msg_id,
+            id: rrq_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
-        let send_msg = SRequest {
+        let srq = SRequest {
             interface_name: interface_name.clone(),
             dst_mac,
             src_mac,
@@ -1219,10 +1219,10 @@ fn send_tecn_probe(
             eth_type: ether_type,
             retransmit: 1,
         };
-        if let Err(e) = push_rd.send(recv_msg) {
+        if let Err(e) = push_rd.send(rrq) {
             error!("send os probe ecn recv msg failed: {}", e);
         }
-        if let Err(e) = push_sd.send(send_msg) {
+        if let Err(e) = push_sd.send(srq) {
             error!("send os probe ecn send msg failed: {}", e);
         }
         match get_response.recv_timeout(timeout) {
@@ -1230,7 +1230,7 @@ fn send_tecn_probe(
                 let id = recv_response.id;
                 let response = recv_response.data;
                 let rtt = recv_response.rtt;
-                if recv_msg_id == id && response.len() > 0 {
+                if rrq_id == id && response.len() > 0 {
                     let rr = RequestResponse {
                         request: buff.clone(),
                         response,
@@ -1385,14 +1385,14 @@ fn send_tx_probes(
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let start = Instant::now();
-                let recv_msg = RRequest {
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: status.id,
                     filters: vec![filter],
                     created: start,
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -1400,10 +1400,10 @@ fn send_tx_probes(
                     eth_type: ether_type,
                     retransmit: 1,
                 };
-                if let Err(e) = push_rd.send(recv_msg) {
+                if let Err(e) = push_rd.send(rrq) {
                     error!("send os probe tx recv msg failed: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
+                if let Err(e) = push_sd.send(srq) {
                     error!("send os probe tx send msg failed: {}", e);
                 }
 

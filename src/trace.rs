@@ -173,15 +173,15 @@ fn syn_trace_ipv4(
             tcp::build_syn_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -190,16 +190,16 @@ fn syn_trace_ipv4(
                 retransmit: 1,
             };
 
-            if let Err(e) = push_rd.send(recv_msg) {
+            if let Err(e) = push_rd.send(rrq) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
+            if let Err(e) = push_sd.send(srq) {
                 error!("send trace packet error: {}", e);
             }
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == recv_msg_id && r.data.len() > 0 {
+                    if r.id == rrq_id && r.data.len() > 0 {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -263,15 +263,15 @@ fn syn_trace_ipv6(
             tcp6::build_syn_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -279,16 +279,16 @@ fn syn_trace_ipv6(
                 eth_type: EtherTypes::Ipv6,
                 retransmit: 1,
             };
-            if let Err(e) = push_rd.send(recv_msg) {
+            if let Err(e) = push_rd.send(rrq) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
+            if let Err(e) = push_sd.send(srq) {
                 error!("send trace packet error: {}", e);
             }
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == recv_msg_id && r.data.len() > 0 {
+                    if r.id == rrq_id && r.data.len() > 0 {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -419,15 +419,15 @@ fn icmp_trace_ipv4(
             icmp::send_icmp_trace_packet(dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -435,16 +435,16 @@ fn icmp_trace_ipv4(
                 eth_type: EtherTypes::Ipv4,
                 retransmit: 1,
             };
-            if let Err(e) = push_rd.send(recv_msg) {
+            if let Err(e) = push_rd.send(rrq) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
+            if let Err(e) = push_sd.send(srq) {
                 error!("send trace packet error: {}", e);
             }
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == recv_msg_id && r.data.len() > 0 {
+                    if r.id == rrq_id && r.data.len() > 0 {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -511,15 +511,15 @@ fn icmp_trace_ipv6(
         )?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -527,16 +527,16 @@ fn icmp_trace_ipv6(
                 eth_type: EtherTypes::Ipv6,
                 retransmit: 1,
             };
-            if let Err(e) = push_rd.send(recv_msg) {
+            if let Err(e) = push_rd.send(rrq) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
+            if let Err(e) = push_sd.send(srq) {
                 error!("send trace packet error: {}", e);
             }
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == recv_msg_id && r.data.len() > 0 {
+                    if r.id == rrq_id && r.data.len() > 0 {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -657,15 +657,15 @@ fn udp_trace_ipv4(
             udp::build_udp_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -673,16 +673,16 @@ fn udp_trace_ipv4(
                 eth_type: EtherTypes::Ipv4,
                 retransmit: 1,
             };
-            if let Err(e) = push_rd.send(recv_msg) {
+            if let Err(e) = push_rd.send(rrq) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
+            if let Err(e) = push_sd.send(srq) {
                 error!("send trace packet error: {}", e);
             }
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == recv_msg_id && r.data.len() > 0 {
+                    if r.id == rrq_id && r.data.len() > 0 {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -744,15 +744,15 @@ fn udp_trace_ipv6(
             udp6::build_udp_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let recv_msg_id = random_recv_msg_id();
-            let recv_msg = RRequest {
+            let rrq_id = random_recv_msg_id();
+            let rrq = RRequest {
                 interface_name: interface_name.clone(),
-                id: recv_msg_id,
+                id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
-            let send_msg = SRequest {
+            let srq = SRequest {
                 interface_name: interface_name.clone(),
                 dst_mac,
                 src_mac,
@@ -760,16 +760,16 @@ fn udp_trace_ipv6(
                 eth_type: EtherTypes::Ipv6,
                 retransmit: 1,
             };
-            if let Err(e) = push_rd.send(recv_msg) {
+            if let Err(e) = push_rd.send(rrq) {
                 error!("send trace recv msg error: {}", e);
             }
-            if let Err(e) = push_sd.send(send_msg) {
+            if let Err(e) = push_sd.send(srq) {
                 error!("send trace packet error: {}", e);
             }
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == recv_msg_id && r.data.len() > 0 {
+                    if r.id == rrq_id && r.data.len() > 0 {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));

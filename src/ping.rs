@@ -616,15 +616,15 @@ fn ping(
                             build_ping_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
                         let interface_name = ni.interface_name.clone();
-                        let recv_msg_id = random_recv_msg_id();
-                        let recv_msg = RRequest {
+                        let rrq_id = random_recv_msg_id();
+                        let rrq = RRequest {
                             interface_name: interface_name.clone(),
-                            id: recv_msg_id,
+                            id: rrq_id,
                             filters,
                             created: Instant::now(),
                             elapsed: timeout,
                         };
-                        let send_msg = SRequest {
+                        let srq = SRequest {
                             interface_name: interface_name.clone(),
                             dst_mac,
                             src_mac,
@@ -632,14 +632,14 @@ fn ping(
                             eth_type: EtherTypes::Ipv4,
                             retransmit: 1,
                         };
-                        if let Err(e) = push_rd.send(recv_msg) {
+                        if let Err(e) = push_rd.send(rrq) {
                             error!("ipv4 send ping recv msg error: {}", e);
                         }
-                        if let Err(e) = push_sd.send(send_msg) {
+                        if let Err(e) = push_sd.send(srq) {
                             error!("ipv4 send ping send msg error: {}", e);
                         }
 
-                        recv_msg_ids.insert(recv_msg_id, dst_addr);
+                        recv_msg_ids.insert(rrq_id, dst_addr);
 
                         let mut status_clone = status.clone();
                         status_clone.retried = retried + 1;
@@ -680,15 +680,15 @@ fn ping(
                             build_ping_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
                         let interface_name = ni.interface_name.clone();
-                        let recv_msg_id = random_recv_msg_id();
-                        let recv_msg = RRequest {
+                        let rrq_id = random_recv_msg_id();
+                        let rrq = RRequest {
                             interface_name: interface_name.clone(),
-                            id: recv_msg_id,
+                            id: rrq_id,
                             filters,
                             created: Instant::now(),
                             elapsed: timeout,
                         };
-                        let send_msg = SRequest {
+                        let srq = SRequest {
                             interface_name: interface_name.clone(),
                             dst_mac,
                             src_mac,
@@ -696,14 +696,14 @@ fn ping(
                             eth_type: EtherTypes::Ipv6,
                             retransmit: 1,
                         };
-                        if let Err(e) = push_rd.send(recv_msg) {
+                        if let Err(e) = push_rd.send(rrq) {
                             error!("ipv4 send ping recv msg error: {}", e);
                         }
-                        if let Err(e) = push_sd.send(send_msg) {
+                        if let Err(e) = push_sd.send(srq) {
                             error!("ipv4 send ping send msg error: {}", e);
                         }
 
-                        recv_msg_ids.insert(recv_msg_id, dst_addr);
+                        recv_msg_ids.insert(rrq_id, dst_addr);
 
                         let mut status_clone = status.clone();
                         status_clone.retried = retried + 1;
@@ -824,15 +824,15 @@ pub fn ping_raw(
                     build_ping_buff(dst_ipv4, Some(dst_port), src_ipv4, src_port, method)?;
 
                 let interface_name = net_info.interface_name.clone();
-                let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RRequest {
+                let rrq_id = random_recv_msg_id();
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: recv_msg_id,
+                    id: rrq_id,
                     filters,
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -840,16 +840,16 @@ pub fn ping_raw(
                     eth_type: EtherTypes::Ipv4,
                     retransmit: 1,
                 };
-                if let Err(e) = push_rd.send(recv_msg) {
+                if let Err(e) = push_rd.send(rrq) {
                     error!("ipv4 send ping recv msg error: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
+                if let Err(e) = push_sd.send(srq) {
                     error!("ipv4 send ping send msg error: {}", e);
                 }
 
                 let recv_response = match get_response.recv_timeout(timeout) {
                     Ok(r) => {
-                        if r.id == recv_msg_id {
+                        if r.id == rrq_id {
                             r
                         } else {
                             continue;
@@ -899,15 +899,15 @@ pub fn ping_raw(
                     build_ping_buff6(dst_ipv6, Some(dst_port), src_ipv6, src_port, method)?;
 
                 let interface_name = net_info.interface_name.clone();
-                let recv_msg_id = random_recv_msg_id();
-                let recv_msg = RRequest {
+                let rrq_id = random_recv_msg_id();
+                let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: recv_msg_id,
+                    id: rrq_id,
                     filters,
                     created: Instant::now(),
                     elapsed: timeout,
                 };
-                let send_msg = SRequest {
+                let srq = SRequest {
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
@@ -915,16 +915,16 @@ pub fn ping_raw(
                     eth_type: EtherTypes::Ipv4,
                     retransmit: 1,
                 };
-                if let Err(e) = push_rd.send(recv_msg) {
+                if let Err(e) = push_rd.send(rrq) {
                     error!("ipv4 send ping recv msg error: {}", e);
                 }
-                if let Err(e) = push_sd.send(send_msg) {
+                if let Err(e) = push_sd.send(srq) {
                     error!("ipv4 send ping send msg error: {}", e);
                 }
 
                 let recv_response = match get_response.recv_timeout(timeout) {
                     Ok(r) => {
-                        if r.id == recv_msg_id {
+                        if r.id == rrq_id {
                             r
                         } else {
                             continue;

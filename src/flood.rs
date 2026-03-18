@@ -212,7 +212,7 @@ fn ipv4_flood_thread(
         FloodMethods::Udp => udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?,
     };
 
-    let send_msg = SRequest {
+    let srq = SRequest {
         interface_name: interface_name.clone(),
         dst_mac,
         src_mac,
@@ -220,7 +220,7 @@ fn ipv4_flood_thread(
         eth_type: EtherTypes::Ipv4,
         retransmit,
     };
-    if let Err(e) = push_sd.send(send_msg) {
+    if let Err(e) = push_sd.send(srq) {
         error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
     }
 
@@ -251,7 +251,7 @@ fn ipv6_flood_thread(
         FloodMethods::Udp => udp6::send_udp_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?,
     };
 
-    let send_msg = SRequest {
+    let srq = SRequest {
         interface_name: interface_name.clone(),
         dst_mac,
         src_mac,
@@ -259,7 +259,7 @@ fn ipv6_flood_thread(
         eth_type: EtherTypes::Ipv4,
         retransmit,
     };
-    if let Err(e) = push_sd.send(send_msg) {
+    if let Err(e) = push_sd.send(srq) {
         error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
     }
 
@@ -450,7 +450,7 @@ pub(crate) fn flood_raw(
                         }
                     };
                     let interface_name = net_info.interface_name.clone();
-                    let send_msg = SRequest {
+                    let srq = SRequest {
                         interface_name,
                         dst_mac,
                         src_mac,
@@ -458,7 +458,7 @@ pub(crate) fn flood_raw(
                         eth_type: EtherTypes::Ipv4,
                         retransmit,
                     };
-                    if let Err(e) = push_sd.send(send_msg) {
+                    if let Err(e) = push_sd.send(srq) {
                         error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
                     }
 
@@ -511,7 +511,7 @@ pub(crate) fn flood_raw(
                     };
 
                     let interface_name = net_info.interface_name.clone();
-                    let send_msg = SRequest {
+                    let srq = SRequest {
                         interface_name,
                         dst_mac,
                         src_mac,
@@ -519,7 +519,7 @@ pub(crate) fn flood_raw(
                         eth_type: EtherTypes::Ipv4,
                         retransmit,
                     };
-                    if let Err(e) = push_sd.send(send_msg) {
+                    if let Err(e) = push_sd.send(srq) {
                         error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
                     }
                     let send_buff_size = buff.len() * retransmit;
@@ -734,7 +734,7 @@ mod tests {
         let repeat = 4; // The number of times each thread repeats the attack.
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.init_runner(&targets, None, None).unwrap();
+        let (net_infos, dur) = pistol.init_domain(&targets, None, None).unwrap();
         let push_sd = pistol.push_sders["ens33"].clone();
         let ret = tcp_syn_flood(net_infos, retransmit, repeat, true, push_sd).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
