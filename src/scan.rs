@@ -533,7 +533,7 @@ pub fn ndp_ns_scan_buff_send(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Layer2LoopStatus {
+struct Layer2LoopStates {
     retried: usize,
     data_recved: bool,
 }
@@ -629,21 +629,21 @@ pub fn mac_scan(
 ) -> Result<MacScans, PistolError> {
     let mut rets = MacScans::new(max_retries);
 
-    let mut loop_status = HashMap::new();
+    let mut loop_states = HashMap::new();
     for t in targets {
-        let status = Layer2LoopStatus {
+        let status = Layer2LoopStates {
             retried: 0,
             data_recved: false,
         };
-        loop_status.insert(t.addr, status);
+        loop_states.insert(t.addr, status);
     }
     let mut mac_scan_rets = HashMap::new();
     let mut rrq_id_hm = HashMap::new();
 
     loop {
         let mut all_done = true;
-        for (dst_addr, status) in loop_status.iter_mut() {
-            if status.retried < max_retries && !status.data_recved {
+        for (dst_addr, state) in loop_states.iter_mut() {
+            if state.retried < max_retries && !state.data_recved {
                 let dst_addr = dst_addr.clone();
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
@@ -652,36 +652,36 @@ pub fn mac_scan(
                         println!(
                             "arp scan packets to {}: #{}/{}",
                             dst_ipv4,
-                            status.retried + 1,
+                            state.retried + 1,
                             max_retries
                         );
                         debug!(
                             "arp scan packets to {}: #{}/{}",
                             dst_ipv4,
-                            status.retried + 1,
+                            state.retried + 1,
                             max_retries
                         );
                         // retry to send arp scan packet and recv response
                         let rrq_id = arp_scan_buff_send(dst_ipv4, timeout, push_rd, push_sd)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
-                        status.data_recved = false;
-                        status.retried += 1;
+                        state.data_recved = false;
+                        state.retried += 1;
                         all_done = false;
                     }
                     IpAddr::V6(dst_ipv6) => {
                         debug!(
                             "ndp_ns scan packets to {}: #{}/{}",
                             dst_ipv6,
-                            status.retried + 1,
+                            state.retried + 1,
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
                         let rrq_id = ndp_ns_scan_buff_send(dst_ipv6, timeout, push_rd, push_sd)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
-                        status.data_recved = false;
-                        status.retried += 1;
+                        state.data_recved = false;
+                        state.retried += 1;
                         all_done = false;
                     }
                 }
@@ -710,7 +710,7 @@ pub fn mac_scan(
         for recv_response in recv_responses {
             if let Some((addr, mac)) = parse_mac_scan_response(recv_response.data) {
                 let rtt = recv_response.rtt;
-                if let Some(status) = loop_status.get_mut(&addr) {
+                if let Some(status) = loop_states.get_mut(&addr) {
                     status.data_recved = true;
                 }
                 mac_scan_rets.insert(addr, (mac, rtt));
