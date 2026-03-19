@@ -268,14 +268,11 @@ impl fmt::Display for HostPings {
             self.finish_time.format("%Y-%m-%d %H:%M:%S"),
             self.max_retries,
         );
-        let layer2_cost = self.layer2_cost.as_secs_f32();
-        let avg_cost = total_cost.as_seconds_f64() / self.ping_reports.len() as f64;
+        let layer2_cost_str = time_to_string(self.layer2_cost);
+        let total_cost_str = time_to_string(total_cost.to_std().unwrap_or(Duration::ZERO));
         let summary2 = format!(
-            "layer2 cost: {:.2}s, total cost: {:.2}s, avg cost: {:.2}s, alive hosts: {}",
-            layer2_cost,
-            total_cost.as_seconds_f64(),
-            avg_cost,
-            alive_hosts,
+            "layer2 cost: {}, total cost: {}, alive hosts: {}",
+            layer2_cost_str, total_cost_str, alive_hosts,
         );
         let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));

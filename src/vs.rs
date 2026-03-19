@@ -124,7 +124,7 @@ impl fmt::Display for PistolVsScans {
                     Some(o) => format!("{}({})", service.addr, o),
                     None => format!("{}", service.addr),
                 };
-                total_cost += service.time_cost.as_secs_f64();
+                total_cost += service.time_cost.as_secs_f32();
                 let time_cost_str = time_to_string(service.time_cost);
                 table.add_row(
                     row![c -> i, c -> addr_str, c -> service.port, c -> services_str, c -> versioninfo_str, c -> time_cost_str],
@@ -133,11 +133,8 @@ impl fmt::Display for PistolVsScans {
             }
         }
 
-        let avg_cost = total_cost / self.port_services.len() as f64;
-        let summary = format!(
-            "total used time: {:.2}s, avg time cost: {:.2}s",
-            total_cost, avg_cost,
-        );
+        let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost));
+        let summary = format!("total used time: {}", total_cost_str);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(6)]));
         write!(f, "{}", table)
     }

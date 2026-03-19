@@ -294,13 +294,8 @@ impl fmt::Display for OsDetects {
                 }
             }
         }
-        let avg_cost = total_cost / self.detect_reports.len() as f32;
         let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost));
-        let avg_cost_str = time_to_string(Duration::from_secs_f32(avg_cost));
-        let summary = format!(
-            "total used time: {}, avg time cost: {}",
-            total_cost_str, avg_cost_str,
-        );
+        let summary = format!("total used time: {}", total_cost_str,);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(7)]));
         write!(f, "{}", table)
     }

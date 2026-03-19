@@ -1181,8 +1181,6 @@ impl Pistol {
                         #[cfg(feature = "debug")]
                         debug_show_packet(&packet.data, Some(EtherTypes::Arp));
                         // send matched packet back to thread
-                        println!("matched packet [{}]", packet.data.len());
-                        debug!("matched packet [{}]", packet.data.len());
                         let rtt = msg.created.elapsed();
                         let recv_response = RResponse {
                             id: msg.id,
@@ -1190,8 +1188,12 @@ impl Pistol {
                             rtt,
                         };
                         if let Err(e) = push_response.send(recv_response) {
-                            error!("receiver [{}] send response failed: {}", interface_name, e)
+                            error!("receiver [{}] send response failed: {}", interface_name, e);
+                            #[cfg(feature = "debug")]
+                            println!("receiver [{}] send response failed: {}", interface_name, e);
                         }
+                        #[cfg(feature = "debug")]
+                        println!("send response!!!");
                         packet.processed = true;
                         break;
                     }

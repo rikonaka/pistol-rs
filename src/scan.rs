@@ -58,6 +58,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::thread;
+#[cfg(feature = "scan")]
+use std::thread::sleep;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use std::time::Duration;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -177,11 +179,9 @@ impl fmt::Display for MacScans {
 
         let total_cost = self.finish_time - self.start_time;
         let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
-        let avg_cost = total_cost.as_seconds_f32() / self.mac_reports.len() as f32;
-        let avg_cost_str = time_to_string(Duration::from_secs_f32(avg_cost));
         let summary = format!(
-            "total cost: {}, avg cost: {}, alive hosts: {}",
-            total_cost_str, avg_cost_str, alive_hosts
+            "total cost: {}, alive hosts: {}",
+            total_cost_str, alive_hosts
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
 
@@ -547,7 +547,7 @@ pub(crate) fn parse_mac_scan_response(eth_response: Arc<[u8]>) -> Option<(IpAddr
     if let Some(eth_packet) = EthernetPacket::new(eth_response) {
         match eth_packet.get_ethertype() {
             EtherTypes::Arp => {
-                // arp on ipv6
+                // arp on ipv4
                 if let Some(arp_packet) = ArpPacket::new(eth_packet.payload()) {
                     let mac = arp_packet.get_sender_hw_addr();
                     let addr = arp_packet.get_sender_proto_addr();
@@ -637,93 +637,86 @@ pub fn mac_scan(
         };
         loop_status.insert(t.addr, status);
     }
-    let mut loop_status_clone = loop_status.clone();
     let mut mac_scan_rets = HashMap::new();
+    let mut rrq_id_hm = HashMap::new();
 
     loop {
-        let mut rrq_id_hm = HashMap::new();
         let mut all_done = true;
-        #[cfg(feature = "debug")]
-        let send_start_time = Instant::now();
-        for (dst_addr, status) in loop_status {
-            let retried = status.retried;
-            let data_recved = status.data_recved;
-            if retried < max_retries && !data_recved {
+        for (dst_addr, status) in loop_status.iter_mut() {
+            if status.retried < max_retries && !status.data_recved {
+                let dst_addr = dst_addr.clone();
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 match dst_addr {
                     IpAddr::V4(dst_ipv4) => {
-                        debug!("arp scan packets: #{}/{}", retried + 1, max_retries);
+                        println!(
+                            "arp scan packets to {}: #{}/{}",
+                            dst_ipv4,
+                            status.retried + 1,
+                            max_retries
+                        );
+                        debug!(
+                            "arp scan packets to {}: #{}/{}",
+                            dst_ipv4,
+                            status.retried + 1,
+                            max_retries
+                        );
                         // retry to send arp scan packet and recv response
                         let rrq_id = arp_scan_buff_send(dst_ipv4, timeout, push_rd, push_sd)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
-                        let status = Layer2LoopStatus {
-                            retried: retried + 1,
-                            data_recved: false,
-                        };
-                        loop_status_clone.insert(dst_addr, status);
+                        status.data_recved = false;
+                        status.retried += 1;
                         all_done = false;
                     }
                     IpAddr::V6(dst_ipv6) => {
-                        debug!("ndp_ns scan packets: #{}/{}", retried + 1, max_retries);
+                        debug!(
+                            "ndp_ns scan packets to {}: #{}/{}",
+                            dst_ipv6,
+                            status.retried + 1,
+                            max_retries
+                        );
                         // retry to send ndp_ns scan packet and recv response
                         let rrq_id = ndp_ns_scan_buff_send(dst_ipv6, timeout, push_rd, push_sd)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
-                        let status = Layer2LoopStatus {
-                            retried: retried + 1,
-                            data_recved: false,
-                        };
-                        loop_status_clone.insert(dst_addr, status);
+                        status.data_recved = false;
+                        status.retried += 1;
                         all_done = false;
                     }
                 }
             }
         }
 
-        #[cfg(feature = "debug")]
-        println!(
-            "send mac scan packets cost: {:.2}s",
-            send_start_time.elapsed().as_secs_f32()
-        );
-
         if all_done {
             break;
         }
 
-        loop_status = loop_status_clone.clone();
-        let timeout_10ms = Duration::from_millis(10);
-        let recv_start_time = Instant::now();
-
-        loop {
-            if recv_start_time.elapsed() > timeout {
-                break;
-            }
-            let recv_response = match get_response.recv_timeout(timeout_10ms) {
+        // wait for responses
+        sleep(timeout);
+        let response_num = get_response.len();
+        let mut recv_responses = Vec::new();
+        for _ in 0..response_num {
+            let recv_response = match get_response.recv() {
                 Ok(r) => r,
                 Err(_e) => continue,
             };
 
-            if !rrq_id_hm.contains_key(&recv_response.id) {
-                continue;
+            if rrq_id_hm.contains_key(&recv_response.id) {
+                recv_responses.push(recv_response);
             }
+        }
 
+        for recv_response in recv_responses {
             if let Some((addr, mac)) = parse_mac_scan_response(recv_response.data) {
                 let rtt = recv_response.rtt;
-                let mut status = loop_status[&addr].clone();
-                status.data_recved = true;
-                loop_status.insert(addr, status);
+                if let Some(status) = loop_status.get_mut(&addr) {
+                    status.data_recved = true;
+                }
                 mac_scan_rets.insert(addr, (mac, rtt));
                 update_neighbor_cache(addr, mac, rtt)?;
             }
         }
-
-        #[cfg(feature = "debug")]
-        println!(
-            "recv mac scan responses cost: {:.2}s",
-            recv_start_time.elapsed().as_secs_f32()
-        );
     }
 
     let nmap_mac_prefixes = get_nmap_mac_prefixes()?;
@@ -960,16 +953,10 @@ impl fmt::Display for PortScans {
         );
         let total_cost = self.finish_time - self.start_time;
         let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
-        let avg_cost = if self.port_reports.len() > 0 {
-            total_cost.as_seconds_f32() / self.port_reports.len() as f32
-        } else {
-            total_cost.as_seconds_f32()
-        };
-        let avg_cost_str = time_to_string(Duration::from_secs_f32(avg_cost));
         let layer2_cost_str = time_to_string(self.layer2_cost);
         let summary2 = format!(
-            "layer2 cost: {}, total cost: {}, avg cost: {}, open ports: {}",
-            layer2_cost_str, total_cost_str, avg_cost_str, open_ports_num
+            "layer2 cost: {}, total cost: {}, open ports: {}",
+            layer2_cost_str, total_cost_str, open_ports_num
         );
         let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
