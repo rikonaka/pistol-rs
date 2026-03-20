@@ -77,7 +77,7 @@ use crate::scan::udp6;
 #[cfg(feature = "ping")]
 use crate::utils::random_port;
 #[cfg(feature = "ping")]
-use crate::utils::random_recv_msg_id;
+use crate::utils::random_request_id;
 #[cfg(feature = "ping")]
 use crate::utils::time_to_string;
 
@@ -613,7 +613,7 @@ fn ping(
                             build_ping_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
                         let interface_name = ni.interface_name.clone();
-                        let rrq_id = random_recv_msg_id();
+                        let rrq_id = random_request_id();
                         let rrq = RRequest {
                             interface_name: interface_name.clone(),
                             id: rrq_id,
@@ -677,7 +677,7 @@ fn ping(
                             build_ping_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
                         let interface_name = ni.interface_name.clone();
-                        let rrq_id = random_recv_msg_id();
+                        let rrq_id = random_request_id();
                         let rrq = RRequest {
                             interface_name: interface_name.clone(),
                             id: rrq_id,
@@ -821,7 +821,7 @@ pub fn ping_raw(
                     build_ping_buff(dst_ipv4, Some(dst_port), src_ipv4, src_port, method)?;
 
                 let interface_name = net_info.interface_name.clone();
-                let rrq_id = random_recv_msg_id();
+                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,
@@ -896,7 +896,7 @@ pub fn ping_raw(
                     build_ping_buff6(dst_ipv6, Some(dst_port), src_ipv6, src_port, method)?;
 
                 let interface_name = net_info.interface_name.clone();
-                let rrq_id = random_recv_msg_id();
+                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,

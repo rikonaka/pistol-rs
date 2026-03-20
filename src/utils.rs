@@ -42,7 +42,7 @@ pub fn random_port_range(start: u16, end: u16) -> u16 {
 }
 
 /// Returns the random id.
-pub(crate) fn random_recv_msg_id() -> u64 {
+pub(crate) fn random_request_id() -> u64 {
     let mut rng = rand::rng();
     let id: u64 = rng.random();
     id

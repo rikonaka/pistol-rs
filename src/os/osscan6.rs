@@ -42,7 +42,7 @@ use crate::os::rr::U1RR6;
 use crate::trace::icmp_trace;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
-use crate::utils::random_recv_msg_id;
+use crate::utils::random_request_id;
 
 const PROBE_MAX_RETIRIES: usize = 5; // nmap default
 
@@ -575,7 +575,7 @@ fn send_seq_probes(
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
-            id: random_recv_msg_id(),
+            id: random_request_id(),
             retried: 0,
             recved: false,
         };
@@ -794,7 +794,7 @@ fn send_ie_probes(
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
-            id: random_recv_msg_id(),
+            id: random_request_id(),
             retried: 0,
             recved: false,
         };
@@ -950,7 +950,7 @@ fn send_nx_probes(
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
-            id: random_recv_msg_id(),
+            id: random_request_id(),
             retried: 0,
             recved: false,
         };
@@ -1103,7 +1103,7 @@ fn send_u1_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let ether_type = EtherTypes::Ipv6;
-    let rrq_id = random_recv_msg_id();
+    let rrq_id = random_request_id();
     for _ in 0..PROBE_MAX_RETIRIES {
         let st = scan_start.elapsed();
         let rrq = RRequest {
@@ -1202,7 +1202,7 @@ fn send_tecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let st = start_time.elapsed();
     let ether_type = EtherTypes::Ipv6;
-    let rrq_id = random_recv_msg_id();
+    let rrq_id = random_request_id();
     for _ in 0..PROBE_MAX_RETIRIES {
         let rrq = RRequest {
             interface_name: interface_name.clone(),
@@ -1365,7 +1365,7 @@ fn send_tx_probes(
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
-            id: random_recv_msg_id(),
+            id: random_request_id(),
             retried: 0,
             recved: false,
         };

@@ -52,7 +52,7 @@ use crate::error::PistolError;
 #[cfg(feature = "trace")]
 use crate::utils::random_port_range;
 #[cfg(feature = "trace")]
-use crate::utils::random_recv_msg_id;
+use crate::utils::random_request_id;
 #[cfg(feature = "trace")]
 use crate::utils::time_to_string;
 
@@ -173,7 +173,7 @@ fn syn_trace_ipv4(
             tcp::build_syn_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -263,7 +263,7 @@ fn syn_trace_ipv6(
             tcp6::build_syn_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -419,7 +419,7 @@ fn icmp_trace_ipv4(
             icmp::send_icmp_trace_packet(dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -511,7 +511,7 @@ fn icmp_trace_ipv6(
         )?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -657,7 +657,7 @@ fn udp_trace_ipv4(
             udp::build_udp_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -744,7 +744,7 @@ fn udp_trace_ipv6(
             udp6::build_udp_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
 
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,

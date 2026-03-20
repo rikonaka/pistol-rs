@@ -70,7 +70,7 @@ use crate::os::rr::U1RR;
 use crate::trace::icmp_trace;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
-use crate::utils::random_recv_msg_id;
+use crate::utils::random_request_id;
 
 const PROBE_MAX_RETIRIES: usize = 5; // nmap default
 
@@ -343,7 +343,7 @@ fn send_seq_probes(
             let recved = status.recved;
             if retried < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
-                let rrq_id = random_recv_msg_id();
+                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,
@@ -499,7 +499,7 @@ fn send_ie_probes(
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
-            id: random_recv_msg_id(),
+            id: random_request_id(),
             retried: 0,
             recved: false,
         };
@@ -639,7 +639,7 @@ fn send_ecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
 
-    let rrq_id = random_recv_msg_id();
+    let rrq_id = random_request_id();
     for _ in 0..PROBE_MAX_RETIRIES {
         let rrq = RRequest {
             interface_name: interface_name.clone(),
@@ -800,7 +800,7 @@ fn send_tx_probes(
     for t in 2..=7 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
-            id: random_recv_msg_id(),
+            id: random_request_id(),
             retried: 0,
             recved: false,
         };
@@ -959,7 +959,7 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let rrq_id = random_recv_msg_id();
+    let rrq_id = random_request_id();
     let ether_type = EtherTypes::Ipv4;
     for _ in 0..PROBE_MAX_RETIRIES {
         let start = Instant::now();

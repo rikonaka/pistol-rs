@@ -13,7 +13,7 @@ use crate::layer::Layer2Filter;
 use crate::layer::Layer3Filter;
 use crate::layer::PacketFilter;
 
-pub fn build_arp_scan_packet(
+pub fn build_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,

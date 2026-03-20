@@ -861,7 +861,7 @@ impl NetInfo {
     }
 }
 
-const MAX_HISTORY_PACKETS: usize = 10_000_000;
+const MAX_HISTORY_PACKETS: usize = 10_000;
 
 #[derive(Debug, Clone)]
 pub struct Pistol {
@@ -1036,14 +1036,14 @@ impl Pistol {
 
         let timeout_10ms = Duration::from_millis(10);
         loop {
-            let smsg = match receiver.recv_timeout(timeout_10ms) {
+            let srq = match receiver.recv_timeout(timeout_10ms) {
                 Ok(s) => s,
                 Err(_e) => continue,
             };
-            if smsg.dst_mac == smsg.src_mac {
+            if srq.dst_mac == srq.src_mac {
                 // This case is for loopback interface.
-                let mut eth_payload = smsg.eth_payload.to_vec();
-                match smsg.eth_type {
+                let mut eth_payload = srq.eth_payload.to_vec();
+                match srq.eth_type {
                     EtherTypes::Ipv4 => {
                         let mut packet = MutableIpv4Packet::new(&mut eth_payload).ok_or(
                             PistolError::BuildPacketError {
@@ -1067,16 +1067,16 @@ impl Pistol {
                     _ => {
                         error!(
                             "unsupported ether_type for loopback packet: {}, drop it",
-                            smsg.eth_type
+                            srq.eth_type
                         );
                     }
                 };
             } else {
-                let payload = smsg.eth_payload;
-                let dst_mac = smsg.dst_mac;
-                let src_mac = smsg.src_mac;
-                let ether_type = smsg.eth_type;
-                let retransmit = smsg.retransmit;
+                let payload = srq.eth_payload;
+                let dst_mac = srq.dst_mac;
+                let src_mac = srq.src_mac;
+                let ether_type = srq.eth_type;
+                let retransmit = srq.retransmit;
 
                 let payload_len = payload.len();
                 let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
@@ -1101,14 +1101,15 @@ impl Pistol {
                     ether_type.to_string().to_lowercase(),
                     payload.len()
                 );
+
                 // If retransmit is 1, it means no retransmission, just send once,
                 // and if retransmit is greater than 1, it means retransmission,
                 // send multiple times (used in flood attack).
                 for i in 0..retransmit {
                     if let Some(r) = sender.send_to(&buff, None) {
                         match r {
-                            Ok(_) => debug!("send flood {} packet success, {}", i, m),
-                            Err(e) => error!("send flood {} packet error, {} - {}", i, m, e),
+                            Ok(_) => debug!("send {} packet success, {}", i, m),
+                            Err(e) => error!("send {} packet error, {} - {}", i, m, e),
                         }
                     }
                 }
@@ -1138,8 +1139,8 @@ impl Pistol {
             processed: bool,
         }
 
-        let mut history_packets: Vec<HistoryPacket> = Vec::new();
-        let mut r_msgs = Vec::new();
+        let mut history_packets: Vec<HistoryPacket> = Vec::with_capacity(MAX_HISTORY_PACKETS);
+        let mut r_requests = Vec::new();
         loop {
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
@@ -1166,7 +1167,7 @@ impl Pistol {
 
             loop {
                 match receiver.recv_timeout(timeout_10ms) {
-                    Ok(r) => r_msgs.push(r),
+                    Ok(r) => r_requests.push(r),
                     Err(_) => break,
                 }
             }
@@ -1175,25 +1176,23 @@ impl Pistol {
                 if packet.processed {
                     continue;
                 }
-                for msg in &r_msgs {
+                // check the newest rrequest first
+                for rrq in r_requests.iter().rev() {
                     // Not drop any message here.
-                    if msg.check_packet(&packet.data) {
+                    if rrq.check_packet(&packet.data) {
                         #[cfg(feature = "debug")]
                         debug_show_packet(&packet.data, Some(EtherTypes::Arp));
                         // send matched packet back to thread
-                        let rtt = msg.created.elapsed();
+                        let rtt = rrq.created.elapsed();
                         let recv_response = RResponse {
-                            id: msg.id,
+                            id: rrq.id,
                             data: packet.data.clone(),
                             rtt,
                         };
                         if let Err(e) = push_response.send(recv_response) {
                             error!("receiver [{}] send response failed: {}", interface_name, e);
-                            #[cfg(feature = "debug")]
-                            println!("receiver [{}] send response failed: {}", interface_name, e);
                         }
-                        #[cfg(feature = "debug")]
-                        println!("send response!!!");
+                        println!("send matched packet back to runner");
                         packet.processed = true;
                         break;
                     }
@@ -1202,7 +1201,7 @@ impl Pistol {
 
             let mut drop_idxs = Vec::new();
             let mut need_drop = false;
-            for (i, msg) in r_msgs.iter().enumerate() {
+            for (i, msg) in r_requests.iter().enumerate() {
                 // Sometimes if we drop msg too quickly,
                 // as well as the sender in msg will be droped too,3
                 // when worker's receiver wanna recv back packet,
@@ -1224,14 +1223,14 @@ impl Pistol {
                     drop_idxs.len()
                 );
                 for &drop_idx in drop_idxs.iter().rev() {
-                    let _droped_msg = r_msgs.swap_remove(drop_idx);
+                    let _droped_msg = r_requests.swap_remove(drop_idx);
                 }
             }
 
             debug!(
                 "receiver [{}] has {} msgs to process",
                 interface_name,
-                r_msgs.len()
+                r_requests.len()
             );
         }
     }
@@ -1255,10 +1254,10 @@ impl Pistol {
         get_rd: Receiver<RRequest>,
         get_sd: Receiver<SRequest>,
     ) -> Result<(), PistolError> {
-        let timeout_5ms = Duration::from_millis(5);
         let to_receivers = self.to_receivers.clone();
         let push_sders = self.push_sders.clone();
-        let _h = thread::spawn(move || {
+        let timeout_5ms = Duration::from_millis(5);
+        let _domain_handle = thread::spawn(move || {
             loop {
                 match get_rd.recv_timeout(timeout_5ms) {
                     Ok(r) => {
@@ -1319,6 +1318,10 @@ impl Pistol {
             self.to_receivers.insert(i.name.clone(), s_r_msg);
             self.runner(self.timeout, i.name, r_s_msg, r_r_msg);
         }
+
+        let get_rd = self.get_rd.clone();
+        let get_sd = self.get_sd.clone();
+        self.domain(get_rd, get_sd)?;
 
         let mut net_info_inputs = Vec::new();
         for t in targets {
@@ -1396,23 +1399,24 @@ impl Pistol {
     /// }
     /// ```
     /// Compare the speed with arp-scan.
+    /// Note: r1 means receive response in the first retry, r2 means receive response in the second retry, and so on.
     /// pistol:
     /// ```
-    /// +------------+---------------+-------------------+------------+------------+
-    /// |                        Mac Scans (max_retries:2)                         |
-    /// +------------+---------------+-------------------+------------+------------+
-    /// |    seq     |     addr      |        mac        |    oui     |    rtt     |
-    /// +------------+---------------+-------------------+------------+------------+
-    /// |     1      |  192.168.5.1  | 00:50:56:c0:00:08 |   VMware   |  489.36ms  |
-    /// +------------+---------------+-------------------+------------+------------+
-    /// |     2      |  192.168.5.2  | 00:50:56:ea:b6:ec |   VMware   |  492.57ms  |
-    /// +------------+---------------+-------------------+------------+------------+
-    /// |     3      | 192.168.5.78  | 00:0c:29:cf:62:2f |   VMware   |  500.18ms  |
-    /// +------------+---------------+-------------------+------------+------------+
-    /// |     4      | 192.168.5.254 | 00:50:56:e1:a8:e6 |   VMware   |  477.67ms  |
-    /// +------------+---------------+-------------------+------------+------------+
-    /// | total cost: 1.65s, avg cost: 425.92ms, alive hosts: 4                    |
-    /// +------------+---------------+-------------------+------------+------------+
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// |                     Mac Scans (max_retries:2)                     |
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// |  seq   |     addr      |        mac        |  oui   |     rtt     |
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// |   1    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 70.01ms(r1) |
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// |   2    |  192.168.5.2  | 00:50:56:ea:b6:ec | VMware | 89.05ms(r2) |
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// |   3    | 192.168.5.78  | 00:0c:29:cf:62:2f | VMware | 81.25ms(r2) |
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// |   4    | 192.168.5.254 | 00:50:56:e1:a8:e6 | VMware | 73.03ms(r1) |
+    /// +--------+---------------+-------------------+--------+-------------+
+    /// | total cost: 1.25s, alive hosts: 4                                 |
+    /// +--------+---------------+-------------------+--------+-------------+
     /// ```
     /// arp-scan:
     /// ```
@@ -1451,6 +1455,7 @@ impl Pistol {
         scan::arp_scan_raw(
             dst_ipv4,
             self.timeout,
+            self.max_retries,
             self.push_rd.clone(),
             self.push_sd.clone(),
             self.get_response.clone(),
@@ -3240,30 +3245,30 @@ mod tests {
         println!("{}", top_1000_udp_ports.len());
         // println!("{:?}", top_1000_tcp_ports);
     }
-    #[cfg(feature = "scan")]
-    #[test]
-    fn test_mac_scan_single() {
-        let mut pistol = Pistol::new();
-        pistol.set_max_retries(2);
-        pistol.set_timeout(2.5);
-        // pistol.set_log_level("debug");
 
-        let targets = vec![Target::new(Ipv4Addr::new(192, 168, 5, 254).into(), None)];
-        let ret = pistol.mac_scan(&targets).unwrap();
-        println!("{}", ret);
-    }
     #[cfg(feature = "scan")]
     #[test]
-    fn test_mac_scan_multi() {
+    fn test_mac_scan() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(0.5);
-        pistol.set_max_retries(2);
         // pistol.set_log_level("debug");
 
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
+    }
+    #[cfg(feature = "scan")]
+    #[test]
+    fn test_arp_scan_raw() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(0.5);
+        // pistol.set_log_level("debug");
+
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 2);
+        let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
+        println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
     }
     #[cfg(feature = "scan")]
     #[test]

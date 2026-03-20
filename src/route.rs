@@ -30,11 +30,11 @@ use crate::fake_interface;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::layer::ipv6_multicast_mac;
-use crate::scan::arp::build_arp_scan_packet;
+use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::scan::ndp_rs::build_ndp_ra_scan_packet;
 use crate::scan::parse_mac_scan_response;
-use crate::utils::random_recv_msg_id;
+use crate::utils::random_request_id;
 
 #[cfg(any(
     target_os = "linux",
@@ -630,9 +630,9 @@ fn send_neighbor_detect_packet(
                 IpAddr::V4(src) => src,
                 _ => return Err(PistolError::CanNotFoundSrcAddress),
             };
-            let (buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
+            let (buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
-            let rrq_id = random_recv_msg_id();
+            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -666,7 +666,7 @@ fn send_neighbor_detect_packet(
             let dst_ipv6 = dst_ipv6_ext.link_multicast();
             if is_route {
                 let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-                let rrq_id = random_recv_msg_id();
+                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,
@@ -693,7 +693,7 @@ fn send_neighbor_detect_packet(
             } else {
                 let dst_mac = ipv6_multicast_mac(dst_ipv6);
                 let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-                let rrq_id = random_recv_msg_id();
+                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,

@@ -103,13 +103,13 @@ use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[cfg(feature = "scan")]
-use crate::scan::arp::build_arp_scan_packet;
+use crate::scan::arp::build_arp_scan_buff;
 #[cfg(feature = "scan")]
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 #[cfg(feature = "scan")]
 use crate::utils::random_port;
 #[cfg(feature = "scan")]
-use crate::utils::random_recv_msg_id;
+use crate::utils::random_request_id;
 #[cfg(feature = "scan")]
 use crate::utils::time_to_string;
 
@@ -132,6 +132,8 @@ pub struct MacReport {
     /// Productions organization name.
     pub oui: String,
     pub rtt: Duration,
+    /// The number of retries for this target, not all.
+    pub retries: usize,
 }
 
 #[cfg(feature = "scan")]
@@ -164,11 +166,12 @@ impl fmt::Display for MacScans {
         let mut alive_hosts = 0;
         let mut i = 1;
         for (_addr, report) in btm_addr {
-            let time_cost_str = time_to_string(report.rtt);
+            let rtt_str = format!("{}(r{})", time_to_string(report.rtt), report.retries);
+
             match report.mac {
                 Some(mac) => {
                     table.add_row(
-                        row![c -> i, c -> report.addr, c -> mac, c -> report.oui, c -> time_cost_str],
+                        row![c -> i, c -> report.addr, c -> mac, c -> report.oui, c -> rtt_str],
                     );
                     i += 1;
                     alive_hosts += 1;
@@ -244,6 +247,7 @@ fn mac_scan_found_interface(dst_addr: IpAddr) -> Result<NetworkInterface, Pistol
 pub fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -259,62 +263,60 @@ pub fn arp_scan_raw(
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
     let mut src_ipv4 = None;
     for ipn in &interface.ips {
-        match ipn.ip() {
-            IpAddr::V4(src) => {
-                if src.is_loopback() {
-                    continue;
-                } else {
-                    src_ipv4 = Some(src);
-                    break;
-                }
+        if ipn.contains(dst_ipv4.into()) {
+            if let IpAddr::V4(src) = ipn.ip() {
+                src_ipv4 = Some(src);
             }
-            _ => debug!("skip non-ipv4 address {}", ipn.ip()),
+            break;
         }
     }
+    let src_ipv4 = src_ipv4.ok_or(PistolError::CanNotFoundSrcAddress)?;
 
-    match src_ipv4 {
-        Some(src_ipv4) => {
-            debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
-            let (arp_buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
+    debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
+    let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
-            let rrq = RRequest {
-                interface_name: interface_name.clone(),
-                id: random_recv_msg_id(),
-                filters,
-                created: Instant::now(),
-                elapsed: timeout,
-            };
-            let srq = SRequest {
-                interface_name: interface_name.clone(),
-                dst_mac,
-                src_mac,
-                eth_payload: arp_buff,
-                eth_type: EtherTypes::Arp,
-                retransmit: 1,
-            };
-            if let Err(e) = push_rd.send(rrq) {
-                error!("send arp scan recv msg error: {}", e);
-            }
-            if let Err(e) = push_sd.send(srq) {
-                error!("send arp scan msg error: {}", e);
-            }
+    for _ in 0..max_retries {
+        let rrq_id = random_request_id();
+        let rrq = RRequest {
+            interface_name: interface_name.clone(),
+            id: rrq_id,
+            filters: filters.clone(),
+            created: Instant::now(),
+            elapsed: timeout,
+        };
+        let srq = SRequest {
+            interface_name: interface_name.clone(),
+            dst_mac,
+            src_mac,
+            eth_payload: arp_buff.clone(),
+            eth_type: EtherTypes::Arp,
+            retransmit: 1,
+        };
 
-            match get_response.recv_timeout(timeout) {
-                Ok(recv_response) => {
+        if let Err(e) = push_rd.send(rrq) {
+            error!("send arp scan recv msg error: {}", e);
+        }
+        if let Err(e) = push_sd.send(srq) {
+            error!("send arp scan msg error: {}", e);
+        }
+
+        match get_response.recv_timeout(timeout) {
+            Ok(recv_response) => {
+                if rrq_id == recv_response.id {
                     let rtt = recv_response.rtt;
                     match parse_mac_scan_response(recv_response.data) {
                         Some((addr, mac)) => {
                             update_neighbor_cache(addr, mac, rtt)?;
-                            Ok((Some(mac), rtt))
+                            return Ok((Some(mac), rtt));
                         }
-                        None => Ok((None, rtt)),
+                        None => return Ok((None, rtt)),
                     }
                 }
-                Err(_) => Ok((None, Duration::ZERO)),
             }
+            Err(_) => (),
         }
-        None => Err(PistolError::CanNotFoundSrcAddress),
     }
+    Ok((None, Duration::ZERO))
 }
 
 #[cfg(feature = "scan")]
@@ -351,9 +353,9 @@ fn arp_scan_buff_send(
 
     debug!("use interface {} and src ipv4 {}", interface_name, src_ipv4);
     // only send here
-    let (arp_buff, filters) = build_arp_scan_packet(dst_ipv4, src_mac, src_ipv4)?;
+    let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
-    let rrq_id = random_recv_msg_id();
+    let rrq_id = random_request_id();
     let rrq = RRequest {
         interface_name: interface_name.clone(),
         id: rrq_id,
@@ -401,66 +403,58 @@ pub fn ndp_ns_scan_raw(
 
     let mut src_ipv6 = None;
     for ipn in &interface.ips {
-        match ipn.ip() {
-            IpAddr::V6(src) => {
-                if src.is_loopback() {
-                    continue;
-                } else {
-                    src_ipv6 = Some(src);
-                }
+        if ipn.contains(dst_ipv6.into()) {
+            if let IpAddr::V6(src) = ipn.ip() {
+                src_ipv6 = Some(src);
             }
-            _ => debug!("skip non-ipv6 address {}", ipn.ip()),
+            break;
         }
     }
+    let src_ipv6 = src_ipv6.ok_or(PistolError::CanNotFoundSrcAddress)?;
 
-    match src_ipv6 {
-        Some(src_ipv6) => {
-            debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-            let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+    debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+    let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
 
-            let rrq_id = random_recv_msg_id();
-            let rrq = RRequest {
-                interface_name: interface_name.clone(),
-                id: rrq_id,
-                filters,
-                created: Instant::now(),
-                elapsed: timeout,
-            };
-            let srq = SRequest {
-                interface_name: interface_name.clone(),
-                dst_mac,
-                src_mac,
-                eth_payload: ndp_ns_buff,
-                eth_type: EtherTypes::Ipv6,
-                retransmit: 1,
-            };
+    let rrq_id = random_request_id();
+    let rrq = RRequest {
+        interface_name: interface_name.clone(),
+        id: rrq_id,
+        filters,
+        created: Instant::now(),
+        elapsed: timeout,
+    };
+    let srq = SRequest {
+        interface_name: interface_name.clone(),
+        dst_mac,
+        src_mac,
+        eth_payload: ndp_ns_buff,
+        eth_type: EtherTypes::Ipv6,
+        retransmit: 1,
+    };
 
-            if let Err(e) = push_rd.send(rrq) {
-                error!("send arp scan recv msg error: {}", e);
-            }
-            if let Err(e) = push_sd.send(srq) {
-                error!("send arp scan msg error: {}", e);
-            }
+    if let Err(e) = push_rd.send(rrq) {
+        error!("send arp scan recv msg error: {}", e);
+    }
+    if let Err(e) = push_sd.send(srq) {
+        error!("send arp scan msg error: {}", e);
+    }
 
-            match get_response.recv_timeout(timeout) {
-                Ok(recv_response) => {
-                    let rtt = recv_response.rtt;
-                    if recv_response.id == rrq_id {
-                        match parse_mac_scan_response(recv_response.data) {
-                            Some((addr, mac)) => {
-                                update_neighbor_cache(addr, mac, rtt)?;
-                                Ok((Some(mac), rtt))
-                            }
-                            None => Ok((None, rtt)),
-                        }
-                    } else {
-                        Ok((None, rtt))
+    match get_response.recv_timeout(timeout) {
+        Ok(recv_response) => {
+            let rtt = recv_response.rtt;
+            if recv_response.id == rrq_id {
+                match parse_mac_scan_response(recv_response.data) {
+                    Some((addr, mac)) => {
+                        update_neighbor_cache(addr, mac, rtt)?;
+                        Ok((Some(mac), rtt))
                     }
+                    None => Ok((None, rtt)),
                 }
-                Err(_) => Ok((None, Duration::ZERO)),
+            } else {
+                Ok((None, rtt))
             }
         }
-        None => Err(PistolError::CanNotFoundSrcAddress),
+        Err(_) => Ok((None, Duration::ZERO)),
     }
 }
 
@@ -485,56 +479,48 @@ pub fn ndp_ns_scan_buff_send(
 
     let mut src_ipv6 = None;
     for ipn in &interface.ips {
-        match ipn.ip() {
-            IpAddr::V6(src) => {
-                if src.is_loopback() {
-                    continue;
-                } else {
-                    src_ipv6 = Some(src);
-                }
+        if ipn.contains(dst_ipv6.into()) {
+            if let IpAddr::V6(src) = ipn.ip() {
+                src_ipv6 = Some(src);
             }
-            _ => debug!("skip non-ipv6 address {}", ipn.ip()),
+            break;
         }
     }
+    let src_ipv6 = src_ipv6.ok_or(PistolError::CanNotFoundSrcAddress)?;
 
-    match src_ipv6 {
-        Some(src_ipv6) => {
-            debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-            let created = Instant::now();
-            let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+    debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+    let created = Instant::now();
+    let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
 
-            let rrq_id = random_recv_msg_id();
-            let rrq = RRequest {
-                interface_name: interface_name.clone(),
-                id: rrq_id,
-                filters,
-                created,
-                elapsed: timeout,
-            };
-            let srq = SRequest {
-                interface_name: interface_name.clone(),
-                dst_mac,
-                src_mac,
-                eth_payload: ndp_ns_buff,
-                eth_type: EtherTypes::Ipv6,
-                retransmit: 1,
-            };
+    let rrq_id = random_request_id();
+    let rrq = RRequest {
+        interface_name: interface_name.clone(),
+        id: rrq_id,
+        filters,
+        created,
+        elapsed: timeout,
+    };
+    let srq = SRequest {
+        interface_name: interface_name.clone(),
+        dst_mac,
+        src_mac,
+        eth_payload: ndp_ns_buff,
+        eth_type: EtherTypes::Ipv6,
+        retransmit: 1,
+    };
 
-            if let Err(e) = push_rd.send(rrq) {
-                error!("send arp scan recv msg error: {}", e);
-            }
-            if let Err(e) = push_sd.send(srq) {
-                error!("send arp scan msg error: {}", e);
-            }
-            Ok(rrq_id)
-        }
-        None => Err(PistolError::CanNotFoundSrcAddress),
+    if let Err(e) = push_rd.send(rrq) {
+        error!("send arp scan recv msg error: {}", e);
     }
+    if let Err(e) = push_sd.send(srq) {
+        error!("send arp scan msg error: {}", e);
+    }
+    Ok(rrq_id)
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Layer2LoopStates {
-    retried: usize,
+    retries: usize,
     data_recved: bool,
 }
 
@@ -632,7 +618,7 @@ pub fn mac_scan(
     let mut loop_states = HashMap::new();
     for t in targets {
         let status = Layer2LoopStates {
-            retried: 0,
+            retries: 0,
             data_recved: false,
         };
         loop_states.insert(t.addr, status);
@@ -643,22 +629,16 @@ pub fn mac_scan(
     loop {
         let mut all_done = true;
         for (dst_addr, state) in loop_states.iter_mut() {
-            if state.retried < max_retries && !state.data_recved {
+            if state.retries < max_retries && !state.data_recved {
                 let dst_addr = dst_addr.clone();
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 match dst_addr {
                     IpAddr::V4(dst_ipv4) => {
-                        println!(
-                            "arp scan packets to {}: #{}/{}",
-                            dst_ipv4,
-                            state.retried + 1,
-                            max_retries
-                        );
                         debug!(
                             "arp scan packets to {}: #{}/{}",
                             dst_ipv4,
-                            state.retried + 1,
+                            state.retries + 1,
                             max_retries
                         );
                         // retry to send arp scan packet and recv response
@@ -666,14 +646,14 @@ pub fn mac_scan(
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
                         state.data_recved = false;
-                        state.retried += 1;
+                        state.retries += 1;
                         all_done = false;
                     }
                     IpAddr::V6(dst_ipv6) => {
                         debug!(
                             "ndp_ns scan packets to {}: #{}/{}",
                             dst_ipv6,
-                            state.retried + 1,
+                            state.retries + 1,
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
@@ -681,7 +661,7 @@ pub fn mac_scan(
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
                         state.data_recved = false;
-                        state.retried += 1;
+                        state.retries += 1;
                         all_done = false;
                     }
                 }
@@ -710,10 +690,13 @@ pub fn mac_scan(
         for recv_response in recv_responses {
             if let Some((addr, mac)) = parse_mac_scan_response(recv_response.data) {
                 let rtt = recv_response.rtt;
-                if let Some(status) = loop_states.get_mut(&addr) {
+                let retries = if let Some(status) = loop_states.get_mut(&addr) {
                     status.data_recved = true;
-                }
-                mac_scan_rets.insert(addr, (mac, rtt));
+                    status.retries
+                } else {
+                    0
+                };
+                mac_scan_rets.insert(addr, (mac, rtt, retries));
                 update_neighbor_cache(addr, mac, rtt)?;
             }
         }
@@ -721,7 +704,7 @@ pub fn mac_scan(
 
     let nmap_mac_prefixes = get_nmap_mac_prefixes()?;
     let mut mac_scan_reports = Vec::new();
-    for (target_addr, (target_mac, rtt)) in mac_scan_rets {
+    for (target_addr, (target_mac, rtt, retries)) in mac_scan_rets {
         let mac_prefix = format!(
             "{:02X}{:02X}{:02X}",
             target_mac.0, target_mac.1, target_mac.2
@@ -737,6 +720,7 @@ pub fn mac_scan(
             mac: Some(target_mac),
             oui: target_oui,
             rtt,
+            retries,
         };
         mac_scan_reports.push(mr);
     }
@@ -1143,7 +1127,7 @@ fn scan(
                                 build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
                             let interface_name = ni.interface_name.clone();
-                            let rrq_id = random_recv_msg_id();
+                            let rrq_id = random_request_id();
                             let rrq = RRequest {
                                 interface_name: interface_name.clone(),
                                 id: rrq_id,
@@ -1194,7 +1178,7 @@ fn scan(
                                 build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
                             let interface_name = ni.interface_name.clone();
-                            let rrq_id = random_recv_msg_id();
+                            let rrq_id = random_request_id();
                             let rrq = RRequest {
                                 interface_name: interface_name.clone(),
                                 id: rrq_id,
@@ -1327,7 +1311,7 @@ fn scan_raw(
     // The real dst_addr is inferred from infer_addr.
     let cached = net_info.cached;
     for _ in 0..max_retries {
-        let rrq_id = random_recv_msg_id();
+        let rrq_id = random_request_id();
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let src_ipv4 = match net_info.inferred_src_addr {
