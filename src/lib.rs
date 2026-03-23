@@ -1176,7 +1176,7 @@ impl Pistol {
                 if packet.processed {
                     continue;
                 }
-                // check the newest rrequest first
+                // check the newest rrq first
                 for rrq in r_requests.iter().rev() {
                     // Not drop any message here.
                     if rrq.check_packet(&packet.data) {
@@ -1192,7 +1192,7 @@ impl Pistol {
                         if let Err(e) = push_response.send(recv_response) {
                             error!("receiver [{}] send response failed: {}", interface_name, e);
                         }
-                        println!("send matched packet back to runner");
+                        debug!("send matched packet back to runner");
                         packet.processed = true;
                         break;
                     }
@@ -1201,16 +1201,14 @@ impl Pistol {
 
             let mut drop_idxs = Vec::new();
             let mut need_drop = false;
-            for (i, msg) in r_requests.iter().enumerate() {
-                // Sometimes if we drop msg too quickly,
-                // as well as the sender in msg will be droped too,3
+            for (i, rrq) in r_requests.iter().enumerate() {
+                // Sometimes if we drop msg too quickly, as well as the sender in msg will be droped too,
                 // when worker's receiver wanna recv back packet,
                 // the 'receiving on an empty and disconnected channel' error raise,
                 // which will cause the worker can not receive matched packets back from runner,
-                // and then the worker will start next retry process,
-                // it will cause unnecessary traffic on network,
-                // so I set the timeout for each msg to be 100 times of the timeout for receiving and sending packets.
-                if msg.created.elapsed() > msg.elapsed * 100 {
+                // and then the worker will start next retry process, it will cause unnecessary traffic on network,
+                // so I set the timeout for each msg to be 5 times of the timeout for receiving and sending packets.
+                if rrq.created.elapsed() > rrq.elapsed * 5 {
                     // timeout, remove this msg
                     drop_idxs.push(i);
                     need_drop = true;

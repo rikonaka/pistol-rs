@@ -44,3 +44,7 @@ os = []
 vs = []
 trace = []
 debug = []
+
+[[example]]
+name = "mac_scan"
+required-features = ["scan"]

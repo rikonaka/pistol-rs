@@ -71,17 +71,17 @@ use tracing::debug;
 #[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::error;
 
-pub mod arp;
-pub mod ndp_ns;
-pub mod ndp_rs;
+pub(crate) mod arp;
+pub(crate) mod ndp_ns;
+pub(crate) mod ndp_rs;
 #[cfg(any(feature = "scan", feature = "ping"))]
-pub mod tcp;
+pub(crate) mod tcp;
 #[cfg(any(feature = "scan", feature = "ping"))]
-pub mod tcp6;
+pub(crate) mod tcp6;
 #[cfg(any(feature = "scan", feature = "ping"))]
-pub mod udp;
+pub(crate) mod udp;
 #[cfg(any(feature = "scan", feature = "ping"))]
-pub mod udp6;
+pub(crate) mod udp6;
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::GLOBAL_NET_CACHES;
@@ -194,7 +194,7 @@ impl fmt::Display for MacScans {
 
 #[cfg(feature = "scan")]
 impl MacScans {
-    pub fn new(max_retries: usize) -> MacScans {
+    pub(crate) fn new(max_retries: usize) -> MacScans {
         MacScans {
             mac_reports: Vec::new(),
             start_time: Local::now(),
@@ -202,10 +202,7 @@ impl MacScans {
             max_retries,
         }
     }
-    pub fn value(&self) -> Vec<MacReport> {
-        self.mac_reports.clone()
-    }
-    pub fn finish(&mut self, mac_reports: Vec<MacReport>) {
+    pub(crate) fn finish(&mut self, mac_reports: Vec<MacReport>) {
         self.finish_time = Local::now();
         self.mac_reports = mac_reports;
     }
@@ -244,7 +241,7 @@ fn mac_scan_found_interface(dst_addr: IpAddr) -> Result<NetworkInterface, Pistol
 }
 
 #[cfg(feature = "scan")]
-pub fn arp_scan_raw(
+pub(crate) fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
     max_retries: usize,
@@ -382,7 +379,7 @@ fn arp_scan_buff_send(
 }
 
 #[cfg(feature = "scan")]
-pub fn ndp_ns_scan_raw(
+pub(crate) fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
     push_rd: Sender<RRequest>,
@@ -459,7 +456,7 @@ pub fn ndp_ns_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn ndp_ns_scan_buff_send(
+pub(crate) fn ndp_ns_scan_buff_send(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
     push_rd: Sender<RRequest>,
@@ -605,7 +602,7 @@ fn get_nmap_mac_prefixes() -> Result<HashMap<String, String>, PistolError> {
 }
 
 #[cfg(feature = "scan")]
-pub fn mac_scan(
+pub(crate) fn mac_scan(
     targets: &[Target],
     timeout: Duration,
     max_retries: usize,
@@ -731,7 +728,7 @@ pub fn mac_scan(
 /// Remove connect and idle scan from here.
 #[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ScanMethod {
+pub(crate) enum ScanMethod {
     Syn,
     Fin,
     Ack,
@@ -963,9 +960,6 @@ impl PortScans {
     pub(crate) fn finish(&mut self, port_reports: Vec<PortReport>) {
         self.finish_time = Local::now();
         self.port_reports = port_reports;
-    }
-    pub fn reports(&self) -> Vec<PortReport> {
-        self.port_reports.clone()
     }
 }
 
@@ -1409,7 +1403,7 @@ fn scan_raw(
 }
 
 #[cfg(any(feature = "scan", feature = "ping"))]
-pub fn tcp_syn_scan(
+pub(crate) fn tcp_syn_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1430,7 +1424,7 @@ pub fn tcp_syn_scan(
 
 /// TCP SYN Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_syn_scan_raw(
+pub(crate) fn tcp_syn_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1450,7 +1444,7 @@ pub fn tcp_syn_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_fin_scan(
+pub(crate) fn tcp_fin_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1471,7 +1465,7 @@ pub fn tcp_fin_scan(
 
 /// TCP FIN Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_fin_scan_raw(
+pub(crate) fn tcp_fin_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1491,7 +1485,7 @@ pub fn tcp_fin_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_ack_scan(
+pub(crate) fn tcp_ack_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1512,7 +1506,7 @@ pub fn tcp_ack_scan(
 
 /// TCP ACK Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_ack_scan_raw(
+pub(crate) fn tcp_ack_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1532,7 +1526,7 @@ pub fn tcp_ack_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_null_scan(
+pub(crate) fn tcp_null_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1553,7 +1547,7 @@ pub fn tcp_null_scan(
 
 /// TCP Null Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_null_scan_raw(
+pub(crate) fn tcp_null_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1573,7 +1567,7 @@ pub fn tcp_null_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_xmas_scan(
+pub(crate) fn tcp_xmas_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1594,7 +1588,7 @@ pub fn tcp_xmas_scan(
 
 /// TCP Xmas Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_xmas_scan_raw(
+pub(crate) fn tcp_xmas_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1614,7 +1608,7 @@ pub fn tcp_xmas_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_window_scan(
+pub(crate) fn tcp_window_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1635,7 +1629,7 @@ pub fn tcp_window_scan(
 
 /// TCP Window Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_window_scan_raw(
+pub(crate) fn tcp_window_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1655,7 +1649,7 @@ pub fn tcp_window_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_maimon_scan(
+pub(crate) fn tcp_maimon_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1676,7 +1670,7 @@ pub fn tcp_maimon_scan(
 
 /// TCP Maimon Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_maimon_scan_raw(
+pub(crate) fn tcp_maimon_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1696,7 +1690,7 @@ pub fn tcp_maimon_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn tcp_connect_scan(
+pub(crate) fn tcp_connect_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1756,7 +1750,7 @@ pub fn tcp_connect_scan(
 
 /// TCP connect() Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn tcp_connect_scan_raw(
+pub(crate) fn tcp_connect_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
@@ -1800,7 +1794,7 @@ pub fn tcp_connect_scan_raw(
 }
 
 #[cfg(feature = "scan")]
-pub fn udp_scan(
+pub(crate) fn udp_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
@@ -1821,7 +1815,7 @@ pub fn udp_scan(
 
 /// UDP Scan, raw version.
 #[cfg(feature = "scan")]
-pub fn udp_scan_raw(
+pub(crate) fn udp_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
