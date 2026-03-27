@@ -536,7 +536,7 @@ fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingSt
 
 #[derive(Debug, Clone)]
 struct ScanStatus {
-    retried: usize,
+    retries: usize,
     data_recved: bool,
 }
 
@@ -558,7 +558,7 @@ fn ping(
         // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
         if ni.valid {
             let status = ScanStatus {
-                retried: 0,
+                retries: 0,
                 data_recved: false,
             };
             scan_status.insert(ni, status);
@@ -606,9 +606,9 @@ fn ping(
                         None
                     };
 
-                    let retried = status.retried;
+                    let retries = status.retries;
                     let data_recved = status.data_recved;
-                    if retried < max_retries && !data_recved {
+                    if retries < max_retries && !data_recved {
                         let (buff, filters) =
                             build_ping_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
@@ -639,7 +639,7 @@ fn ping(
                         recv_msg_ids.insert(rrq_id, dst_addr);
 
                         let mut status_clone = status.clone();
-                        status_clone.retried = retried + 1;
+                        status_clone.retries = retries + 1;
                         scan_status_clone.insert(ni.clone(), status_clone);
 
                         all_done = false;
@@ -670,9 +670,9 @@ fn ping(
                             None
                         };
 
-                    let retried = status.retried;
+                    let retries = status.retries;
                     let data_recved = status.data_recved;
-                    if retried < max_retries && !data_recved {
+                    if retries < max_retries && !data_recved {
                         let (buff, filters) =
                             build_ping_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
@@ -703,7 +703,7 @@ fn ping(
                         recv_msg_ids.insert(rrq_id, dst_addr);
 
                         let mut status_clone = status.clone();
-                        status_clone.retried = retried + 1;
+                        status_clone.retries = retries + 1;
                         scan_status_clone.insert(ni.clone(), status_clone);
 
                         all_done = false;

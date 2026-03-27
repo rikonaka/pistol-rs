@@ -787,7 +787,7 @@ struct InferStatus {
     rtt: Duration,
     is_route: bool,
     target: IpAddr,
-    retried: usize,
+    retries: usize,
 }
 
 /// Get destination mac address and source interface.
@@ -815,7 +815,7 @@ pub(crate) fn infer_macs(
                 rtt: Duration::ZERO,
                 is_route: false,
                 target: dst_addr,
-                retried: 0,
+                retries: 0,
             };
 
             infer_status.insert(dst_addr, status);
@@ -835,7 +835,7 @@ pub(crate) fn infer_macs(
                 rtt: Duration::ZERO,
                 is_route: false,
                 target: dst_addr,
-                retried: 0,
+                retries: 0,
             };
 
             infer_status.insert(dst_addr, status);
@@ -848,7 +848,7 @@ pub(crate) fn infer_macs(
     loop {
         let mut all_done = true;
         for (&dst_addr, status) in &infer_status {
-            if status.mac != MacAddr::zero() || status.retried >= max_retries {
+            if status.mac != MacAddr::zero() || status.retries >= max_retries {
                 continue;
             }
 
@@ -895,7 +895,7 @@ pub(crate) fn infer_macs(
                                     status_clone.cached = false;
                                     status_clone.is_route = false;
                                     status_clone.target = dst_addr;
-                                    status_clone.retried += 1;
+                                    status_clone.retries += 1;
                                     infer_status_clone.insert(dst_addr, status_clone);
 
                                     all_done = false;
@@ -941,7 +941,7 @@ pub(crate) fn infer_macs(
                                     status_clone.cached = false;
                                     status_clone.is_route = true;
                                     status_clone.target = via_addr;
-                                    status_clone.retried += 1;
+                                    status_clone.retries += 1;
                                     infer_status_clone.insert(dst_addr, status_clone);
 
                                     all_done = false;
@@ -977,7 +977,7 @@ pub(crate) fn infer_macs(
                             status_clone.cached = false;
                             status_clone.is_route = false;
                             status_clone.target = dst_addr;
-                            status_clone.retried += 1;
+                            status_clone.retries += 1;
                             infer_status_clone.insert(dst_addr, status_clone);
 
                             all_done = false;

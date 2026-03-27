@@ -89,7 +89,7 @@ pub mod rr;
 #[derive(Debug, Clone)]
 struct LoopStatus {
     id: u64,
-    retried: usize,
+    retries: usize,
     recved: bool,
 }
 

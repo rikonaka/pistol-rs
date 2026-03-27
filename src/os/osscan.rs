@@ -326,7 +326,7 @@ fn send_seq_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: 0,
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -339,9 +339,9 @@ fn send_seq_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retried = status.retried;
+            let retries = status.retries;
             let recved = status.recved;
-            if retried < PROBE_MAX_RETIRIES && !recved {
+            if retries < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let rrq_id = random_request_id();
                 let rrq = RRequest {
@@ -367,7 +367,7 @@ fn send_seq_probes(
                     error!("send os probe seq send msg failed: {}", e);
                 }
 
-                status.retried = retried + 1;
+                status.retries = retries + 1;
                 status.id = rrq_id;
                 send_status_clone.insert(*i, status);
                 all_done = false;
@@ -500,7 +500,7 @@ fn send_ie_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: random_request_id(),
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -513,7 +513,7 @@ fn send_ie_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retired = status.retried;
+            let retired = status.retries;
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let rrq = RRequest {
@@ -539,7 +539,7 @@ fn send_ie_probes(
                     error!("send os probe ie send msg failed: {}", e);
                 }
 
-                status.retried = retired + 1;
+                status.retries = retired + 1;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }
@@ -801,7 +801,7 @@ fn send_tx_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: random_request_id(),
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -814,9 +814,9 @@ fn send_tx_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retried = status.retried;
+            let retries = status.retries;
             let recved = status.recved;
-            if retried < PROBE_MAX_RETIRIES && !recved {
+            if retries < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let filter = filter_hm[i].clone();
                 let rrq = RRequest {
@@ -841,7 +841,7 @@ fn send_tx_probes(
                     error!("send os probe tx send msg failed: {}", e);
                 }
 
-                status.retried = retried + 1;
+                status.retries = retries + 1;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }

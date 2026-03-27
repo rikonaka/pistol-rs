@@ -3272,7 +3272,6 @@ mod tests {
     #[test]
     fn test_tcp_syn_scan() {
         let mut pistol = Pistol::new();
-        pistol.set_log_level("debug");
         pistol.set_max_retries(2);
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
@@ -3281,7 +3280,7 @@ mod tests {
         let src_port = None;
         let targets = vec![Target::new(
             Ipv4Addr::new(192, 168, 5, 78).into(),
-            Some(vec![22]),
+            Some(vec![22, 80, 443]),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);

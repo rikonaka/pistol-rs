@@ -576,7 +576,7 @@ fn send_seq_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: random_request_id(),
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -590,9 +590,9 @@ fn send_seq_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retried = status.retried;
+            let retries = status.retries;
             let recved = status.recved;
-            if retried < PROBE_MAX_RETIRIES && !recved {
+            if retries < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let created = Instant::now();
                 let rrq = RRequest {
@@ -618,7 +618,7 @@ fn send_seq_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retried = retried + 1;
+                status.retries = retries + 1;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }
@@ -795,7 +795,7 @@ fn send_ie_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: random_request_id(),
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -809,7 +809,7 @@ fn send_ie_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retired = status.retried;
+            let retired = status.retries;
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
@@ -836,7 +836,7 @@ fn send_ie_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retried = retired + 1;
+                status.retries = retired + 1;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }
@@ -951,7 +951,7 @@ fn send_nx_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: random_request_id(),
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -965,7 +965,7 @@ fn send_nx_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retired = status.retried;
+            let retired = status.retries;
             let recved = status.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
@@ -992,7 +992,7 @@ fn send_nx_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retried = retired + 1;
+                status.retries = retired + 1;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }
@@ -1366,7 +1366,7 @@ fn send_tx_probes(
         // 1 means buff_1, 2 means buff_2, and so on.
         let status = LoopStatus {
             id: random_request_id(),
-            retried: 0,
+            retries: 0,
             recved: false,
         };
         send_status.insert(t, status);
@@ -1380,9 +1380,9 @@ fn send_tx_probes(
         let mut send_status_clone = send_status.clone();
         for (i, buff) in &buff_hm {
             let mut status = send_status[i].clone();
-            let retried = status.retried;
+            let retries = status.retries;
             let recved = status.recved;
-            if retried < PROBE_MAX_RETIRIES && !recved {
+            if retries < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let start = Instant::now();
                 let rrq = RRequest {
@@ -1408,7 +1408,7 @@ fn send_tx_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retried = retried + 1;
+                status.retries = retries + 1;
                 send_status_clone.insert(*i, status);
                 all_done = false;
             }

@@ -781,7 +781,8 @@ pub struct PortReport {
     pub status: PortStatus,
     /// The cost of each target, not all.
     pub cost: Duration,
-    cached: bool,
+    pub cached: bool,
+    pub retries: usize,
 }
 
 impl PortReport {
@@ -822,6 +823,7 @@ impl fmt::Display for PortScan {
                     let time_cost_str = time_to_string(report.cost);
                     format!("{}(cached)", time_cost_str)
                 };
+                let time_cost_str = format!("{}(r{})", time_cost_str, report.retries);
 
                 table.add_row(
                     row![c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
@@ -1054,7 +1056,7 @@ fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortSta
 #[derive(Debug, Clone)]
 struct ScanStatus {
     id: u64,
-    retried: usize,
+    retries: usize,
     recved: bool,
 }
 
@@ -1080,7 +1082,7 @@ fn scan(
             for p in ni.dst_ports.clone() {
                 let status = ScanStatus {
                     id: 0,
-                    retried: 0,
+                    retries: 0,
                     recved: false,
                 };
                 hm.insert(p, status);
@@ -1114,9 +1116,9 @@ fn scan(
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
                         let mut status = status.clone();
-                        let retried = status.retried;
+                        let retries = status.retries;
                         let recved = status.recved;
-                        if retried < max_retries && !recved {
+                        if retries < max_retries && !recved {
                             let (buff, filters) =
                                 build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
@@ -1135,7 +1137,7 @@ fn scan(
                                 src_mac,
                                 eth_payload: buff.clone(),
                                 eth_type: EtherTypes::Ipv4,
-                                retransmit: retried,
+                                retransmit: retries,
                             };
 
                             if let Err(e) = push_rd.send(rrq) {
@@ -1145,7 +1147,7 @@ fn scan(
                                 error!("send scan packet error: {}", e);
                             }
 
-                            status.retried = retried + 1;
+                            status.retries = retries + 1;
                             status.id = rrq_id;
                             tmp_hm.insert(dst_port, status);
                             all_done = false;
@@ -1165,9 +1167,9 @@ fn scan(
                     let mut tmp_hm = scan_status_clone[&ni].clone();
                     for (dst_port, status) in hm {
                         let mut status = status.clone();
-                        let retried = status.retried;
+                        let retries = status.retries;
                         let recved = status.recved;
-                        if retried < max_retries && !recved {
+                        if retries < max_retries && !recved {
                             let (buff, filters) =
                                 build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
@@ -1186,7 +1188,7 @@ fn scan(
                                 src_mac,
                                 eth_payload: buff.clone(),
                                 eth_type: EtherTypes::Ipv6,
-                                retransmit: retried,
+                                retransmit: retries,
                             };
 
                             if let Err(e) = push_rd.send(rrq) {
@@ -1196,7 +1198,7 @@ fn scan(
                                 error!("send scan packet error: {}", e);
                             }
 
-                            status.retried = retried + 1;
+                            status.retries = retries + 1;
                             status.id = rrq_id;
                             tmp_hm.insert(dst_port, status);
                             all_done = false;
@@ -1206,11 +1208,6 @@ fn scan(
                 }
             }
         }
-
-        println!(
-            "send all packet: {:.2}s",
-            start_eval.elapsed().as_secs_f32()
-        );
 
         if all_done {
             break;
@@ -1242,6 +1239,7 @@ fn scan(
                     if response.id == status.id {
                         let mut status = status.clone();
                         status.recved = true;
+                        let retries = status.retries;
                         tmp_hm.insert(dst_port, status);
 
                         let port_status = parse_response(response.data.clone(), method)?;
@@ -1252,6 +1250,7 @@ fn scan(
                             status: port_status,
                             cost: response.rtt,
                             cached: ni.cached,
+                            retries,
                         };
                         reports.push(report);
                     }
@@ -1304,7 +1303,7 @@ fn scan_raw(
     // It is only used here to determine whether the target is ipv4 or ipv6.
     // The real dst_addr is inferred from infer_addr.
     let cached = net_info.cached;
-    for _ in 0..max_retries {
+    for i in 0..max_retries {
         let rrq_id = random_request_id();
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
@@ -1390,6 +1389,7 @@ fn scan_raw(
                         status: port_status,
                         cost: r.rtt,
                         cached,
+                        retries: i + 1,
                     };
                     port_scan.finish(Some(report));
                     return Ok(port_scan);
@@ -1706,10 +1706,10 @@ pub(crate) fn tcp_connect_scan(
         for dst_port in dst_ports {
             let reports = reports.clone();
             let h = thread::spawn(move || {
-                for i in 0..max_retries {
+                for retries in 0..max_retries {
                     match tcp::send_connect_scan_packet(dst_addr, dst_port, timeout) {
                         Ok((port_status, rtt)) => {
-                            if port_status == PortStatus::Open || i == max_retries - 1 {
+                            if port_status == PortStatus::Open || retries == max_retries - 1 {
                                 let report = PortReport {
                                     addr: dst_addr,
                                     addr_origin,
@@ -1717,6 +1717,7 @@ pub(crate) fn tcp_connect_scan(
                                     status: port_status,
                                     cost: rtt,
                                     cached,
+                                    retries: retries + 1,
                                 };
 
                                 if let Ok(mut reports) = reports.lock() {
@@ -1775,6 +1776,7 @@ pub(crate) fn tcp_connect_scan_raw(
                 status: port_status,
                 cost: rtt,
                 cached,
+                retries: i + 1,
             };
             port_scan.finish(Some(report));
             return Ok(port_scan);
@@ -1788,6 +1790,7 @@ pub(crate) fn tcp_connect_scan_raw(
         status: PortStatus::Closed,
         cost: timeout,
         cached,
+        retries: max_retries,
     };
     port_scan.finish(Some(report));
     Ok(port_scan)
