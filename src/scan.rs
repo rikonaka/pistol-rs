@@ -85,6 +85,8 @@ pub(crate) mod udp6;
 
 #[cfg(any(feature = "scan", feature = "ping"))]
 use crate::GLOBAL_NET_CACHES;
+#[cfg(any(feature = "scan", feature = "ping"))]
+use crate::LoopStates;
 #[cfg(feature = "scan")]
 use crate::NetInfo;
 #[cfg(any(feature = "scan", feature = "ping"))]
@@ -516,7 +518,9 @@ pub(crate) fn ndp_ns_scan_buff_send(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Layer2LoopStates {
+struct MacScanState {
+    id: u64,
+    addr: IpAddr,
     retries: usize,
     data_recved: bool,
 }
@@ -612,22 +616,26 @@ pub(crate) fn mac_scan(
 ) -> Result<MacScans, PistolError> {
     let mut rets = MacScans::new(max_retries);
 
-    let mut loop_states = HashMap::new();
+    let mut loop_states = LoopStates::default();
     for t in targets {
-        let status = Layer2LoopStates {
+        let dst_addr = t.addr;
+        let dst_port = 0;
+        let state = MacScanState {
+            id: 0,
+            addr: dst_addr,
             retries: 0,
             data_recved: false,
         };
-        loop_states.insert(t.addr, status);
+        loop_states.insert(dst_addr, dst_port, state);
     }
     let mut mac_scan_rets = HashMap::new();
     let mut rrq_id_hm = HashMap::new();
 
     loop {
         let mut all_done = true;
-        for (dst_addr, state) in loop_states.iter_mut() {
+        for (_key, state) in &mut loop_states {
             if state.retries < max_retries && !state.data_recved {
-                let dst_addr = dst_addr.clone();
+                let dst_addr = state.addr;
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 match dst_addr {
@@ -642,6 +650,7 @@ pub(crate) fn mac_scan(
                         let rrq_id = arp_scan_buff_send(dst_ipv4, timeout, push_rd, push_sd)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
+                        state.id = rrq_id;
                         state.data_recved = false;
                         state.retries += 1;
                         all_done = false;
@@ -657,6 +666,7 @@ pub(crate) fn mac_scan(
                         let rrq_id = ndp_ns_scan_buff_send(dst_ipv6, timeout, push_rd, push_sd)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
+                        state.id = rrq_id;
                         state.data_recved = false;
                         state.retries += 1;
                         all_done = false;
@@ -686,15 +696,17 @@ pub(crate) fn mac_scan(
 
         for recv_response in recv_responses {
             if let Some((addr, mac)) = parse_mac_scan_response(recv_response.data) {
-                let rtt = recv_response.rtt;
-                let retries = if let Some(status) = loop_states.get_mut(&addr) {
-                    status.data_recved = true;
-                    status.retries
-                } else {
-                    0
-                };
-                mac_scan_rets.insert(addr, (mac, rtt, retries));
-                update_neighbor_cache(addr, mac, rtt)?;
+                for (_key, state) in &mut loop_states {
+                    if state.id == recv_response.id {
+                        state.data_recved = true;
+
+                        let rtt = recv_response.rtt;
+                        let retries = state.retries;
+                        mac_scan_rets.insert(addr, (mac, rtt, retries));
+                        update_neighbor_cache(addr, mac, rtt)?;
+                        break;
+                    }
+                }
             }
         }
     }
@@ -776,7 +788,7 @@ impl fmt::Display for PortStatus {
 #[derive(Debug, Clone, Copy)]
 pub struct PortReport {
     pub addr: IpAddr,
-    pub addr_origin: IpAddr,
+    pub origin_addr: IpAddr,
     pub port: u16,
     pub status: PortStatus,
     /// The cost of each target, not all.
@@ -815,7 +827,7 @@ impl fmt::Display for PortScan {
 
         match self.port_report {
             Some(report) => {
-                let addr_str = format!("{}", report.addr_origin);
+                let addr_str = format!("{}", report.origin_addr);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
                     time_to_string(report.cost)
@@ -913,14 +925,16 @@ impl fmt::Display for PortScans {
                     PortStatus::Open => open_ports_num += 1,
                     _ => (),
                 }
-                let addr_str = format!("{}", report.addr_origin);
+                let addr_str = format!("{}", report.origin_addr);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
                     let time_cost_str = time_to_string(report.cost);
-                    format!("{}(cached)", time_cost_str)
+                    format!("{}(l2c)", time_cost_str)
                 } else {
                     time_to_string(report.cost)
                 };
+                let retries_str = format!("r{}", report.retries);
+                let time_cost_str = format!("{}({})", time_cost_str, retries_str);
                 table.add_row(
                     row![c -> i, c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
                 );
@@ -941,7 +955,9 @@ impl fmt::Display for PortScans {
             "layer2 cost: {}, total cost: {}, open ports: {}",
             layer2_cost_str, total_cost_str, open_ports_num
         );
-        let summary = format!("{}\n{}", summary1, summary2);
+        let summary3 =
+            format!("l2c means layer2 mac address from cache, r1 means retry 1 time, and so on.");
+        let summary = format!("{}\n{}\n{}", summary1, summary2, summary3);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
         write!(f, "{}", table)
     }
@@ -1054,10 +1070,19 @@ fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortSta
 }
 
 #[derive(Debug, Clone)]
-struct ScanStatus {
+struct PortScanState {
     id: u64,
     retries: usize,
     recved: bool,
+    dst_mac: MacAddr,
+    dst_addr: IpAddr,
+    o_dst_addr: IpAddr,
+    dst_port: u16,
+    src_mac: MacAddr,
+    src_addr: IpAddr,
+    src_port: Option<u16>,
+    interface_name: String,
+    cached: bool,
 }
 
 /// General scan function.
@@ -1074,137 +1099,135 @@ fn scan(
     let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
 
-    let mut scan_status = HashMap::new();
+    let mut loop_states = LoopStates::default();
     for ni in net_infos {
-        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
         if ni.valid {
-            let mut hm = HashMap::new();
             for p in ni.dst_ports.clone() {
-                let status = ScanStatus {
+                let dst_mac = ni.inferred_dst_mac;
+                let dst_addr = ni.inferred_dst_addr;
+                let o_dst_addr = ni.dst_addr;
+                let src_mac = ni.inferred_src_mac;
+                let src_addr = ni.inferred_src_addr;
+                let src_port = ni.src_port;
+                let interface_name = ni.interface_name.clone();
+                let cached = ni.cached;
+
+                let state = PortScanState {
                     id: 0,
                     retries: 0,
                     recved: false,
+                    dst_mac,
+                    dst_addr,
+                    o_dst_addr,
+                    dst_port: p,
+                    src_mac,
+                    src_addr,
+                    src_port,
+                    interface_name,
+                    cached,
                 };
-                hm.insert(p, status);
+                loop_states.insert(ni.dst_addr, p, state);
             }
-            scan_status.insert(ni, hm);
         }
     }
-    let mut scan_status_clone = scan_status.clone();
 
     loop {
-        let start_eval = Instant::now();
         let mut all_done = true;
-        for (ni, hm) in scan_status {
-            let dst_mac = ni.inferred_dst_mac;
-            let dst_addr = ni.inferred_dst_addr;
-            let src_mac = ni.inferred_src_mac;
-            let src_port = match ni.src_port {
+        for (_key, state) in &mut loop_states {
+            let dst_mac = state.dst_mac;
+            let dst_addr = state.dst_addr;
+            let dst_port = state.dst_port;
+            let src_mac = state.src_mac;
+            let src_port = match state.src_port {
                 Some(s) => s,
                 None => random_port(),
             };
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
-                    let src_ipv4 = match ni.inferred_src_addr {
+                    let src_ipv4 = match state.src_addr {
                         IpAddr::V4(s) => s,
                         _ => {
                             return Err(PistolError::AttackAddressNotMatch {
-                                addr: ni.inferred_src_addr,
+                                addr: state.src_addr,
                             });
                         }
                     };
-                    let mut tmp_hm = scan_status_clone[&ni].clone();
-                    for (dst_port, status) in hm {
-                        let mut status = status.clone();
-                        let retries = status.retries;
-                        let recved = status.recved;
-                        if retries < max_retries && !recved {
-                            let (buff, filters) =
-                                build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
+                    if state.retries < max_retries && !state.recved {
+                        let (buff, filters) =
+                            build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
-                            let interface_name = ni.interface_name.clone();
-                            let rrq_id = random_request_id();
-                            let rrq = RRequest {
-                                interface_name: interface_name.clone(),
-                                id: rrq_id,
-                                filters,
-                                created: Instant::now(),
-                                elapsed: timeout,
-                            };
-                            let srq = SRequest {
-                                interface_name: interface_name.clone(),
-                                dst_mac,
-                                src_mac,
-                                eth_payload: buff.clone(),
-                                eth_type: EtherTypes::Ipv4,
-                                retransmit: retries,
-                            };
+                        let interface_name = state.interface_name.clone();
+                        let rrq_id = random_request_id();
+                        let rrq = RRequest {
+                            interface_name: interface_name.clone(),
+                            id: rrq_id,
+                            filters,
+                            created: Instant::now(),
+                            elapsed: timeout,
+                        };
+                        let srq = SRequest {
+                            interface_name: interface_name.clone(),
+                            dst_mac,
+                            src_mac,
+                            eth_payload: buff.clone(),
+                            eth_type: EtherTypes::Ipv4,
+                            retransmit: 1,
+                        };
 
-                            if let Err(e) = push_rd.send(rrq) {
-                                error!("send scan recv msg error: {}", e);
-                            }
-                            if let Err(e) = push_sd.send(srq) {
-                                error!("send scan packet error: {}", e);
-                            }
-
-                            status.retries = retries + 1;
-                            status.id = rrq_id;
-                            tmp_hm.insert(dst_port, status);
-                            all_done = false;
+                        if let Err(e) = push_rd.send(rrq) {
+                            error!("send scan recv msg error: {}", e);
                         }
+                        if let Err(e) = push_sd.send(srq) {
+                            error!("send scan packet error: {}", e);
+                        }
+
+                        state.retries += 1;
+                        state.id = rrq_id;
+                        all_done = false;
                     }
-                    scan_status_clone.insert(ni, tmp_hm);
                 }
                 IpAddr::V6(dst_ipv6) => {
-                    let src_ipv6 = match ni.inferred_src_addr {
+                    let src_ipv6 = match state.src_addr {
                         IpAddr::V6(s) => s,
                         _ => {
                             return Err(PistolError::AttackAddressNotMatch {
-                                addr: ni.inferred_src_addr,
+                                addr: state.src_addr,
                             });
                         }
                     };
-                    let mut tmp_hm = scan_status_clone[&ni].clone();
-                    for (dst_port, status) in hm {
-                        let mut status = status.clone();
-                        let retries = status.retries;
-                        let recved = status.recved;
-                        if retries < max_retries && !recved {
-                            let (buff, filters) =
-                                build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
+                    if state.retries < max_retries && !state.recved {
+                        let (buff, filters) =
+                            build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
-                            let interface_name = ni.interface_name.clone();
-                            let rrq_id = random_request_id();
-                            let rrq = RRequest {
-                                interface_name: interface_name.clone(),
-                                id: rrq_id,
-                                filters,
-                                created: Instant::now(),
-                                elapsed: timeout,
-                            };
-                            let srq = SRequest {
-                                interface_name: interface_name.clone(),
-                                dst_mac,
-                                src_mac,
-                                eth_payload: buff.clone(),
-                                eth_type: EtherTypes::Ipv6,
-                                retransmit: retries,
-                            };
+                        let interface_name = state.interface_name.clone();
+                        let rrq_id = random_request_id();
+                        let rrq = RRequest {
+                            interface_name: interface_name.clone(),
+                            id: rrq_id,
+                            filters,
+                            created: Instant::now(),
+                            elapsed: timeout,
+                        };
+                        let srq = SRequest {
+                            interface_name: interface_name.clone(),
+                            dst_mac,
+                            src_mac,
+                            eth_payload: buff.clone(),
+                            eth_type: EtherTypes::Ipv6,
+                            retransmit: 1,
+                        };
 
-                            if let Err(e) = push_rd.send(rrq) {
-                                error!("send scan recv msg error: {}", e);
-                            }
-                            if let Err(e) = push_sd.send(srq) {
-                                error!("send scan packet error: {}", e);
-                            }
-
-                            status.retries = retries + 1;
-                            status.id = rrq_id;
-                            tmp_hm.insert(dst_port, status);
-                            all_done = false;
+                        if let Err(e) = push_rd.send(rrq) {
+                            error!("send scan recv msg error: {}", e);
                         }
+                        if let Err(e) = push_sd.send(srq) {
+                            error!("send scan packet error: {}", e);
+                        }
+
+                        state.retries += 1;
+                        state.id = rrq_id;
+                        all_done = false;
                     }
-                    scan_status_clone.insert(ni, tmp_hm);
                 }
             }
         }
@@ -1221,9 +1244,7 @@ fn scan(
                 break;
             }
             match get_response.recv_timeout(timeout_10ms) {
-                Ok(recv_response) => {
-                    responses.push(recv_response);
-                }
+                Ok(recv_response) => responses.push(recv_response),
                 Err(_e) => {
                     // timeout error is expected
                     continue;
@@ -1231,38 +1252,32 @@ fn scan(
             };
         }
 
-        scan_status = scan_status_clone.clone();
         for response in &responses {
-            for (ni, hm) in &scan_status {
-                let mut tmp_hm = scan_status[&ni].clone();
-                for (&dst_port, status) in hm {
-                    if response.id == status.id {
-                        let mut status = status.clone();
-                        status.recved = true;
-                        let retries = status.retries;
-                        tmp_hm.insert(dst_port, status);
+            for (_key, state) in &mut loop_states {
+                if response.id == state.id {
+                    state.recved = true;
 
-                        let port_status = parse_response(response.data.clone(), method)?;
-                        let report = PortReport {
-                            addr: ni.inferred_dst_addr,
-                            addr_origin: ni.dst_addr,
-                            port: dst_port,
-                            status: port_status,
-                            cost: response.rtt,
-                            cached: ni.cached,
-                            retries,
-                        };
-                        reports.push(report);
-                    }
+                    let retries = state.retries;
+                    let addr = state.dst_addr;
+                    let origin_addr = state.o_dst_addr;
+                    let port = state.dst_port;
+                    let cached = state.cached;
+
+                    let port_status = parse_response(response.data.clone(), method)?;
+                    let report = PortReport {
+                        addr,
+                        origin_addr,
+                        port,
+                        status: port_status,
+                        cost: response.rtt,
+                        cached,
+                        retries,
+                    };
+                    reports.push(report);
+                    break;
                 }
-                scan_status_clone.insert(ni.clone(), tmp_hm);
             }
         }
-        scan_status = scan_status_clone.clone();
-        println!(
-            "recv all packet: {:.2}s",
-            start_eval.elapsed().as_secs_f32()
-        );
     }
     port_scans.finish(reports);
     Ok(port_scans)
@@ -1384,7 +1399,7 @@ fn scan_raw(
                     let port_status = parse_response(r.data.clone(), method)?;
                     let report = PortReport {
                         addr: dst_addr,
-                        addr_origin,
+                        origin_addr: addr_origin,
                         port: dst_port,
                         status: port_status,
                         cost: r.rtt,
@@ -1712,7 +1727,7 @@ pub(crate) fn tcp_connect_scan(
                             if port_status == PortStatus::Open || retries == max_retries - 1 {
                                 let report = PortReport {
                                     addr: dst_addr,
-                                    addr_origin,
+                                    origin_addr: addr_origin,
                                     port: dst_port,
                                     status: port_status,
                                     cost: rtt,
@@ -1771,7 +1786,7 @@ pub(crate) fn tcp_connect_scan_raw(
         if port_status == PortStatus::Open || i == max_retries - 1 {
             let report = PortReport {
                 addr: addr_origin,
-                addr_origin,
+                origin_addr: addr_origin,
                 port: dst_port,
                 status: port_status,
                 cost: rtt,
@@ -1785,7 +1800,7 @@ pub(crate) fn tcp_connect_scan_raw(
 
     let report = PortReport {
         addr: addr_origin,
-        addr_origin,
+        origin_addr: addr_origin,
         port: dst_port,
         status: PortStatus::Closed,
         cost: timeout,

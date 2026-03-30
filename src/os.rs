@@ -87,7 +87,7 @@ pub mod packet6;
 pub mod rr;
 
 #[derive(Debug, Clone)]
-struct LoopStatus {
+struct OsProbeState {
     id: u64,
     retries: usize,
     recved: bool,

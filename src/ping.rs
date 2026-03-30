@@ -27,8 +27,6 @@ use prettytable::row;
 #[cfg(feature = "ping")]
 use std::collections::BTreeMap;
 #[cfg(feature = "ping")]
-use std::collections::HashMap;
-#[cfg(feature = "ping")]
 use std::fmt;
 #[cfg(feature = "ping")]
 use std::net::IpAddr;
@@ -52,6 +50,8 @@ pub mod icmp;
 #[cfg(feature = "ping")]
 pub mod icmpv6;
 
+#[cfg(feature = "ping")]
+use crate::LoopStates;
 #[cfg(feature = "ping")]
 use crate::NetInfo;
 #[cfg(feature = "ping")]
@@ -535,9 +535,11 @@ fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingSt
 }
 
 #[derive(Debug, Clone)]
-struct ScanStatus {
+struct PingState {
+    id: u64,
     retries: usize,
     data_recved: bool,
+    net_info: NetInfo,
 }
 
 #[cfg(feature = "ping")]
@@ -553,23 +555,25 @@ fn ping(
     let mut pistol_pings = HostPings::new(max_retries);
     let mut reports = Vec::new();
 
-    let mut scan_status = HashMap::new();
+    let mut loop_states = LoopStates::default();
     for ni in net_infos {
-        // (0, false, None, start) => (retiries, has data recved?, receiver, send probe time)
         if ni.valid {
-            let status = ScanStatus {
+            let dst_addr = ni.dst_addr;
+            let dst_port = 0;
+            let state = PingState {
+                id: 0,
                 retries: 0,
                 data_recved: false,
+                net_info: ni.clone(),
             };
-            scan_status.insert(ni, status);
+            loop_states.insert(dst_addr, dst_port, state);
         }
     }
 
-    let mut recv_msg_ids = HashMap::new();
-    let mut scan_status_clone = scan_status.clone();
     loop {
         let mut all_done = true;
-        for (ni, status) in scan_status {
+        for (_key, state) in &mut loop_states {
+            let ni = state.net_info.clone();
             let dst_mac = ni.inferred_dst_mac;
             let dst_addr = ni.inferred_dst_addr;
             let src_mac = ni.inferred_src_mac;
@@ -606,9 +610,7 @@ fn ping(
                         None
                     };
 
-                    let retries = status.retries;
-                    let data_recved = status.data_recved;
-                    if retries < max_retries && !data_recved {
+                    if state.retries < max_retries && !state.data_recved {
                         let (buff, filters) =
                             build_ping_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
@@ -636,12 +638,7 @@ fn ping(
                             error!("ipv4 send ping send msg error: {}", e);
                         }
 
-                        recv_msg_ids.insert(rrq_id, dst_addr);
-
-                        let mut status_clone = status.clone();
-                        status_clone.retries = retries + 1;
-                        scan_status_clone.insert(ni.clone(), status_clone);
-
+                        state.retries += 1;
                         all_done = false;
                     }
                 }
@@ -670,9 +667,7 @@ fn ping(
                             None
                         };
 
-                    let retries = status.retries;
-                    let data_recved = status.data_recved;
-                    if retries < max_retries && !data_recved {
+                    if state.retries < max_retries && !state.data_recved {
                         let (buff, filters) =
                             build_ping_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
@@ -700,12 +695,7 @@ fn ping(
                             error!("ipv4 send ping send msg error: {}", e);
                         }
 
-                        recv_msg_ids.insert(rrq_id, dst_addr);
-
-                        let mut status_clone = status.clone();
-                        status_clone.retries = retries + 1;
-                        scan_status_clone.insert(ni.clone(), status_clone);
-
+                        state.retries += 1;
                         all_done = false;
                     }
                 }
@@ -715,8 +705,6 @@ fn ping(
         if all_done {
             break;
         }
-        scan_status = scan_status_clone.clone();
-
         let timeout_10ms = Duration::from_millis(10);
         let recv_start = Instant::now();
         loop {
@@ -725,49 +713,36 @@ fn ping(
             }
 
             let recv_response = match get_response.recv_timeout(timeout_10ms) {
-                Ok(r) => {
-                    if recv_msg_ids.contains_key(&r.id) {
-                        r
-                    } else {
-                        continue;
-                    }
-                }
+                Ok(r) => r,
                 Err(_e) => continue,
             };
 
-            match parse_response(method, recv_response.data) {
-                Ok(ps) => {
-                    let dst_addr = recv_msg_ids[&recv_response.id];
-                    let rtt = recv_response.rtt;
-                    let mut cached = false;
-                    for (ni, _status) in &scan_status {
-                        if ni.inferred_dst_addr == dst_addr {
-                            cached = ni.cached;
-                        }
-                    }
-                    let ping_report = PingReport {
-                        addr: dst_addr,
-                        status: ps,
-                        cost: rtt,
-                        cached,
-                    };
-                    reports.push(ping_report);
+            for (_key, state) in &mut loop_states {
+                if state.id == recv_response.id {
+                    match parse_response(method, recv_response.data.clone()) {
+                        Ok(ps) => {
+                            state.data_recved = true;
+                            let dst_addr = state.net_info.inferred_dst_addr;
+                            let rtt = recv_response.rtt;
+                            let cached = state.net_info.cached;
 
-                    for (ni, status) in &scan_status {
-                        if ni.inferred_dst_addr == dst_addr {
-                            let mut status_clone = status.clone();
-                            status_clone.data_recved = true;
-                            scan_status_clone.insert(ni.clone(), status_clone);
+                            let ping_report = PingReport {
+                                addr: dst_addr,
+                                status: ps,
+                                cost: rtt,
+                                cached,
+                            };
+                            reports.push(ping_report);
+                        }
+                        Err(e) => {
+                            error!("parse ping response error: {}", e);
+                            continue;
                         }
                     }
-                }
-                Err(e) => {
-                    error!("parse ping response error: {}", e);
-                    continue;
+                    break;
                 }
             }
         }
-        scan_status = scan_status_clone.clone();
     }
     pistol_pings.finish(reports);
     Ok(pistol_pings)

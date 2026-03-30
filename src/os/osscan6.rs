@@ -25,8 +25,8 @@ use crate::layer::Layer4FilterIcmpv6;
 use crate::layer::Layer4FilterTcpUdp;
 use crate::layer::PacketFilter;
 use crate::os::Linear;
-use crate::os::LoopStatus;
 use crate::os::OsInfo6;
+use crate::os::OsProbeState;
 use crate::os::operator6::apply_scale;
 use crate::os::operator6::vectorize;
 use crate::os::osscan::get_scan_line;
@@ -378,7 +378,7 @@ pub struct Fingerprint6 {
     pub t7x: TX6,
     pub extra: String,
     pub novelty: f64,
-    pub status: bool,
+    pub state: bool,
 }
 
 impl Default for Fingerprint6 {
@@ -405,7 +405,7 @@ impl Default for Fingerprint6 {
             t7x: TX6::default(),
             extra: String::new(),
             novelty: 0.0,
-            status: false,
+            state: false,
         }
     }
 }
@@ -571,15 +571,15 @@ fn send_seq_probes(
         filter_hm.insert(i, filter);
     }
 
-    let mut send_status = HashMap::new();
+    let mut send_states = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = LoopStatus {
+        let state = OsProbeState {
             id: random_request_id(),
             retries: 0,
             recved: false,
         };
-        send_status.insert(t, status);
+        send_states.insert(t, state);
     }
 
     let ether_type = EtherTypes::Ipv6;
@@ -587,17 +587,17 @@ fn send_seq_probes(
     let mut scan_start_hm = HashMap::new();
     loop {
         let mut all_done = true;
-        let mut send_status_clone = send_status.clone();
+        let mut send_state_clone = send_states.clone();
         for (i, buff) in &buff_hm {
-            let mut status = send_status[i].clone();
-            let retries = status.retries;
-            let recved = status.recved;
+            let mut state = send_states[i].clone();
+            let retries = state.retries;
+            let recved = state.recved;
             if retries < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let created = Instant::now();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: status.id,
+                    id: state.id,
                     filters: vec![filter],
                     created,
                     elapsed: timeout,
@@ -618,8 +618,8 @@ fn send_seq_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retries = retries + 1;
-                send_status_clone.insert(*i, status);
+                state.retries = retries + 1;
+                send_state_clone.insert(*i, state);
                 all_done = false;
             }
 
@@ -632,8 +632,8 @@ fn send_seq_probes(
         }
 
         let search_id = |id: u64| -> Option<usize> {
-            for (&i, status) in &send_status {
-                if status.id == id {
+            for (&i, state) in &send_states {
+                if state.id == id {
                     return Some(i);
                 }
             }
@@ -649,9 +649,9 @@ fn send_seq_probes(
                         match search_id(id) {
                             Some(seq) => {
                                 let rtt = recv_response.rtt;
-                                let mut status = send_status[&seq].clone();
-                                status.recved = true;
-                                send_status_clone.insert(seq, status);
+                                let mut state = send_states[&seq].clone();
+                                state.recved = true;
+                                send_state_clone.insert(seq, state);
 
                                 let request = buff_hm[&seq].clone();
                                 let rr = RequestResponse {
@@ -669,7 +669,7 @@ fn send_seq_probes(
             }
         }
 
-        send_status = send_status_clone.clone();
+        send_states = send_state_clone.clone();
     }
 
     let seq1: RequestResponse = seq_hm
@@ -790,15 +790,15 @@ fn send_ie_probes(
     let filter_4 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_4));
     let filters = vec![filter_1, filter_2, filter_3, filter_4];
 
-    let mut send_status = HashMap::new();
+    let mut send_state = HashMap::new();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = LoopStatus {
+        let state = OsProbeState {
             id: random_request_id(),
             retries: 0,
             recved: false,
         };
-        send_status.insert(t, status);
+        send_state.insert(t, state);
     }
 
     let mut ie_hm = HashMap::new();
@@ -806,16 +806,16 @@ fn send_ie_probes(
     let ether_type = EtherTypes::Ipv6;
     loop {
         let mut all_done = true;
-        let mut send_status_clone = send_status.clone();
+        let mut send_state_clone = send_state.clone();
         for (i, buff) in &buff_hm {
-            let mut status = send_status[i].clone();
-            let retired = status.retries;
-            let recved = status.recved;
+            let mut state = send_state[i].clone();
+            let retired = state.retries;
+            let recved = state.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: status.id,
+                    id: state.id,
                     filters: filters.clone(),
                     created: start,
                     elapsed: timeout,
@@ -836,8 +836,8 @@ fn send_ie_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retries = retired + 1;
-                send_status_clone.insert(*i, status);
+                state.retries = retired + 1;
+                send_state_clone.insert(*i, state);
                 all_done = false;
             }
         }
@@ -847,8 +847,8 @@ fn send_ie_probes(
         }
 
         let search_id = |id: u64| -> Option<usize> {
-            for (&i, status) in &send_status {
-                if status.id == id {
+            for (&i, state) in &send_state {
+                if state.id == id {
                     return Some(i);
                 }
             }
@@ -864,9 +864,9 @@ fn send_ie_probes(
                         match search_id(id) {
                             Some(ie) => {
                                 let rtt = recv_response.rtt;
-                                let mut status = send_status[&ie].clone();
-                                status.recved = true;
-                                send_status_clone.insert(ie, status);
+                                let mut state = send_state[&ie].clone();
+                                state.recved = true;
+                                send_state_clone.insert(ie, state);
 
                                 let request = buff_hm[&ie].clone();
                                 let rr = RequestResponse {
@@ -886,7 +886,7 @@ fn send_ie_probes(
             }
         }
 
-        send_status = send_status_clone.clone();
+        send_state = send_state_clone.clone();
     }
 
     let ie1 = ie_hm
@@ -946,15 +946,15 @@ fn send_nx_probes(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let mut send_status = HashMap::new();
+    let mut send_state = HashMap::new();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = LoopStatus {
+        let state = OsProbeState {
             id: random_request_id(),
             retries: 0,
             recved: false,
         };
-        send_status.insert(t, status);
+        send_state.insert(t, state);
     }
 
     let mut nx_hm = HashMap::new();
@@ -962,16 +962,16 @@ fn send_nx_probes(
     let ether_type = EtherTypes::Ipv6;
     loop {
         let mut all_done = true;
-        let mut send_status_clone = send_status.clone();
+        let mut send_state_clone = send_state.clone();
         for (i, buff) in &buff_hm {
-            let mut status = send_status[i].clone();
-            let retired = status.retries;
-            let recved = status.recved;
+            let mut state = send_state[i].clone();
+            let retired = state.retries;
+            let recved = state.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
                 let start = Instant::now();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: status.id,
+                    id: state.id,
                     filters: vec![filter.clone()],
                     created: start,
                     elapsed: timeout,
@@ -992,8 +992,8 @@ fn send_nx_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retries = retired + 1;
-                send_status_clone.insert(*i, status);
+                state.retries = retired + 1;
+                send_state_clone.insert(*i, state);
                 all_done = false;
             }
         }
@@ -1003,8 +1003,8 @@ fn send_nx_probes(
         }
 
         let search_id = |id: u64| -> Option<usize> {
-            for (&i, status) in &send_status {
-                if status.id == id {
+            for (&i, state) in &send_state {
+                if state.id == id {
                     return Some(i);
                 }
             }
@@ -1020,9 +1020,9 @@ fn send_nx_probes(
                         match search_id(id) {
                             Some(ie) => {
                                 let rtt = recv_response.rtt;
-                                let mut status = send_status[&ie].clone();
-                                status.recved = true;
-                                send_status_clone.insert(ie, status);
+                                let mut state = send_state[&ie].clone();
+                                state.recved = true;
+                                send_state_clone.insert(ie, state);
 
                                 let request = buff_hm[&ie].clone();
                                 let rr = RequestResponse {
@@ -1042,7 +1042,7 @@ fn send_nx_probes(
             }
         }
 
-        send_status = send_status_clone.clone();
+        send_state = send_state_clone.clone();
     }
 
     let ni = nx_hm
@@ -1361,15 +1361,15 @@ fn send_tx_probes(
     buff_hm.insert(6, buff_6);
     buff_hm.insert(7, buff_7);
 
-    let mut send_status = HashMap::new();
+    let mut send_state = HashMap::new();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let status = LoopStatus {
+        let state = OsProbeState {
             id: random_request_id(),
             retries: 0,
             recved: false,
         };
-        send_status.insert(t, status);
+        send_state.insert(t, state);
     }
 
     let ether_type = EtherTypes::Ipv6;
@@ -1377,17 +1377,17 @@ fn send_tx_probes(
     let mut scan_start_hm = HashMap::new();
     loop {
         let mut all_done = true;
-        let mut send_status_clone = send_status.clone();
+        let mut send_state_clone = send_state.clone();
         for (i, buff) in &buff_hm {
-            let mut status = send_status[i].clone();
-            let retries = status.retries;
-            let recved = status.recved;
+            let mut state = send_state[i].clone();
+            let retries = state.retries;
+            let recved = state.recved;
             if retries < PROBE_MAX_RETIRIES && !recved {
                 let filter = filter_hm[i].clone();
                 let start = Instant::now();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
-                    id: status.id,
+                    id: state.id,
                     filters: vec![filter],
                     created: start,
                     elapsed: timeout,
@@ -1408,8 +1408,8 @@ fn send_tx_probes(
                 }
 
                 scan_start_hm.insert(i, scan_start.elapsed());
-                status.retries = retries + 1;
-                send_status_clone.insert(*i, status);
+                state.retries = retries + 1;
+                send_state_clone.insert(*i, state);
                 all_done = false;
             }
         }
@@ -1419,8 +1419,8 @@ fn send_tx_probes(
         }
 
         let search_id = |id: u64| -> Option<usize> {
-            for (&i, status) in &send_status {
-                if status.id == id {
+            for (&i, state) in &send_state {
+                if state.id == id {
                     return Some(i);
                 }
             }
@@ -1436,9 +1436,9 @@ fn send_tx_probes(
                         match search_id(id) {
                             Some(tx) => {
                                 let rtt = recv_response.rtt;
-                                let mut status = send_status[&tx].clone();
-                                status.recved = true;
-                                send_status_clone.insert(tx, status);
+                                let mut state = send_state[&tx].clone();
+                                state.recved = true;
+                                send_state_clone.insert(tx, state);
 
                                 let request = buff_hm[&tx].clone();
                                 let rr = RequestResponse {
@@ -1458,7 +1458,7 @@ fn send_tx_probes(
             }
         }
 
-        send_status = send_status_clone.clone();
+        send_state = send_state_clone.clone();
     }
 
     let t2 = tx_hm
@@ -1903,7 +1903,7 @@ pub fn os_probe_thread6(
     };
 
     const FP_NOVELTY_THRESHOLD: f64 = 15.0;
-    let status = if perfect_match == 1 {
+    let state = if perfect_match == 1 {
         if novelty < FP_NOVELTY_THRESHOLD {
             true
         } else {
@@ -1935,10 +1935,10 @@ pub fn os_probe_thread6(
         t7x,
         extra: String::from("12345"), // IPv6 flow label
         novelty,
-        status,
+        state,
     };
 
-    let ret = if status {
+    let ret = if state {
         let mut count = top_k;
         let mut last_score = 0.0;
         let mut ret = Vec::new();

@@ -35,6 +35,9 @@ use pnet::transport::transport_channel;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::collections::hash_map::IntoIter;
+use std::collections::hash_map::Iter;
+use std::collections::hash_map::IterMut;
 use std::fmt;
 use std::fs;
 use std::net::IpAddr;
@@ -143,6 +146,53 @@ const NETWORK_CACHE_PATH: &str = ".plnetcache";
 // When the cache is created more than 1 hour ago,
 // it will be considered expired and will be deleted.
 const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
+
+#[derive(Debug, Clone)]
+struct LoopStates<T> {
+    /// The key of the HashMap is the {IP}_{PORT}.
+    data: HashMap<String, T>,
+}
+
+impl<T> Default for LoopStates<T> {
+    fn default() -> Self {
+        let data: HashMap<String, T> = HashMap::new();
+        Self { data }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a LoopStates<T> {
+    type Item = (&'a String, &'a T);
+    type IntoIter = Iter<'a, String, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut LoopStates<T> {
+    type Item = (&'a String, &'a mut T);
+    type IntoIter = IterMut<'a, String, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.iter_mut()
+    }
+}
+
+impl<T> IntoIterator for LoopStates<T> {
+    type Item = (String, T);
+    type IntoIter = IntoIter<String, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.into_iter()
+    }
+}
+
+impl<T> LoopStates<T> {
+    fn insert(&mut self, ip: IpAddr, port: u16, value: T) {
+        let key = format!("{}_{}", ip, port);
+        self.data.insert(key, value);
+    }
+}
 
 /// Cache the network information of the program runtime process to avoid repeated calculations.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -3273,14 +3323,14 @@ mod tests {
     fn test_tcp_syn_scan() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(0.5);
+        pistol.set_timeout(1.5);
         // pistol.set_log_level("debug");
 
         let src_ipv4 = None;
         let src_port = None;
         let targets = vec![Target::new(
             Ipv4Addr::new(192, 168, 5, 78).into(),
-            Some(vec![22, 80, 443]),
+            Some(vec![22, 80, 443, 8080]),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
@@ -3342,6 +3392,36 @@ mod tests {
         let ret = pistol
             .tcp_connect_scan(&targets, src_ipv4, src_port)
             .unwrap();
+        println!("{}", ret);
+    }
+    #[cfg(feature = "os")]
+    #[test]
+    fn test_os_detect() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(2.5);
+
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
+        // `dst_open_tcp_port` must be a certain open tcp port.
+        let dst_open_tcp_port = 22;
+        // `dst_closed_tcp_port` must be a certain closed tcp port.
+        let dst_closed_tcp_port = 8765;
+        // `dst_closed_udp_port` must be a certain closed udp port.
+        let dst_closed_udp_port = 9876;
+        let target = Target::new(
+            dst_ipv4.into(),
+            Some(vec![
+                dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+        let top_k = 3;
+        let threads = 8;
+
+        // The `fingerprint` is the obtained fingerprint of the target OS.
+        // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
+        let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
     }
     #[cfg(feature = "scan")]

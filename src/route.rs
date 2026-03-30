@@ -22,6 +22,7 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::GLOBAL_NET_CACHES;
+use crate::LoopStates;
 use crate::RRequest;
 use crate::RResponse;
 use crate::SRequest;
@@ -778,15 +779,16 @@ pub(crate) struct InferMacInput {
 }
 
 #[derive(Debug, Clone)]
-struct InferStatus {
-    mac: MacAddr,
+struct InferState {
+    id: u64,
+    dst_mac: MacAddr,
     route_via: Option<RouteVia>,
     interface: NetworkInterface,
     src_addr: IpAddr,
     cached: bool,
     rtt: Duration,
     is_route: bool,
-    target: IpAddr,
+    dst_addr: IpAddr,
     retries: usize,
 }
 
@@ -799,73 +801,70 @@ pub(crate) fn infer_macs(
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
-    let mut infer_status = HashMap::new();
-    let mut recv_msg_ids = Vec::new();
+    let mut loop_states = LoopStates::default();
 
     for it in inputs {
         let src_addr = it.inferred_src_addr;
         let dst_addr = it.inferred_dst_addr;
+        let dst_port = 0;
         if src_addr.is_loopback() || dst_addr.is_loopback() {
-            let status = InferStatus {
-                mac: MacAddr::zero(),
+            let state = InferState {
+                id: 0,
+                dst_mac: MacAddr::zero(),
                 route_via: None,
                 interface: fake_interface(),
                 src_addr,
                 cached: true,
                 rtt: Duration::ZERO,
                 is_route: false,
-                target: dst_addr,
+                dst_addr,
                 retries: 0,
             };
-
-            infer_status.insert(dst_addr, status);
+            loop_states.insert(dst_addr, 0, state);
         } else {
             let (src_interface, route_via) = get_route(dst_addr, src_addr)?;
             debug!(
                 "src interface: {}, via addr: {:?}",
                 src_interface.name, route_via
             );
-
-            let status = InferStatus {
-                mac: MacAddr::zero(),
+            let state = InferState {
+                id: 0,
+                dst_mac: MacAddr::zero(),
                 route_via,
                 interface: src_interface.clone(),
                 src_addr,
                 cached: false,
                 rtt: Duration::ZERO,
                 is_route: false,
-                target: dst_addr,
+                dst_addr,
                 retries: 0,
             };
-
-            infer_status.insert(dst_addr, status);
+            loop_states.insert(dst_addr, dst_port, state);
         }
     }
 
     // Get mac of via address if its on cache or send packet to get it if not cached,
     // and store the receiver for waiting response in the next step.
-    let mut infer_status_clone = infer_status.clone();
     loop {
         let mut all_done = true;
-        for (&dst_addr, status) in &infer_status {
-            if status.mac != MacAddr::zero() || status.retries >= max_retries {
+        for (_key, state) in &mut loop_states {
+            if state.dst_mac != MacAddr::zero() || state.retries >= max_retries {
                 continue;
             }
 
             let push_rd = push_rd.clone();
             let push_sd = push_sd.clone();
-            match status.route_via {
+            match state.route_via {
                 Some(route_via) => {
                     match route_via {
                         RouteVia::IfIndex(if_index) => {
                             // To send to the address, we need to use this interface,
                             // and we should repalce the src_interface with the new src_interface.
+                            let dst_addr = state.dst_addr;
                             match search_mac(dst_addr)? {
                                 Some(dst_mac) => {
-                                    let mut status_clone = status.clone();
-                                    status_clone.mac = dst_mac;
-                                    status_clone.cached = true;
-                                    infer_status_clone.insert(dst_addr, status_clone);
+                                    state.dst_mac = dst_mac;
+                                    state.cached = true;
                                 }
                                 None => {
                                     // replace with new src_interfaces
@@ -878,7 +877,7 @@ pub(crate) fn infer_macs(
                                         }
                                     };
 
-                                    let src_addr = status.src_addr;
+                                    let src_addr = state.src_addr;
                                     let rrq_id = send_neighbor_detect_packet(
                                         dst_addr,
                                         src_addr,
@@ -889,43 +888,36 @@ pub(crate) fn infer_macs(
                                         push_sd,
                                     )?;
 
-                                    recv_msg_ids.push(rrq_id);
-
-                                    let mut status_clone = status.clone();
-                                    status_clone.cached = false;
-                                    status_clone.is_route = false;
-                                    status_clone.target = dst_addr;
-                                    status_clone.retries += 1;
-                                    infer_status_clone.insert(dst_addr, status_clone);
+                                    state.id = rrq_id;
+                                    state.cached = false;
+                                    state.is_route = false;
+                                    state.dst_addr = dst_addr;
+                                    state.retries += 1;
 
                                     all_done = false;
                                 }
                             };
                         }
                         RouteVia::MacAddr(dst_mac) => {
-                            let mut status_clone = status.clone();
-                            status_clone.mac = dst_mac;
-                            status_clone.cached = true;
-                            infer_status_clone.insert(dst_addr, status_clone);
+                            state.dst_mac = dst_mac;
+                            state.cached = true;
                         }
                         RouteVia::IpAddr(via_addr) => {
                             // In most cases, this is usually the routing address.
                             let via_addr = if via_addr.is_unspecified() {
                                 // fix 0.0.0.0 address
-                                dst_addr
+                                state.dst_addr
                             } else {
                                 via_addr
                             };
                             match search_mac(via_addr)? {
                                 Some(dst_mac) => {
-                                    let mut status_clone = status.clone();
-                                    status_clone.mac = dst_mac;
-                                    status_clone.cached = true;
-                                    infer_status_clone.insert(dst_addr, status_clone);
+                                    state.dst_mac = dst_mac;
+                                    state.cached = true;
                                 }
                                 None => {
-                                    let src_addr = status.src_addr;
-                                    let src_interface = status.interface.clone();
+                                    let src_addr = state.src_addr;
+                                    let src_interface = state.interface.clone();
                                     let rrq_id = send_neighbor_detect_packet(
                                         via_addr,
                                         src_addr,
@@ -935,14 +927,12 @@ pub(crate) fn infer_macs(
                                         push_rd,
                                         push_sd,
                                     )?;
-                                    recv_msg_ids.push(rrq_id);
 
-                                    let mut status_clone = status.clone();
-                                    status_clone.cached = false;
-                                    status_clone.is_route = true;
-                                    status_clone.target = via_addr;
-                                    status_clone.retries += 1;
-                                    infer_status_clone.insert(dst_addr, status_clone);
+                                    state.id = rrq_id;
+                                    state.cached = false;
+                                    state.is_route = true;
+                                    state.dst_addr = via_addr;
+                                    state.retries += 1;
 
                                     all_done = false;
                                 }
@@ -952,16 +942,15 @@ pub(crate) fn infer_macs(
                 }
                 None => {
                     debug!("route_via is none");
+                    let dst_addr = state.dst_addr;
                     match search_mac(dst_addr)? {
                         Some(dst_mac) => {
-                            let mut status_clone = status.clone();
-                            status_clone.mac = dst_mac;
-                            status_clone.cached = true;
-                            infer_status_clone.insert(dst_addr, status_clone);
+                            state.dst_mac = dst_mac;
+                            state.cached = true;
                         }
                         None => {
-                            let src_addr = status.src_addr;
-                            let src_interface = status.interface.clone();
+                            let src_addr = state.src_addr;
+                            let src_interface = state.interface.clone();
                             let rrq_id = send_neighbor_detect_packet(
                                 dst_addr,
                                 src_addr,
@@ -971,14 +960,12 @@ pub(crate) fn infer_macs(
                                 push_rd,
                                 push_sd,
                             )?;
-                            recv_msg_ids.push(rrq_id);
 
-                            let mut status_clone = status.clone();
-                            status_clone.cached = false;
-                            status_clone.is_route = false;
-                            status_clone.target = dst_addr;
-                            status_clone.retries += 1;
-                            infer_status_clone.insert(dst_addr, status_clone);
+                            state.id = rrq_id;
+                            state.cached = false;
+                            state.is_route = false;
+                            state.dst_addr = dst_addr;
+                            state.retries += 1;
 
                             all_done = false;
                         }
@@ -986,7 +973,6 @@ pub(crate) fn infer_macs(
                 }
             }
         }
-        infer_status = infer_status_clone.clone();
 
         if all_done {
             break;
@@ -999,36 +985,38 @@ pub(crate) fn infer_macs(
                 break;
             }
             let recv_response = match get_response.recv_timeout(timeout_10ms) {
-                Ok(r) => {
-                    if recv_msg_ids.contains(&r.id) {
-                        r
-                    } else {
-                        continue;
-                    }
-                }
+                Ok(r) => r,
                 Err(_e) => continue,
             };
 
-            match parse_mac_scan_response(recv_response.data) {
-                Some((addr, mac)) => {
-                    let mut status = infer_status[&addr].clone();
-                    status.mac = mac;
-                    status.rtt = recv_response.rtt;
-                    infer_status.insert(addr, status);
-                    update_neighbor_cache(addr, mac, Some(recv_response.rtt))?;
+            for (_key, state) in &mut loop_states {
+                if state.id == recv_response.id {
+                    match parse_mac_scan_response(recv_response.data.clone()) {
+                        Some((addr, mac)) => {
+                            state.dst_mac = mac;
+                            state.rtt = recv_response.rtt;
+                            update_neighbor_cache(addr, mac, Some(recv_response.rtt))?;
+                        }
+                        None => continue,
+                    }
+                    break;
                 }
-                None => continue,
             }
         }
     }
 
     let mut rets = HashMap::new();
-    for (dst_addr, status) in infer_status {
+    for (_key, state) in loop_states {
+        let dst_addr = state.dst_addr;
+        let inferred_dst_mac = state.dst_mac;
+        let inferred_interface = state.interface;
+        let cached = state.cached;
+        let rtt = state.rtt;
         let output = InferMacOutput {
-            inferred_dst_mac: status.mac,
-            inferred_interface: status.interface,
-            cached: status.cached,
-            rtt: status.rtt,
+            inferred_dst_mac,
+            inferred_interface,
+            cached,
+            rtt,
         };
         rets.insert(dst_addr, output);
     }
