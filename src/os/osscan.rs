@@ -18,6 +18,7 @@ use tracing::debug;
 use tracing::error;
 
 use crate::IpCheckMethods;
+use crate::LoopStates;
 use crate::NetInfo;
 use crate::RRequest;
 use crate::RResponse;
@@ -273,6 +274,7 @@ fn send_seq_probes(
     src_ipv4: Ipv4Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -321,7 +323,7 @@ fn send_seq_probes(
         filter_hm.insert(i, filter);
     }
 
-    let mut send_state = HashMap::new();
+    let mut loop_states = LoopStates::default();
     for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
@@ -329,20 +331,17 @@ fn send_seq_probes(
             retries: 0,
             recved: false,
         };
-        send_state.insert(t, state);
+        loop_states.insert_ip_port(dst_ipv4.into(), t, state);
     }
 
     let ether_type = EtherTypes::Ipv4;
     let mut seq_hm = HashMap::new();
     loop {
         let mut all_done = true;
-        let mut send_state_clone = send_state.clone();
-        for (i, buff) in &buff_hm {
-            let mut state = send_state[i].clone();
-            let retries = state.retries;
-            let recved = state.recved;
-            if retries < PROBE_MAX_RETIRIES && !recved {
-                let filter = filter_hm[i].clone();
+        for (_key, state) in &mut loop_states {
+            if state.retries < max_retries && !state.recved {
+                let filter = filter_hm[&i].clone();
+                let buff = buff_hm[&i].clone();
                 let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
@@ -367,9 +366,9 @@ fn send_seq_probes(
                     error!("send os probe seq send msg failed: {}", e);
                 }
 
-                state.retries = retries + 1;
+                state.retries += 1;
                 state.id = rrq_id;
-                send_state_clone.insert(*i, state);
+                send_state_clone.insert(*t, state);
                 all_done = false;
             }
 
@@ -466,6 +465,7 @@ fn send_ie_probes(
     src_ipv4: Ipv4Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -613,6 +613,7 @@ fn send_ecn_probe(
     src_ipv4: Ipv4Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -704,6 +705,7 @@ fn send_tx_probes(
     src_ipv4: Ipv4Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -935,6 +937,7 @@ fn send_u1_probe(
     src_ipv4: Ipv4Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1025,6 +1028,7 @@ fn send_all_probes(
     src_ipv4: Ipv4Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1038,6 +1042,7 @@ fn send_all_probes(
         src_ipv4,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),
@@ -1050,6 +1055,7 @@ fn send_all_probes(
         src_ipv4,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),
@@ -1063,6 +1069,7 @@ fn send_all_probes(
         src_ipv4,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),
@@ -1077,6 +1084,7 @@ fn send_all_probes(
         src_ipv4,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),
@@ -1090,6 +1098,7 @@ fn send_all_probes(
         src_ipv4,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),
@@ -2199,6 +2208,7 @@ pub fn os_probe_thread(
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -2214,6 +2224,7 @@ pub fn os_probe_thread(
         src_ipv4,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),

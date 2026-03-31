@@ -626,7 +626,7 @@ pub(crate) fn mac_scan(
             retries: 0,
             data_recved: false,
         };
-        loop_states.insert(dst_addr, dst_port, state);
+        loop_states.insert_ip_port(dst_addr, dst_port, state);
     }
     let mut mac_scan_rets = HashMap::new();
     let mut rrq_id_hm = HashMap::new();
@@ -1126,7 +1126,7 @@ fn scan(
                     interface_name,
                     cached,
                 };
-                loop_states.insert(ni.dst_addr, p, state);
+                loop_states.insert_ip_port(ni.dst_addr, p, state);
             }
         }
     }

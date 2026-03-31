@@ -217,6 +217,7 @@ pub struct OsDetects {
     pub detect_reports: Vec<DetectReport>,
     pub start_time: DateTime<Local>,
     pub finish_time: DateTime<Local>,
+    max_retries: usize,
 }
 
 #[cfg(feature = "os")]
@@ -295,7 +296,10 @@ impl fmt::Display for OsDetects {
             }
         }
         let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost));
-        let summary = format!("total used time: {}", total_cost_str,);
+        let summary = format!(
+            "total used time: {}, max_retries: {}",
+            total_cost_str, self.max_retries
+        );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(7)]));
         write!(f, "{}", table)
     }
@@ -303,12 +307,13 @@ impl fmt::Display for OsDetects {
 
 #[cfg(feature = "os")]
 impl OsDetects {
-    fn new() -> Self {
+    fn new(max_retries: usize) -> Self {
         Self {
             layer2_cost: Duration::ZERO,
             detect_reports: Vec::new(),
             start_time: Local::now(),
             finish_time: Local::now(),
+            max_retries,
         }
     }
     fn finish(&mut self, os_detects: Vec<DetectReport>) {
@@ -424,6 +429,7 @@ pub fn os_detect(
     net_infos: Vec<NetInfo>,
     threads: usize,
     timeout: Duration,
+    max_retries: usize,
     top_k: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -432,7 +438,7 @@ pub fn os_detect(
     let (tx, rx) = channel();
     let pool = ThreadPool::new(threads);
     let mut recv_size = 0;
-    let mut ret = OsDetects::new();
+    let mut ret = OsDetects::new(max_retries);
     let mut os_detects = Vec::new();
 
     for ni in &net_infos {
@@ -484,6 +490,7 @@ pub fn os_detect(
                             nmap_os_db,
                             top_k,
                             timeout,
+                            max_retries,
                             push_rd,
                             push_sd,
                             get_response,

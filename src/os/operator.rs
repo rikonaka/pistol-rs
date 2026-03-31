@@ -812,7 +812,11 @@ fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Result<Option<u8>, PistolError> {
             let r_ipv4_packet = build_ipv4_packet(&r_ipv4_buff, probe_name)?;
             let ttl_1 = request.get_ttl();
             let ttl_2 = r_ipv4_packet.get_ttl();
-            let hops = ttl_1 - ttl_2;
+            let hops = if ttl_1 > ttl_2 {
+                ttl_1 - ttl_2
+            } else {
+                ttl_2 - ttl_1
+            };
             // It is not uncommon for Nmap to receive no response to the U1 probe.
             Ok(Some(hops))
         }

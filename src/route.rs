@@ -820,7 +820,7 @@ pub(crate) fn infer_macs(
                 dst_addr,
                 retries: 0,
             };
-            loop_states.insert(dst_addr, 0, state);
+            loop_states.insert_ip_port(dst_addr, 0, state);
         } else {
             let (src_interface, route_via) = get_route(dst_addr, src_addr)?;
             debug!(
@@ -839,7 +839,7 @@ pub(crate) fn infer_macs(
                 dst_addr,
                 retries: 0,
             };
-            loop_states.insert(dst_addr, dst_port, state);
+            loop_states.insert_ip_port(dst_addr, dst_port, state);
         }
     }
 

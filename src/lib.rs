@@ -148,47 +148,47 @@ const NETWORK_CACHE_PATH: &str = ".plnetcache";
 const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 
 #[derive(Debug, Clone)]
-struct LoopStates<T> {
+struct LoopStates<K, V> {
     /// The key of the HashMap is the {IP}_{PORT}.
-    data: HashMap<String, T>,
+    data: HashMap<K, V>,
 }
 
-impl<T> Default for LoopStates<T> {
+impl<K, V> Default for LoopStates<K, V> {
     fn default() -> Self {
-        let data: HashMap<String, T> = HashMap::new();
+        let data: HashMap<K, V> = HashMap::new();
         Self { data }
     }
 }
 
-impl<'a, T> IntoIterator for &'a LoopStates<T> {
-    type Item = (&'a String, &'a T);
-    type IntoIter = Iter<'a, String, T>;
+impl<'a, K, T> IntoIterator for &'a LoopStates<K, T> {
+    type Item = (&'a K, &'a T);
+    type IntoIter = Iter<'a, K, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.iter()
     }
 }
 
-impl<'a, T> IntoIterator for &'a mut LoopStates<T> {
-    type Item = (&'a String, &'a mut T);
-    type IntoIter = IterMut<'a, String, T>;
+impl<'a, K, T> IntoIterator for &'a mut LoopStates<K, T> {
+    type Item = (&'a K, &'a mut T);
+    type IntoIter = IterMut<'a, K, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.iter_mut()
     }
 }
 
-impl<T> IntoIterator for LoopStates<T> {
-    type Item = (String, T);
-    type IntoIter = IntoIter<String, T>;
+impl<K, T> IntoIterator for LoopStates<K, T> {
+    type Item = (K, T);
+    type IntoIter = IntoIter<K, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.into_iter()
     }
 }
 
-impl<T> LoopStates<T> {
-    fn insert(&mut self, ip: IpAddr, port: u16, value: T) {
+impl<K, T> LoopStates<K, T> {
+    fn insert_ip_port(&mut self, ip: IpAddr, port: u16, value: T) {
         let key = format!("{}_{}", ip, port);
         self.data.insert(key, value);
     }
@@ -1155,11 +1155,11 @@ impl Pistol {
                 // If retransmit is 1, it means no retransmission, just send once,
                 // and if retransmit is greater than 1, it means retransmission,
                 // send multiple times (used in flood attack).
-                for i in 0..retransmit {
+                for _ in 0..retransmit {
                     if let Some(r) = sender.send_to(&buff, None) {
                         match r {
-                            Ok(_) => debug!("send {} packet success, {}", i, m),
-                            Err(e) => error!("send {} packet error, {} - {}", i, m, e),
+                            Ok(_) => debug!("send packet success, {}", m),
+                            Err(e) => error!("send packet error, {}, {}", m, e),
                         }
                     }
                 }
@@ -1194,14 +1194,7 @@ impl Pistol {
         loop {
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
-            let packets = cap.fetch_as_vec()?;
-            debug!(
-                "receiver [{}] recv {} packets",
-                interface_name,
-                packets.len()
-            );
-
-            for packet in packets {
+            for packet in cap.fetch_as_vec()? {
                 let hp = HistoryPacket {
                     data: Arc::from(packet),
                     processed: false,
@@ -1242,7 +1235,6 @@ impl Pistol {
                         if let Err(e) = push_response.send(recv_response) {
                             error!("receiver [{}] send response failed: {}", interface_name, e);
                         }
-                        debug!("send matched packet back to runner");
                         packet.processed = true;
                         break;
                     }
@@ -1265,21 +1257,10 @@ impl Pistol {
                 }
             }
             if need_drop {
-                debug!(
-                    "receiver [{}] drop {} expired msgs",
-                    interface_name,
-                    drop_idxs.len()
-                );
                 for &drop_idx in drop_idxs.iter().rev() {
                     let _droped_msg = r_requests.swap_remove(drop_idx);
                 }
             }
-
-            debug!(
-                "receiver [{}] has {} msgs to process",
-                interface_name,
-                r_requests.len()
-            );
         }
     }
     fn runner(
@@ -3400,6 +3381,7 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
+        pistol.set_log_level("debug");
 
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
         // `dst_open_tcp_port` must be a certain open tcp port.

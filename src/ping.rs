@@ -566,7 +566,7 @@ fn ping(
                 data_recved: false,
                 net_info: ni.clone(),
             };
-            loop_states.insert(dst_addr, dst_port, state);
+            loop_states.insert_ip_port(dst_addr, dst_port, state);
         }
     }
 
