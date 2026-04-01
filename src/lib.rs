@@ -40,6 +40,7 @@ use std::collections::hash_map::Iter;
 use std::collections::hash_map::IterMut;
 use std::fmt;
 use std::fs;
+use std::hash::Hash;
 use std::net::IpAddr;
 #[cfg(feature = "os")]
 use std::net::Ipv4Addr;
@@ -147,49 +148,64 @@ const NETWORK_CACHE_PATH: &str = ".plnetcache";
 // it will be considered expired and will be deleted.
 const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 
-#[derive(Debug, Clone)]
-struct LoopStates<K, V> {
-    /// The key of the HashMap is the {IP}_{PORT}.
-    data: HashMap<K, V>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LoopKey {
+    Ip(IpAddr),
+    Port(u16),
+    IpPort(IpAddr, u16),
 }
 
-impl<K, V> Default for LoopStates<K, V> {
+#[derive(Debug, Clone)]
+struct LoopStates<V> {
+    /// The key of the HashMap is the {IP}_{PORT}.
+    data: HashMap<LoopKey, V>,
+}
+
+impl<V> Default for LoopStates<V> {
     fn default() -> Self {
-        let data: HashMap<K, V> = HashMap::new();
+        let data: HashMap<LoopKey, V> = HashMap::new();
         Self { data }
     }
 }
 
-impl<'a, K, T> IntoIterator for &'a LoopStates<K, T> {
-    type Item = (&'a K, &'a T);
-    type IntoIter = Iter<'a, K, T>;
+impl<'a, V> IntoIterator for &'a LoopStates<V> {
+    type Item = (&'a LoopKey, &'a V);
+    type IntoIter = Iter<'a, LoopKey, V>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.iter()
     }
 }
 
-impl<'a, K, T> IntoIterator for &'a mut LoopStates<K, T> {
-    type Item = (&'a K, &'a mut T);
-    type IntoIter = IterMut<'a, K, T>;
+impl<'a, V> IntoIterator for &'a mut LoopStates<V> {
+    type Item = (&'a LoopKey, &'a mut V);
+    type IntoIter = IterMut<'a, LoopKey, V>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.iter_mut()
     }
 }
 
-impl<K, T> IntoIterator for LoopStates<K, T> {
-    type Item = (K, T);
-    type IntoIter = IntoIter<K, T>;
+impl<V> IntoIterator for LoopStates<V> {
+    type Item = (LoopKey, V);
+    type IntoIter = IntoIter<LoopKey, V>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.into_iter()
     }
 }
 
-impl<K, T> LoopStates<K, T> {
-    fn insert_ip_port(&mut self, ip: IpAddr, port: u16, value: T) {
-        let key = format!("{}_{}", ip, port);
+impl<V> LoopStates<V> {
+    fn insert_ip_port(&mut self, ip: IpAddr, port: u16, value: V) {
+        let key = LoopKey::IpPort(ip, port);
+        self.data.insert(key, value);
+    }
+    fn insert_only_ip(&mut self, ip: IpAddr, value: V) {
+        let key = LoopKey::Ip(ip);
+        self.data.insert(key, value);
+    }
+    fn insert_only_port(&mut self, port: u16, value: V) {
+        let key = LoopKey::Port(port);
         self.data.insert(key, value);
     }
 }
@@ -2749,6 +2765,7 @@ impl Pistol {
             net_infos,
             threads,
             self.timeout,
+            self.max_retries,
             top_k,
             self.push_rd.clone(),
             self.push_sd.clone(),
@@ -2780,6 +2797,7 @@ impl Pistol {
         let mut ret = os::os_detect_raw(
             net_info,
             self.timeout,
+            self.max_retries,
             top_k,
             self.push_rd.clone(),
             self.push_sd.clone(),

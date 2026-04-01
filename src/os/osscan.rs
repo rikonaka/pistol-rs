@@ -18,6 +18,7 @@ use tracing::debug;
 use tracing::error;
 
 use crate::IpCheckMethods;
+use crate::LoopKey;
 use crate::LoopStates;
 use crate::NetInfo;
 use crate::RRequest;
@@ -73,7 +74,10 @@ use crate::utils::random_port;
 use crate::utils::random_port_range;
 use crate::utils::random_request_id;
 
-const PROBE_MAX_RETIRIES: usize = 5; // nmap default
+// use user defined max retries for probes,
+// instead of nmap default 5 retries,
+// which is too much for us and may cause network congestion.
+// const PROBE_MAX_RETIRIES: usize = 5; // nmap default
 
 // EXAMPLE
 // SCAN(V=5.05BETA1%D=8/23%OT=22%CT=1%CU=42341%PV=N%DS=0%DC=L%G=Y%TM=4A91CB90%P=i686-pc-linux-gnu)
@@ -301,17 +305,18 @@ fn send_seq_probes(
     buff_hm.insert(5, buff_5);
     buff_hm.insert(6, buff_6);
 
+    let mut loop_states = LoopStates::default();
     let mut filter_hm = HashMap::new();
-    for i in 1..=6 {
-        let src_port = src_ports[&i];
-        let name = format!("os scan seq {} layer3", i);
+    for t in 1..=6 {
+        let src_port = src_ports[&t];
+        let name = format!("os scan seq {} layer3", t);
         let layer3 = Layer3Filter {
             name,
             layer2: None,
             src_addr: Some(dst_ipv4.into()),
             dst_addr: Some(src_ipv4.into()),
         };
-        let name = format!("os scan seq {} tcp_udp", i);
+        let name = format!("os scan seq {} tcp_udp", t);
         let layer4_tcp_udp = Layer4FilterTcpUdp {
             name,
             layer3: Some(layer3),
@@ -320,56 +325,54 @@ fn send_seq_probes(
             flag: None,
         };
         let filter = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
-        filter_hm.insert(i, filter);
-    }
+        filter_hm.insert(t, filter);
 
-    let mut loop_states = LoopStates::default();
-    for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
             id: 0,
             retries: 0,
             recved: false,
         };
-        loop_states.insert_ip_port(dst_ipv4.into(), t, state);
+        loop_states.insert_only_port(t, state);
     }
 
     let ether_type = EtherTypes::Ipv4;
     let mut seq_hm = HashMap::new();
     loop {
         let mut all_done = true;
-        for (_key, state) in &mut loop_states {
+        for (key, state) in &mut loop_states {
             if state.retries < max_retries && !state.recved {
-                let filter = filter_hm[&i].clone();
-                let buff = buff_hm[&i].clone();
-                let rrq_id = random_request_id();
-                let rrq = RRequest {
-                    interface_name: interface_name.clone(),
-                    id: rrq_id,
-                    filters: vec![filter],
-                    created: Instant::now(),
-                    elapsed: timeout,
-                };
-                let srq = SRequest {
-                    interface_name: interface_name.clone(),
-                    dst_mac,
-                    src_mac,
-                    eth_payload: buff.clone(),
-                    eth_type: ether_type,
-                    retransmit: 1,
-                };
+                if let LoopKey::Port(t) = key {
+                    let filter = filter_hm[t].clone();
+                    let buff = buff_hm[t].clone();
+                    let rrq_id = random_request_id();
+                    let rrq = RRequest {
+                        interface_name: interface_name.clone(),
+                        id: rrq_id,
+                        filters: vec![filter],
+                        created: Instant::now(),
+                        elapsed: timeout,
+                    };
+                    let srq = SRequest {
+                        interface_name: interface_name.clone(),
+                        dst_mac,
+                        src_mac,
+                        eth_payload: buff,
+                        eth_type: ether_type,
+                        retransmit: 1,
+                    };
 
-                if let Err(e) = push_rd.send(rrq) {
-                    error!("send os probe seq recv msg failed: {}", e);
-                }
-                if let Err(e) = push_sd.send(srq) {
-                    error!("send os probe seq send msg failed: {}", e);
-                }
+                    if let Err(e) = push_rd.send(rrq) {
+                        error!("send os probe seq recv msg failed: {}", e);
+                    }
+                    if let Err(e) = push_sd.send(srq) {
+                        error!("send os probe seq send msg failed: {}", e);
+                    }
 
-                state.retries += 1;
-                state.id = rrq_id;
-                send_state_clone.insert(*t, state);
-                all_done = false;
+                    state.retries += 1;
+                    state.id = rrq_id;
+                    all_done = false;
+                }
             }
 
             // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
@@ -380,39 +383,25 @@ fn send_seq_probes(
             break;
         }
 
-        send_state = send_state_clone.clone();
-
-        let search_id = |id: u64| -> Option<u16> {
-            for (&i, state) in &send_state {
-                if state.id == id {
-                    return Some(i);
-                }
-            }
-            None
-        };
-
         for _ in 1..=6 {
             match get_response.recv_timeout(timeout) {
                 Ok(recv_response) => {
-                    let id = recv_response.id;
-                    let response = recv_response.data;
-                    if response.len() > 0 {
-                        match search_id(id) {
-                            Some(seq) => {
+                    for (key, state) in &mut loop_states {
+                        if state.id == recv_response.id {
+                            if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
-                                let mut state = send_state[&seq].clone();
+                                let response = recv_response.data.clone();
                                 state.recved = true;
-                                send_state_clone.insert(seq, state);
 
-                                let request = buff_hm[&seq].clone();
+                                let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
                                     request,
                                     response,
                                     rtt,
                                 };
-                                seq_hm.insert(seq, rr);
+                                seq_hm.insert(*t, rr);
                             }
-                            None => debug!("recv os probe seq response with unknown id: {}", id),
+                            break;
                         }
                     }
                 }
@@ -421,8 +410,6 @@ fn send_seq_probes(
                 }
             }
         }
-
-        send_state = send_state_clone.clone();
     }
 
     let seq1 = seq_hm
@@ -495,7 +482,7 @@ fn send_ie_probes(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmp(layer4_icmp));
 
-    let mut send_state = HashMap::new();
+    let mut loop_states = LoopStates::default();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
@@ -503,45 +490,45 @@ fn send_ie_probes(
             retries: 0,
             recved: false,
         };
-        send_state.insert(t, state);
+        loop_states.insert_only_port(t, state);
     }
 
     let mut ie_hm = HashMap::new();
     let ether_type = EtherTypes::Ipv4;
     loop {
         let mut all_done = true;
-        let mut send_state_clone = send_state.clone();
-        for (i, buff) in &buff_hm {
-            let mut state = send_state[i].clone();
-            let retired = state.retries;
-            let recved = state.recved;
-            if retired < PROBE_MAX_RETIRIES && !recved {
-                let rrq = RRequest {
-                    interface_name: interface_name.clone(),
-                    id: state.id,
-                    filters: vec![filter.clone()],
-                    created: Instant::now(),
-                    elapsed: timeout,
-                };
-                let srq = SRequest {
-                    interface_name: interface_name.clone(),
-                    dst_mac,
-                    src_mac,
-                    eth_payload: buff.clone(),
-                    eth_type: ether_type,
-                    retransmit: 1,
-                };
+        for (key, state) in &mut loop_states {
+            if state.retries < max_retries && !state.recved {
+                if let LoopKey::Port(t) = key {
+                    let filter = filter.clone();
+                    let buff = buff_hm[t].clone();
 
-                if let Err(e) = push_rd.send(rrq) {
-                    error!("send os probe ie recv msg failed: {}", e);
-                }
-                if let Err(e) = push_sd.send(srq) {
-                    error!("send os probe ie send msg failed: {}", e);
-                }
+                    let rrq = RRequest {
+                        interface_name: interface_name.clone(),
+                        id: state.id,
+                        filters: vec![filter.clone()],
+                        created: Instant::now(),
+                        elapsed: timeout,
+                    };
+                    let srq = SRequest {
+                        interface_name: interface_name.clone(),
+                        dst_mac,
+                        src_mac,
+                        eth_payload: buff,
+                        eth_type: ether_type,
+                        retransmit: 1,
+                    };
 
-                state.retries = retired + 1;
-                send_state_clone.insert(*i, state);
-                all_done = false;
+                    if let Err(e) = push_rd.send(rrq) {
+                        error!("send os probe ie recv msg failed: {}", e);
+                    }
+                    if let Err(e) = push_sd.send(srq) {
+                        error!("send os probe ie send msg failed: {}", e);
+                    }
+
+                    state.retries += 1;
+                    all_done = false;
+                }
             }
         }
 
@@ -549,39 +536,25 @@ fn send_ie_probes(
             break;
         }
 
-        send_state = send_state_clone.clone();
-
-        let search_id = |id: u64| -> Option<usize> {
-            for (&i, state) in &send_state {
-                if state.id == id {
-                    return Some(i);
-                }
-            }
-            None
-        };
-
         for _ in 0..2 {
             match get_response.recv_timeout(timeout) {
                 Ok(recv_response) => {
-                    let id = recv_response.id;
-                    let response = recv_response.data;
-                    if response.len() > 0 {
-                        match search_id(id) {
-                            Some(ie) => {
+                    for (key, state) in &mut loop_states {
+                        if state.id == recv_response.id {
+                            if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
-                                let mut state = send_state[&ie].clone();
+                                let response = recv_response.data.clone();
                                 state.recved = true;
-                                send_state_clone.insert(ie, state);
 
-                                let request = buff_hm[&ie].clone();
+                                let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
                                     request,
                                     response,
                                     rtt,
                                 };
-                                ie_hm.insert(ie, rr);
+                                ie_hm.insert(*t, rr);
                             }
-                            None => debug!("recv os probe ie response with unknown id: {}", id),
+                            break;
                         }
                     }
                 }
@@ -590,8 +563,6 @@ fn send_ie_probes(
                 }
             }
         }
-
-        send_state = send_state_clone.clone();
     }
 
     let ie1 = ie_hm
@@ -641,7 +612,7 @@ fn send_ecn_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
 
     let rrq_id = random_request_id();
-    for _ in 0..PROBE_MAX_RETIRIES {
+    for _ in 0..max_retries {
         let rrq = RRequest {
             interface_name: interface_name.clone(),
             id: rrq_id,
@@ -667,10 +638,9 @@ fn send_ecn_probe(
 
         match get_response.recv_timeout(timeout) {
             Ok(recv_response) => {
-                let id = recv_response.id;
-                let response = recv_response.data;
-                let rtt = recv_response.rtt;
-                if rrq_id == id && response.len() > 0 {
+                if rrq_id == recv_response.id {
+                    let response = recv_response.data;
+                    let rtt = recv_response.rtt;
                     let rr = RequestResponse {
                         request: buff.clone(),
                         response,
@@ -798,29 +768,27 @@ fn send_tx_probes(
     buff_hm.insert(6, buff_6);
     buff_hm.insert(7, buff_7);
 
-    let mut send_states = HashMap::new();
+    let mut loop_states = HashMap::new();
     for t in 2..=7 {
-        // 1 means buff_1, 2 means buff_2, and so on.
+        // 2 means buff_2, 3 means buff_3, and so on.
         let state = OsProbeState {
             id: random_request_id(),
             retries: 0,
             recved: false,
         };
-        send_states.insert(t, state);
+        loop_states.insert(t, state);
     }
 
     let ether_type = EtherTypes::Ipv4;
     let mut tx_hm = HashMap::new();
     loop {
         let mut all_done = true;
-        let mut send_state_clone = send_states.clone();
-        for (i, buff) in &buff_hm {
-            let mut state = send_states[i].clone();
-            let retries = state.retries;
-            let recved = state.recved;
-            if retries < PROBE_MAX_RETIRIES && !recved {
+        for (key, state) in &mut loop_states {
+            if state.retries < max_retries && !state.recved {
+                let filter = filter_hm[key].clone();
+                let buff = buff_hm[key].clone();
+
                 let start = Instant::now();
-                let filter = filter_hm[i].clone();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: state.id,
@@ -832,7 +800,7 @@ fn send_tx_probes(
                     interface_name: interface_name.clone(),
                     dst_mac,
                     src_mac,
-                    eth_payload: buff.clone(),
+                    eth_payload: buff,
                     eth_type: ether_type,
                     retransmit: 1,
                 };
@@ -843,8 +811,7 @@ fn send_tx_probes(
                     error!("send os probe tx send msg failed: {}", e);
                 }
 
-                state.retries = retries + 1;
-                send_state_clone.insert(*i, state);
+                state.retries += 1;
                 all_done = false;
             }
         }
@@ -853,39 +820,23 @@ fn send_tx_probes(
             break;
         }
 
-        send_states = send_state_clone.clone();
-
-        let search_id = |id: u64| -> Option<usize> {
-            for (&i, state) in &send_states {
-                if state.id == id {
-                    return Some(i);
-                }
-            }
-            None
-        };
-
         for _ in 0..6 {
             match get_response.recv_timeout(timeout) {
                 Ok(recv_response) => {
-                    let id = recv_response.id;
-                    let response = recv_response.data;
-                    if response.len() > 0 {
-                        match search_id(id) {
-                            Some(tx) => {
-                                let rtt = recv_response.rtt;
-                                let mut state = send_states[&tx].clone();
-                                state.recved = true;
-                                send_state_clone.insert(tx, state);
+                    for (key, state) in &mut loop_states {
+                        if state.id == recv_response.id {
+                            let rtt = recv_response.rtt;
+                            let response = recv_response.data.clone();
+                            state.recved = true;
 
-                                let request = buff_hm[&tx].clone();
-                                let rr = RequestResponse {
-                                    request,
-                                    response,
-                                    rtt,
-                                };
-                                tx_hm.insert(tx, rr);
-                            }
-                            None => debug!("recv os probe tx response with unknown id: {}", id),
+                            let request = buff_hm[key].clone();
+                            let rr = RequestResponse {
+                                request,
+                                response,
+                                rtt,
+                            };
+                            tx_hm.insert(*key, rr);
+                            break;
                         }
                     }
                 }
@@ -894,8 +845,6 @@ fn send_tx_probes(
                 }
             }
         }
-
-        send_states = send_state_clone.clone();
     }
 
     let t2 = tx_hm
@@ -964,7 +913,7 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let rrq_id = random_request_id();
     let ether_type = EtherTypes::Ipv4;
-    for _ in 0..PROBE_MAX_RETIRIES {
+    for _ in 0..max_retries {
         let start = Instant::now();
         let rrq = RRequest {
             interface_name: interface_name.clone(),
@@ -992,7 +941,7 @@ fn send_u1_probe(
             Ok(recv_response) => {
                 let id = recv_response.id;
                 let response = recv_response.data;
-                if rrq_id == id && response.len() > 0 {
+                if rrq_id == id {
                     let rtt = recv_response.rtt;
                     let rr = RequestResponse {
                         request: buff.clone(),

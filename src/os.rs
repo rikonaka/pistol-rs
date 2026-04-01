@@ -631,6 +631,7 @@ pub fn os_detect(
 pub fn os_detect_raw(
     net_info: NetInfo,
     timeout: Duration,
+    max_retries: usize,
     top_k: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -673,6 +674,7 @@ pub fn os_detect_raw(
                 nmap_os_db,
                 top_k,
                 timeout,
+                max_retries,
                 push_rd,
                 push_sd,
                 get_response,
@@ -725,6 +727,7 @@ pub fn os_detect_raw(
                 top_k,
                 linear,
                 timeout,
+                max_retries,
                 push_rd,
                 push_sd,
                 get_response,

@@ -15,6 +15,8 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 
+use crate::LoopKey;
+use crate::LoopStates;
 use crate::NetInfo;
 use crate::RRequest;
 use crate::RResponse;
@@ -524,6 +526,7 @@ fn send_seq_probes(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     scan_start: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -531,16 +534,22 @@ fn send_seq_probes(
 ) -> Result<SEQRR6, PistolError> {
     let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
-    let mut src_ports = Vec::new();
+    let mut src_ports = HashMap::new();
     for i in 0..6 {
-        src_ports.push(src_port_start * 10 + i);
+        src_ports.insert(i, src_port_start * 10 + i);
     }
-    let buff_1 = packet6::seq_packet_1_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[0])?;
-    let buff_2 = packet6::seq_packet_2_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[1])?;
-    let buff_3 = packet6::seq_packet_3_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[2])?;
-    let buff_4 = packet6::seq_packet_4_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[3])?;
-    let buff_5 = packet6::seq_packet_5_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[4])?;
-    let buff_6 = packet6::seq_packet_6_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[5])?;
+    let buff_1 =
+        packet6::seq_packet_1_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&0])?;
+    let buff_2 =
+        packet6::seq_packet_2_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&1])?;
+    let buff_3 =
+        packet6::seq_packet_3_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&2])?;
+    let buff_4 =
+        packet6::seq_packet_4_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&3])?;
+    let buff_5 =
+        packet6::seq_packet_5_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&4])?;
+    let buff_6 =
+        packet6::seq_packet_6_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&5])?;
     let mut buff_hm = HashMap::new();
     buff_hm.insert(1, buff_1);
     buff_hm.insert(2, buff_2);
@@ -549,17 +558,18 @@ fn send_seq_probes(
     buff_hm.insert(5, buff_5);
     buff_hm.insert(6, buff_6);
 
+    let mut loop_states = LoopStates::default();
     let mut filter_hm = HashMap::new();
-    for i in 1..=6 {
-        let src_port = src_ports[i];
-        let name = format!("os scan6 seq {} layer3", i + 1);
+    for t in 1..=6 {
+        let src_port = src_ports[&t];
+        let name = format!("os scan6 seq {} layer3", t + 1);
         let layer3 = Layer3Filter {
             name,
             layer2: None,
             src_addr: Some(dst_ipv6.into()),
             dst_addr: Some(src_ipv6.into()),
         };
-        let name = format!("os scan6 seq {} tcp_udp", i + 1);
+        let name = format!("os scan6 seq {} tcp_udp", t + 1);
         let layer4_tcp_udp = Layer4FilterTcpUdp {
             name,
             layer3: Some(layer3),
@@ -568,18 +578,15 @@ fn send_seq_probes(
             flag: None,
         };
         let filter = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
-        filter_hm.insert(i, filter);
-    }
+        filter_hm.insert(t, filter);
 
-    let mut send_states = HashMap::new();
-    for t in 1..=6 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
             id: random_request_id(),
             retries: 0,
             recved: false,
         };
-        send_states.insert(t, state);
+        loop_states.insert_only_port(t, state);
     }
 
     let ether_type = EtherTypes::Ipv6;
@@ -587,89 +594,73 @@ fn send_seq_probes(
     let mut scan_start_hm = HashMap::new();
     loop {
         let mut all_done = true;
-        let mut send_state_clone = send_states.clone();
-        for (i, buff) in &buff_hm {
-            let mut state = send_states[i].clone();
-            let retries = state.retries;
-            let recved = state.recved;
-            if retries < PROBE_MAX_RETIRIES && !recved {
-                let filter = filter_hm[i].clone();
-                let created = Instant::now();
-                let rrq = RRequest {
-                    interface_name: interface_name.clone(),
-                    id: state.id,
-                    filters: vec![filter],
-                    created,
-                    elapsed: timeout,
-                };
-                let srq = SRequest {
-                    interface_name: interface_name.clone(),
-                    dst_mac,
-                    src_mac,
-                    eth_payload: buff.clone(),
-                    eth_type: ether_type,
-                    retransmit: 1,
-                };
-                if let Err(e) = push_rd.send(rrq) {
-                    error!("send os probe seq recv msg failed: {}", e);
-                }
-                if let Err(e) = push_sd.send(srq) {
-                    error!("send os probe seq send msg failed: {}", e);
+        for (key, state) in &mut loop_states {
+            if state.retries < max_retries && !state.recved {
+                if let LoopKey::Port(t) = key {
+                    let filter = filter_hm[t].clone();
+                    let buff = buff_hm[&t].clone();
+
+                    let created = Instant::now();
+                    let rrq = RRequest {
+                        interface_name: interface_name.clone(),
+                        id: state.id,
+                        filters: vec![filter],
+                        created,
+                        elapsed: timeout,
+                    };
+                    let srq = SRequest {
+                        interface_name: interface_name.clone(),
+                        dst_mac,
+                        src_mac,
+                        eth_payload: buff,
+                        eth_type: ether_type,
+                        retransmit: 1,
+                    };
+                    if let Err(e) = push_rd.send(rrq) {
+                        error!("send os probe seq recv msg failed: {}", e);
+                    }
+                    if let Err(e) = push_sd.send(srq) {
+                        error!("send os probe seq send msg failed: {}", e);
+                    }
+
+                    scan_start_hm.insert(*t, scan_start.elapsed());
+                    state.retries += 1;
+                    all_done = false;
                 }
 
-                scan_start_hm.insert(i, scan_start.elapsed());
-                state.retries = retries + 1;
-                send_state_clone.insert(*i, state);
-                all_done = false;
+                // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
+                sleep(Duration::from_millis(100));
             }
-
-            // the probes are sent exactly 100 milliseconds apart so the total time taken is 500 ms
-            sleep(Duration::from_millis(100));
         }
 
         if all_done {
             break;
         }
 
-        let search_id = |id: u64| -> Option<usize> {
-            for (&i, state) in &send_states {
-                if state.id == id {
-                    return Some(i);
-                }
-            }
-            None
-        };
-
         for _ in 0..6 {
             match get_response.recv_timeout(timeout) {
                 Ok(recv_response) => {
-                    let id = recv_response.id;
-                    let response = recv_response.data;
-                    if response.len() > 0 {
-                        match search_id(id) {
-                            Some(seq) => {
+                    for (key, state) in &mut loop_states {
+                        if state.id == recv_response.id {
+                            if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
-                                let mut state = send_states[&seq].clone();
+                                let response = recv_response.data.clone();
                                 state.recved = true;
-                                send_state_clone.insert(seq, state);
 
-                                let request = buff_hm[&seq].clone();
+                                let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
                                     request,
                                     response,
                                     rtt,
                                 };
-                                seq_hm.insert(seq, rr);
+                                seq_hm.insert(*t, rr);
                             }
-                            None => debug!("recv os probe seq response with unknown id: {}", id),
                         }
                     }
                 }
                 Err(e) => debug!("recv os probe seq response failed: {}", e),
             }
         }
-
-        send_states = send_state_clone.clone();
     }
 
     let seq1: RequestResponse = seq_hm
@@ -738,6 +729,7 @@ fn send_ie_probes(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     scan_start: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -790,7 +782,7 @@ fn send_ie_probes(
     let filter_4 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_4));
     let filters = vec![filter_1, filter_2, filter_3, filter_4];
 
-    let mut send_state = HashMap::new();
+    let mut loop_state = LoopStates::default();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
@@ -798,7 +790,7 @@ fn send_ie_probes(
             retries: 0,
             recved: false,
         };
-        send_state.insert(t, state);
+        loop_state.insert_only_port(t, state);
     }
 
     let mut ie_hm = HashMap::new();
@@ -806,9 +798,8 @@ fn send_ie_probes(
     let ether_type = EtherTypes::Ipv6;
     loop {
         let mut all_done = true;
-        let mut send_state_clone = send_state.clone();
-        for (i, buff) in &buff_hm {
-            let mut state = send_state[i].clone();
+        for (key, state) in &mut loop_state {
+            let mut state = loop_state[i].clone();
             let retired = state.retries;
             let recved = state.recved;
             if retired < PROBE_MAX_RETIRIES && !recved {
@@ -835,9 +826,8 @@ fn send_ie_probes(
                     error!("send os probe ie send msg failed: {}", e);
                 }
 
-                scan_start_hm.insert(i, scan_start.elapsed());
-                state.retries = retired + 1;
-                send_state_clone.insert(*i, state);
+                scan_start_hm.insert(t, scan_start.elapsed());
+                state.retries += 1;
                 all_done = false;
             }
         }
@@ -847,7 +837,7 @@ fn send_ie_probes(
         }
 
         let search_id = |id: u64| -> Option<usize> {
-            for (&i, state) in &send_state {
+            for (&i, state) in &loop_state {
                 if state.id == id {
                     return Some(i);
                 }
@@ -864,7 +854,7 @@ fn send_ie_probes(
                         match search_id(id) {
                             Some(ie) => {
                                 let rtt = recv_response.rtt;
-                                let mut state = send_state[&ie].clone();
+                                let mut state = loop_state[&ie].clone();
                                 state.recved = true;
                                 send_state_clone.insert(ie, state);
 
@@ -886,7 +876,7 @@ fn send_ie_probes(
             }
         }
 
-        send_state = send_state_clone.clone();
+        loop_state = send_state_clone.clone();
     }
 
     let ie1 = ie_hm
@@ -920,6 +910,7 @@ fn send_nx_probes(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     scan_start: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -1077,6 +1068,7 @@ fn send_u1_probe(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     scan_start: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -1175,6 +1167,7 @@ fn send_tecn_probe(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     start_time: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -1273,6 +1266,7 @@ fn send_tx_probes(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     scan_start: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -1528,6 +1522,7 @@ fn send_all_probes(
     src_ipv6: Ipv6Addr,
     interface_name: String,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1542,6 +1537,7 @@ fn send_all_probes(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         scan_start,
         push_rd.clone(),
         push_sd.clone(),
@@ -1555,6 +1551,7 @@ fn send_all_probes(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         scan_start,
         push_rd.clone(),
         push_sd.clone(),
@@ -1568,6 +1565,7 @@ fn send_all_probes(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         scan_start,
         push_rd.clone(),
         push_sd.clone(),
@@ -1582,6 +1580,7 @@ fn send_all_probes(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         scan_start,
         push_rd.clone(),
         push_sd.clone(),
@@ -1596,6 +1595,7 @@ fn send_all_probes(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         scan_start,
         push_rd.clone(),
         push_sd.clone(),
@@ -1611,6 +1611,7 @@ fn send_all_probes(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         scan_start,
         push_rd.clone(),
         push_sd.clone(),
@@ -1708,6 +1709,7 @@ pub fn os_probe_thread6(
     top_k: usize,
     linear: Linear,
     timeout: Duration,
+    max_retries: usize,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1723,6 +1725,7 @@ pub fn os_probe_thread6(
         src_ipv6,
         interface_name.clone(),
         timeout,
+        max_retries,
         push_rd.clone(),
         push_sd.clone(),
         get_response.clone(),
