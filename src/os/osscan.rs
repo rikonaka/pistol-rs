@@ -196,7 +196,7 @@ pub fn get_scan_line(
     good_results: bool,
 ) -> String {
     // Nmap version number (V), we will our own version number like pistol_4.0.16 here.
-    let v = format!("pistol_{}", env!("CARGO_PKG_VERSION"));
+    let v = format!("p{}", env!("CARGO_PKG_VERSION"));
     // Date of scan (D) in the form month/day.
     let now: DateTime<Local> = Local::now();
     let date = format!("{}", now.format("%-m/%-d"));
@@ -1758,65 +1758,65 @@ impl fmt::Display for TXX {
     }
 }
 
-fn tx_fingerprint_func(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolError> {
-    let r = tcp_udp_icmp_r(&tx.response)?;
-    let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
-        "Y" => {
-            let df = tcp_udp_df(&tx.response, &name.to_lowercase())?;
-            let t = tcp_udp_icmp_t(&tx.response, u1rr, &name.to_lowercase())?;
-            let tg = tcp_udp_icmp_tg(&tx.response, &name.to_lowercase())?;
-            let w = tcp_w(&tx.response, &name.to_lowercase())?;
-            let s = tcp_s(&tx.request, &tx.response, &name.to_lowercase())?;
-            let a = tcp_a(&tx.request, &tx.response, &name.to_lowercase())?;
-            let f = tcp_f(&tx.response, &name.to_lowercase())?;
-            let o = tcp_o(&tx.response, &name.to_lowercase())?;
-            let rd = tcp_rd(&tx.response, &name.to_lowercase())?;
-            let q = tcp_q(&tx.response, &name.to_lowercase())?;
-
-            (df, t, tg, w, s, a, f, o, rd, q)
-        }
-        _ => {
-            let df = String::new();
-            let t = Some(0);
-            let tg = 0;
-            let w = 0;
-            let s = String::new();
-            let a = String::new();
-            let f = String::new();
-            let o = String::new();
-            let rd = 0;
-            let q = String::new();
-            (df, t, tg, w, s, a, f, o, rd, q)
-        }
-    };
-
-    Ok(TXX {
-        name: name.to_string(),
-        r,
-        df,
-        t,
-        tg,
-        w,
-        s,
-        a,
-        f,
-        o,
-        rd,
-        q,
-    })
-}
-
 pub fn tx_fingerprint(
     ap: &AllPacketRR,
 ) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX), PistolError> {
+    fn do_jobs(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolError> {
+        let r = tcp_udp_icmp_r(&tx.response)?;
+        let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
+            "Y" => {
+                let df = tcp_udp_df(&tx.response, &name.to_lowercase())?;
+                let t = tcp_udp_icmp_t(&tx.response, u1rr, &name.to_lowercase())?;
+                let tg = tcp_udp_icmp_tg(&tx.response, &name.to_lowercase())?;
+                let w = tcp_w(&tx.response, &name.to_lowercase())?;
+                let s = tcp_s(&tx.request, &tx.response, &name.to_lowercase())?;
+                let a = tcp_a(&tx.request, &tx.response, &name.to_lowercase())?;
+                let f = tcp_f(&tx.response, &name.to_lowercase())?;
+                let o = tcp_o(&tx.response, &name.to_lowercase())?;
+                let rd = tcp_rd(&tx.response, &name.to_lowercase())?;
+                let q = tcp_q(&tx.response, &name.to_lowercase())?;
+
+                (df, t, tg, w, s, a, f, o, rd, q)
+            }
+            _ => {
+                let df = String::new();
+                let t = Some(0);
+                let tg = 0;
+                let w = 0;
+                let s = String::new();
+                let a = String::new();
+                let f = String::new();
+                let o = String::new();
+                let rd = 0;
+                let q = String::new();
+                (df, t, tg, w, s, a, f, o, rd, q)
+            }
+        };
+
+        Ok(TXX {
+            name: name.to_string(),
+            r,
+            df,
+            t,
+            tg,
+            w,
+            s,
+            a,
+            f,
+            o,
+            rd,
+            q,
+        })
+    }
+
     // The final line related to these probes, T1, contains various test values for packet #1.
-    let t1 = tx_fingerprint_func(&ap.seq.seq1, &ap.u1, "T1")?;
-    let t2 = tx_fingerprint_func(&ap.tx.t2, &ap.u1, "T2")?;
-    let t3 = tx_fingerprint_func(&ap.tx.t3, &ap.u1, "T3")?;
-    let t4 = tx_fingerprint_func(&ap.tx.t4, &ap.u1, "T4")?;
-    let t5 = tx_fingerprint_func(&ap.tx.t5, &ap.u1, "T5")?;
-    let t6 = tx_fingerprint_func(&ap.tx.t6, &ap.u1, "T6")?;
-    let t7 = tx_fingerprint_func(&ap.tx.t7, &ap.u1, "T7")?;
+    let t1 = do_jobs(&ap.seq.seq1, &ap.u1, "T1")?;
+    let t2 = do_jobs(&ap.tx.t2, &ap.u1, "T2")?;
+    let t3 = do_jobs(&ap.tx.t3, &ap.u1, "T3")?;
+    let t4 = do_jobs(&ap.tx.t4, &ap.u1, "T4")?;
+    let t5 = do_jobs(&ap.tx.t5, &ap.u1, "T5")?;
+    let t6 = do_jobs(&ap.tx.t6, &ap.u1, "T6")?;
+    let t7 = do_jobs(&ap.tx.t7, &ap.u1, "T7")?;
 
     Ok((t1, t2, t3, t4, t5, t6, t7))
 }
