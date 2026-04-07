@@ -200,10 +200,6 @@ impl<V> LoopStates<V> {
         let key = LoopKey::IpPort(ip, port);
         self.data.insert(key, value);
     }
-    fn insert_only_ip(&mut self, ip: IpAddr, value: V) {
-        let key = LoopKey::Ip(ip);
-        self.data.insert(key, value);
-    }
     fn insert_only_port(&mut self, port: u16, value: V) {
         let key = LoopKey::Port(port);
         self.data.insert(key, value);
@@ -3169,6 +3165,7 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::os::DetectReport;
     use std::thread::sleep;
     use subnetwork::CrossIpv4Pool;
     #[test]
@@ -3423,6 +3420,14 @@ mod tests {
         // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
         let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
+
+        println!("============================================================");
+        for d in ret.detect_reports {
+            match d {
+                DetectReport::V4(d) => println!("IPv4: {}", d.fingerprint),
+                DetectReport::V6(d) => println!("IPv6: {}", d.fingerprint),
+            }
+        }
     }
     #[cfg(feature = "scan")]
     #[test]

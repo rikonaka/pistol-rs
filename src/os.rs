@@ -555,6 +555,7 @@ pub fn os_detect(
                             top_k,
                             linear,
                             timeout,
+                            max_retries,
                             push_rd,
                             push_sd,
                             get_response,
