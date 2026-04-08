@@ -44,61 +44,46 @@ fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Vec<u8> {
     }
 }
 
-fn build_ipv6_packet<'a>(
-    ipv6_buff: &'a [u8],
-    probe_name: &str,
-) -> Result<Ipv6Packet<'a>, PistolError> {
+fn build_ipv6_packet<'a>(ipv6_buff: &'a [u8], probe_name: &str) -> Option<Ipv6Packet<'a>> {
     // println!("{}", ipv6_buff.len());
-    if ipv6_buff.len() > 0 {
-        match Ipv6Packet::new(ipv6_buff) {
-            Some(p) => return Ok(p),
-            None => (),
+    match Ipv6Packet::new(ipv6_buff) {
+        Some(p) => Some(p),
+        None => {
+            warn!("build ipv6 packet failed for probe {}", probe_name);
+            None
         }
     }
-    Err(PistolError::OsDetectBuildIpv6PacketFailed {
-        probe_name: probe_name.to_string(),
-    })
 }
 
-fn build_icmpv6_packet<'a>(
-    icmpv6_buff: &'a [u8],
-    probe_name: &str,
-) -> Result<Icmpv6Packet<'a>, PistolError> {
-    if icmpv6_buff.len() > 0 {
-        match Icmpv6Packet::new(icmpv6_buff) {
-            Some(p) => return Ok(p),
-            None => (),
+fn build_icmpv6_packet<'a>(icmpv6_buff: &'a [u8], probe_name: &str) -> Option<Icmpv6Packet<'a>> {
+    match Icmpv6Packet::new(icmpv6_buff) {
+        Some(p) => Some(p),
+        None => {
+            warn!("build icmpv6 packet failed for probe {}", probe_name);
+            None
         }
     }
-    Err(PistolError::OsDetectBuildIcmpv6PacketFailed {
-        probe_name: probe_name.to_string(),
-    })
 }
 
-fn build_tcp_packet<'a>(
-    tcp_buff: &'a [u8],
-    probe_name: &str,
-) -> Result<TcpPacket<'a>, PistolError> {
-    if tcp_buff.len() > 0 {
-        match TcpPacket::new(tcp_buff) {
-            Some(p) => return Ok(p),
-            None => (),
+fn build_tcp_packet<'a>(tcp_buff: &'a [u8], probe_name: &str) -> Option<TcpPacket<'a>> {
+    match TcpPacket::new(tcp_buff) {
+        Some(p) => Some(p),
+        None => {
+            warn!("build tcp packet failed for probe {}", probe_name);
+            None
         }
     }
-    Err(PistolError::OsDetectBuildTcpPacketFailed {
-        probe_name: probe_name.to_string(),
-    })
 }
 
 /// IPv6 Payload Length field.
 /// IPv6 Traffic Class field.
 fn ipv6_plen_tc(ipv6_buff: &[u8], probe_name: &str) -> Result<(f64, f64), PistolError> {
     let (plen, tc) = match build_ipv6_packet(ipv6_buff, probe_name) {
-        Ok(ipv6_packet) => (
+        Some(ipv6_packet) => (
             ipv6_packet.get_payload_length() as f64,
             ipv6_packet.get_traffic_class() as f64,
         ),
-        Err(_) => {
+        None => {
             warn!("plen tc get ipv6 packet failed");
             (-1.0, -1.0)
         }
