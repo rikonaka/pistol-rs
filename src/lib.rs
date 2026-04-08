@@ -3165,7 +3165,6 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::os::DetectReport;
     use std::thread::sleep;
     use subnetwork::CrossIpv4Pool;
     #[test]
@@ -3390,27 +3389,57 @@ mod tests {
             .unwrap();
         println!("{}", ret);
     }
+    #[test]
+    fn nmap_fingerprint_parse() {
+        let nmap_fingerprint_str = r#"
+OS:SCAN(V=7.95%E=4%D=4/8%OT=22%CT=1%CU=33689%PV=Y%DS=1%DC=D%G=Y%M=000C29%TM
+OS:=69D5CAA9%P=x86_64-pc-linux-gnu)SEQ(SP=106%GCD=1%ISR=10C%TI=Z%CI=Z%II=I%
+OS:TS=A)OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5
+OS:=M5B4ST11NW7%O6=M5B4ST11)WIN(W1=FE88%W2=FE88%W3=FE88%W4=FE88%W5=FE88%W6=
+OS:FE88)ECN(R=Y%DF=Y%T=40%W=FAF0%O=M5B4NNSNW7%CC=Y%Q=)T1(R=Y%DF=Y%T=40%S=O%
+OS:A=S+%F=AS%RD=0%Q=)T2(R=N)T3(R=N)T4(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0
+OS:%Q=)T5(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)T6(R=Y%DF=Y%T=40%W=0%S
+OS:=A%A=Z%F=R%O=%RD=0%Q=)T7(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)U1(R
+OS:=Y%DF=N%T=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)IE(R=Y%DFI=N
+OS:%T=40%CD=S)
+        "#;
+
+        let mut rets: Vec<String> = Vec::new();
+        let mut last_line: Option<String> = None;
+        for line in nmap_fingerprint_str.lines() {
+            let line = line.trim();
+            if line.len() == 0 {
+                continue;
+            }
+
+            let line_fix = line.replace("OS:", "");
+            if !line_fix.contains(")") {
+                last_line = Some(line_fix);
+            } else {
+                let line_split: Vec<&str> = line_fix.split(")").collect();
+                match last_line {
+                    Some(l) => {
+                        let line_cb = format!("{}{})", l, line_split[0]);
+                        rets.push(line_cb);
+                        last_line = Some(line_split[1].to_string());
+                    }
+                    None => {
+                        let line_cb = format!("{})", line_split[0]);
+                        rets.push(line_cb);
+                        last_line = Some(line_split[1].to_string());
+                    }
+                }
+            }
+        }
+
+        let rets_str = rets.join("\n");
+        println!("{}", rets_str);
+    }
     #[cfg(feature = "os")]
     #[test]
     fn test_os_detect() {
-        // pistol
-        // SCAN(V=pistol_5.0.0%D=4/7%OT=22%CT=8765%CU=9876PV=Y%DS=1%DC=D%G=Y%M=0C29%TM=69D4D042%P=RUST)
-        // SEQ(SP=87%GCD=0%ISR=76%TI=D037%CI=D037%II=D037%TS=U)
-        // OPS()
-        // WIN(W1=16%W2=16%W3=16%W4=16%W5=16%W6=16)
-        // ECN(R=Y%DF=N%T=72%W=16%CC=N%Q=RU)
-        // T1(R=Y%DF=N%T=72%S=O%A=O%F=SF%RD=51F03746%Q=RU)
-        // T2(R=N)
-        // T3(R=N)
-        // T4(R=Y%DF=N%T=72%W=16%S=O%A=O%F=SF%O=%RD=39C4F8F%Q=RU)
-        // T5(R=Y%DF=N%T=72%W=223D%S=O%A=O%F=SF%O=%RD=BA49D2DF%Q=R)
-        // T6(R=Y%DF=N%T=72%W=223D%S=O%A=O%F=SF%O=%RD=FA5735CB%Q=RU)
-        // T7(R=Y%DF=N%T=72%W=223D%S=O%A=O%F=SF%O=%RD=1086C5AA%Q=R)
-        // U1(R=Y%DF=N%T=72%IPL=172%UN=2AB2C0A8%RIPL=156%RID=503%RIPCK=I%RUCK=C0A8%RUD=I)
-        // IE(R=Y%DFI=N%T=72%CD=Z)
-
         // nmap
-        // OS:SCAN(V=7.95%E=4%D=4/7%OT=22%CT=1%CU=34013%PV=Y%DS=1%DC=D%G=Y%M=000C29%TM=69D4D116%P=x86_64-pc-linux-gnu)
+        // SCAN(V=7.95%E=4%D=4/7%OT=22%CT=1%CU=34013%PV=Y%DS=1%DC=D%G=Y%M=000C29%TM=69D4D116%P=x86_64-pc-linux-gnu)
         // SEQ(SP=108%GCD=1%ISR=10B%TI=Z%CI=Z%II=I%TS=A)
         // OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
         // WIN(W1=FE88%W2=FE88%W3=FE88%W4=FE88%W5=FE88%W6=FE88)
@@ -3453,10 +3482,7 @@ mod tests {
 
         println!("============================================================");
         for d in ret.detect_reports {
-            match d {
-                DetectReport::V4(d) => println!("{}", d.fingerprint),
-                DetectReport::V6(d) => println!("{}", d.fingerprint),
-            }
+            d.print_fingerprint();
         }
     }
     #[cfg(feature = "scan")]

@@ -186,7 +186,7 @@ impl Fingerprint {
     }
 }
 
-pub fn get_scan_line(
+pub(crate) fn get_scan_line(
     dst_mac: MacAddr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
@@ -283,7 +283,6 @@ fn send_seq_probes(
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
 ) -> Result<SEQRR, PistolError> {
-    let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
     for i in 1..=6 {
@@ -395,8 +394,8 @@ fn send_seq_probes(
 
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
-                                    request,
-                                    response,
+                                    request3: request,
+                                    response2: response,
                                     rtt,
                                 };
                                 seq_hm.insert(*t, rr);
@@ -431,7 +430,6 @@ fn send_seq_probes(
         .get(&6)
         .map_or(RequestResponse::default(), |x| x.clone());
 
-    let elapsed = begin.elapsed().as_secs_f64();
     let seqrr = SEQRR {
         seq1,
         seq2,
@@ -439,7 +437,6 @@ fn send_seq_probes(
         seq4,
         seq5,
         seq6,
-        elapsed,
     };
 
     Ok(seqrr)
@@ -548,8 +545,8 @@ fn send_ie_probes(
 
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
-                                    request,
-                                    response,
+                                    request3: request,
+                                    response2: response,
                                     rtt,
                                 };
                                 ie_hm.insert(*t, rr);
@@ -642,8 +639,8 @@ fn send_ecn_probe(
                     let response = recv_response.data;
                     let rtt = recv_response.rtt;
                     let rr = RequestResponse {
-                        request: buff.clone(),
-                        response,
+                        request3: buff.clone(),
+                        response2: response,
                         rtt,
                     };
                     let ecn = ECNRR { ecn: rr };
@@ -657,8 +654,8 @@ fn send_ecn_probe(
     }
 
     let rr = RequestResponse {
-        request: buff,
-        response: Arc::new([]),
+        request3: buff,
+        response2: Arc::new([]),
         rtt: Duration::ZERO,
     };
 
@@ -831,8 +828,8 @@ fn send_tx_probes(
 
                             let request = buff_hm[key].clone();
                             let rr = RequestResponse {
-                                request,
-                                response,
+                                request3: request,
+                                response2: response,
                                 rtt,
                             };
                             tx_hm.insert(*key, rr);
@@ -944,8 +941,8 @@ fn send_u1_probe(
                 if rrq_id == id {
                     let rtt = recv_response.rtt;
                     let rr = RequestResponse {
-                        request: buff.clone(),
-                        response,
+                        request3: buff.clone(),
+                        response2: response,
                         rtt,
                     };
                     let u1 = U1RR { u1: rr };
@@ -959,8 +956,8 @@ fn send_u1_probe(
     }
 
     let rr = RequestResponse {
-        request: buff,
-        response: Arc::new([]),
+        request3: buff,
+        response2: Arc::new([]),
         rtt: Duration::ZERO,
     };
     let u1 = U1RR { u1: rr };
@@ -1100,7 +1097,7 @@ impl fmt::Display for SEQX {
             "Y" => {
                 // Do not show R if R == Y.
                 let mut output =
-                    format!("SEQ(SP={:X}%GCD={:X}%ISR={:X}", self.sp, self.gcd, self.isr);
+                    format!("SEQ(SP={}%GCD={:X}%ISR={:X}", self.sp, self.gcd, self.isr);
                 if self.ti.len() > 0 {
                     let ti_str = format!("%TI={}", self.ti);
                     output += &ti_str;
@@ -1142,20 +1139,19 @@ fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
         }
         num
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response)?;
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response)?;
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response)?;
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response)?;
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response)?;
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response)?;
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1")?;
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2")?;
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3")?;
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4")?;
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5")?;
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6")?;
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     let num = rynum(rvec);
 
     // At least four responses should be returned.
     let (r, sp, gcd, isr, ti, ci, ii, ss, ts) = if num >= 4 {
         let (gcd, diff) = tcp_gcd(&ap.seq)?; // None mean error
-        let elapsed = ap.seq.elapsed / 6.0;
-        let (isr, seq_rates) = tcp_isr(diff, elapsed as f64)?;
+        let (isr, seq_rates) = tcp_isr(diff)?;
         let sp = tcp_sp(seq_rates, gcd)?;
         let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.tx, &ap.ie)?;
         let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii)?;
@@ -1284,7 +1280,7 @@ impl fmt::Display for OPSX {
     }
 }
 
-pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
+pub(crate) fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
     let rops = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
@@ -1294,12 +1290,12 @@ pub fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
         }
         flag
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response)?;
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response)?;
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response)?;
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response)?;
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response)?;
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response)?;
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1")?;
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2")?;
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3")?;
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4")?;
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5")?;
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6")?;
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     // println!("{:?}", rvec);
     let flag = rops(rvec);
@@ -1419,7 +1415,7 @@ impl fmt::Display for WINX {
     }
 }
 
-pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
+pub(crate) fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
     let rwin = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
@@ -1429,12 +1425,12 @@ pub fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
         }
         flag
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response)?;
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response)?;
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response)?;
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response)?;
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response)?;
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response)?;
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1")?;
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2")?;
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3")?;
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4")?;
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5")?;
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6")?;
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     let flag = rwin(rvec);
     let r = if flag {
@@ -1570,17 +1566,17 @@ impl fmt::Display for ECNX {
     }
 }
 
-pub fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
-    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response)?;
+pub(crate) fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
+    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response2, "ecn")?;
     let (df, t, tg, w, o, cc, q) = match r.as_str() {
         "Y" => {
-            let df = tcp_udp_df(&ap.ecn.ecn.response, "ecn")?;
-            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response, &ap.u1, "ecn")?;
-            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response, "ecn")?;
-            let w = tcp_w(&ap.ecn.ecn.response, "ecn")?;
-            let o = tcp_o(&ap.ecn.ecn.response, "ecn")?;
-            let cc = tcp_cc(&ap.ecn.ecn.response, "ecn")?;
-            let q = tcp_q(&ap.ecn.ecn.response, "ecn")?;
+            let df = tcp_udp_df(&ap.ecn.ecn.response2, "ecn")?;
+            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response2, &ap.u1, "ecn")?;
+            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response2, "ecn")?;
+            let w = tcp_w(&ap.ecn.ecn.response2, "ecn")?;
+            let o = tcp_o(&ap.ecn.ecn.response2, "ecn")?;
+            let cc = tcp_cc(&ap.ecn.ecn.response2, "ecn")?;
+            let q = tcp_q(&ap.ecn.ecn.response2, "ecn")?;
 
             (df, t, tg, w, o, cc, q)
         }
@@ -1758,23 +1754,31 @@ impl fmt::Display for TXX {
     }
 }
 
-pub fn tx_fingerprint(
+pub(crate) fn tx_fingerprint(
     ap: &AllPacketRR,
 ) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX), PistolError> {
     fn do_jobs(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolError> {
-        let r = tcp_udp_icmp_r(&tx.response)?;
+        println!("processing {} probe", name);
+        let r = tcp_udp_icmp_r(&tx.response2, name)?;
+        println!("111");
         let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
             "Y" => {
-                let df = tcp_udp_df(&tx.response, &name.to_lowercase())?;
-                let t = tcp_udp_icmp_t(&tx.response, u1rr, &name.to_lowercase())?;
-                let tg = tcp_udp_icmp_tg(&tx.response, &name.to_lowercase())?;
-                let w = tcp_w(&tx.response, &name.to_lowercase())?;
-                let s = tcp_s(&tx.request, &tx.response, &name.to_lowercase())?;
-                let a = tcp_a(&tx.request, &tx.response, &name.to_lowercase())?;
-                let f = tcp_f(&tx.response, &name.to_lowercase())?;
-                let o = tcp_o(&tx.response, &name.to_lowercase())?;
-                let rd = tcp_rd(&tx.response, &name.to_lowercase())?;
-                let q = tcp_q(&tx.response, &name.to_lowercase())?;
+                println!("222");
+                let df = tcp_udp_df(&tx.response2, &name.to_lowercase())?;
+                println!("333");
+                let t = tcp_udp_icmp_t(&tx.response2, u1rr, &name.to_lowercase())?;
+                println!("444");
+                let tg = tcp_udp_icmp_tg(&tx.response2, &name.to_lowercase())?;
+                println!("555");
+                let w = tcp_w(&tx.response2, &name.to_lowercase())?;
+                println!("666");
+                let s = tcp_s(&tx.request3, &tx.response2, &name.to_lowercase())?;
+                let a = tcp_a(&tx.request3, &tx.response2, &name.to_lowercase())?;
+                let f = tcp_f(&tx.response2, &name.to_lowercase())?;
+                let o = tcp_o(&tx.response2, &name.to_lowercase())?;
+                let rd = tcp_rd(&tx.response2, &name.to_lowercase())?;
+                let q = tcp_q(&tx.response2, &name.to_lowercase())?;
+                println!("000");
 
                 (df, t, tg, w, s, a, f, o, rd, q)
             }
@@ -1810,13 +1814,13 @@ pub fn tx_fingerprint(
     }
 
     // The final line related to these probes, T1, contains various test values for packet #1.
-    let t1 = do_jobs(&ap.seq.seq1, &ap.u1, "T1")?;
-    let t2 = do_jobs(&ap.tx.t2, &ap.u1, "T2")?;
-    let t3 = do_jobs(&ap.tx.t3, &ap.u1, "T3")?;
-    let t4 = do_jobs(&ap.tx.t4, &ap.u1, "T4")?;
-    let t5 = do_jobs(&ap.tx.t5, &ap.u1, "T5")?;
-    let t6 = do_jobs(&ap.tx.t6, &ap.u1, "T6")?;
-    let t7 = do_jobs(&ap.tx.t7, &ap.u1, "T7")?;
+    let t1 = do_jobs(&ap.seq.seq1, &ap.u1, "t1")?;
+    let t2 = do_jobs(&ap.tx.t2, &ap.u1, "t2")?;
+    let t3 = do_jobs(&ap.tx.t3, &ap.u1, "t3")?;
+    let t4 = do_jobs(&ap.tx.t4, &ap.u1, "t4")?;
+    let t5 = do_jobs(&ap.tx.t5, &ap.u1, "t5")?;
+    let t6 = do_jobs(&ap.tx.t6, &ap.u1, "t6")?;
+    let t7 = do_jobs(&ap.tx.t7, &ap.u1, "t7")?;
 
     Ok((t1, t2, t3, t4, t5, t6, t7))
 }
@@ -1961,13 +1965,13 @@ impl fmt::Display for U1X {
     }
 }
 
-pub fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
-    let r = tcp_udp_icmp_r(&ap.u1.u1.response)?;
+pub(crate) fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
+    let r = tcp_udp_icmp_r(&ap.u1.u1.response2, "u1")?;
     let (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud) = match r.as_str() {
         "Y" => {
-            let df = tcp_udp_df(&ap.u1.u1.response, "u1")?;
-            let t = tcp_udp_icmp_t(&ap.u1.u1.response, &ap.u1, "u1")?;
-            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response, "u1")?;
+            let df = tcp_udp_df(&ap.u1.u1.response2, "u1")?;
+            let t = tcp_udp_icmp_t(&ap.u1.u1.response2, &ap.u1, "u1")?;
+            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response2, "u1")?;
             let ipl = udp_ipl(&ap.u1)?;
             let un = udp_un(&ap.u1, "u1")?;
             let ripl = udp_ripl(&ap.u1, "u1")?;
@@ -2085,15 +2089,15 @@ impl fmt::Display for IEX {
     }
 }
 
-pub fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolError> {
-    let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response)?;
-    let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response)?;
+pub(crate) fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolError> {
+    let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response2, "ie1")?;
+    let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response2, "ie2")?;
     let (r, dfi, t, tg, cd) = if r1 == "Y" && r2 == "Y" {
         // The R value is only true (Y) if both probes elicit responses.
         let r = String::from("Y");
         let dfi = icmp_dfi(&ap.ie, "ie")?;
-        let t = tcp_udp_icmp_t(&ap.ie.ie1.response, &ap.u1, "ie")?;
-        let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response, "ie")?;
+        let t = tcp_udp_icmp_t(&ap.ie.ie1.response2, &ap.u1, "ie")?;
+        let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response2, "ie")?;
         let cd = icmp_cd(&ap.ie, "ie")?;
 
         (r, dfi, t, tg, cd)
@@ -2145,7 +2149,7 @@ fn sort_pick(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
     ret
 }
 
-pub fn os_probe_thread(
+pub(crate) fn os_probe_thread(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_open_tcp_port: u16,
@@ -2272,70 +2276,3 @@ pub fn os_probe_thread(
         Err(e) => Err(e),
     }
 }
-
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pnet::packet::ipv4::Ipv4Packet;
-    use tracing::error;
-    use tracing::info;
-    #[test]
-    fn test_send_probes() {
-        let build_ipv4_packet = |buff: &[u8], debug_info: &str| {
-            if let Some(_ipv4_packet) = Ipv4Packet::new(buff) {
-                info!("{} build ipv4 success", debug_info);
-            } else {
-                error!("{} build ipv4 failed", debug_info);
-            }
-        };
-
-        // t2, t5, t7, u1
-        // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 6);
-        // let dst_open_tcp_port = 22;
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 1, 4);
-        let dst_open_tcp_port = 3389;
-        let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let timeout = Duration::from_secs_f64(1.0);
-
-        let dst_closed_tcp_port = 7890;
-        let dst_closed_udp_port = 8901;
-
-        debug!("send all probes now");
-
-        let seq = send_seq_probes(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout).unwrap();
-        build_ipv4_packet(&seq.seq1.response, "seq1");
-        build_ipv4_packet(&seq.seq2.response, "seq2");
-        build_ipv4_packet(&seq.seq3.response, "seq3");
-        build_ipv4_packet(&seq.seq4.response, "seq4");
-        build_ipv4_packet(&seq.seq5.response, "seq5");
-
-        let ie = send_ie_probes(dst_ipv4, src_ipv4, timeout).unwrap();
-        build_ipv4_packet(&ie.ie1.response, "ie1");
-        build_ipv4_packet(&ie.ie2.response, "ie2");
-
-        let ecn = send_ecn_probe(dst_ipv4, dst_open_tcp_port, src_ipv4, timeout).unwrap();
-        build_ipv4_packet(&ecn.ecn.response, "ecn");
-
-        let tx = send_tx_probes(
-            dst_ipv4,
-            dst_open_tcp_port,
-            dst_closed_tcp_port,
-            src_ipv4,
-            timeout,
-        )
-        .unwrap();
-        build_ipv4_packet(&tx.t2.response, "t2");
-        build_ipv4_packet(&tx.t3.response, "t3");
-        build_ipv4_packet(&tx.t4.response, "t4");
-        build_ipv4_packet(&tx.t5.response, "t5");
-        build_ipv4_packet(&tx.t6.response, "t6");
-        build_ipv4_packet(&tx.t7.response, "t7");
-
-        let u1 = send_u1_probe(dst_ipv4, dst_closed_udp_port, src_ipv4, timeout).unwrap();
-        build_ipv4_packet(&u1.u1.response, "u1");
-
-        debug!("send all probes done");
-    }
-}
-*/

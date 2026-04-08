@@ -161,11 +161,11 @@ impl Default for SEQX6 {
 
 impl fmt::Display for SEQX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response.len() > 0 {
+        let output = if self.rr.response2.len() > 0 {
             let output = format!(
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
-                p_as_nmap_format(&self.rr.response),
+                p_as_nmap_format(&self.rr.response2),
                 self.st.as_secs_f64(),
                 self.rt.as_secs_f64()
             );
@@ -198,11 +198,11 @@ impl Default for IEX6 {
 
 impl fmt::Display for IEX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response.len() > 0 {
+        let output = if self.rr.response2.len() > 0 {
             let output = format!(
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
-                p_as_nmap_format(&self.rr.response),
+                p_as_nmap_format(&self.rr.response2),
                 self.st.as_secs_f64(),
                 self.rt.as_secs_f64()
             );
@@ -235,11 +235,11 @@ impl Default for NX6 {
 
 impl fmt::Display for NX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response.len() > 0 {
+        let output = if self.rr.response2.len() > 0 {
             let output = format!(
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
-                p_as_nmap_format(&self.rr.response),
+                p_as_nmap_format(&self.rr.response2),
                 self.st.as_secs_f64(),
                 self.rt.as_secs_f64()
             );
@@ -270,10 +270,10 @@ impl Default for U1X6 {
 
 impl fmt::Display for U1X6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response.len() > 0 {
+        let output = if self.rr.response2.len() > 0 {
             let output = format!(
                 "U1(P={}%ST={:.6}%RT={:.6})",
-                p_as_nmap_format(&self.rr.response),
+                p_as_nmap_format(&self.rr.response2),
                 self.st.as_secs_f64(),
                 self.rt.as_secs_f64()
             );
@@ -304,10 +304,10 @@ impl Default for TECNX6 {
 
 impl fmt::Display for TECNX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response.len() > 0 {
+        let output = if self.rr.response2.len() > 0 {
             let output = format!(
                 "TECN(P={}%ST={:.6}%RT={:.6})",
-                p_as_nmap_format(&self.rr.response),
+                p_as_nmap_format(&self.rr.response2),
                 self.st.as_secs_f64(),
                 self.rt.as_secs_f64()
             );
@@ -340,11 +340,11 @@ impl Default for TX6 {
 
 impl fmt::Display for TX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response.len() > 0 {
+        let output = if self.rr.response2.len() > 0 {
             let output = format!(
                 "{}(P={}%ST={:.6}%RT={:.6})",
                 self.name,
-                p_as_nmap_format(&self.rr.response),
+                p_as_nmap_format(&self.rr.response2),
                 self.st.as_secs_f64(),
                 self.rt.as_secs_f64()
             );
@@ -649,8 +649,8 @@ fn send_seq_probes(
 
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
-                                    request,
-                                    response,
+                                    request3: request,
+                                    response2: response,
                                     rtt,
                                 };
                                 seq_hm.insert(*t, rr);
@@ -848,8 +848,8 @@ fn send_ie_probes(
 
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
-                                    request,
-                                    response,
+                                    request3: request,
+                                    response2: response,
                                     rtt,
                                 };
                                 ie_hm.insert(*t, rr);
@@ -989,8 +989,8 @@ fn send_nx_probes(
 
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
-                                    request,
-                                    response,
+                                    request3: request,
+                                    response2: response,
                                     rtt,
                                 };
                                 nx_hm.insert(*t, rr);
@@ -1097,8 +1097,8 @@ fn send_u1_probe(
                 let rtt = recv_response.rtt;
                 if rrq_id == id && response.len() > 0 {
                     let rr = RequestResponse {
-                        request: buff.clone(),
-                        response,
+                        request3: buff.clone(),
+                        response2: response,
                         rtt,
                     };
                     let ecn = U1RR6 {
@@ -1116,8 +1116,8 @@ fn send_u1_probe(
     }
 
     let rr = RequestResponse {
-        request: buff,
-        response: Arc::new([]),
+        request3: buff,
+        response2: Arc::new([]),
         rtt: Duration::ZERO,
     };
 
@@ -1194,8 +1194,8 @@ fn send_tecn_probe(
                     let response = recv_response.data;
                     let rtt = recv_response.rtt;
                     let rr = RequestResponse {
-                        request: buff.clone(),
-                        response,
+                        request3: buff.clone(),
+                        response2: response,
                         rtt,
                     };
                     let tecn = TECNRR6 {
@@ -1213,8 +1213,8 @@ fn send_tecn_probe(
     }
 
     let rr = RequestResponse {
-        request: buff,
-        response: Arc::new([]),
+        request3: buff,
+        response2: Arc::new([]),
         rtt: Duration::ZERO,
     };
 
@@ -1391,8 +1391,8 @@ fn send_tx_probes(
 
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
-                                    request,
-                                    response,
+                                    request3: request,
+                                    response2: response,
                                     rtt,
                                 };
                                 tx_hm.insert(*t, rr);
@@ -1650,7 +1650,7 @@ fn isort(arr: &[OsInfo6]) -> Vec<OsInfo6> {
     ret
 }
 
-pub fn os_probe_thread6(
+pub(crate) fn os_probe_thread6(
     dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_open_tcp_port: u16,

@@ -4,17 +4,18 @@ use std::time::Duration;
 // Each request corresponds to a response, all layer3 packet
 #[derive(Debug, Clone)]
 pub struct RequestResponse {
-    // pub name: String,
-    pub request: Arc<[u8]>,  // layer3
-    pub response: Arc<[u8]>, // layer3, if no response: response.len() == 0
+    /// layer3 request packet, if no request: request.len() == 0
+    pub request3: Arc<[u8]>,
+    /// layer2 response packet, if no response: response.len() == 0
+    pub response2: Arc<[u8]>,
     pub rtt: Duration,
 }
 
 impl Default for RequestResponse {
     fn default() -> Self {
         Self {
-            request: Arc::new([]),
-            response: Arc::new([]),
+            request3: Arc::new([]),
+            response2: Arc::new([]),
             rtt: Duration::ZERO,
         }
     }
@@ -28,7 +29,6 @@ pub struct SEQRR {
     pub seq4: RequestResponse,
     pub seq5: RequestResponse,
     pub seq6: RequestResponse,
-    pub elapsed: f64,
 }
 
 #[derive(Debug, Clone)]

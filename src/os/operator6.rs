@@ -22,24 +22,24 @@ const FIN_MASK: u8 = 0b00000001;
 
 fn get_response_by_name(ap: &AllPacketRR6, name: &str) -> Vec<u8> {
     match name {
-        "S1" => ap.seq.seq1.response.to_vec(),
-        "S2" => ap.seq.seq2.response.to_vec(),
-        "S3" => ap.seq.seq3.response.to_vec(),
-        "S4" => ap.seq.seq4.response.to_vec(),
-        "S5" => ap.seq.seq5.response.to_vec(),
-        "S6" => ap.seq.seq6.response.to_vec(),
-        "IE1" => ap.ie.ie1.response.to_vec(),
-        "IE2" => ap.ie.ie2.response.to_vec(),
-        "NI" => ap.nx.ni.response.to_vec(),
-        "NS" => ap.nx.ns.response.to_vec(),
-        "U1" => ap.u1.u1.response.to_vec(),
-        "TECN" => ap.tecn.tecn.response.to_vec(),
-        "T2" => ap.tx.t2.response.to_vec(),
-        "T3" => ap.tx.t3.response.to_vec(),
-        "T4" => ap.tx.t4.response.to_vec(),
-        "T5" => ap.tx.t5.response.to_vec(),
-        "T6" => ap.tx.t6.response.to_vec(),
-        "T7" => ap.tx.t7.response.to_vec(),
+        "S1" => ap.seq.seq1.response2.to_vec(),
+        "S2" => ap.seq.seq2.response2.to_vec(),
+        "S3" => ap.seq.seq3.response2.to_vec(),
+        "S4" => ap.seq.seq4.response2.to_vec(),
+        "S5" => ap.seq.seq5.response2.to_vec(),
+        "S6" => ap.seq.seq6.response2.to_vec(),
+        "IE1" => ap.ie.ie1.response2.to_vec(),
+        "IE2" => ap.ie.ie2.response2.to_vec(),
+        "NI" => ap.nx.ni.response2.to_vec(),
+        "NS" => ap.nx.ns.response2.to_vec(),
+        "U1" => ap.u1.u1.response2.to_vec(),
+        "TECN" => ap.tecn.tecn.response2.to_vec(),
+        "T2" => ap.tx.t2.response2.to_vec(),
+        "T3" => ap.tx.t3.response2.to_vec(),
+        "T4" => ap.tx.t4.response2.to_vec(),
+        "T5" => ap.tx.t5.response2.to_vec(),
+        "T6" => ap.tx.t6.response2.to_vec(),
+        "T7" => ap.tx.t7.response2.to_vec(),
         _ => vec![],
     }
 }
@@ -117,12 +117,12 @@ fn tcp_seq(ipv6_buff: &[u8], probe_name: &str) -> Result<u32, PistolError> {
 /// The differences between consecutive sequence responses are added up, then this sum is divided by the time elapsed between the first and last probe.
 fn tcp_isr(ap: &AllPacketRR6) -> Result<f64, PistolError> {
     let mut seq_vec = Vec::new();
-    let s1 = tcp_seq(&ap.seq.seq1.response, "seq1")?;
-    let s2 = tcp_seq(&ap.seq.seq2.response, "seq2")?;
-    let s3 = tcp_seq(&ap.seq.seq3.response, "seq3")?;
-    let s4 = tcp_seq(&ap.seq.seq4.response, "seq4")?;
-    let s5 = tcp_seq(&ap.seq.seq5.response, "seq5")?;
-    let s6 = tcp_seq(&ap.seq.seq6.response, "seq6")?;
+    let s1 = tcp_seq(&ap.seq.seq1.response2, "seq1")?;
+    let s2 = tcp_seq(&ap.seq.seq2.response2, "seq2")?;
+    let s3 = tcp_seq(&ap.seq.seq3.response2, "seq3")?;
+    let s4 = tcp_seq(&ap.seq.seq4.response2, "seq4")?;
+    let s5 = tcp_seq(&ap.seq.seq5.response2, "seq5")?;
+    let s6 = tcp_seq(&ap.seq.seq6.response2, "seq6")?;
     seq_vec.push(s1);
     seq_vec.push(s2);
     seq_vec.push(s3);
@@ -403,7 +403,7 @@ fn icmpv6_type_code(ipv6_buff: &[u8], probe_name: &str) -> Result<(f64, f64), Pi
     }
 }
 
-pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolError> {
+pub(crate) fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolError> {
     let ipv6_probe_names: Vec<&str> = vec![
         "S1", "S2", "S3", "S4", "S5", "S6", "IE1", "IE2", "NS", "U1", "TECN", "T2", "T3", "T4",
         "T5", "T6", "T7",
@@ -482,7 +482,7 @@ pub fn vectorize(ap: &AllPacketRR6) -> Result<Vec<f64>, PistolError> {
     Ok(features)
 }
 
-pub fn apply_scale(features: &[f64], scale: &[Vec<f64>]) -> Vec<f64> {
+pub(crate) fn apply_scale(features: &[f64], scale: &[Vec<f64>]) -> Vec<f64> {
     let mut new_features = Vec::new();
     for (f, ab) in zip(features, scale) {
         if *f < 0.0 {

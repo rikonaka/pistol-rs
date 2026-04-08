@@ -103,7 +103,7 @@ const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
 const TTL: u8 = 64;
 
-pub fn seq_packet_1_layer3(
+pub(crate) fn seq_packet_1_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -176,7 +176,7 @@ pub fn seq_packet_1_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_2_layer3(
+pub(crate) fn seq_packet_2_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -247,7 +247,7 @@ pub fn seq_packet_2_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_3_layer3(
+pub(crate) fn seq_packet_3_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -321,7 +321,7 @@ pub fn seq_packet_3_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_4_layer3(
+pub(crate) fn seq_packet_4_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -391,7 +391,7 @@ pub fn seq_packet_4_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_5_layer3(
+pub(crate) fn seq_packet_5_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -462,7 +462,7 @@ pub fn seq_packet_5_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_6_layer3(
+pub(crate) fn seq_packet_6_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -532,7 +532,7 @@ pub fn seq_packet_6_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn ie_packet_1_layer3(
+pub(crate) fn ie_packet_1_layer3(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     idtf: u16,
@@ -600,7 +600,7 @@ pub fn ie_packet_1_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn ie_packet_2_layer3(
+pub(crate) fn ie_packet_2_layer3(
     dst_ipv4: Ipv4Addr,
     src_ipv4: Ipv4Addr,
     idtf: u16,
@@ -668,7 +668,7 @@ pub fn ie_packet_2_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn ecn_packet_layer3(
+pub(crate) fn ecn_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -756,7 +756,7 @@ pub fn ecn_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t2_packet_layer3(
+pub(crate) fn t2_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -828,7 +828,7 @@ pub fn t2_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t3_packet_layer3(
+pub(crate) fn t3_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -900,7 +900,7 @@ pub fn t3_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t4_packet_layer3(
+pub(crate) fn t4_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -972,7 +972,7 @@ pub fn t4_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t5_packet_layer3(
+pub(crate) fn t5_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -1044,7 +1044,7 @@ pub fn t5_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t6_packet_layer3(
+pub(crate) fn t6_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -1116,7 +1116,7 @@ pub fn t6_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t7_packet_layer3(
+pub(crate) fn t7_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,
@@ -1190,7 +1190,7 @@ pub fn t7_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn udp_packet_layer3(
+pub(crate) fn udp_packet_layer3(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
     src_ipv4: Ipv4Addr,

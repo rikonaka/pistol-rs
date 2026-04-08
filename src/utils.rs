@@ -60,6 +60,19 @@ pub(crate) struct PistolHex {
     pub(crate) hex: String, // hex => dec
 }
 
+pub(crate) fn be_vec_to_u32(input: &[u8; 4]) -> u32 {
+    let padding_size = 4 - input.len();
+    let mut after_padding = vec![0; padding_size];
+    for &i in input {
+        after_padding.push(i as u32);
+    }
+    let a = after_padding[0] << 24;
+    let b = after_padding[1] << 16;
+    let c = after_padding[2] << 8;
+    let d = after_padding[3];
+    a + b + c + d
+}
+
 impl PistolHex {
     pub(crate) fn new_hex(hex_str: &str) -> PistolHex {
         let hex_str_len = hex_str.len();
@@ -70,26 +83,14 @@ impl PistolHex {
         };
         PistolHex { hex: after_fix }
     }
-    pub(crate) fn be_vec_to_u32(input: &[u8]) -> Result<u32, PistolError> {
-        if input.len() <= 4 {
-            let padding_size = 4 - input.len();
-            let mut after_padding = vec![0; padding_size];
-            for &i in input {
-                after_padding.push(i as u32);
-            }
-            let a = after_padding[0] << 24;
-            let b = after_padding[1] << 16;
-            let c = after_padding[2] << 8;
-            let d = after_padding[3];
-            Ok(a + b + c + d)
-        } else {
-            let v = format!("{:?}", input);
-            Err(PistolError::InputTooLoog { v })
-        }
-    }
+
     pub(crate) fn decode_as_u32(&self) -> Result<u32, PistolError> {
         match hex::decode(&self.hex) {
-            Ok(d) => Self::be_vec_to_u32(&d),
+            Ok(d) => {
+                let d = d[0..4].try_into()?;
+                let v = be_vec_to_u32(&d);
+                Ok(v)
+            }
             Err(e) => Err(e.into()),
         }
     }
@@ -101,8 +102,8 @@ mod tests {
     use pnet::datalink::interfaces;
     #[test]
     fn test_convert() {
-        let v: Vec<u8> = vec![1, 1, 1, 1];
-        let r = PistolHex::be_vec_to_u32(&v).unwrap();
+        let v = [1, 1, 1, 1];
+        let r = be_vec_to_u32(&v);
         assert_eq!(r, 16843009);
 
         let s = "51E80C";

@@ -7,18 +7,6 @@ pub enum PistolError {
     /* OS DETECT ERROR */
     #[error("calculation of diff vec failed, the input vec length is not enough")]
     CalcDiffFailed,
-    #[error("build {probe_name} ipv4 packet failed")]
-    OsDetectBuildIpv4PacketFailed { probe_name: String },
-    #[error("build {probe_name} ipv6 packet failed")]
-    OsDetectBuildIpv6PacketFailed { probe_name: String },
-    #[error("build {probe_name} icmp packet failed")]
-    OsDetectBuildIcmpPacketFailed { probe_name: String },
-    #[error("build {probe_name} icmpv6 packet failed")]
-    OsDetectBuildIcmpv6PacketFailed { probe_name: String },
-    #[error("build {probe_name} tcp packet failed")]
-    OsDetectBuildTcpPacketFailed { probe_name: String },
-    #[error("build udp packet failed")]
-    OsDetectBuildUdpPacketFailed { probe_name: String },
     #[error("calculation of isr failed")]
     CalcISRFailed,
     #[error("calculation of ss failed")]
@@ -29,8 +17,6 @@ pub enum PistolError {
     OSDetectPortsNotEnough,
     #[error("os detect results is null")]
     OSDetectResultsNullError,
-    #[error("tsval value length is not enough")]
-    TsValIsNull,
     #[error("system time error")]
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("os db parser error: {name}-{line}")]
@@ -126,6 +112,6 @@ pub enum PistolError {
     LockVarFailed { e: String },
     #[error("tracing error")]
     SetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
-    #[error("input {v} is too loog to convert to u32")]
-    InputTooLoog { v: String },
+    #[error("try from slice error")]
+    TryFromSliceError(#[from] std::array::TryFromSliceError),
 }

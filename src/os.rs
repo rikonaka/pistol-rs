@@ -126,7 +126,7 @@ pub struct Detect {
 }
 
 impl Detect {
-    fn new_down_host(dst_addr: IpAddr) -> Self {
+    fn new_offline_host(dst_addr: IpAddr) -> Self {
         Self {
             addr: dst_addr,
             alive: false,
@@ -150,7 +150,7 @@ pub struct Detect6 {
 }
 
 impl Detect6 {
-    fn new_down_host(dst_addr: IpAddr) -> Self {
+    fn new_offline_host(dst_addr: IpAddr) -> Self {
         Self {
             addr: dst_addr,
             alive: false,
@@ -177,10 +177,20 @@ impl DetectReport {
             DetectReport::V6(ipv6) => ipv6.addr,
         }
     }
-    fn down_host(addr: IpAddr) -> Self {
+    fn new_offline_host(addr: IpAddr) -> Self {
         match addr {
-            IpAddr::V4(_) => DetectReport::V4(Detect::new_down_host(addr)),
-            IpAddr::V6(_) => DetectReport::V6(Detect6::new_down_host(addr)),
+            IpAddr::V4(_) => DetectReport::V4(Detect::new_offline_host(addr)),
+            IpAddr::V6(_) => DetectReport::V6(Detect6::new_offline_host(addr)),
+        }
+    }
+    pub fn print_fingerprint(&self) {
+        match self {
+            DetectReport::V4(o) => {
+                println!("{}", o.fingerprint);
+            }
+            DetectReport::V6(o) => {
+                println!("{}", o.fingerprint);
+            }
         }
     }
 }
@@ -443,7 +453,7 @@ pub fn os_detect(
 
     for ni in &net_infos {
         if !ni.valid {
-            let od = DetectReport::down_host(ni.inferred_dst_addr);
+            let od = DetectReport::new_offline_host(ni.inferred_dst_addr);
             os_detects.push(od);
             continue;
         }
@@ -640,7 +650,9 @@ pub fn os_detect_raw(
 ) -> Result<OsDetect, PistolError> {
     let mut os_detect = OsDetect::new();
     if !net_info.valid {
-        os_detect.finish(Some(DetectReport::down_host(net_info.inferred_dst_addr)));
+        os_detect.finish(Some(DetectReport::new_offline_host(
+            net_info.inferred_dst_addr,
+        )));
         return Ok(os_detect);
     }
     let start_time = Instant::now();

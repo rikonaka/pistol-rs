@@ -110,7 +110,7 @@ const WSCALE_SIZE: usize = 3;
 const TIMESTAMP_SIZE: usize = 10;
 const SACK_PERM_SIZE: usize = 2;
 
-pub fn seq_packet_1_layer3(
+pub(crate) fn seq_packet_1_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -181,7 +181,7 @@ pub fn seq_packet_1_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_2_layer3(
+pub(crate) fn seq_packet_2_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -250,7 +250,7 @@ pub fn seq_packet_2_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_3_layer3(
+pub(crate) fn seq_packet_3_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -322,7 +322,7 @@ pub fn seq_packet_3_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_4_layer3(
+pub(crate) fn seq_packet_4_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -390,7 +390,7 @@ pub fn seq_packet_4_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_5_layer3(
+pub(crate) fn seq_packet_5_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -459,7 +459,7 @@ pub fn seq_packet_5_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn seq_packet_6_layer3(
+pub(crate) fn seq_packet_6_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -527,7 +527,7 @@ pub fn seq_packet_6_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn ie_packet_1_layer3(
+pub(crate) fn ie_packet_1_layer3(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
 ) -> Result<Arc<[u8]>, PistolError> {
@@ -612,7 +612,7 @@ pub fn ie_packet_1_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn ie_packet_2_layer3(
+pub(crate) fn ie_packet_2_layer3(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
 ) -> Result<Arc<[u8]>, PistolError> {
@@ -775,7 +775,7 @@ pub fn ie_packet_2_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Arc<[u8]>, PistolError> {
+pub(crate) fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     const ICMPV6_DATA_SIZE: usize = 0;
     // ipv6 header
@@ -877,7 +877,7 @@ pub fn ni_packet_layer3(dst_ipv6: Ipv6Addr, src_ipv6: Ipv6Addr) -> Result<Arc<[u
     Ok(Arc::new(buff))
 }
 
-pub fn ns_packet_layer3(
+pub(crate) fn ns_packet_layer3(
     dst_ipv6: Ipv6Addr,
     src_ipv6: Ipv6Addr,
     src_mac: MacAddr,
@@ -943,7 +943,7 @@ pub fn ns_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn udp_packet_layer3(
+pub(crate) fn udp_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -995,7 +995,7 @@ pub fn udp_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn tecn_packet_layer3(
+pub(crate) fn tecn_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -1080,7 +1080,7 @@ pub fn tecn_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t2_packet_layer3(
+pub(crate) fn t2_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -1149,7 +1149,7 @@ pub fn t2_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t3_packet_layer3(
+pub(crate) fn t3_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -1218,7 +1218,7 @@ pub fn t3_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t4_packet_layer3(
+pub(crate) fn t4_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -1287,7 +1287,7 @@ pub fn t4_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t5_packet_layer3(
+pub(crate) fn t5_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -1356,7 +1356,7 @@ pub fn t5_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t6_packet_layer3(
+pub(crate) fn t6_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
@@ -1425,7 +1425,7 @@ pub fn t6_packet_layer3(
     Ok(Arc::new(buff))
 }
 
-pub fn t7_packet_layer3(
+pub(crate) fn t7_packet_layer3(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
     src_ipv6: Ipv6Addr,
