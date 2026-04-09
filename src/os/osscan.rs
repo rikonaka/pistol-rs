@@ -16,6 +16,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
 use tracing::error;
+use tracing::warn;
 
 use crate::IpCheckMethods;
 use crate::LoopKey;
@@ -382,11 +383,18 @@ fn send_seq_probes(
             break;
         }
 
-        for _ in 1..=6 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recvd_packet = 0;
+        loop {
+            if recv_start.elapsed() >= timeout || recvd_packet >= 6 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
+                            recvd_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -404,9 +412,7 @@ fn send_seq_probes(
                         }
                     }
                 }
-                Err(e) => {
-                    debug!("recv os probe seq response failed: {}", e);
-                }
+                Err(_e) => (),
             }
         }
     }
@@ -482,8 +488,10 @@ fn send_ie_probes(
     let mut loop_states = LoopStates::default();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
+        let rrq_id = random_request_id();
+        println!("t{}: {}", t, rrq_id);
         let state = OsProbeState {
-            id: random_request_id(),
+            id: rrq_id,
             retries: 0,
             recved: false,
         };
@@ -533,12 +541,20 @@ fn send_ie_probes(
             break;
         }
 
-        for _ in 0..2 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recvd_packet = 0;
+        loop {
+            if recv_start.elapsed() >= timeout || recvd_packet >= 2 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
+                            recvd_packet += 1;
                             if let LoopKey::Port(t) = key {
+                                println!("recv t{}: {}", t, recv_response.id);
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
                                 state.recved = true;
@@ -555,9 +571,7 @@ fn send_ie_probes(
                         }
                     }
                 }
-                Err(e) => {
-                    debug!("recv os probe ie response failed: {}", e);
-                }
+                Err(_e) => (),
             }
         }
     }
@@ -647,9 +661,7 @@ fn send_ecn_probe(
                     return Ok(ecn);
                 }
             }
-            Err(e) => {
-                debug!("recv os probe ecn response failed: {}", e);
-            }
+            Err(_e) => (),
         }
     }
 
@@ -765,7 +777,7 @@ fn send_tx_probes(
     buff_hm.insert(6, buff_6);
     buff_hm.insert(7, buff_7);
 
-    let mut loop_states = HashMap::new();
+    let mut loop_states = LoopStates::default();
     for t in 2..=7 {
         // 2 means buff_2, 3 means buff_3, and so on.
         let state = OsProbeState {
@@ -773,7 +785,7 @@ fn send_tx_probes(
             retries: 0,
             recved: false,
         };
-        loop_states.insert(t, state);
+        loop_states.insert_only_port(t, state);
     }
 
     let ether_type = EtherTypes::Ipv4;
@@ -782,34 +794,36 @@ fn send_tx_probes(
         let mut all_done = true;
         for (key, state) in &mut loop_states {
             if state.retries < max_retries && !state.recved {
-                let filter = filter_hm[key].clone();
-                let buff = buff_hm[key].clone();
+                if let LoopKey::Port(t) = key {
+                    let filter = filter_hm[t].clone();
+                    let buff = buff_hm[t].clone();
 
-                let start = Instant::now();
-                let rrq = RRequest {
-                    interface_name: interface_name.clone(),
-                    id: state.id,
-                    filters: vec![filter],
-                    created: start,
-                    elapsed: timeout,
-                };
-                let srq = SRequest {
-                    interface_name: interface_name.clone(),
-                    dst_mac,
-                    src_mac,
-                    eth_payload: buff,
-                    eth_type: ether_type,
-                    retransmit: 1,
-                };
-                if let Err(e) = push_rd.send(rrq) {
-                    error!("send os probe tx recv msg failed: {}", e);
-                }
-                if let Err(e) = push_sd.send(srq) {
-                    error!("send os probe tx send msg failed: {}", e);
-                }
+                    let start = Instant::now();
+                    let rrq = RRequest {
+                        interface_name: interface_name.clone(),
+                        id: state.id,
+                        filters: vec![filter],
+                        created: start,
+                        elapsed: timeout,
+                    };
+                    let srq = SRequest {
+                        interface_name: interface_name.clone(),
+                        dst_mac,
+                        src_mac,
+                        eth_payload: buff,
+                        eth_type: ether_type,
+                        retransmit: 1,
+                    };
+                    if let Err(e) = push_rd.send(rrq) {
+                        error!("send os probe tx recv msg failed: {}", e);
+                    }
+                    if let Err(e) = push_sd.send(srq) {
+                        error!("send os probe tx send msg failed: {}", e);
+                    }
 
-                state.retries += 1;
-                all_done = false;
+                    state.retries += 1;
+                    all_done = false;
+                }
             }
         }
 
@@ -817,29 +831,36 @@ fn send_tx_probes(
             break;
         }
 
-        for _ in 0..6 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recvd_packet = 0;
+        loop {
+            if recv_start.elapsed() >= timeout || recvd_packet >= 6 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
-                            let rtt = recv_response.rtt;
-                            let response = recv_response.data.clone();
-                            state.recved = true;
+                            recvd_packet += 1;
+                            if let LoopKey::Port(t) = key {
+                                let rtt = recv_response.rtt;
+                                let response = recv_response.data.clone();
+                                state.recved = true;
 
-                            let request = buff_hm[key].clone();
-                            let rr = RequestResponse {
-                                request3: request,
-                                response2: response,
-                                rtt,
-                            };
-                            tx_hm.insert(*key, rr);
-                            break;
+                                let request = buff_hm[t].clone();
+                                let rr = RequestResponse {
+                                    request3: request,
+                                    response2: response,
+                                    rtt,
+                                };
+                                tx_hm.insert(*t, rr);
+                                break;
+                            }
                         }
                     }
                 }
-                Err(e) => {
-                    debug!("recv os probe tx response failed: {}", e);
-                }
+                Err(_e) => (),
             }
         }
     }
@@ -949,9 +970,7 @@ fn send_u1_probe(
                     return Ok(u1);
                 }
             }
-            Err(e) => {
-                debug!("recv os probe u1 response failed: {}", e);
-            }
+            Err(_e) => (),
         }
     }
 
@@ -1067,12 +1086,12 @@ pub struct SEQX {
     pub sp: u32,
     pub gcd: u32,
     pub isr: u32,
-    pub ti: String,
-    pub ci: String,
-    pub ii: String,
-    pub ss: String,
-    pub ts: String,
-    pub r: String,
+    pub ti: Option<String>,
+    pub ci: Option<String>,
+    pub ii: Option<String>,
+    pub ss: Option<String>,
+    pub ts: Option<String>,
+    pub(crate) r: String,
 }
 
 impl Default for SEQX {
@@ -1081,11 +1100,11 @@ impl Default for SEQX {
             sp: 0,
             gcd: 0,
             isr: 0,
-            ti: String::new(),
-            ci: String::new(),
-            ii: String::new(),
-            ss: String::new(),
-            ts: String::new(),
+            ti: None,
+            ci: None,
+            ii: None,
+            ss: None,
+            ts: None,
             r: String::new(),
         }
     }
@@ -1093,84 +1112,93 @@ impl Default for SEQX {
 
 impl fmt::Display for SEQX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.r.as_str() {
-            "Y" => {
-                // Do not show R if R == Y.
-                let mut output =
-                    format!("SEQ(SP={}%GCD={:X}%ISR={:X}", self.sp, self.gcd, self.isr);
-                if self.ti.len() > 0 {
-                    let ti_str = format!("%TI={}", self.ti);
-                    output += &ti_str;
-                }
-                if self.ci.len() > 0 {
-                    let ci_str = format!("%CI={}", self.ci);
-                    output += &ci_str;
-                }
-                if self.ii.len() > 0 {
-                    let ii_str = format!("%II={}", self.ii);
-                    output += &ii_str;
-                }
-                if self.ss.len() > 0 {
-                    let ss_str = format!("%SS={}", self.ss);
-                    output += &ss_str;
-                }
-                if self.ts.len() > 0 {
-                    let ts_str = format!("%TS={}", self.ts);
-                    output += &ts_str;
-                }
-                output += ")";
-                write!(f, "{}", output)
+        if self.r == "Y" {
+            // Do not show R if R == Y.
+            let mut output = format!("SEQ(SP={:X}%GCD={:X}%ISR={:X}", self.sp, self.gcd, self.isr);
+            if let Some(ti) = &self.ti {
+                let ti_str = format!("%TI={}", ti);
+                output += &ti_str;
             }
-            _ => {
-                let output = format!("SEQ(R={})", self.r);
-                write!(f, "{}", output)
+            if let Some(ci) = &self.ci {
+                let ci_str = format!("%CI={}", ci);
+                output += &ci_str;
             }
+            if let Some(ii) = &self.ii {
+                let ii_str = format!("%II={}", ii);
+                output += &ii_str;
+            }
+            if let Some(ss) = &self.ss {
+                let ss_str = format!("%SS={}", ss);
+                output += &ss_str;
+            }
+            if let Some(ts) = &self.ts {
+                let ts_str = format!("%TS={}", ts);
+                output += &ts_str;
+            }
+            output += ")";
+            write!(f, "{}", output)
+        } else {
+            let output = "SEQ(R=N)";
+            write!(f, "{}", output)
         }
     }
 }
 
-fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
-    let rynum = |rvec: Vec<String>| -> usize {
+fn seq_fingerprint(ap: &AllPacketRR) -> SEQX {
+    let alive_host = |rvec: Vec<Option<String>>| -> usize {
         let mut num = 0;
         for r in rvec {
-            if r == "Y" {
-                num += 1;
+            if let Some(r) = r {
+                if r == "Y" {
+                    num += 1;
+                }
             }
         }
         num
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1")?;
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2")?;
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3")?;
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4")?;
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5")?;
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6")?;
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1");
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2");
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3");
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4");
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5");
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6");
     let rvec = vec![r1, r2, r3, r4, r5, r6];
-    let num = rynum(rvec);
+    let num = alive_host(rvec);
 
     // At least four responses should be returned.
-    let (r, sp, gcd, isr, ti, ci, ii, ss, ts) = if num >= 4 {
-        let (gcd, diff) = tcp_gcd(&ap.seq)?; // None mean error
-        let (isr, seq_rates) = tcp_isr(diff)?;
-        let sp = tcp_sp(seq_rates, gcd)?;
-        let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.tx, &ap.ie)?;
-        let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii)?;
-        let ts = tcp_ts(&ap.seq)?;
-        let r = String::from("Y");
-        (r, sp, gcd, isr, ti, ci, ii, ss, ts)
-    } else {
-        let r = String::from("N");
-        let gcd = 0;
-        let isr = 0;
-        let sp = 0;
-        let ti = String::new();
-        let ci = String::new();
-        let ii = String::new();
-        let ss = String::new();
-        let ts = String::new();
-        (r, sp, gcd, isr, ti, ci, ii, ss, ts)
-    };
-    Ok(SEQX {
+    if num >= 4 {
+        if let Some((gcd, diff)) = tcp_gcd(&ap.seq) {
+            if let Some((isr, seq_rates)) = tcp_isr(diff) {
+                let sp = tcp_sp(seq_rates, gcd);
+                let (ti, ci, ii) = tcp_ti_ci_ii(&ap.seq, &ap.tx, &ap.ie);
+                let ss = tcp_ss(&ap.seq, &ap.ie, &ti, &ii);
+                let ts = tcp_ts(&ap.seq);
+                let r = String::from("Y");
+                return SEQX {
+                    sp,
+                    gcd,
+                    isr,
+                    ti,
+                    ci,
+                    ii,
+                    ss,
+                    ts,
+                    r,
+                };
+            }
+        }
+    }
+    let gcd = 0;
+    let isr = 0;
+    let sp = 0;
+    let ti = None;
+    let ci = None;
+    let ii = None;
+    let ss = None;
+    let ts = None;
+    let r = String::from("N");
+
+    SEQX {
         sp,
         gcd,
         isr,
@@ -1180,30 +1208,30 @@ fn seq_fingerprint(ap: &AllPacketRR) -> Result<SEQX, PistolError> {
         ss,
         ts,
         r,
-    })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct OPSX {
-    pub o1: String,
-    pub o2: String,
-    pub o3: String,
-    pub o4: String,
-    pub o5: String,
-    pub o6: String,
+    pub o1: Option<String>,
+    pub o2: Option<String>,
+    pub o3: Option<String>,
+    pub o4: Option<String>,
+    pub o5: Option<String>,
+    pub o6: Option<String>,
     // Fit the db file.
-    pub r: String,
+    pub(crate) r: String,
 }
 
 impl Default for OPSX {
     fn default() -> Self {
         Self {
-            o1: String::new(),
-            o2: String::new(),
-            o3: String::new(),
-            o4: String::new(),
-            o5: String::new(),
-            o6: String::new(),
+            o1: None,
+            o2: None,
+            o3: None,
+            o4: None,
+            o5: None,
+            o6: None,
             r: String::new(),
         }
     }
@@ -1215,57 +1243,57 @@ impl fmt::Display for OPSX {
             "Y" => {
                 let mut first_elem = true;
                 let mut output = String::from("OPS(");
-                if self.o1.len() > 0 {
+                if let Some(o1) = &self.o1 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("O1={}", self.o1)
+                        format!("O1={}", o1)
                     } else {
-                        format!("%O1={}", self.o1)
+                        format!("%O1={}", o1)
                     };
                     output += &ox_str;
                 }
-                if self.o2.len() > 0 {
+                if let Some(o2) = &self.o2 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("O2={}", self.o2)
+                        format!("O2={}", o2)
                     } else {
-                        format!("%O2={}", self.o2)
+                        format!("%O2={}", o2)
                     };
                     output += &ox_str;
                 }
-                if self.o3.len() > 0 {
+                if let Some(o3) = &self.o3 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("O3={}", self.o3)
+                        format!("O3={}", o3)
                     } else {
-                        format!("%O3={}", self.o3)
+                        format!("%O3={}", o3)
                     };
                     output += &ox_str;
                 }
-                if self.o4.len() > 0 {
+                if let Some(o4) = &self.o4 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("O4={}", self.o4)
+                        format!("O4={}", o4)
                     } else {
-                        format!("%O4={}", self.o4)
+                        format!("%O4={}", o4)
                     };
                     output += &ox_str;
                 }
-                if self.o5.len() > 0 {
+                if let Some(o5) = &self.o5 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("O5={}", self.o5)
+                        format!("O5={}", o5)
                     } else {
-                        format!("%O5={}", self.o5)
+                        format!("%O5={}", o5)
                     };
                     output += &ox_str;
                 }
-                if self.o6.len() > 0 {
+                if let Some(o6) = &self.o6 {
                     let ox_str = if first_elem {
                         // first_elem = false;
-                        format!("O6={}", self.o6)
+                        format!("O6={}", o6)
                     } else {
-                        format!("%O6={}", self.o6)
+                        format!("%O6={}", o6)
                     };
                     output += &ox_str;
                 }
@@ -1273,29 +1301,31 @@ impl fmt::Display for OPSX {
                 write!(f, "{}", output)
             }
             _ => {
-                let output = format!("OPS(R={})", self.r);
+                let output = "OPS(R=N)";
                 write!(f, "{}", output)
             }
         }
     }
 }
 
-pub(crate) fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
-    let rops = |rvec: Vec<String>| -> bool {
+pub(crate) fn ops_fingerprint(ap: &AllPacketRR) -> OPSX {
+    let rops = |rvec: Vec<Option<String>>| -> bool {
         let mut flag = true;
         for r in rvec {
-            if r == "N" {
-                flag = false;
+            if let Some(r) = r {
+                if r == "N" {
+                    flag = false;
+                }
             }
         }
         flag
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1")?;
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2")?;
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3")?;
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4")?;
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5")?;
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6")?;
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1");
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2");
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3");
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4");
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5");
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6");
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     // println!("{:?}", rvec);
     let flag = rops(rvec);
@@ -1305,9 +1335,9 @@ pub(crate) fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
         String::from("N")
     };
 
-    let (o1, o2, o3, o4, o5, o6) = tcp_ox(&ap.seq)?;
+    let (o1, o2, o3, o4, o5, o6) = tcp_ox(&ap.seq);
 
-    Ok(OPSX {
+    OPSX {
         o1,
         o2,
         o3,
@@ -1315,30 +1345,30 @@ pub(crate) fn ops_fingerprint(ap: &AllPacketRR) -> Result<OPSX, PistolError> {
         o5,
         o6,
         r,
-    })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct WINX {
-    pub w1: u16,
-    pub w2: u16,
-    pub w3: u16,
-    pub w4: u16,
-    pub w5: u16,
-    pub w6: u16,
+    pub w1: Option<u16>,
+    pub w2: Option<u16>,
+    pub w3: Option<u16>,
+    pub w4: Option<u16>,
+    pub w5: Option<u16>,
+    pub w6: Option<u16>,
     // Fit.
-    pub r: String,
+    pub(crate) r: String,
 }
 
 impl Default for WINX {
     fn default() -> Self {
         Self {
-            w1: 0,
-            w2: 0,
-            w3: 0,
-            w4: 0,
-            w5: 0,
-            w6: 0,
+            w1: None,
+            w2: None,
+            w3: None,
+            w4: None,
+            w5: None,
+            w6: None,
             r: String::new(),
         }
     }
@@ -1350,57 +1380,57 @@ impl fmt::Display for WINX {
             "Y" => {
                 let mut first_elem = true;
                 let mut output = String::from("WIN(");
-                if self.w1 > 0 {
+                if let Some(w1) = self.w1 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("W1={:X}", self.w1)
+                        format!("W1={:X}", w1)
                     } else {
-                        format!("%W1={:X}", self.w1)
+                        format!("%W1={:X}", w1)
                     };
                     output += &ox_str;
                 }
-                if self.w2 > 0 {
+                if let Some(w2) = self.w2 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("W2={:X}", self.w2)
+                        format!("W2={:X}", w2)
                     } else {
-                        format!("%W2={:X}", self.w2)
+                        format!("%W2={:X}", w2)
                     };
                     output += &ox_str;
                 }
-                if self.w3 > 0 {
+                if let Some(w3) = self.w3 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("W3={:X}", self.w3)
+                        format!("W3={:X}", w3)
                     } else {
-                        format!("%W3={:X}", self.w3)
+                        format!("%W3={:X}", w3)
                     };
                     output += &ox_str;
                 }
-                if self.w4 > 0 {
+                if let Some(w4) = self.w4 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("W4={:X}", self.w4)
+                        format!("W4={:X}", w4)
                     } else {
-                        format!("%W4={:X}", self.w4)
+                        format!("%W4={:X}", w4)
                     };
                     output += &ox_str;
                 }
-                if self.w5 > 0 {
+                if let Some(w5) = self.w5 {
                     let ox_str = if first_elem {
                         first_elem = false;
-                        format!("W5={:X}", self.w5)
+                        format!("W5={:X}", w5)
                     } else {
-                        format!("%W5={:X}", self.w5)
+                        format!("%W5={:X}", w5)
                     };
                     output += &ox_str;
                 }
-                if self.w6 > 0 {
+                if let Some(w6) = self.w6 {
                     let ox_str = if first_elem {
                         // first_elem = false;
-                        format!("W6={:X}", self.w6)
+                        format!("W6={:X}", w6)
                     } else {
-                        format!("%W6={:X}", self.w6)
+                        format!("%W6={:X}", w6)
                     };
                     output += &ox_str;
                 }
@@ -1408,29 +1438,31 @@ impl fmt::Display for WINX {
                 write!(f, "{}", output)
             }
             _ => {
-                let output = format!("WIN(R={})", self.r);
+                let output = "WIN(R=N)";
                 write!(f, "{}", output)
             }
         }
     }
 }
 
-pub(crate) fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
-    let rwin = |rvec: Vec<String>| -> bool {
+pub(crate) fn win_fingerprint(ap: &AllPacketRR) -> WINX {
+    let rwin = |rvec: Vec<Option<String>>| -> bool {
         let mut flag = true;
         for r in rvec {
-            if r == "N" {
-                flag = false;
+            if let Some(r) = r {
+                if r == "N" {
+                    flag = false;
+                }
             }
         }
         flag
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1")?;
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2")?;
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3")?;
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4")?;
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5")?;
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6")?;
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1");
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2");
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3");
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4");
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5");
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6");
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     let flag = rwin(rvec);
     let r = if flag {
@@ -1439,8 +1471,8 @@ pub(crate) fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
         String::from("N")
     };
 
-    let (w1, w2, w3, w4, w5, w6) = tcp_wx(&ap.seq)?;
-    Ok(WINX {
+    let (w1, w2, w3, w4, w5, w6) = tcp_wx(&ap.seq);
+    WINX {
         w1,
         w2,
         w3,
@@ -1448,152 +1480,113 @@ pub(crate) fn win_fingerprint(ap: &AllPacketRR) -> Result<WINX, PistolError> {
         w5,
         w6,
         r,
-    })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ECNX {
     // R, DF, T, TG, W, O, CC, and Q tests.
     pub r: String,
-    pub df: String,
+    pub df: Option<String>,
     pub t: Option<u16>, // if udp probe has no returns, use tg instead of t
-    pub tg: u16,
-    pub w: u16,
-    pub o: String,
-    pub cc: String,
-    pub q: String,
+    pub tg: Option<u16>,
+    pub w: Option<u16>,
+    pub o: Option<String>,
+    pub cc: Option<String>,
+    pub q: Option<String>,
 }
 
 impl Default for ECNX {
     fn default() -> Self {
         Self {
             r: String::new(),
-            df: String::new(),
+            df: None,
             t: None,
-            tg: 0,
-            w: 0,
-            o: String::new(),
-            cc: String::new(),
-            q: String::new(),
+            tg: None,
+            w: None,
+            o: None,
+            cc: None,
+            q: None,
         }
     }
 }
 
 impl fmt::Display for ECNX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.r.as_str() {
-            "Y" => {
-                let mut first_elem = true;
-                let mut output = String::from("ECN(");
-                if self.r.len() > 0 {
-                    let r_str = if first_elem {
-                        first_elem = false;
-                        format!("R={}", self.r)
-                    } else {
-                        format!("%R={}", self.r)
-                    };
-                    output += &r_str;
-                }
-                if self.df.len() > 0 {
-                    let df_str = if first_elem {
-                        first_elem = false;
-                        format!("DF={}", self.df)
-                    } else {
-                        format!("%DF={}", self.df)
-                    };
-                    output += &df_str;
-                }
-                if let Some(t) = self.t {
-                    let t_str = if first_elem {
-                        first_elem = false;
-                        format!("T={:X}", t)
-                    } else {
-                        format!("%T={:X}", t)
-                    };
-                    output += &t_str;
-                } else if self.tg > 0 {
-                    // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
-                    let tg_str = if first_elem {
-                        first_elem = false;
-                        format!("TG={:X}", self.tg)
-                    } else {
-                        format!("%TG={:X}", self.tg)
-                    };
-                    output += &tg_str;
-                }
-                if self.w > 0 {
-                    let w_str = if first_elem {
-                        first_elem = false;
-                        format!("W={:X}", self.w)
-                    } else {
-                        format!("%W={:X}", self.w)
-                    };
-                    output += &w_str;
-                }
-                if self.o.len() > 0 {
-                    let o_str = if first_elem {
-                        first_elem = false;
-                        format!("O={}", self.o)
-                    } else {
-                        format!("%O={}", self.o)
-                    };
-                    output += &o_str;
-                }
-                if self.cc.len() > 0 {
-                    let cc_str = if first_elem {
-                        first_elem = false;
-                        format!("CC={}", self.cc)
-                    } else {
-                        format!("%CC={}", self.cc)
-                    };
-                    output += &cc_str;
-                }
-                let q_str = if first_elem {
-                    // first_elem = false;
-                    format!("Q={}", self.q)
-                } else {
-                    format!("%Q={}", self.q)
-                };
+        if self.r == "Y" {
+            let mut output = String::from("ECN(R=Y");
+            if let Some(df) = &self.df {
+                let df_str = format!("%DF={}", df);
+                output += &df_str;
+            }
+            if let Some(t) = self.t {
+                let t_str = format!("%T={:X}", t);
+                output += &t_str;
+            } else if let Some(tg) = self.tg {
+                // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
+                let tg_str = format!("%TG={:X}", tg);
+                output += &tg_str;
+            }
+            if let Some(w) = self.w {
+                let w_str = format!("%W={:X}", w);
+                output += &w_str;
+            }
+            if let Some(o) = &self.o {
+                let o_str = format!("%O={}", o);
+                output += &o_str;
+            }
+            if let Some(cc) = &self.cc {
+                let cc_str = format!("%CC={}", cc);
+                output += &cc_str;
+            }
+            if let Some(q) = &self.q {
+                let q_str = format!("%Q={}", q);
                 output += &q_str;
-                output += ")";
-                write!(f, "{}", output)
             }
-            _ => {
-                let output = format!("ECN(R={})", self.r);
-                write!(f, "{}", output)
-            }
+            output += ")";
+            write!(f, "{}", output)
+        } else {
+            let output = "ECN(R=N)";
+            write!(f, "{}", output)
         }
     }
 }
 
-pub(crate) fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
-    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response2, "ecn")?;
-    let (df, t, tg, w, o, cc, q) = match r.as_str() {
-        "Y" => {
-            let df = tcp_udp_df(&ap.ecn.ecn.response2, "ecn")?;
-            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response2, &ap.u1, "ecn")?;
-            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response2, "ecn")?;
-            let w = tcp_w(&ap.ecn.ecn.response2, "ecn")?;
-            let o = tcp_o(&ap.ecn.ecn.response2, "ecn")?;
-            let cc = tcp_cc(&ap.ecn.ecn.response2, "ecn")?;
-            let q = tcp_q(&ap.ecn.ecn.response2, "ecn")?;
+pub(crate) fn ecn_fingerprint(ap: &AllPacketRR) -> ECNX {
+    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response2, "ecn");
+    if let Some(rv) = r {
+        if rv == "Y" {
+            let df = tcp_udp_df(&ap.ecn.ecn.response2, "ecn");
+            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response2, &ap.u1, "ecn");
+            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response2, "ecn");
+            let w = tcp_w(&ap.ecn.ecn.response2, "ecn");
+            let o = tcp_o(&ap.ecn.ecn.response2, "ecn");
+            let cc = tcp_cc(&ap.ecn.ecn.response2, "ecn");
+            let q = tcp_q(&ap.ecn.ecn.response2, "ecn");
 
-            (df, t, tg, w, o, cc, q)
+            return ECNX {
+                r: rv,
+                df,
+                t,
+                tg,
+                w,
+                o,
+                cc,
+                q,
+            };
         }
-        _ => {
-            //  If there is no reply, remaining fields for the test are omitted.
-            let df = String::new();
-            let t = Some(0);
-            let tg = 0;
-            let w = 0;
-            let o = String::new();
-            let cc = String::new();
-            let q = String::new();
-            (df, t, tg, w, o, cc, q)
-        }
-    };
+    }
+    //  If there is no reply, remaining fields for the test are omitted.
+    let r = String::from("N");
+    let df = None;
+    let t = None;
+    let tg = None;
+    let w = None;
+    let o = None;
+    let cc = None;
+    let q = None;
 
-    Ok(ECNX {
+    ECNX {
         r,
         df,
         t,
@@ -1602,7 +1595,7 @@ pub(crate) fn ecn_fingerprint(ap: &AllPacketRR) -> Result<ECNX, PistolError> {
         o,
         cc,
         q,
-    })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1610,16 +1603,16 @@ pub struct TXX {
     pub name: String,
     // R, DF, T, TG, W, S, A, F, O, RD, and Q tests.
     pub r: String,
-    pub df: String,
+    pub df: Option<String>,
     pub t: Option<u16>,
-    pub tg: u16,
-    pub w: u16,
-    pub s: String,
-    pub a: String,
-    pub f: String,
-    pub o: String,
-    pub rd: u32, // CRC32
-    pub q: String,
+    pub tg: Option<u16>,
+    pub w: Option<u16>,
+    pub s: Option<String>,
+    pub a: Option<String>,
+    pub f: Option<String>,
+    pub o: Option<String>,
+    pub rd: Option<u32>, // CRC32
+    pub q: Option<String>,
 }
 
 impl Default for TXX {
@@ -1627,177 +1620,123 @@ impl Default for TXX {
         Self {
             name: String::new(),
             r: String::new(),
-            df: String::new(),
+            df: None,
             t: None,
-            tg: 0,
-            w: 0,
-            s: String::new(),
-            a: String::new(),
-            f: String::new(),
-            o: String::new(),
-            rd: 0,
-            q: String::new(),
+            tg: None,
+            w: None,
+            s: None,
+            a: None,
+            f: None,
+            o: None,
+            rd: None,
+            q: None,
         }
     }
 }
 
 impl fmt::Display for TXX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.r.as_str() {
-            "Y" => {
-                let mut first_elem = true;
-                let mut output = format!("{}(", self.name);
-                if self.r.len() > 0 {
-                    let r_str = if first_elem {
-                        first_elem = false;
-                        format!("R={}", self.r)
-                    } else {
-                        format!("%R={}", self.r)
-                    };
-                    output += &r_str;
-                }
-                if self.df.len() > 0 {
-                    let df_str = if first_elem {
-                        first_elem = false;
-                        format!("DF={}", self.df)
-                    } else {
-                        format!("%DF={}", self.df)
-                    };
-                    output += &df_str;
-                }
-                if let Some(t) = self.t {
-                    let t_str = if first_elem {
-                        first_elem = false;
-                        format!("T={:X}", t)
-                    } else {
-                        format!("%T={:X}", t)
-                    };
-                    output += &t_str;
-                } else if self.tg > 0 {
-                    // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
-                    let tg_str = if first_elem {
-                        first_elem = false;
-                        format!("TG={:X}", self.tg)
-                    } else {
-                        format!("%TG={:X}", self.tg)
-                    };
-                    output += &tg_str;
-                }
-                if self.name != "T1" {
-                    let w_str = if first_elem {
-                        first_elem = false;
-                        format!("W={:X}", self.w)
-                    } else {
-                        format!("%W={:X}", self.w)
-                    };
+        if self.r == "Y" {
+            let mut output = format!("{}(R=Y", self.name);
+            if let Some(df) = &self.df {
+                let df_str = format!("%DF={}", df);
+                output += &df_str;
+            }
+            if let Some(t) = self.t {
+                let t_str = format!("%T={:X}", t);
+                output += &t_str;
+            } else if let Some(tg) = self.tg {
+                // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
+                let tg_str = format!("%TG={:X}", tg);
+                output += &tg_str;
+            }
+            if self.name != "T1" {
+                if let Some(w) = self.w {
+                    let w_str = format!("%W={:X}", w);
                     output += &w_str;
                 }
-                if self.s.len() > 0 {
-                    let s_str = if first_elem {
-                        first_elem = false;
-                        format!("S={}", self.s)
-                    } else {
-                        format!("%S={}", self.s)
-                    };
-                    output += &s_str;
-                }
-                if self.a.len() > 0 {
-                    let a_str = if first_elem {
-                        first_elem = false;
-                        format!("A={}", self.a)
-                    } else {
-                        format!("%A={}", self.a)
-                    };
-                    output += &a_str;
-                }
-                if self.f.len() > 0 {
-                    let f_str = if first_elem {
-                        first_elem = false;
-                        format!("F={}", self.f)
-                    } else {
-                        format!("%F={}", self.f)
-                    };
-                    output += &f_str;
-                }
-                if self.name != "T1" {
-                    let o_str = if first_elem {
-                        first_elem = false;
-                        format!("O={}", self.o)
-                    } else {
-                        format!("%O={}", self.o)
-                    };
+            }
+            if let Some(s) = &self.s {
+                let s_str = format!("%S={}", s);
+                output += &s_str;
+            }
+            if let Some(a) = &self.a {
+                let a_str = format!("%A={}", a);
+                output += &a_str;
+            }
+            if let Some(f) = &self.f {
+                let f_str = format!("%F={}", f);
+                output += &f_str;
+            }
+            if self.name != "T1" {
+                if let Some(o) = &self.o {
+                    let o_str = format!("%O={}", o);
                     output += &o_str;
                 }
-                let rd_str = if first_elem {
-                    first_elem = false;
-                    format!("RD={:X}", self.rd)
-                } else {
-                    format!("%RD={:X}", self.rd)
-                };
+            }
+            if let Some(rd) = self.rd {
+                let rd_str = format!("%RD={:X}", rd);
                 output += &rd_str;
-                let q_str = if first_elem {
-                    // first_elem = false;
-                    format!("Q={}", self.q)
-                } else {
-                    format!("%Q={}", self.q)
-                };
+            }
+            if let Some(q) = &self.q {
+                let q_str = format!("%Q={}", q);
                 output += &q_str;
-                output += ")";
-
-                write!(f, "{}", output)
             }
-            _ => {
-                let output = format!("{}(R={})", self.name, self.r);
-                write!(f, "{}", output)
-            }
+            output += ")";
+            write!(f, "{}", output)
+        } else {
+            let output = format!("{}(R=N)", self.name);
+            write!(f, "{}", output)
         }
     }
 }
 
-pub(crate) fn tx_fingerprint(
-    ap: &AllPacketRR,
-) -> Result<(TXX, TXX, TXX, TXX, TXX, TXX, TXX), PistolError> {
-    fn do_jobs(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> Result<TXX, PistolError> {
-        println!("processing {} probe", name);
-        let r = tcp_udp_icmp_r(&tx.response2, name)?;
-        println!("111");
-        let (df, t, tg, w, s, a, f, o, rd, q) = match r.as_str() {
-            "Y" => {
-                println!("222");
-                let df = tcp_udp_df(&tx.response2, &name.to_lowercase())?;
-                println!("333");
-                let t = tcp_udp_icmp_t(&tx.response2, u1rr, &name.to_lowercase())?;
-                println!("444");
-                let tg = tcp_udp_icmp_tg(&tx.response2, &name.to_lowercase())?;
-                println!("555");
-                let w = tcp_w(&tx.response2, &name.to_lowercase())?;
-                println!("666");
-                let s = tcp_s(&tx.request3, &tx.response2, &name.to_lowercase())?;
-                let a = tcp_a(&tx.request3, &tx.response2, &name.to_lowercase())?;
-                let f = tcp_f(&tx.response2, &name.to_lowercase())?;
-                let o = tcp_o(&tx.response2, &name.to_lowercase())?;
-                let rd = tcp_rd(&tx.response2, &name.to_lowercase())?;
-                let q = tcp_q(&tx.response2, &name.to_lowercase())?;
-                println!("000");
+pub(crate) fn tx_fingerprint(ap: &AllPacketRR) -> (TXX, TXX, TXX, TXX, TXX, TXX, TXX) {
+    fn do_jobs(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> TXX {
+        let r = tcp_udp_icmp_r(&tx.response2, name);
+        if let Some(rv) = r {
+            if rv == "Y" {
+                let df = tcp_udp_df(&tx.response2, &name.to_lowercase());
+                let t = tcp_udp_icmp_t(&tx.response2, u1rr, &name.to_lowercase());
+                let tg = tcp_udp_icmp_tg(&tx.response2, &name.to_lowercase());
+                let w = tcp_w(&tx.response2, &name.to_lowercase());
+                let s = tcp_s(&tx.request3, &tx.response2, &name.to_lowercase());
+                let a = tcp_a(&tx.request3, &tx.response2, &name.to_lowercase());
+                let f = tcp_f(&tx.response2, &name.to_lowercase());
+                let o = tcp_o(&tx.response2, &name.to_lowercase());
+                let rd = tcp_rd(&tx.response2, &name.to_lowercase());
+                let q = tcp_q(&tx.response2, &name.to_lowercase());
 
-                (df, t, tg, w, s, a, f, o, rd, q)
+                return TXX {
+                    name: name.to_string(),
+                    r: rv,
+                    df,
+                    t,
+                    tg,
+                    w,
+                    s,
+                    a,
+                    f,
+                    o,
+                    rd,
+                    q,
+                };
             }
-            _ => {
-                let df = String::new();
-                let t = Some(0);
-                let tg = 0;
-                let w = 0;
-                let s = String::new();
-                let a = String::new();
-                let f = String::new();
-                let o = String::new();
-                let rd = 0;
-                let q = String::new();
-                (df, t, tg, w, s, a, f, o, rd, q)
-            }
-        };
+        }
 
-        Ok(TXX {
+        let r = String::from("N");
+        let df = None;
+        let t = None;
+        let tg = None;
+        let w = None;
+        let s = None;
+        let a = None;
+        let f = None;
+        let o = None;
+        let rd = None;
+        let q = None;
+
+        TXX {
             name: name.to_string(),
             r,
             df,
@@ -1810,195 +1749,152 @@ pub(crate) fn tx_fingerprint(
             o,
             rd,
             q,
-        })
+        }
     }
 
     // The final line related to these probes, T1, contains various test values for packet #1.
-    let t1 = do_jobs(&ap.seq.seq1, &ap.u1, "t1")?;
-    let t2 = do_jobs(&ap.tx.t2, &ap.u1, "t2")?;
-    let t3 = do_jobs(&ap.tx.t3, &ap.u1, "t3")?;
-    let t4 = do_jobs(&ap.tx.t4, &ap.u1, "t4")?;
-    let t5 = do_jobs(&ap.tx.t5, &ap.u1, "t5")?;
-    let t6 = do_jobs(&ap.tx.t6, &ap.u1, "t6")?;
-    let t7 = do_jobs(&ap.tx.t7, &ap.u1, "t7")?;
+    let t1 = do_jobs(&ap.seq.seq1, &ap.u1, "T1");
+    let t2 = do_jobs(&ap.tx.t2, &ap.u1, "T2");
+    let t3 = do_jobs(&ap.tx.t3, &ap.u1, "T3");
+    let t4 = do_jobs(&ap.tx.t4, &ap.u1, "T4");
+    let t5 = do_jobs(&ap.tx.t5, &ap.u1, "T5");
+    let t6 = do_jobs(&ap.tx.t6, &ap.u1, "T6");
+    let t7 = do_jobs(&ap.tx.t7, &ap.u1, "T7");
 
-    Ok((t1, t2, t3, t4, t5, t6, t7))
+    (t1, t2, t3, t4, t5, t6, t7)
 }
 
 #[derive(Debug, Clone)]
 pub struct U1X {
     // R, DF, T, TG, IPL, UN, RIPL, RID, RIPCK, RUCK, and RUD tests.
     pub r: String,
-    pub df: String,
+    pub df: Option<String>,
     pub t: Option<u16>,
-    pub tg: u16,
-    pub ipl: usize,
-    pub un: u32,
-    pub ripl: String,
-    pub rid: String,
-    pub ripck: String,
-    pub ruck: String,
-    pub rud: String,
+    pub tg: Option<u16>,
+    pub ipl: u32,
+    pub un: Option<u32>,
+    pub ripl: Option<String>,
+    pub rid: Option<String>,
+    pub ripck: Option<String>,
+    pub ruck: Option<String>,
+    pub rud: Option<String>,
 }
 
 impl Default for U1X {
     fn default() -> Self {
         Self {
             r: String::new(),
-            df: String::new(),
+            df: None,
             t: None,
-            tg: 0,
+            tg: None,
             ipl: 0,
-            un: 0,
-            ripl: String::new(),
-            rid: String::new(),
-            ripck: String::new(),
-            ruck: String::new(),
-            rud: String::new(),
+            un: None,
+            ripl: None,
+            rid: None,
+            ripck: None,
+            ruck: None,
+            rud: None,
         }
     }
 }
 
 impl fmt::Display for U1X {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first_elem = true;
-        let mut output = String::from("U1(");
-        if self.r.len() > 0 {
-            let r_str = if first_elem {
-                first_elem = false;
-                format!("R={}", self.r)
-            } else {
-                format!("%R={}", self.r)
-            };
-            output += &r_str;
-        }
-        if self.df.len() > 0 {
-            let df_str = if first_elem {
-                first_elem = false;
-                format!("DF={}", self.df)
-            } else {
-                format!("%DF={}", self.df)
-            };
-            output += &df_str;
-        }
-        if let Some(t) = self.t {
-            let t_str = if first_elem {
-                first_elem = false;
-                format!("T={:X}", t)
-            } else {
-                format!("%T={:X}", t)
-            };
-            output += &t_str;
-        } else if self.tg > 0 {
-            // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
-            let tg_str = if first_elem {
-                first_elem = false;
-                format!("TG={}", self.tg)
-            } else {
-                format!("%TG={}", self.tg)
-            };
-            output += &tg_str;
-        }
-        if self.ipl > 0 {
-            let ipl_str = if first_elem {
-                first_elem = false;
-                format!("IPL={:X}", self.ipl)
-            } else {
-                format!("%IPL={:X}", self.ipl)
-            };
-            output += &ipl_str;
-        }
-        let un_str = if first_elem {
-            first_elem = false;
-            format!("UN={:X}", self.un)
+        if self.r == "Y" {
+            let mut output = String::from("U1(R=Y");
+            if let Some(df) = &self.df {
+                let df_str = format!("%DF={}", df);
+                output += &df_str;
+            }
+            if let Some(t) = self.t {
+                let t_str = format!("%T={:X}", t);
+                output += &t_str;
+            } else if let Some(tg) = self.tg {
+                // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
+                let tg_str = format!("%TG={}", tg);
+                output += &tg_str;
+            }
+            if self.ipl != 0 {
+                let ipl_str = format!("%IPL={:X}", self.ipl);
+                output += &ipl_str;
+            }
+            if let Some(un) = self.un {
+                let un_str = format!("%UN={:X}", un);
+                output += &un_str;
+            }
+            if let Some(ripl) = &self.ripl {
+                let ripl_str = format!("%RIPL={}", ripl);
+                output += &ripl_str;
+            }
+            if let Some(rid) = &self.rid {
+                let rid_str = format!("%RID={}", rid);
+                output += &rid_str;
+            }
+            if let Some(ripck) = &self.ripck {
+                let ripck_str = format!("%RIPCK={}", ripck);
+                output += &ripck_str;
+            }
+            if let Some(ruck) = &self.ruck {
+                let ruck_str = format!("%RUCK={}", ruck);
+                output += &ruck_str;
+            }
+            if let Some(rud) = &self.rud {
+                let rud_str = format!("%RUD={}", rud);
+                output += &rud_str;
+            }
+            output += ")";
+            write!(f, "{}", output)
         } else {
-            format!("%UN={:X}", self.un)
-        };
-        output += &un_str;
-        if self.ripl.len() > 0 {
-            let ripl_str = if first_elem {
-                first_elem = false;
-                format!("RIPL={}", self.ripl)
-            } else {
-                format!("%RIPL={}", self.ripl)
-            };
-            output += &ripl_str;
+            let output = "U1(R=N)";
+            write!(f, "{}", output)
         }
-        if self.rid.len() > 0 {
-            let rid_str = if first_elem {
-                first_elem = false;
-                format!("RID={}", self.rid)
-            } else {
-                format!("%RID={}", self.rid)
-            };
-            output += &rid_str;
-        }
-        if self.ripck.len() > 0 {
-            let ripck_str = if first_elem {
-                first_elem = false;
-                format!("RIPCK={}", self.ripck)
-            } else {
-                format!("%RIPCK={}", self.ripck)
-            };
-            output += &ripck_str;
-        }
-        if self.ruck.len() > 0 {
-            let ruck_str = if first_elem {
-                first_elem = false;
-                format!("RUCK={}", self.ruck)
-            } else {
-                format!("%RUCK={}", self.ruck)
-            };
-            output += &ruck_str;
-        }
-        if self.rud.len() > 0 {
-            let rud_str = if first_elem {
-                // first_elem = false;
-                format!("RUD={}", self.rud)
-            } else {
-                format!("%RUD={}", self.rud)
-            };
-            output += &rud_str;
-        }
-        output += ")";
-        write!(f, "{}", output)
     }
 }
 
-pub(crate) fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
-    let r = tcp_udp_icmp_r(&ap.u1.u1.response2, "u1")?;
-    let (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud) = match r.as_str() {
-        "Y" => {
-            let df = tcp_udp_df(&ap.u1.u1.response2, "u1")?;
-            let t = tcp_udp_icmp_t(&ap.u1.u1.response2, &ap.u1, "u1")?;
-            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response2, "u1")?;
-            let ipl = udp_ipl(&ap.u1)?;
-            let un = udp_un(&ap.u1, "u1")?;
-            let ripl = udp_ripl(&ap.u1, "u1")?;
-            let rid = udp_rid(&ap.u1, "u1")?;
-            let ripck = udp_ripck(&ap.u1, "u1")?;
-            let ruck = udp_ruck(&ap.u1, "u1")?;
-            let rud = udp_rud(&ap.u1, "u1")?;
+pub(crate) fn u1_fingerprint(ap: &AllPacketRR) -> U1X {
+    let r = tcp_udp_icmp_r(&ap.u1.u1.response2, "u1");
+    if let Some(rv) = r.clone() {
+        if rv == "Y" {
+            let df = tcp_udp_df(&ap.u1.u1.response2, "u1");
+            let t = tcp_udp_icmp_t(&ap.u1.u1.response2, &ap.u1, "u1");
+            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response2, "u1");
+            let ipl = udp_ipl(&ap.u1);
+            let un = udp_un(&ap.u1, "u1");
+            let ripl = udp_ripl(&ap.u1, "u1");
+            let rid = udp_rid(&ap.u1, "u1");
+            let ripck = udp_ripck(&ap.u1, "u1");
+            let ruck = udp_ruck(&ap.u1, "u1");
+            let rud = udp_rud(&ap.u1, "u1");
 
-            (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud)
+            return U1X {
+                r: rv,
+                df,
+                t,
+                tg,
+                ipl,
+                un,
+                ripl,
+                rid,
+                ripck,
+                ruck,
+                rud,
+            };
         }
-        _ => {
-            let df = String::new();
-            let t = Some(0);
-            let tg = 0;
-            let ipl = 0;
-            let un = 0;
-            let ripl = String::new();
-            let rid = String::new();
-            let ripck = String::new();
-            let ruck = String::new();
-            let rud = String::new();
+    }
 
-            (df, t, tg, ipl, un, ripl, rid, ripck, ruck, rud)
-        }
-    };
+    let r = String::from("N");
+    let df = None;
+    let t = None;
+    let tg = None;
+    let ipl = 0;
+    let un = None;
+    let ripl = None;
+    let rid = None;
+    let ripck = None;
+    let ruck = None;
+    let rud = None;
 
-    Ok(U1X {
+    U1X {
         r,
         df,
         t,
@@ -2010,143 +1906,83 @@ pub(crate) fn u1_fingerprint(ap: &AllPacketRR) -> Result<U1X, PistolError> {
         ripck,
         ruck,
         rud,
-    })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct IEX {
     // R, DFI, T, TG, and CD tests.
     pub r: String,
-    pub dfi: String,
+    pub dfi: Option<String>,
     pub t: Option<u16>,
-    pub tg: u16,
-    pub cd: String,
+    pub tg: Option<u16>,
+    pub cd: Option<String>,
 }
 
 impl Default for IEX {
     fn default() -> Self {
         Self {
             r: String::new(),
-            dfi: String::new(),
+            dfi: None,
             t: None,
-            tg: 0,
-            cd: String::new(),
+            tg: None,
+            cd: None,
         }
     }
 }
 
 impl fmt::Display for IEX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first_elem = true;
-        let mut output = String::from("IE(");
-        if self.r.len() > 0 {
-            let r_str = if first_elem {
-                first_elem = false;
-                format!("R={}", self.r)
-            } else {
-                format!("%R={}", self.r)
-            };
-            output += &r_str;
-        }
-        if self.dfi.len() > 0 {
-            let dfi_str = if first_elem {
-                first_elem = false;
-                format!("DFI={}", self.dfi)
-            } else {
-                format!("%DFI={}", self.dfi)
-            };
-            output += &dfi_str;
-        }
-        if let Some(t) = self.t {
-            let t_str = if first_elem {
-                first_elem = false;
-                format!("T={:X}", t)
-            } else {
-                format!("%T={:X}", t)
-            };
-            output += &t_str;
-        } else if self.tg > 0 {
-            // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
-            let tg_str = if first_elem {
-                first_elem = false;
-                format!("TG={}", self.tg)
-            } else {
-                format!("%TG={}", self.tg)
-            };
-            output += &tg_str;
-        }
-        if self.cd.len() > 0 {
-            let cd_str = if first_elem {
-                // first_elem = false;
-                format!("CD={}", self.cd)
-            } else {
-                format!("%CD={}", self.cd)
-            };
-            output += &cd_str;
-        }
-        output += ")";
-        write!(f, "{}", output)
-    }
-}
-
-pub(crate) fn ie_fingerprint(ap: &AllPacketRR) -> Result<IEX, PistolError> {
-    let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response2, "ie1")?;
-    let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response2, "ie2")?;
-    let (r, dfi, t, tg, cd) = if r1 == "Y" && r2 == "Y" {
-        // The R value is only true (Y) if both probes elicit responses.
-        let r = String::from("Y");
-        let dfi = icmp_dfi(&ap.ie, "ie")?;
-        let t = tcp_udp_icmp_t(&ap.ie.ie1.response2, &ap.u1, "ie")?;
-        let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response2, "ie")?;
-        let cd = icmp_cd(&ap.ie, "ie")?;
-
-        (r, dfi, t, tg, cd)
-    } else {
-        let r = String::from("N");
-        let dfi = String::new();
-        let t = Some(0);
-        let tg = 0;
-        let cd = String::new();
-
-        (r, dfi, t, tg, cd)
-    };
-
-    Ok(IEX { r, dfi, t, tg, cd })
-}
-
-fn sort_pick(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
-    /* Insertion Sort (O(n^2) ==! anyway) */
-    let mut ret = Vec::new();
-    let mut arr = arr.to_vec();
-
-    fn pick(arr: &[OsInfo]) -> (OsInfo, Vec<OsInfo>) {
-        let mut max_score = 0;
-        let mut max_score_loc = 0;
-        let mut arr = arr.to_vec();
-        let mut i = 0;
-        for a in &arr {
-            if a.score > max_score {
-                max_score = a.score;
-                max_score_loc = i;
+        if self.r == "Y" {
+            let mut output = String::from("IE(R=Y");
+            if let Some(dfi) = &self.dfi {
+                let dfi_str = format!("%DFI={}", dfi);
+                output += &dfi_str;
             }
-            i += 1;
+            if let Some(t) = self.t {
+                let t_str = format!("%T={:X}", t);
+                output += &t_str;
+            } else if let Some(tg) = self.tg {
+                // This TTL guess field is not printed in a subject fingerprint if the actual TTL (T) value was discovered.
+                let tg_str = format!("%TG={}", tg);
+                output += &tg_str;
+            }
+            if let Some(cd) = &self.cd {
+                let cd_str = format!("%CD={}", cd);
+                output += &cd_str;
+            }
+            output += ")";
+            write!(f, "{}", output)
+        } else {
+            let output = "IE(R=N)";
+            write!(f, "{}", output)
         }
-        let ret = arr.remove(max_score_loc);
-        (ret, arr)
+    }
+}
+
+pub(crate) fn ie_fingerprint(ap: &AllPacketRR) -> IEX {
+    let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response2, "ie1");
+    let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response2, "ie2");
+    if let Some(r1v) = r1.clone() {
+        if let Some(r2v) = r2.clone() {
+            if r1v == "Y" && r2v == "Y" {
+                // The R value is only true (Y) if both probes elicit responses.
+                let r = String::from("Y");
+                let dfi = icmp_dfi(&ap.ie, "ie");
+                let t = tcp_udp_icmp_t(&ap.ie.ie1.response2, &ap.u1, "ie");
+                let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response2, "ie");
+                let cd = icmp_cd(&ap.ie, "ie");
+                return IEX { r, dfi, t, tg, cd };
+            }
+        }
     }
 
-    let mut count = top_k;
-    let mut last_score = 0;
-    while count > 0 {
-        let (max, new_arr) = pick(&arr);
-        if max.score != last_score {
-            count -= 1;
-            last_score = max.score;
-        }
-        arr = new_arr;
-        ret.push(max)
-    }
-    ret
+    let r = String::from("N");
+    let dfi = None;
+    let t = None;
+    let tg = None;
+    let cd = None;
+    IEX { r, dfi, t, tg, cd }
 }
 
 pub(crate) fn os_probe_thread(
@@ -2165,7 +2001,42 @@ pub(crate) fn os_probe_thread(
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
-) -> Result<(Fingerprint, Vec<OsInfo>), PistolError> {
+) -> Result<Option<(Fingerprint, Vec<OsInfo>)>, PistolError> {
+    fn sort_rets(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
+        /* Insertion Sort (O(n^2) ==! anyway) */
+        let mut ret = Vec::new();
+        let mut arr = arr.to_vec();
+
+        fn pick(arr: &[OsInfo]) -> (OsInfo, Vec<OsInfo>) {
+            let mut max_score = 0;
+            let mut max_score_loc = 0;
+            let mut arr = arr.to_vec();
+            let mut i = 0;
+            for a in &arr {
+                if a.score > max_score {
+                    max_score = a.score;
+                    max_score_loc = i;
+                }
+                i += 1;
+            }
+            let ret = arr.remove(max_score_loc);
+            (ret, arr)
+        }
+
+        let mut count = top_k;
+        let mut last_score = 0;
+        while count > 0 {
+            let (max, new_arr) = pick(&arr);
+            if max.score != last_score {
+                count -= 1;
+                last_score = max.score;
+            }
+            arr = new_arr;
+            ret.push(max)
+        }
+        ret
+    }
+
     debug!("send all probes now");
     let ap = send_all_probes(
         dst_mac,
@@ -2216,63 +2087,62 @@ pub(crate) fn os_probe_thread(
 
     // Use seq to judge target is alive or not.
     let seqx = seq_fingerprint(&ap);
-    match seqx {
-        Ok(seqx) => {
-            debug!("SEQX fingerprint parse done");
-            let opsx = ops_fingerprint(&ap)?;
-            debug!("OPSX parse done");
-            let winx = win_fingerprint(&ap)?;
-            debug!("WINX parse done");
-            let ecnx = ecn_fingerprint(&ap)?;
-            debug!("ECNX parse done");
-            let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap)?;
-            debug!("TX parse done");
-            let u1x = u1_fingerprint(&ap)?;
-            debug!("U1X parse done");
-            let iex = ie_fingerprint(&ap)?;
-            debug!("IEX parse done");
+    if seqx.r == "Y" {
+        debug!("SEQX fingerprint parse done");
+        let opsx = ops_fingerprint(&ap);
+        debug!("OPSX parse done");
+        let winx = win_fingerprint(&ap);
+        debug!("WINX parse done");
+        let ecnx = ecn_fingerprint(&ap);
+        debug!("ECNX parse done");
+        let (t1x, t2x, t3x, t4x, t5x, t6x, t7x) = tx_fingerprint(&ap);
+        debug!("TX parse done");
+        let u1x = u1_fingerprint(&ap);
+        debug!("U1X parse done");
+        let iex = ie_fingerprint(&ap);
+        debug!("IEX parse done");
 
-            debug!("generate the fingerprint");
-            let target_fingerprint = Fingerprint {
-                scan,
-                seqx,
-                opsx,
-                winx,
-                ecnx,
-                t1x,
-                t2x,
-                t3x,
-                t4x,
-                t5x,
-                t6x,
-                t7x,
-                u1x,
-                iex,
+        debug!("generate the fingerprint");
+        let target_fingerprint = Fingerprint {
+            scan,
+            seqx,
+            opsx,
+            winx,
+            ecnx,
+            t1x,
+            t2x,
+            t3x,
+            t4x,
+            t5x,
+            t6x,
+            t7x,
+            u1x,
+            iex,
+        };
+
+        let mut rets = Vec::new();
+        for db in &nmap_os_db {
+            let (score, total) = db.check(&target_fingerprint);
+            // println!("name: {}, score: {}", &db.name, score);
+            let osinfo = OsInfo {
+                name: db.name.clone(),
+                class: db.class.clone(),
+                score,
+                total,
+                db: db.clone(),
+                cpe: db.cpe.clone(),
             };
-
-            let mut sort_vec = Vec::new();
-            for db in &nmap_os_db {
-                let (score, total) = db.check(&target_fingerprint);
-                // println!("name: {}, score: {}", &db.name, score);
-                let osinfo = OsInfo {
-                    name: db.name.clone(),
-                    class: db.class.clone(),
-                    score,
-                    total,
-                    db: db.clone(),
-                    cpe: db.cpe.clone(),
-                };
-                sort_vec.push(osinfo);
-            }
-
-            let detect_rets = sort_pick(&sort_vec, top_k);
-            if detect_rets.len() > 0 {
-                debug!("ipv4 fingerprint:\n{}", target_fingerprint);
-                Ok((target_fingerprint, detect_rets))
-            } else {
-                Err(PistolError::OSDetectResultsNullError)
-            }
+            rets.push(osinfo);
         }
-        Err(e) => Err(e),
+
+        let detect_rets = sort_rets(&rets, top_k);
+        if detect_rets.len() > 0 {
+            debug!("ipv4 fingerprint:\n{}", target_fingerprint);
+            return Ok(Some((target_fingerprint, detect_rets)));
+        } else {
+            warn!("no os info matched");
+        }
     }
+
+    Ok(None)
 }

@@ -1713,7 +1713,7 @@ pub(crate) fn os_probe_thread6(
         good_results,
     );
 
-    let features = vectorize(&ap)?;
+    let features = vectorize(&ap);
     debug!("featured vectorize done");
     let features = apply_scale(&features, &linear.scale);
     debug!("apply scale done");

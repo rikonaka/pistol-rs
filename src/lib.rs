@@ -629,14 +629,13 @@ struct RRequest {
 }
 
 impl RRequest {
-    fn check_packet(&self, received_packet: &[u8]) -> bool {
+    fn check_packet(&self, received_packet: &[u8]) -> (bool, String) {
         for filter in &self.filters {
             if filter.check(received_packet) {
-                debug!("recv matched filter: {}", filter.name());
-                return true;
+                return (true, filter.name());
             }
         }
-        false
+        (false, String::new())
     }
 }
 
@@ -1202,7 +1201,7 @@ impl Pistol {
         }
 
         let mut history_packets: Vec<HistoryPacket> = Vec::with_capacity(MAX_HISTORY_PACKETS);
-        let mut r_requests = Vec::new();
+        let mut r_requests = HashMap::new();
         loop {
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
@@ -1222,22 +1221,32 @@ impl Pistol {
 
             loop {
                 match receiver.recv_timeout(timeout_10ms) {
-                    Ok(r) => r_requests.push(r),
+                    Ok(r) => {
+                        r_requests.insert(r.id, r);
+                    }
                     Err(_) => break,
                 }
             }
 
-            for packet in &mut history_packets {
-                if packet.processed {
-                    continue;
-                }
-                // check the newest rrq first
-                for rrq in r_requests.iter().rev() {
+            let mut drop_rrq_ids = Vec::new();
+            let mut need_drop = false;
+
+            for (rrq_id, rrq) in &r_requests {
+                for packet in &mut history_packets {
+                    if packet.processed {
+                        continue;
+                    }
                     // Not drop any message here.
-                    if rrq.check_packet(&packet.data) {
+                    let (check_rets, filter_name) = rrq.check_packet(&packet.data);
+                    if check_rets {
+                        debug!(
+                            "rrq_id matched: {}, interface_name: {}, filter_name: {}",
+                            rrq_id, interface_name, filter_name
+                        );
                         #[cfg(feature = "debug")]
                         debug_show_packet(&packet.data, Some(EtherTypes::Arp));
-                        // send matched packet back to thread
+
+                        // Send matched packet back to thread.
                         let rtt = rrq.created.elapsed();
                         let recv_response = RResponse {
                             id: rrq.id,
@@ -1247,15 +1256,20 @@ impl Pistol {
                         if let Err(e) = push_response.send(recv_response) {
                             error!("receiver [{}] send response failed: {}", interface_name, e);
                         }
+
                         packet.processed = true;
+
+                        // Drop this rrq since it has matched a packet,
+                        // and we don't want to match multiple packets for one rrq.
+                        drop_rrq_ids.push(rrq_id.clone());
+                        need_drop = true;
+
                         break;
                     }
                 }
             }
 
-            let mut drop_idxs = Vec::new();
-            let mut need_drop = false;
-            for (i, rrq) in r_requests.iter().enumerate() {
+            for (rrq_id, rrq) in &r_requests {
                 // Sometimes if we drop msg too quickly, as well as the sender in msg will be droped too,
                 // when worker's receiver wanna recv back packet,
                 // the 'receiving on an empty and disconnected channel' error raise,
@@ -1264,13 +1278,14 @@ impl Pistol {
                 // so I set the timeout for each msg to be 5 times of the timeout for receiving and sending packets.
                 if rrq.created.elapsed() > rrq.elapsed * 5 {
                     // timeout, remove this msg
-                    drop_idxs.push(i);
+                    drop_rrq_ids.push(rrq_id.clone());
                     need_drop = true;
                 }
             }
             if need_drop {
-                for &drop_idx in drop_idxs.iter().rev() {
-                    let _droped_msg = r_requests.swap_remove(drop_idx);
+                debug!("drop rrq ids: {:?}", drop_rrq_ids);
+                for di in drop_rrq_ids {
+                    let _droped_msg = r_requests.remove(&di);
                 }
             }
         }
@@ -3445,7 +3460,9 @@ OS:%T=40%CD=S)
         // WIN(W1=FE88%W2=FE88%W3=FE88%W4=FE88%W5=FE88%W6=FE88)
         // ECN(R=Y%DF=Y%T=40%W=FAF0%O=M5B4NNSNW7%CC=Y%Q=)
         // T1(R=Y%DF=Y%T=40%S=O%A=S+%F=AS%RD=0%Q=)
-        // T2(R=N)T3(R=N)T4(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+        // T2(R=N)
+        // T3(R=N)
+        // T4(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
         // T5(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
         // T6(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
         // T7(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)

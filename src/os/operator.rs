@@ -1,3 +1,5 @@
+use std::u16;
+
 use crc32fast;
 use gcdx::gcdx;
 use pnet::packet::Packet;
@@ -11,12 +13,11 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use tracing::warn;
 
-use crate::error::PistolError;
 use crate::os::rr::IERR;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
-use crate::utils::be_vec_to_u32;
+use crate::utils::vec_to_u32;
 
 const CWR_MASK: u8 = 0b10000000;
 const ECE_MASK: u8 = 0b01000000;
@@ -114,22 +115,35 @@ fn get_diff_u32(input: &[u32]) -> Vec<u32> {
 
 fn get_diff_u16(input: &[u16]) -> Vec<u16> {
     if input.len() >= 2 {
-        let input_slice = input[0..(input.len() - 1)].to_vec();
+        // The received data packets may be out of order, so sorting is used here.
+        let mut sorted = input.to_vec();
+        sorted.sort();
+
+        // o: [1, 2, 3, 4]
+        // a: [1, 2, 3, 4, 5]
+        // b: [0, 1, 2, 3, 4]
+
+        let mut sorted_a = sorted.clone();
+        sorted_a.push(u16::MAX);
+        let mut sorted_b = vec![0];
+        sorted_b.extend(sorted);
+
         let mut diff = Vec::new();
-        for (i, x) in input_slice.iter().enumerate() {
-            let y = input[i + 1];
-            let x = *x;
-            let k = if x <= y { y - x } else { !(x - y) };
-            diff.push(k);
+        for (a, b) in sorted_a.into_iter().zip(sorted_b) {
+            diff.push(a - b)
         }
+
+        let _ = diff.remove(0);
+        let _ = diff.pop();
+
         diff
     } else {
         Vec::new()
     }
 }
 
-/// TCP ISN greatest common divisor (GCD)
-pub(crate) fn tcp_gcd(seqrr: &SEQRR) -> Result<(u32, Vec<u32>), PistolError> {
+/// TCP ISN greatest common divisor (GCD).
+pub(crate) fn tcp_gcd(seqrr: &SEQRR) -> Option<(u32, Vec<u32>)> {
     let s1 = get_tcp_seq(&seqrr.seq1.response2, "seq1");
     let s2 = get_tcp_seq(&seqrr.seq2.response2, "seq2");
     let s3 = get_tcp_seq(&seqrr.seq3.response2, "seq3");
@@ -158,14 +172,14 @@ pub(crate) fn tcp_gcd(seqrr: &SEQRR) -> Result<(u32, Vec<u32>), PistolError> {
     if diff.len() > 1 {
         let gcd = match gcdx(&diff) {
             Some(g) => g,
-            None => return Err(PistolError::CalcDiffFailed),
+            None => return None,
         };
-        Ok((gcd, diff))
+        Some((gcd, diff))
     } else if diff.len() == 1 {
         let gcd = diff[0];
-        Ok((gcd, diff))
+        Some((gcd, diff))
     } else {
-        Err(PistolError::CalcDiffFailed)
+        None
     }
 }
 
@@ -185,7 +199,7 @@ fn vec_std(values: &[f64]) -> f64 {
 
 /// TCP ISN counter rate (ISR).
 /// This value reports the average rate of increase for the returned TCP initial sequence number.
-pub(crate) fn tcp_isr(diff: Vec<u32>) -> Result<(u32, Vec<f64>), PistolError> {
+pub(crate) fn tcp_isr(diff: Vec<u32>) -> Option<(u32, Vec<f64>)> {
     if diff.len() > 0 {
         let mut seq_rates = Vec::new();
         let mut sum = 0.0;
@@ -202,14 +216,14 @@ pub(crate) fn tcp_isr(diff: Vec<u32>) -> Result<(u32, Vec<f64>), PistolError> {
         } else {
             ((8.0 - ISR_ERROR) * avg.log2()).round() as u32
         };
-        Ok((isr, seq_rates))
+        Some((isr, seq_rates))
     } else {
-        Err(PistolError::CalcISRFailed)
+        None
     }
 }
 
 /// TCP ISN sequence predictability index (SP).
-pub(crate) fn tcp_sp(seq_rates: Vec<f64>, gcd: u32) -> Result<u32, PistolError> {
+pub(crate) fn tcp_sp(seq_rates: Vec<f64>, gcd: u32) -> u32 {
     // This test is only performed if at least four responses were seen.
     if seq_rates.len() >= 4 {
         let mut seq_rates_new = seq_rates.clone();
@@ -230,9 +244,9 @@ pub(crate) fn tcp_sp(seq_rates: Vec<f64>, gcd: u32) -> Result<u32, PistolError> 
             ((8.0 - SP_ERROR) * sd.log2()).round() as u32
         };
         // println!("sp: {}, sd: {}, gcd: {}", sp, sd, gcd);
-        Ok(sp)
+        sp
     } else {
-        Ok(0) // mean omitting
+        0 // mean omitting
     }
 }
 
@@ -245,43 +259,54 @@ fn get_ip_id(eth_response: &[u8], probe_name: &str) -> Option<u16> {
     None
 }
 
-/// IP ID sequence generation algorithm (TI, CI, II)
-pub(crate) fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> (String, String, String) {
-    let z_judgement = |x: &[u16]| -> bool {
-        let mut conditon = true; // all of the ID numbers are zero
-        for v in x {
-            if *v != 0 {
+/// IP ID sequence generation algorithm (TI, CI, II).
+pub(crate) fn tcp_ti_ci_ii(
+    seqrr: &SEQRR,
+    txrr: &TXRR,
+    ierr: &IERR,
+) -> (Option<String>, Option<String>, Option<String>) {
+    /// If all of the ID numbers are zero, the value of the test is Z.
+    fn z_judgement(values: &[u16]) -> bool {
+        let mut conditon = true;
+        for &v in values {
+            if v != 0 {
                 conditon = false;
             }
         }
         conditon
-    };
-    let rd_judgement = |diff: &[u16]| -> bool {
-        let mut condition = true; // IP ID sequence ever increases by at least 20,000
-        for d in diff {
-            if *d < 20000 {
+    }
+    /// If the IP ID sequence ever increases by at least 20,000, the value is RD (random).
+    /// This result isn't possible for II because there are not enough samples to support it.
+    fn rd_judgement(diff: &[u16]) -> bool {
+        let mut condition = true;
+        for &d in diff {
+            if d < 20000 {
                 condition = false;
             }
         }
         condition
-    };
-    let hex_judgement = |ip_id_vec: &[u16]| -> bool {
-        let v3 = get_diff_u16(ip_id_vec);
+    }
+    /// If all of the IP IDs are identical, the test is set to that value in hex.
+    fn hex_judgement(ip_id_vec: &[u16]) -> bool {
+        let diff = get_diff_u16(ip_id_vec);
         let mut sum = 0;
-        for v in v3 {
-            sum += v;
+        for d in diff {
+            sum += d;
         }
 
         if sum == 0 { true } else { false }
-    };
-    let ri_judgement = |diff: &[u16]| -> bool {
+    }
+    /// If any of the differences between two consecutive IDs exceeds 1,000,
+    /// and is not evenly divisible by 256, the test's value is RI (random positive increments).
+    /// If the difference is evenly divisible by 256, it must be at least 256,000 to cause this RI result.
+    fn ri_judgement(diff: &[u16]) -> bool {
         let mut condition_1 = true; // any of the differences exceeds 1000
         let mut condition_2 = true; // any of the differences not evenly divisiable by 256
-        for d in diff {
-            if *d < 1000 {
+        for &d in diff {
+            if d < 1000 {
                 condition_1 = false;
             }
-            if *d % 256 == 0 {
+            if d % 256 == 0 {
                 condition_2 = false;
             }
         }
@@ -291,15 +316,20 @@ pub(crate) fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> (String
         } else {
             false
         }
-    };
-    let bi_judgement = |diff: &[u16]| -> bool {
+    }
+    /// If all of the differences are divisible by 256 and no greater than 5,120,
+    /// the test is set to BI (broken increment).
+    /// This happens on systems like Microsoft Windows where the IP ID
+    /// is sent in host byte order rather than network byte order. It works fine and isn't any sort of RFC violation,
+    /// though it does give away host architecture details which can be useful to attackers.
+    fn bi_judgement(diff: &[u16]) -> bool {
         let mut condition_1 = true; // all of the differences are divisible by 256
         let mut condition_2 = true; // all of the differences are no greater than 5,120
-        for d in diff {
-            if *d % 256 != 0 {
+        for &d in diff {
+            if d % 256 != 0 {
                 condition_1 = false;
             }
-            if *d > 5120 {
+            if d > 5120 {
                 condition_2 = false;
             }
         }
@@ -309,16 +339,19 @@ pub(crate) fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> (String
         } else {
             false
         }
-    };
-    let i_judgement = |diff: &[u16]| -> bool {
+    }
+    /// If all of the differences are less than ten, the value is I (incremental).
+    /// We allow difference up to ten here (rather than requiring sequential ordering)
+    /// because traffic from other hosts can cause sequence gaps.
+    fn i_judgement(diff: &[u16]) -> bool {
         let mut condition = true; // all of the differences are less than ten
-        for d in diff {
-            if *d >= 10 {
+        for &d in diff {
+            if d >= 10 {
                 condition = false;
             }
         }
         condition
-    };
+    }
 
     let seq1_ip_id = get_ip_id(&seqrr.seq1.response2, "seq1");
     let seq2_ip_id = get_ip_id(&seqrr.seq2.response2, "seq2");
@@ -348,41 +381,41 @@ pub(crate) fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> (String
     let ti = if seq_ip_id_vec.len() >= 3 {
         if z_judgement(&seq_ip_id_vec) {
             // If all of the ID numbers are zero, the value of the test is Z.
-            String::from("Z")
+            Some(String::from("Z"))
         } else if ri_judgement(&seq_diff) {
             // If the IP ID sequence ever increases by at least 20,000, the value is RD (random).
             // This result isn't possible for II because there are not enough samples to support it.
-            String::from("RD")
+            Some(String::from("RD"))
         } else if hex_judgement(&seq_ip_id_vec) {
             // If all of the IP IDs are identical, the test is set to that value in hex.
-            format!("{:X}", seq_ip_id_vec[0])
+            Some(format!("{:X}", seq_ip_id_vec[0]))
         } else if ri_judgement(&seq_diff) {
             // If any of the differences between two consecutive IDs exceeds 1,000, and is not evenly divisible by 256,
             // the test's value is RI (random positive increments).
             // If the difference is evenly divisible by 256, it must be at least 256,000 to cause this RI result.
-            String::from("RI")
+            Some(String::from("RI"))
         } else if bi_judgement(&seq_diff) {
             // If all of the differences are divisible by 256 and no greater than 5,120, the test is set to BI (broken increment).
             // This happens on systems like Microsoft Windows where the IP ID is sent in host byte order rather than network byte order.
             // It works fine and isn't any sort of RFC violation, though it does give away host architecture details which can be useful to attackers.
-            String::from("BI")
+            Some(String::from("BI"))
         } else if i_judgement(&seq_diff) {
             // If all of the differences are less than ten, the value is I (incremental).
             // We allow difference up to ten here (rather than requiring sequential ordering) because traffic from other hosts can cause sequence gaps.
-            String::from("I")
+            Some(String::from("I"))
         } else {
             // If none of the previous steps identify the generation algorithm, the test is omitted from the fingerprint.
-            String::new()
+            None
         }
     } else {
         // For TI, at least three responses must be received for the test to be included.
-        String::new()
+        None
     };
 
     // CI is from the responses to the three TCP probes sent to a closed port: T5, T6, and T7.
-    let t5_ip_id = get_ip_id(&t2t7rr.t5.response2, "t5");
-    let t6_ip_id = get_ip_id(&t2t7rr.t6.response2, "t6");
-    let t7_ip_id = get_ip_id(&t2t7rr.t7.response2, "t7");
+    let t5_ip_id = get_ip_id(&txrr.t5.response2, "t5");
+    let t6_ip_id = get_ip_id(&txrr.t6.response2, "t6");
+    let t7_ip_id = get_ip_id(&txrr.t7.response2, "t7");
     let mut tmp_vec = Vec::new();
     tmp_vec.push(t5_ip_id);
     tmp_vec.push(t6_ip_id);
@@ -400,35 +433,35 @@ pub(crate) fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> (String
     let ci = if t_ip_id_vec.len() >= 2 {
         if z_judgement(&t_ip_id_vec) {
             // If all of the ID numbers are zero, the value of the test is Z.
-            String::from("Z")
+            Some(String::from("Z"))
         } else if rd_judgement(&t_diff) {
             // If the IP ID sequence ever increases by at least 20,000, the value is RD (random).
             // This result isn't possible for II because there are not enough samples to support it.
-            String::from("RD")
+            Some(String::from("RD"))
         } else if hex_judgement(&t_ip_id_vec) {
             // If all of the IP IDs are identical, the test is set to that value in hex.
-            format!("{:X}", t_ip_id_vec[0])
+            Some(format!("{:X}", t_ip_id_vec[0]))
         } else if ri_judgement(&t_diff) {
             // If any of the differences between two consecutive IDs exceeds 1,000, and is not evenly divisible by 256,
             // the test's value is RI (random positive increments).
             // If the difference is evenly divisible by 256, it must be at least 256,000 to cause this RI result.
-            String::from("RI")
+            Some(String::from("RI"))
         } else if bi_judgement(&t_diff) {
             // If all of the differences are divisible by 256 and no greater than 5,120, the test is set to BI (broken increment).
             // This happens on systems like Microsoft Windows where the IP ID is sent in host byte order rather than network byte order.
             // It works fine and isn't any sort of RFC violation, though it does give away host architecture details which can be useful to attackers.
-            String::from("BI")
+            Some(String::from("BI"))
         } else if i_judgement(&t_diff) {
             // If all of the differences are less than ten, the value is I (incremental).
             // We allow difference up to ten here (rather than requiring sequential ordering) because traffic from other hosts can cause sequence gaps.
-            String::from("I")
+            Some(String::from("I"))
         } else {
             // If none of the previous steps identify the generation algorithm, the test is omitted from the fingerprint.
-            String::new()
+            None
         }
     } else {
         // for CI, at least two responses are required.
-        String::new()
+        None
     };
 
     // II comes from the ICMP responses to the two IE ping probes.
@@ -446,56 +479,61 @@ pub(crate) fn tcp_ti_ci_ii(seqrr: &SEQRR, t2t7rr: &TXRR, ierr: &IERR) -> (String
         }
     }
     let ie_diff = get_diff_u16(&ie_ip_id_vec);
-    // println!("{:?}", ie_ip_id_vec);
-    // println!("{:?}", ie_diff);
+    println!("{:?}", ie_ip_id_vec);
+    println!("{:?}", ie_diff);
 
     // RD result isn't possible for II because there are not enough samples to support it.
-    let ii = if ie_ip_id_vec.len() >= 2 {
+    let ii = if ie_ip_id_vec.len() == 2 {
         if z_judgement(&ie_ip_id_vec) {
             // If all of the ID numbers are zero, the value of the test is Z.
-            String::from("Z")
+            Some(String::from("Z"))
         } else if hex_judgement(&ie_ip_id_vec) {
             // If all of the IP IDs are identical, the test is set to that value in hex.
-            format!("{:X}", ie_ip_id_vec[0])
+            Some(format!("{:X}", ie_ip_id_vec[0]))
         } else if ri_judgement(&ie_diff) {
             // If any of the differences between two consecutive IDs exceeds 1,000, and is not evenly divisible by 256,
             // the test's value is RI (random positive increments).
             // If the difference is evenly divisible by 256, it must be at least 256,000 to cause this RI result.
-            String::from("RI")
+            Some(String::from("RI"))
         } else if bi_judgement(&ie_diff) {
             // If all of the differences are divisible by 256 and no greater than 5,120, the test is set to BI (broken increment).
             // This happens on systems like Microsoft Windows where the IP ID is sent in host byte order rather than network byte order.
             // It works fine and isn't any sort of RFC violation, though it does give away host architecture details which can be useful to attackers.
-            String::from("BI")
+            Some(String::from("BI"))
         } else if i_judgement(&ie_diff) {
             // If all of the differences are less than ten, the value is I (incremental).
             // We allow difference up to ten here (rather than requiring sequential ordering) because traffic from other hosts can cause sequence gaps.
-            String::from("I")
+            Some(String::from("I"))
         } else {
             // If none of the previous steps identify the generation algorithm, the test is omitted from the fingerprint.
-            String::new()
+            None
         }
     } else {
         // and for II, both ICMP responses must be received.
-        String::new()
+        None
     };
     (ti, ci, ii)
 }
 
-/// Shared IP ID sequence Boolean (SS)
+/// Shared IP ID sequence Boolean (SS).
 pub(crate) fn tcp_ss(
     seqrr: &SEQRR,
     ierr: &IERR,
-    ti: &str,
-    ii: &str,
-) -> Result<String, PistolError> {
-    let judge_value = |x: &str| -> bool {
-        if x == "RI" || x == "BI" || x == "I" {
-            true
+    ti: &Option<String>,
+    ii: &Option<String>,
+) -> Option<String> {
+    let judge_value = |x: &Option<String>| -> bool {
+        if let Some(x) = x {
+            if x == "RI" || x == "BI" || x == "I" {
+                true
+            } else {
+                false
+            }
         } else {
             false
         }
     };
+
     // This test is only included if II is RI, BI, or I and TI is the same.
     let c1 = judge_value(ii);
     let c2 = judge_value(ti);
@@ -546,16 +584,16 @@ pub(crate) fn tcp_ss(
 
         let (seq_first_ip_id, first) = match first_ip_id(&ip_id_vec) {
             Some((s, f)) => (s, f),
-            None => return Err(PistolError::CalcSSFailed),
+            None => return None,
         };
 
         let (seq_last_ip_id, last) = match last_ip_id(&ip_id_vec) {
             Some((s, f)) => (s, f),
-            None => return Err(PistolError::CalcSSFailed),
+            None => return None,
         };
 
         if last <= first {
-            return Ok(String::new());
+            return None;
         }
 
         let difference = if seq_last_ip_id > seq_first_ip_id {
@@ -578,15 +616,15 @@ pub(crate) fn tcp_ss(
                 };
                 ss
             }
-            None => String::new(),
+            None => return None,
         };
-        Ok(ss)
+        Some(ss)
     } else {
-        Ok(String::new())
+        None
     }
 }
 
-fn get_tsval(eth_response: &[u8], probe_name: &str) -> Result<Option<u32>, PistolError> {
+fn get_tsval(eth_response: &[u8], probe_name: &str) -> Option<u32> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
             if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
@@ -595,11 +633,13 @@ fn get_tsval(eth_response: &[u8], probe_name: &str) -> Result<Option<u32>, Pisto
                     match option.number {
                         TcpOptionNumbers::TIMESTAMPS => {
                             // get first 4 u8 values
-                            if option.data.len() >= 4 {
-                                let tsval_vec = option.data[0..4].try_into()?;
-                                let tsval = be_vec_to_u32(&tsval_vec);
-                                return Ok(Some(tsval));
-                            }
+                            let tsval_vec = if option.data.len() >= 4 {
+                                &option.data[0..4]
+                            } else {
+                                &option.data
+                            };
+                            let tsval = vec_to_u32(tsval_vec);
+                            return Some(tsval);
                         }
                         _ => (),
                     }
@@ -607,11 +647,11 @@ fn get_tsval(eth_response: &[u8], probe_name: &str) -> Result<Option<u32>, Pisto
             }
         }
     }
-    Ok(None)
+    None
 }
 
-/// TCP timestamp option algorithm (TS)
-pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Result<String, PistolError> {
+/// TCP timestamp option algorithm (TS).
+pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Option<String> {
     let tsval_1 = get_tsval(&seqrr.seq1.response2, "seq1");
     let tsval_2 = get_tsval(&seqrr.seq2.response2, "seq2");
     let tsval_3 = get_tsval(&seqrr.seq3.response2, "seq3");
@@ -629,9 +669,8 @@ pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Result<String, PistolError> {
     let mut tsval_vec = Vec::new();
     for t in tmp_vec {
         match t {
-            Ok(Some(t)) => tsval_vec.push(t),
-            Ok(None) => warn!("tsval is null"),
-            Err(e) => warn!("tsval error: {}", e),
+            Some(t) => tsval_vec.push(t),
+            None => warn!("tsval is null"),
         }
     }
 
@@ -677,15 +716,14 @@ pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Result<String, PistolError> {
             };
             ts
         } else {
-            String::new()
+            return None;
         };
         ts
     };
-    Ok(ts)
+    Some(ts)
 }
 
-/// TCP options (O, O1–O6)
-pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Result<Option<String>, PistolError> {
+pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
             if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
@@ -699,8 +737,7 @@ pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Result<Option<Stri
                             } else {
                                 &option.data
                             };
-                            let data: &[u8; 4] = data.try_into()?;
-                            let mss = be_vec_to_u32(data);
+                            let mss = vec_to_u32(data);
                             let o_str = format!("M{:X}", mss);
                             o_ret += &o_str;
                         }
@@ -720,8 +757,7 @@ pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Result<Option<Stri
                                 &option.data
                             };
 
-                            let data: &[u8; 4] = data.try_into()?;
-                            let wscale = be_vec_to_u32(data);
+                            let wscale = vec_to_u32(data);
                             let o_str = format!("W{:X}", wscale);
                             o_ret += &o_str;
                         }
@@ -731,7 +767,7 @@ pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Result<Option<Stri
                                 if option.data.len() >= 4 {
                                     &option.data[0..4]
                                 } else {
-                                    &option.data[0..option.data.len() - 1]
+                                    &[0; 4]
                                 }
                             } else {
                                 &[0; 4]
@@ -741,16 +777,14 @@ pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Result<Option<Stri
                                 if option.data.len() >= 8 {
                                     &option.data[4..8]
                                 } else {
-                                    &option.data[4..option.data.len() - 1]
+                                    &[0; 4]
                                 }
                             } else {
                                 &[0; 4]
                             };
 
-                            let t0: &[u8; 4] = t0.try_into()?;
-                            let t1: &[u8; 4] = t1.try_into()?;
-                            let t0_u32 = be_vec_to_u32(t0);
-                            let t1_u32 = be_vec_to_u32(t1);
+                            let t0_u32 = vec_to_u32(t0);
+                            let t1_u32 = vec_to_u32(t1);
                             if t0_u32 == 0 {
                                 o_ret += "0";
                             } else {
@@ -765,27 +799,33 @@ pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Result<Option<Stri
                         _ => (),
                     }
                 }
-                return Ok(Some(o_ret));
+                return Some(o_ret);
             }
         }
     }
-    Ok(None)
+    None
 }
 
-/// TCP options (O, O1–O6)
+/// TCP options (O, O1–O6).
 pub(crate) fn tcp_ox(
     seqrr: &SEQRR,
-) -> Result<(String, String, String, String, String, String), PistolError> {
-    let o1 = tcp_o(&seqrr.seq1.response2, "seq1")?.unwrap_or(String::new());
-    let o2 = tcp_o(&seqrr.seq2.response2, "seq2")?.unwrap_or(String::new());
-    let o3 = tcp_o(&seqrr.seq3.response2, "seq3")?.unwrap_or(String::new());
-    let o4 = tcp_o(&seqrr.seq4.response2, "seq4")?.unwrap_or(String::new());
-    let o5 = tcp_o(&seqrr.seq5.response2, "seq5")?.unwrap_or(String::new());
-    let o6 = tcp_o(&seqrr.seq6.response2, "seq6")?.unwrap_or(String::new());
-    Ok((o1, o2, o3, o4, o5, o6))
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    let o1 = tcp_o(&seqrr.seq1.response2, "seq1");
+    let o2 = tcp_o(&seqrr.seq2.response2, "seq2");
+    let o3 = tcp_o(&seqrr.seq3.response2, "seq3");
+    let o4 = tcp_o(&seqrr.seq4.response2, "seq4");
+    let o5 = tcp_o(&seqrr.seq5.response2, "seq5");
+    let o6 = tcp_o(&seqrr.seq6.response2, "seq6");
+    (o1, o2, o3, o4, o5, o6)
 }
 
-/// TCP initial window size (W, W1–W6)
 pub(crate) fn tcp_w(eth_response: &[u8], probe_name: &str) -> Option<u16> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -798,18 +838,27 @@ pub(crate) fn tcp_w(eth_response: &[u8], probe_name: &str) -> Option<u16> {
     None
 }
 
-/// TCP initial window size (W, W1–W6)
-pub(crate) fn tcp_wx(seqrr: &SEQRR) -> Result<(u16, u16, u16, u16, u16, u16), PistolError> {
-    let w1 = tcp_w(&seqrr.seq1.response2, "seq1").unwrap_or(0);
-    let w2 = tcp_w(&seqrr.seq2.response2, "seq2").unwrap_or(0);
-    let w3 = tcp_w(&seqrr.seq3.response2, "seq3").unwrap_or(0);
-    let w4 = tcp_w(&seqrr.seq4.response2, "seq4").unwrap_or(0);
-    let w5 = tcp_w(&seqrr.seq5.response2, "seq5").unwrap_or(0);
-    let w6 = tcp_w(&seqrr.seq6.response2, "seq6").unwrap_or(0);
-    Ok((w1, w2, w3, w4, w5, w6))
+/// TCP initial window size (W, W1–W6).
+pub(crate) fn tcp_wx(
+    seqrr: &SEQRR,
+) -> (
+    Option<u16>,
+    Option<u16>,
+    Option<u16>,
+    Option<u16>,
+    Option<u16>,
+    Option<u16>,
+) {
+    let w1 = tcp_w(&seqrr.seq1.response2, "seq1");
+    let w2 = tcp_w(&seqrr.seq2.response2, "seq2");
+    let w3 = tcp_w(&seqrr.seq3.response2, "seq3");
+    let w4 = tcp_w(&seqrr.seq4.response2, "seq4");
+    let w5 = tcp_w(&seqrr.seq5.response2, "seq5");
+    let w6 = tcp_w(&seqrr.seq6.response2, "seq6");
+    (w1, w2, w3, w4, w5, w6)
 }
 
-/// Responsiveness (R)
+/// Responsiveness (R).
 pub(crate) fn tcp_udp_icmp_r(eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -823,7 +872,7 @@ pub(crate) fn tcp_udp_icmp_r(eth_response: &[u8], probe_name: &str) -> Option<St
     None
 }
 
-/// IP don't fragment bit (DF)
+/// IP don't fragment bit (DF).
 pub(crate) fn tcp_udp_df(eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -840,7 +889,7 @@ pub(crate) fn tcp_udp_df(eth_response: &[u8], probe_name: &str) -> Option<String
     None
 }
 
-fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Result<Option<u8>, PistolError> {
+fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Option<u8> {
     let ipv4_request = &u1rr.u1.request3;
     if let Some(request_ipv4_packet) = build_ipv4_packet(ipv4_request, probe_name) {
         // must have request
@@ -858,39 +907,35 @@ fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Result<Option<u8>, PistolError> {
                             ttl_2 - ttl_1
                         };
                         // It is not uncommon for Nmap to receive no response to the U1 probe.
-                        return Ok(Some(hops));
+                        return Some(hops);
                     }
                 }
             }
         }
     }
     // It is common for Nmap to receive no response when target is Windows.
-    Ok(None)
+    None
 }
 
-/// IP initial time-to-live (T)
-pub(crate) fn tcp_udp_icmp_t(
-    eth_response: &[u8],
-    u1rr: &U1RR,
-    probe_name: &str,
-) -> Result<Option<u16>, PistolError> {
-    let hops = udp_hops(u1rr, probe_name)?;
+/// IP initial time-to-live (T).
+pub(crate) fn tcp_udp_icmp_t(eth_response: &[u8], u1rr: &U1RR, probe_name: &str) -> Option<u16> {
+    let hops = udp_hops(u1rr, probe_name);
     match hops {
         Some(hops) => {
             if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
                 if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
                     let ipv4_ttl = ipv4_packet.get_ttl();
                     // avoid overflow in integer addition
-                    return Ok(Some(hops as u16 + ipv4_ttl as u16));
+                    return Some(hops as u16 + ipv4_ttl as u16);
                 }
             }
         }
-        None => return Ok(None), // no udp return, ignore t and use tg instead
+        None => (), // no udp return, ignore t and use tg instead
     }
-    Ok(None)
+    None
 }
 
-/// IP initial time-to-live guess (TG)
+/// IP initial time-to-live guess (TG).
 pub(crate) fn tcp_udp_icmp_tg(eth_response: &[u8], probe_name: &str) -> Option<u16> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -923,7 +968,7 @@ pub(crate) fn tcp_udp_icmp_tg(eth_response: &[u8], probe_name: &str) -> Option<u
     None
 }
 
-/// Explicit congestion notification (CC)
+/// Explicit congestion notification (CC).
 pub(crate) fn tcp_cc(eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -949,7 +994,7 @@ pub(crate) fn tcp_cc(eth_response: &[u8], probe_name: &str) -> Option<String> {
     None
 }
 
-/// TCP miscellaneous quirks (Q)
+/// TCP miscellaneous quirks (Q).
 pub(crate) fn tcp_q(eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -975,7 +1020,7 @@ pub(crate) fn tcp_q(eth_response: &[u8], probe_name: &str) -> Option<String> {
     None
 }
 
-/// TCP sequence number (S)
+/// TCP sequence number (S).
 pub(crate) fn tcp_s(ipv4_request: &[u8], eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(ipv4_packet_request) = build_ipv4_packet(ipv4_request, probe_name) {
         if let Some(tcp_packet_request) =
@@ -1012,7 +1057,7 @@ pub(crate) fn tcp_s(ipv4_request: &[u8], eth_response: &[u8], probe_name: &str) 
     None
 }
 
-/// TCP acknowledgment number (A)
+/// TCP acknowledgment number (A).
 pub(crate) fn tcp_a(ipv4_request: &[u8], eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(ipv4_packet_request) = build_ipv4_packet(ipv4_request, probe_name) {
         if let Some(tcp_packet_request) =
@@ -1049,7 +1094,7 @@ pub(crate) fn tcp_a(ipv4_request: &[u8], eth_response: &[u8], probe_name: &str) 
     None
 }
 
-/// TCP flags (F)
+/// TCP flags (F).
 pub(crate) fn tcp_f(eth_response: &[u8], probe_name: &str) -> Option<String> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -1091,7 +1136,7 @@ pub(crate) fn tcp_f(eth_response: &[u8], probe_name: &str) -> Option<String> {
     None
 }
 
-/// TCP RST data checksum (RD)
+/// TCP RST data checksum (RD).
 pub(crate) fn tcp_rd(eth_response: &[u8], probe_name: &str) -> Option<u32> {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
@@ -1104,38 +1149,39 @@ pub(crate) fn tcp_rd(eth_response: &[u8], probe_name: &str) -> Option<u32> {
     None
 }
 
-/// IP total length (IPL)
-pub(crate) fn udp_ipl(u1: &U1RR) -> Result<usize, PistolError> {
+/// IP total length (IPL).
+pub(crate) fn udp_ipl(u1: &U1RR) -> u32 {
     let response = &u1.u1.response2;
-    Ok(response.len())
+    response.len() as u32
 }
 
-/// Unused port unreachable field nonzero (UN)
-pub(crate) fn udp_un(u1: &U1RR, probe_name: &str) -> Result<Option<u32>, PistolError> {
+/// Unused port unreachable field nonzero (UN).
+pub(crate) fn udp_un(u1: &U1RR, probe_name: &str) -> Option<u32> {
+    // An ICMP port unreachable message header is eight bytes long,
+    // but only the first four are used. RFC 792 states that the last four bytes must be zero.
+    // A few implementations (mostly ethernet switches and some specialized embedded devices) set it anyway.
+    // The value of those last four bytes is recorded in this field.
     let eth_response = &u1.u1.response2;
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(icmp_packet) = build_icmp_packet(ipv4_packet.payload(), probe_name) {
-                let payload = icmp_packet.payload();
-                if payload.len() > 4 {
-                    let rest_of_header = if payload.len() >= 8 {
-                        &payload[4..8]
-                    } else {
-                        &payload[4..payload.len() - 1]
-                    };
-                    let rest_of_header: &[u8; 4] = rest_of_header.try_into()?;
-                    let un = be_vec_to_u32(&rest_of_header);
-                    return Ok(Some(un));
+            let icmp_buff = ipv4_packet.payload();
+            if icmp_buff.len() > 4 {
+                let rest_of_header = if icmp_buff.len() >= 8 {
+                    &icmp_buff[4..8]
                 } else {
-                    return Err(PistolError::CalcUNFailed);
-                }
+                    &icmp_buff[4..icmp_buff.len() - 1]
+                };
+                let un = vec_to_u32(rest_of_header);
+                return Some(un);
+            } else {
+                return Some(0);
             }
         }
     }
-    Ok(None)
+    None
 }
 
-/// Returned probe IP total length value (RIPL)
+/// Returned probe IP total length value (RIPL).
 pub(crate) fn udp_ripl(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
@@ -1155,7 +1201,7 @@ pub(crate) fn udp_ripl(u1: &U1RR, probe_name: &str) -> Option<String> {
     None
 }
 
-/// Returned probe IP ID value (RID)
+/// Returned probe IP ID value (RID).
 pub(crate) fn udp_rid(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
@@ -1179,7 +1225,7 @@ pub(crate) fn udp_rid(u1: &U1RR, probe_name: &str) -> Option<String> {
     None
 }
 
-/// Integrity of returned probe IP checksum value (RIPCK)
+/// Integrity of returned probe IP checksum value (RIPCK).
 pub(crate) fn udp_ripck(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
@@ -1203,7 +1249,7 @@ pub(crate) fn udp_ripck(u1: &U1RR, probe_name: &str) -> Option<String> {
     None
 }
 
-/// Integrity of returned probe UDP checksum (RUCK)
+/// Integrity of returned probe UDP checksum (RUCK).
 pub(crate) fn udp_ruck(u1: &U1RR, probe_name: &str) -> Option<String> {
     let ipv4_request = &u1.u1.request3;
     let eth_response = &u1.u1.response2;
@@ -1250,7 +1296,7 @@ pub(crate) fn udp_ruck(u1: &U1RR, probe_name: &str) -> Option<String> {
     Some(ret)
 }
 
-/// Integrity of returned UDP data (RUD)
+/// Integrity of returned UDP data (RUD).
 pub(crate) fn udp_rud(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
     let eth_packet = match build_eth_packet(eth_response, probe_name) {
@@ -1295,7 +1341,7 @@ pub(crate) fn udp_rud(u1: &U1RR, probe_name: &str) -> Option<String> {
     Some(ret)
 }
 
-/// Don't fragment (ICMP) (DFI)
+/// Don't fragment (ICMP) (DFI).
 pub(crate) fn icmp_dfi(ie: &IERR, probe_name: &str) -> Option<String> {
     let df_mask: u8 = 0b0010;
 
@@ -1355,7 +1401,7 @@ pub(crate) fn icmp_dfi(ie: &IERR, probe_name: &str) -> Option<String> {
     Some(ret)
 }
 
-/// ICMP response code (CD)
+/// ICMP response code (CD).
 pub(crate) fn icmp_cd(ie: &IERR, probe_name: &str) -> Option<String> {
     let ipv4_request_1 = &ie.ie1.request3;
     let ipv4_request_2 = &ie.ie2.request3;

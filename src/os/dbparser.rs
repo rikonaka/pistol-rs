@@ -33,13 +33,13 @@ pub enum NmapRangeTypes {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NmapRangeValue {
-    pub start: usize,
-    pub end: usize,
+    pub start: u32,
+    pub end: u32,
     pub range_value_type: NmapRangeTypes,
 }
 
 impl NmapRangeValue {
-    pub fn new(start: usize, end: usize, range_value_type: NmapRangeTypes) -> NmapRangeValue {
+    pub fn new(start: u32, end: u32, range_value_type: NmapRangeTypes) -> NmapRangeValue {
         NmapRangeValue {
             start,
             end,
@@ -50,11 +50,11 @@ impl NmapRangeValue {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NmapSingleValue {
-    pub value: usize,
+    pub value: u32,
 }
 
 impl NmapSingleValue {
-    pub fn new(value: usize) -> NmapSingleValue {
+    pub fn new(value: u32) -> NmapSingleValue {
         NmapSingleValue { value }
     }
 }
@@ -122,20 +122,20 @@ impl NmapData {
                         Some(caps) => {
                             let start = caps.name("start").map_or("", |m| m.as_str());
                             let end = caps.name("end").map_or("", |m| m.as_str());
-                            let start: usize = match start.parse() {
+                            let start: u32 = match start.parse() {
                                 Ok(s) => s,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(start);
                                     let e_u32 = he.decode_as_u32()?;
-                                    e_u32 as usize
+                                    e_u32
                                 }
                             };
-                            let end: usize = match end.parse() {
+                            let end: u32 = match end.parse() {
                                 Ok(e) => e,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(end);
                                     let e_u32 = he.decode_as_u32()?;
-                                    e_u32 as usize
+                                    e_u32
                                 }
                             };
                             let range = NmapRangeValue::new(start, end, NmapRangeTypes::Both);
@@ -147,12 +147,12 @@ impl NmapData {
                     match great_reg.captures(it) {
                         Some(caps) => {
                             let start = caps.name("start").map_or("", |m| m.as_str());
-                            let start: usize = match start.parse() {
+                            let start: u32 = match start.parse() {
                                 Ok(s) => s,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(start);
                                     let e_u32 = he.decode_as_u32()?;
-                                    e_u32 as usize
+                                    e_u32
                                 }
                             };
                             let range = NmapRangeValue::new(start, 0, NmapRangeTypes::Left);
@@ -164,12 +164,12 @@ impl NmapData {
                     match less_reg.captures(it) {
                         Some(caps) => {
                             let end = caps.name("end").map_or("", |m| m.as_str());
-                            let end: usize = match end.parse() {
+                            let end: u32 = match end.parse() {
                                 Ok(e) => e,
                                 Err(_) => {
                                     let he = PistolHex::new_hex(end);
                                     let e_u32 = he.decode_as_u32()?;
-                                    e_u32 as usize
+                                    e_u32
                                 }
                             };
                             let range = NmapRangeValue::new(end, 0, NmapRangeTypes::Right);
@@ -180,7 +180,7 @@ impl NmapData {
                 } else {
                     let he = PistolHex::new_hex(it);
                     let e_u32 = he.decode_as_u32()?;
-                    let single = NmapSingleValue::new(e_u32 as usize);
+                    let single = NmapSingleValue::new(e_u32);
                     single_values.push(single);
                 }
             }
@@ -213,69 +213,83 @@ impl NmapData {
     pub fn empty() -> NmapData {
         NmapData::NmapEmpty(NmapEmpty::new())
     }
-    pub fn check_usize(&self, input: usize) -> bool {
-        match self {
-            NmapData::NmapEmpty(_) => match input {
-                0 => true,
-                _ => false,
-            },
-            NmapData::NmapMix(m) => {
-                let m = m.clone();
-                for r in m.range_values {
-                    match r.range_value_type {
-                        NmapRangeTypes::Both => {
-                            if input >= r.start && input <= r.end {
+    pub fn check_u32<T: Into<u32>>(&self, input: Option<T>) -> bool {
+        match input {
+            Some(input) => {
+                let input_u32: u32 = input.into();
+                match self {
+                    NmapData::NmapEmpty(_ne) => match input_u32 {
+                        0 => true,
+                        _ => false,
+                    },
+                    NmapData::NmapMix(m) => {
+                        let m = m.clone();
+                        for r in m.range_values {
+                            match r.range_value_type {
+                                NmapRangeTypes::Both => {
+                                    if input_u32 >= r.start && input_u32 <= r.end {
+                                        return true;
+                                    }
+                                }
+                                NmapRangeTypes::Left => {
+                                    if input_u32 >= r.start {
+                                        return true;
+                                    }
+                                }
+                                NmapRangeTypes::Right => {
+                                    if input_u32 <= r.end {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        for s in m.single_values {
+                            if input_u32 == s.value {
                                 return true;
                             }
                         }
-                        NmapRangeTypes::Left => {
-                            if input >= r.start {
-                                return true;
-                            }
-                        }
-                        NmapRangeTypes::Right => {
-                            if input <= r.end {
-                                return true;
-                            }
-                        }
+                        false
                     }
+                    _ => panic!("wrong type: {:?} - {}", self, input_u32),
                 }
-                for s in m.single_values {
-                    if input == s.value {
-                        return true;
-                    }
-                }
-                false
             }
-            _ => panic!("wrong type: {:?} - {}", self, input),
+            None => false,
         }
     }
-    pub fn check_string(&self, input: &str) -> bool {
-        match self {
-            NmapData::NmapString(v) => match input.len() {
-                0 => false,
-                _ => {
-                    let mut ret = false;
-                    for s in &v.value {
-                        if input == s {
-                            ret = true;
+    pub fn check_string(&self, input: &Option<String>) -> bool {
+        match input {
+            Some(input) => match self {
+                NmapData::NmapString(v) => {
+                    if input.len() == 0 {
+                        false
+                    } else {
+                        let mut ret = false;
+                        for s in &v.value {
+                            if input == s {
+                                ret = true;
+                            }
                         }
+                        ret
                     }
-                    ret
                 }
+                NmapData::NmapEmpty(_ne) => {
+                    if input.len() == 0 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => panic!("wrong type: {:?} - {}", self, input),
             },
-            NmapData::NmapEmpty(_) => match input.len() {
-                0 => true,
-                _ => false,
-            },
-            _ => panic!("wrong type: {:?} - {}", self, input),
+            None => false,
         }
     }
     pub fn check_r(&self, input: &str) -> bool {
         match self {
-            NmapData::NmapString(v) => match input.len() {
-                0 => false,
-                _ => {
+            NmapData::NmapString(v) => {
+                if input.len() == 0 {
+                    false
+                } else {
                     let mut ret = false;
                     for s in &v.value {
                         if input == s {
@@ -284,11 +298,14 @@ impl NmapData {
                     }
                     ret
                 }
-            },
-            NmapData::NmapEmpty(_) => match input {
-                "Y" => true,
-                _ => false,
-            },
+            }
+            NmapData::NmapEmpty(_) => {
+                if input == "Y" {
+                    true
+                } else {
+                    false
+                }
+            }
             _ => panic!("wrong type: {:?} - {}", self, input),
         }
     }
@@ -316,7 +333,7 @@ impl SEQDB {
                 _ => {
                     // let sp_check = self.sp.check_usize(seqx.sp as usize);
                     let sp_check = true;
-                    let gcd_check = self.gcd.check_usize(seqx.gcd as usize);
+                    let gcd_check = self.gcd.check_u32(Some(seqx.gcd));
                     // let isr_check = self.isr.check_usize(seqx.isr as usize);
                     let isr_check = true;
                     let ti_check = self.ti.check_string(&seqx.ti);
@@ -398,12 +415,12 @@ impl WINDB {
             match winx.r.as_str() {
                 "N" => (),
                 _ => {
-                    let w1_check = self.w1.check_usize(winx.w1 as usize);
-                    let w2_check = self.w2.check_usize(winx.w2 as usize);
-                    let w3_check = self.w3.check_usize(winx.w3 as usize);
-                    let w4_check = self.w4.check_usize(winx.w4 as usize);
-                    let w5_check = self.w5.check_usize(winx.w5 as usize);
-                    let w6_check = self.w6.check_usize(winx.w6 as usize);
+                    let w1_check = self.w1.check_u32(winx.w1);
+                    let w2_check = self.w2.check_u32(winx.w2);
+                    let w3_check = self.w3.check_u32(winx.w3);
+                    let w4_check = self.w4.check_u32(winx.w4);
+                    let w5_check = self.w5.check_u32(winx.w5);
+                    let w6_check = self.w6.check_u32(winx.w6);
                     let bool_vec = vec![w1_check, w2_check, w3_check, w4_check, w5_check, w6_check];
                     return (bool_score(bool_vec), 6);
                 }
@@ -434,11 +451,11 @@ impl ECNDB {
                 _ => {
                     let df_check = self.df.check_string(&ecnx.df);
                     let t_check = if let Some(t) = ecnx.t {
-                        self.t.check_usize(t as usize)
+                        self.t.check_u32(Some(t))
                     } else {
-                        self.tg.check_usize(ecnx.tg as usize)
+                        self.tg.check_u32(ecnx.tg)
                     };
-                    let w_check = self.w.check_usize(ecnx.w as usize);
+                    let w_check = self.w.check_u32(ecnx.w);
                     let o_check = self.o.check_string(&ecnx.o);
                     let cc_check = self.cc.check_string(&ecnx.cc);
                     let q_check = self.q.check_string(&ecnx.q);
@@ -475,12 +492,12 @@ impl TXDB {
                 _ => {
                     let df_check = self.df.check_string(&txx.df);
                     let t_check = if let Some(t) = txx.t {
-                        self.t.check_usize(t as usize)
+                        self.t.check_u32(Some(t))
                     } else {
-                        self.tg.check_usize(txx.tg as usize)
+                        self.tg.check_u32(txx.tg)
                     };
                     let w_check = if name != "T1" {
-                        self.w.check_usize(txx.w as usize)
+                        self.w.check_u32(txx.w)
                     } else {
                         true
                     };
@@ -492,7 +509,7 @@ impl TXDB {
                     } else {
                         true
                     };
-                    let rd_check = self.rd.check_usize(txx.rd as usize);
+                    let rd_check = self.rd.check_u32(txx.rd);
                     let q_check = self.q.check_string(&txx.q);
 
                     // println!("{}", df_check);
@@ -541,12 +558,12 @@ impl U1DB {
                 _ => {
                     let df_check = self.df.check_string(&u1x.df);
                     let t_check = if let Some(t) = u1x.t {
-                        self.t.check_usize(t as usize)
+                        self.t.check_u32(Some(t))
                     } else {
-                        self.tg.check_usize(u1x.tg as usize)
+                        self.tg.check_u32(u1x.tg)
                     };
-                    let ipl_check = self.ipl.check_usize(u1x.ipl as usize);
-                    let un_check = self.un.check_usize(u1x.un as usize);
+                    let ipl_check = self.ipl.check_u32(Some(u1x.ipl));
+                    let un_check = self.un.check_u32(u1x.un);
                     let ripl_check = self.ripl.check_string(&u1x.ripl);
                     let rid_check = self.rid.check_string(&u1x.rid);
                     let ripck_check = self.ripck.check_string(&u1x.ripck);
@@ -600,9 +617,9 @@ impl IEDB {
                 _ => {
                     let dfi_check = self.dfi.check_string(&iex.dfi);
                     let t_check = if let Some(t) = iex.t {
-                        self.t.check_usize(t as usize)
+                        self.t.check_u32(Some(t))
                     } else {
-                        self.tg.check_usize(iex.tg as usize)
+                        self.tg.check_u32(iex.tg)
                     };
                     let cd_check = self.cd.check_string(&iex.cd);
                     let bool_vec = vec![dfi_check, t_check, cd_check];

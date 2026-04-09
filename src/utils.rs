@@ -2,6 +2,7 @@ use rand::RngExt;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::time::Duration;
+use tracing::warn;
 
 use crate::error::PistolError;
 
@@ -56,21 +57,25 @@ pub(crate) fn time_to_string(cost: Duration) -> String {
     }
 }
 
-pub(crate) struct PistolHex {
-    pub(crate) hex: String, // hex => dec
+/// Big endian, convert 4 bytes to u32.
+pub(crate) fn vec_to_u32(input: &[u8]) -> u32 {
+    if input.len() > 4 {
+        warn!("input length should be less than or equal to 4");
+    }
+
+    let mut sum = 0;
+    for (i, it) in input.iter().rev().enumerate() {
+        if i >= 4 {
+            break;
+        }
+        sum += (*it as u32) << (i * 8);
+    }
+
+    sum
 }
 
-pub(crate) fn be_vec_to_u32(input: &[u8; 4]) -> u32 {
-    let padding_size = 4 - input.len();
-    let mut after_padding = vec![0; padding_size];
-    for &i in input {
-        after_padding.push(i as u32);
-    }
-    let a = after_padding[0] << 24;
-    let b = after_padding[1] << 16;
-    let c = after_padding[2] << 8;
-    let d = after_padding[3];
-    a + b + c + d
+pub(crate) struct PistolHex {
+    pub(crate) hex: String, // hex => dec
 }
 
 impl PistolHex {
@@ -87,8 +92,7 @@ impl PistolHex {
     pub(crate) fn decode_as_u32(&self) -> Result<u32, PistolError> {
         match hex::decode(&self.hex) {
             Ok(d) => {
-                let d = d[0..4].try_into()?;
-                let v = be_vec_to_u32(&d);
+                let v = vec_to_u32(&d);
                 Ok(v)
             }
             Err(e) => Err(e.into()),
@@ -103,7 +107,7 @@ mod tests {
     #[test]
     fn test_convert() {
         let v = [1, 1, 1, 1];
-        let r = be_vec_to_u32(&v);
+        let r = vec_to_u32(&v);
         assert_eq!(r, 16843009);
 
         let s = "51E80C";

@@ -510,7 +510,7 @@ pub fn os_detect(
                         Err(PistolError::OSDetectPortsNotEnough)
                     };
                     let od = match detect_rets {
-                        Ok((fingerprint, detects)) => {
+                        Ok(Some((fingerprint, detects))) => {
                             let o = Detect {
                                 addr: dst_addr,
                                 alive: true,
@@ -520,8 +520,9 @@ pub fn os_detect(
                                 layer2_cost: Duration::ZERO,
                             };
                             let od = DetectReport::V4(o);
-                            Ok(od)
+                            Ok(Some(od))
                         }
+                        Ok(None) => Ok(None),
                         Err(e) => Err(e),
                     };
                     if let Err(e) = tx.send((dst_addr, od, start_time)) {
@@ -585,7 +586,7 @@ pub fn os_detect(
                                 layer2_cost: Duration::ZERO,
                             };
                             let od = DetectReport::V6(o);
-                            Ok(od)
+                            Ok(Some(od))
                         }
                         Err(e) => Err(e),
                     };
@@ -600,38 +601,35 @@ pub fn os_detect(
     let iter = rx.into_iter().take(recv_size);
     for (addr, r, start_time) in iter {
         match r {
-            Ok(od) => {
+            Ok(Some(od)) => {
                 os_detects.push(od);
             }
-            Err(e) => {
-                warn!("os probe error: {}", e);
-                match addr {
-                    IpAddr::V4(_) => {
-                        let o = Detect {
-                            addr,
-                            alive: false,
-                            fingerprint: Fingerprint::default(),
-                            detects: Vec::new(),
-                            cost: start_time.elapsed(),
-                            layer2_cost: Duration::ZERO,
-                        };
-                        let od = DetectReport::V4(o);
-                        os_detects.push(od);
-                    }
-                    IpAddr::V6(_) => {
-                        let o = Detect6 {
-                            addr,
-                            alive: false,
-                            fingerprint: Fingerprint6::default(),
-                            detects: Vec::new(),
-                            cost: start_time.elapsed(),
-                            layer2_cost: Duration::ZERO,
-                        };
-                        let od = DetectReport::V6(o);
-                        os_detects.push(od);
-                    }
+            Ok(None) | Err(_) => match addr {
+                IpAddr::V4(_) => {
+                    let o = Detect {
+                        addr,
+                        alive: false,
+                        fingerprint: Fingerprint::default(),
+                        detects: Vec::new(),
+                        cost: start_time.elapsed(),
+                        layer2_cost: Duration::ZERO,
+                    };
+                    let od = DetectReport::V4(o);
+                    os_detects.push(od);
                 }
-            }
+                IpAddr::V6(_) => {
+                    let o = Detect6 {
+                        addr,
+                        alive: false,
+                        fingerprint: Fingerprint6::default(),
+                        detects: Vec::new(),
+                        cost: start_time.elapsed(),
+                        layer2_cost: Duration::ZERO,
+                    };
+                    let od = DetectReport::V6(o);
+                    os_detects.push(od);
+                }
+            },
         }
     }
     ret.finish(os_detects);
@@ -692,7 +690,7 @@ pub fn os_detect_raw(
                 push_sd,
                 get_response,
             ) {
-                Ok((fingerprint, detects)) => {
+                Ok(Some((fingerprint, detects))) => {
                     let o = Detect {
                         addr: dst_addr,
                         alive: true,
@@ -705,8 +703,7 @@ pub fn os_detect_raw(
                     os_detect.finish(Some(dr));
                     Ok(os_detect)
                 }
-                Err(e) => {
-                    warn!("os probe error: {}", e);
+                Ok(None) | Err(_) => {
                     let o = Detect {
                         addr: dst_addr,
                         alive: false,
