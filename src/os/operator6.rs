@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::debug;
 use tracing::warn;
 
+use crate::os::operator::get_diff;
 use crate::os::rr::AllPacketRR6;
 use crate::utils::vec_to_u32;
 
@@ -126,16 +127,7 @@ fn tcp_isr(ap: &AllPacketRR6) -> f64 {
     seq_vec.push(s5);
     seq_vec.push(s6);
 
-    let mut diff = Vec::new();
-    if seq_vec.len() >= 2 {
-        for i in 0..(seq_vec.len() - 1) {
-            let a = seq_vec[i];
-            let b = seq_vec[i + 1];
-            let x = if a <= b { b - a } else { !(a - b) };
-            // println!("{} {} {}", a, b, x);
-            diff.push(x);
-        }
-    }
+    let diff = get_diff(&seq_vec, false);
 
     let mut sum: u64 = 0; // avoid overflow
     for d in diff {

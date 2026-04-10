@@ -200,6 +200,10 @@ impl<V> LoopStates<V> {
         let key = LoopKey::IpPort(ip, port);
         self.data.insert(key, value);
     }
+    fn insert_only_ip(&mut self, ip: IpAddr, value: V) {
+        let key = LoopKey::Ip(ip);
+        self.data.insert(key, value);
+    }
     fn insert_only_port(&mut self, port: u16, value: V) {
         let key = LoopKey::Port(port);
         self.data.insert(key, value);
@@ -3472,7 +3476,7 @@ OS:%T=40%CD=S)
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
-        pistol.set_log_level("debug");
+        // pistol.set_log_level("debug");
 
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
         // `dst_open_tcp_port` must be a certain open tcp port.
@@ -3497,9 +3501,48 @@ OS:%T=40%CD=S)
         let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
 
-        println!("============================================================");
         for d in ret.detect_reports {
-            d.print_fingerprint();
+            // print finger print
+            println!("{}", d);
+        }
+    }
+    #[cfg(feature = "os")]
+    #[test]
+    fn test_os_detect6() {
+        // nmap
+
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(2.5);
+        pistol.set_log_level("debug");
+
+        // fe80::20c:29ff:fecf:622f
+        let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfecf, 0x622f);
+        // `dst_open_tcp_port` must be a certain open tcp port.
+        let dst_open_tcp_port = 22;
+        // `dst_closed_tcp_port` must be a certain closed tcp port.
+        let dst_closed_tcp_port = 8765;
+        // `dst_closed_udp_port` must be a certain closed udp port.
+        let dst_closed_udp_port = 9876;
+        let target = Target::new(
+            dst_ipv6.into(),
+            Some(vec![
+                dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+            ]),
+        );
+        let top_k = 3;
+        let threads = 8;
+
+        // The `fingerprint` is the obtained fingerprint of the target OS.
+        // Return the `top_k` best results (the number of os detect result may not equal to `top_k`), sorted by score.
+        let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
+        println!("{}", ret);
+
+        for d in ret.detect_reports {
+            // print finger print
+            println!("{}", d);
         }
     }
     #[cfg(feature = "scan")]

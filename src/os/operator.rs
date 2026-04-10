@@ -1,5 +1,3 @@
-use std::u16;
-
 use crc32fast;
 use gcdx::gcdx;
 use pnet::packet::Packet;
@@ -11,6 +9,8 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
+use std::ops::Not;
+use std::ops::Sub;
 use tracing::warn;
 
 use crate::os::rr::IERR;
@@ -97,40 +97,51 @@ fn get_tcp_seq(eth_response: &[u8], probe_name: &str) -> Option<u32> {
     None
 }
 
-fn get_diff_u32(input: &[u32]) -> Vec<u32> {
-    if input.len() >= 2 {
-        let input_slice = input[0..(input.len() - 1)].to_vec();
-        let mut diff = Vec::new();
-        for (i, x) in input_slice.iter().enumerate() {
-            let y = input[i + 1];
-            let x = *x;
-            let k = if x <= y { y - x } else { !(x - y) };
-            diff.push(k);
-        }
-        diff
-    } else {
-        Vec::new()
-    }
+pub(crate) trait PistolUnsigned {
+    const ZERO: Self;
+    const MAX: Self;
 }
 
-fn get_diff_u16(input: &[u16]) -> Vec<u16> {
+impl PistolUnsigned for u8 {
+    const ZERO: Self = 0;
+    const MAX: Self = u8::MAX;
+}
+impl PistolUnsigned for u16 {
+    const ZERO: Self = 0;
+    const MAX: Self = u16::MAX;
+}
+impl PistolUnsigned for u32 {
+    const ZERO: Self = 0;
+    const MAX: Self = u32::MAX;
+}
+
+pub(crate) fn get_diff<T>(input: &[T], sorted: bool) -> Vec<T>
+where
+    T: PistolUnsigned + Sub<Output = T> + Not<Output = T> + Ord + Clone + PartialOrd,
+{
     if input.len() >= 2 {
         // The received data packets may be out of order, so sorting is used here.
-        let mut sorted = input.to_vec();
-        sorted.sort();
+        // In some cases, later packets will return first,
+        // and normally the difference in IP IDs won't be too large.
+        // Therefore, we'll perform a sorting process first,
+        // and then calculate the diff value.
+        let mut sorted_input = input.to_vec();
+        if !sorted {
+            sorted_input.sort();
+        }
 
         // o: [1, 2, 3, 4]
         // a: [1, 2, 3, 4, 5]
         // b: [0, 1, 2, 3, 4]
-
-        let mut sorted_a = sorted.clone();
-        sorted_a.push(u16::MAX);
-        let mut sorted_b = vec![0];
-        sorted_b.extend(sorted);
+        let mut sorted_a: Vec<T> = sorted_input.clone();
+        sorted_a.push(T::MAX);
+        let mut sorted_b: Vec<T> = vec![T::ZERO];
+        sorted_b.extend_from_slice(&sorted_input);
 
         let mut diff = Vec::new();
         for (a, b) in sorted_a.into_iter().zip(sorted_b) {
-            diff.push(a - b)
+            let c = if a >= b { a - b } else { !(b - a) };
+            diff.push(c)
         }
 
         let _ = diff.remove(0);
@@ -168,7 +179,7 @@ pub(crate) fn tcp_gcd(seqrr: &SEQRR) -> Option<(u32, Vec<u32>)> {
         }
     }
 
-    let diff = get_diff_u32(&seq_vec);
+    let diff = get_diff(&seq_vec, false);
     if diff.len() > 1 {
         let gcd = match gcdx(&diff) {
             Some(g) => g,
@@ -288,7 +299,7 @@ pub(crate) fn tcp_ti_ci_ii(
     }
     /// If all of the IP IDs are identical, the test is set to that value in hex.
     fn hex_judgement(ip_id_vec: &[u16]) -> bool {
-        let diff = get_diff_u16(ip_id_vec);
+        let diff = get_diff(ip_id_vec, false);
         let mut sum = 0;
         for d in diff {
             sum += d;
@@ -375,7 +386,7 @@ pub(crate) fn tcp_ti_ci_ii(
         }
     }
 
-    let seq_diff = get_diff_u16(&seq_ip_id_vec);
+    let seq_diff = get_diff(&seq_ip_id_vec, false);
 
     // TI is based on responses to the TCP SEQ probes.
     let ti = if seq_ip_id_vec.len() >= 3 {
@@ -428,7 +439,7 @@ pub(crate) fn tcp_ti_ci_ii(
             None => (),
         }
     }
-    let t_diff = get_diff_u16(&t_ip_id_vec);
+    let t_diff = get_diff(&t_ip_id_vec, false);
 
     let ci = if t_ip_id_vec.len() >= 2 {
         if z_judgement(&t_ip_id_vec) {
@@ -478,9 +489,9 @@ pub(crate) fn tcp_ti_ci_ii(
             None => (),
         }
     }
-    let ie_diff = get_diff_u16(&ie_ip_id_vec);
-    println!("{:?}", ie_ip_id_vec);
-    println!("{:?}", ie_diff);
+    let ie_diff = get_diff(&ie_ip_id_vec, false);
+    // println!("{:?}", ie_ip_id_vec);
+    // println!("{:?}", ie_diff);
 
     // RD result isn't possible for II because there are not enough samples to support it.
     let ii = if ie_ip_id_vec.len() == 2 {
@@ -688,7 +699,7 @@ pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Option<String> {
         // If any of the timestamp values are zero, TS is set to 0.
         String::from("0")
     } else {
-        let diff = get_diff_u32(&tsval_vec);
+        let diff = get_diff(&tsval_vec, false);
         let ts = if diff.len() > 0 {
             let mut sum = 0.0;
             for d in &diff {
@@ -859,17 +870,12 @@ pub(crate) fn tcp_wx(
 }
 
 /// Responsiveness (R).
-pub(crate) fn tcp_udp_icmp_r(eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            let ret = match ipv4_packet.payload().len() {
-                0 => String::from("N"),
-                _ => String::from("Y"),
-            };
-            return Some(ret);
-        }
+pub(crate) fn tcp_udp_icmp_r(eth_response: &[u8]) -> String {
+    if eth_response.len() > 0 {
+        String::from("Y")
+    } else {
+        String::from("N")
     }
-    None
 }
 
 /// IP don't fragment bit (DF).
@@ -1454,6 +1460,11 @@ pub(crate) fn icmp_cd(ie: &IERR, probe_name: &str) -> Option<String> {
         };
         let code_3 = icmp_packet_3.get_icmp_code();
         let code_4 = icmp_packet_4.get_icmp_code();
+
+        // println!(
+        //     "code_1: {}, code_2: {}, code_3: {}, code_4: {}",
+        //     code_1.0, code_2.0, code_3.0, code_4.0
+        // );
 
         let ret = if (code_3 == IcmpCode(0)) && (code_4 == IcmpCode(0)) {
             // Both code values are zero.

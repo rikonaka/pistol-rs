@@ -489,7 +489,6 @@ fn send_ie_probes(
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let rrq_id = random_request_id();
-        println!("t{}: {}", t, rrq_id);
         let state = OsProbeState {
             id: rrq_id,
             retries: 0,
@@ -554,7 +553,6 @@ fn send_ie_probes(
                         if state.id == recv_response.id {
                             recvd_packet += 1;
                             if let LoopKey::Port(t) = key {
-                                println!("recv t{}: {}", t, recv_response.id);
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
                                 state.recved = true;
@@ -1145,23 +1143,21 @@ impl fmt::Display for SEQX {
 }
 
 fn seq_fingerprint(ap: &AllPacketRR) -> SEQX {
-    let alive_host = |rvec: Vec<Option<String>>| -> usize {
+    let alive_host = |rvec: Vec<String>| -> usize {
         let mut num = 0;
         for r in rvec {
-            if let Some(r) = r {
-                if r == "Y" {
-                    num += 1;
-                }
+            if r == "Y" {
+                num += 1;
             }
         }
         num
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1");
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2");
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3");
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4");
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5");
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6");
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2);
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2);
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2);
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2);
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2);
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2);
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     let num = alive_host(rvec);
 
@@ -1309,23 +1305,21 @@ impl fmt::Display for OPSX {
 }
 
 pub(crate) fn ops_fingerprint(ap: &AllPacketRR) -> OPSX {
-    let rops = |rvec: Vec<Option<String>>| -> bool {
+    let rops = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
-            if let Some(r) = r {
-                if r == "N" {
-                    flag = false;
-                }
+            if r == "N" {
+                flag = false;
             }
         }
         flag
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1");
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2");
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3");
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4");
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5");
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6");
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2);
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2);
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2);
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2);
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2);
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2);
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     // println!("{:?}", rvec);
     let flag = rops(rvec);
@@ -1446,23 +1440,21 @@ impl fmt::Display for WINX {
 }
 
 pub(crate) fn win_fingerprint(ap: &AllPacketRR) -> WINX {
-    let rwin = |rvec: Vec<Option<String>>| -> bool {
+    let rwin = |rvec: Vec<String>| -> bool {
         let mut flag = true;
         for r in rvec {
-            if let Some(r) = r {
-                if r == "N" {
-                    flag = false;
-                }
+            if r == "N" {
+                flag = false;
             }
         }
         flag
     };
-    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2, "seq1");
-    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2, "seq2");
-    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2, "seq3");
-    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2, "seq4");
-    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2, "seq5");
-    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2, "seq6");
+    let r1 = tcp_udp_icmp_r(&ap.seq.seq1.response2);
+    let r2 = tcp_udp_icmp_r(&ap.seq.seq2.response2);
+    let r3 = tcp_udp_icmp_r(&ap.seq.seq3.response2);
+    let r4 = tcp_udp_icmp_r(&ap.seq.seq4.response2);
+    let r5 = tcp_udp_icmp_r(&ap.seq.seq5.response2);
+    let r6 = tcp_udp_icmp_r(&ap.seq.seq6.response2);
     let rvec = vec![r1, r2, r3, r4, r5, r6];
     let flag = rwin(rvec);
     let r = if flag {
@@ -1553,28 +1545,26 @@ impl fmt::Display for ECNX {
 }
 
 pub(crate) fn ecn_fingerprint(ap: &AllPacketRR) -> ECNX {
-    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response2, "ecn");
-    if let Some(rv) = r {
-        if rv == "Y" {
-            let df = tcp_udp_df(&ap.ecn.ecn.response2, "ecn");
-            let t = tcp_udp_icmp_t(&ap.ecn.ecn.response2, &ap.u1, "ecn");
-            let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response2, "ecn");
-            let w = tcp_w(&ap.ecn.ecn.response2, "ecn");
-            let o = tcp_o(&ap.ecn.ecn.response2, "ecn");
-            let cc = tcp_cc(&ap.ecn.ecn.response2, "ecn");
-            let q = tcp_q(&ap.ecn.ecn.response2, "ecn");
+    let r = tcp_udp_icmp_r(&ap.ecn.ecn.response2);
+    if r == "Y" {
+        let df = tcp_udp_df(&ap.ecn.ecn.response2, "ecn");
+        let t = tcp_udp_icmp_t(&ap.ecn.ecn.response2, &ap.u1, "ecn");
+        let tg = tcp_udp_icmp_tg(&ap.ecn.ecn.response2, "ecn");
+        let w = tcp_w(&ap.ecn.ecn.response2, "ecn");
+        let o = tcp_o(&ap.ecn.ecn.response2, "ecn");
+        let cc = tcp_cc(&ap.ecn.ecn.response2, "ecn");
+        let q = tcp_q(&ap.ecn.ecn.response2, "ecn");
 
-            return ECNX {
-                r: rv,
-                df,
-                t,
-                tg,
-                w,
-                o,
-                cc,
-                q,
-            };
-        }
+        return ECNX {
+            r,
+            df,
+            t,
+            tg,
+            w,
+            o,
+            cc,
+            q,
+        };
     }
     //  If there is no reply, remaining fields for the test are omitted.
     let r = String::from("N");
@@ -1693,35 +1683,33 @@ impl fmt::Display for TXX {
 
 pub(crate) fn tx_fingerprint(ap: &AllPacketRR) -> (TXX, TXX, TXX, TXX, TXX, TXX, TXX) {
     fn do_jobs(tx: &RequestResponse, u1rr: &U1RR, name: &str) -> TXX {
-        let r = tcp_udp_icmp_r(&tx.response2, name);
-        if let Some(rv) = r {
-            if rv == "Y" {
-                let df = tcp_udp_df(&tx.response2, &name.to_lowercase());
-                let t = tcp_udp_icmp_t(&tx.response2, u1rr, &name.to_lowercase());
-                let tg = tcp_udp_icmp_tg(&tx.response2, &name.to_lowercase());
-                let w = tcp_w(&tx.response2, &name.to_lowercase());
-                let s = tcp_s(&tx.request3, &tx.response2, &name.to_lowercase());
-                let a = tcp_a(&tx.request3, &tx.response2, &name.to_lowercase());
-                let f = tcp_f(&tx.response2, &name.to_lowercase());
-                let o = tcp_o(&tx.response2, &name.to_lowercase());
-                let rd = tcp_rd(&tx.response2, &name.to_lowercase());
-                let q = tcp_q(&tx.response2, &name.to_lowercase());
+        let r = tcp_udp_icmp_r(&tx.response2);
+        if r == "Y" {
+            let df = tcp_udp_df(&tx.response2, &name.to_lowercase());
+            let t = tcp_udp_icmp_t(&tx.response2, u1rr, &name.to_lowercase());
+            let tg = tcp_udp_icmp_tg(&tx.response2, &name.to_lowercase());
+            let w = tcp_w(&tx.response2, &name.to_lowercase());
+            let s = tcp_s(&tx.request3, &tx.response2, &name.to_lowercase());
+            let a = tcp_a(&tx.request3, &tx.response2, &name.to_lowercase());
+            let f = tcp_f(&tx.response2, &name.to_lowercase());
+            let o = tcp_o(&tx.response2, &name.to_lowercase());
+            let rd = tcp_rd(&tx.response2, &name.to_lowercase());
+            let q = tcp_q(&tx.response2, &name.to_lowercase());
 
-                return TXX {
-                    name: name.to_string(),
-                    r: rv,
-                    df,
-                    t,
-                    tg,
-                    w,
-                    s,
-                    a,
-                    f,
-                    o,
-                    rd,
-                    q,
-                };
-            }
+            return TXX {
+                name: name.to_string(),
+                r,
+                df,
+                t,
+                tg,
+                w,
+                s,
+                a,
+                f,
+                o,
+                rd,
+                q,
+            };
         }
 
         let r = String::from("N");
@@ -1852,34 +1840,32 @@ impl fmt::Display for U1X {
 }
 
 pub(crate) fn u1_fingerprint(ap: &AllPacketRR) -> U1X {
-    let r = tcp_udp_icmp_r(&ap.u1.u1.response2, "u1");
-    if let Some(rv) = r.clone() {
-        if rv == "Y" {
-            let df = tcp_udp_df(&ap.u1.u1.response2, "u1");
-            let t = tcp_udp_icmp_t(&ap.u1.u1.response2, &ap.u1, "u1");
-            let tg = tcp_udp_icmp_tg(&ap.u1.u1.response2, "u1");
-            let ipl = udp_ipl(&ap.u1);
-            let un = udp_un(&ap.u1, "u1");
-            let ripl = udp_ripl(&ap.u1, "u1");
-            let rid = udp_rid(&ap.u1, "u1");
-            let ripck = udp_ripck(&ap.u1, "u1");
-            let ruck = udp_ruck(&ap.u1, "u1");
-            let rud = udp_rud(&ap.u1, "u1");
+    let r = tcp_udp_icmp_r(&ap.u1.u1.response2);
+    if r == "Y" {
+        let df = tcp_udp_df(&ap.u1.u1.response2, "u1");
+        let t = tcp_udp_icmp_t(&ap.u1.u1.response2, &ap.u1, "u1");
+        let tg = tcp_udp_icmp_tg(&ap.u1.u1.response2, "u1");
+        let ipl = udp_ipl(&ap.u1);
+        let un = udp_un(&ap.u1, "u1");
+        let ripl = udp_ripl(&ap.u1, "u1");
+        let rid = udp_rid(&ap.u1, "u1");
+        let ripck = udp_ripck(&ap.u1, "u1");
+        let ruck = udp_ruck(&ap.u1, "u1");
+        let rud = udp_rud(&ap.u1, "u1");
 
-            return U1X {
-                r: rv,
-                df,
-                t,
-                tg,
-                ipl,
-                un,
-                ripl,
-                rid,
-                ripck,
-                ruck,
-                rud,
-            };
-        }
+        return U1X {
+            r,
+            df,
+            t,
+            tg,
+            ipl,
+            un,
+            ripl,
+            rid,
+            ripck,
+            ruck,
+            rud,
+        };
     }
 
     let r = String::from("N");
@@ -1961,20 +1947,16 @@ impl fmt::Display for IEX {
 }
 
 pub(crate) fn ie_fingerprint(ap: &AllPacketRR) -> IEX {
-    let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response2, "ie1");
-    let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response2, "ie2");
-    if let Some(r1v) = r1.clone() {
-        if let Some(r2v) = r2.clone() {
-            if r1v == "Y" && r2v == "Y" {
-                // The R value is only true (Y) if both probes elicit responses.
-                let r = String::from("Y");
-                let dfi = icmp_dfi(&ap.ie, "ie");
-                let t = tcp_udp_icmp_t(&ap.ie.ie1.response2, &ap.u1, "ie");
-                let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response2, "ie");
-                let cd = icmp_cd(&ap.ie, "ie");
-                return IEX { r, dfi, t, tg, cd };
-            }
-        }
+    let r1 = tcp_udp_icmp_r(&ap.ie.ie1.response2);
+    let r2 = tcp_udp_icmp_r(&ap.ie.ie2.response2);
+    if r1 == "Y" && r2 == "Y" {
+        // The R value is only true (Y) if both probes elicit responses.
+        let r = String::from("Y");
+        let dfi = icmp_dfi(&ap.ie, "ie");
+        let t = tcp_udp_icmp_t(&ap.ie.ie1.response2, &ap.u1, "ie");
+        let tg = tcp_udp_icmp_tg(&ap.ie.ie1.response2, "ie");
+        let cd = icmp_cd(&ap.ie, "ie");
+        return IEX { r, dfi, t, tg, cd };
     }
 
     let r = String::from("N");

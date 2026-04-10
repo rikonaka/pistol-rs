@@ -17,7 +17,6 @@ use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
-use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 use tracing::warn;
 
@@ -621,7 +620,8 @@ fn send_neighbor_detect_packet(
     is_route: bool,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
-) -> Result<u64, PistolError> {
+    rrq_id: u64,
+) -> Result<(), PistolError> {
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
     let interface_name = interface.name.clone();
     match dst_addr {
@@ -633,7 +633,6 @@ fn send_neighbor_detect_packet(
             };
             let (buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
-            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -656,18 +655,19 @@ fn send_neighbor_detect_packet(
             if let Err(e) = push_sd.send(srq) {
                 warn!("send srq error: {}", e);
             }
-            Ok(rrq_id)
+            Ok(())
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match src_addr {
                 IpAddr::V6(src) => src,
                 _ => return Err(PistolError::CanNotFoundSrcAddress),
             };
-            let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
-            let dst_ipv6 = dst_ipv6_ext.link_multicast();
             if is_route {
+                debug!(
+                    "dst {} is not in local net, send NDP RA to default router to detect the dst mac",
+                    dst_ipv6
+                );
                 let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,
@@ -680,7 +680,7 @@ fn send_neighbor_detect_packet(
                     dst_mac,
                     src_mac,
                     eth_payload: buff,
-                    eth_type: EtherTypes::Arp,
+                    eth_type: EtherTypes::Ipv6,
                     retransmit: 1,
                 };
 
@@ -690,11 +690,14 @@ fn send_neighbor_detect_packet(
                 if let Err(e) = push_sd.send(srq) {
                     warn!("send srq error: {}", e);
                 }
-                Ok(rrq_id)
+                Ok(())
             } else {
+                debug!(
+                    "dst {} is in local net, send NDP NS to detect the dst mac",
+                    dst_ipv6
+                );
                 let dst_mac = ipv6_multicast_mac(dst_ipv6);
                 let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,
@@ -707,7 +710,7 @@ fn send_neighbor_detect_packet(
                     dst_mac,
                     src_mac,
                     eth_payload: buff,
-                    eth_type: EtherTypes::Arp,
+                    eth_type: EtherTypes::Ipv6,
                     retransmit: 1,
                 };
 
@@ -717,7 +720,7 @@ fn send_neighbor_detect_packet(
                 if let Err(e) = push_sd.send(srq) {
                     warn!("send srq error: {}", e);
                 }
-                Ok(rrq_id)
+                Ok(())
             }
         }
     }
@@ -802,11 +805,9 @@ pub(crate) fn infer_macs(
     get_response: Receiver<RResponse>,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
     let mut loop_states = LoopStates::default();
-
     for it in inputs {
         let src_addr = it.inferred_src_addr;
         let dst_addr = it.inferred_dst_addr;
-        let dst_port = 0;
         if src_addr.is_loopback() || dst_addr.is_loopback() {
             let state = InferState {
                 id: 0,
@@ -820,7 +821,7 @@ pub(crate) fn infer_macs(
                 dst_addr,
                 retries: 0,
             };
-            loop_states.insert_ip_port(dst_addr, 0, state);
+            loop_states.insert_only_ip(dst_addr, state);
         } else {
             let (src_interface, route_via) = get_route(dst_addr, src_addr)?;
             debug!(
@@ -828,7 +829,7 @@ pub(crate) fn infer_macs(
                 src_interface.name, route_via
             );
             let state = InferState {
-                id: 0,
+                id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via,
                 interface: src_interface.clone(),
@@ -839,7 +840,7 @@ pub(crate) fn infer_macs(
                 dst_addr,
                 retries: 0,
             };
-            loop_states.insert_ip_port(dst_addr, dst_port, state);
+            loop_states.insert_only_ip(dst_addr, state);
         }
     }
 
@@ -848,7 +849,7 @@ pub(crate) fn infer_macs(
     loop {
         let mut all_done = true;
         for (_key, state) in &mut loop_states {
-            if state.dst_mac != MacAddr::zero() || state.retries >= max_retries {
+            if state.retries >= max_retries {
                 continue;
             }
 
@@ -878,7 +879,8 @@ pub(crate) fn infer_macs(
                                     };
 
                                     let src_addr = state.src_addr;
-                                    let rrq_id = send_neighbor_detect_packet(
+                                    let rrq_id = state.id;
+                                    send_neighbor_detect_packet(
                                         dst_addr,
                                         src_addr,
                                         src_interface,
@@ -886,14 +888,12 @@ pub(crate) fn infer_macs(
                                         false,
                                         push_rd,
                                         push_sd,
+                                        rrq_id,
                                     )?;
 
-                                    state.id = rrq_id;
                                     state.cached = false;
                                     state.is_route = false;
-                                    state.dst_addr = dst_addr;
                                     state.retries += 1;
-
                                     all_done = false;
                                 }
                             };
@@ -918,7 +918,8 @@ pub(crate) fn infer_macs(
                                 None => {
                                     let src_addr = state.src_addr;
                                     let src_interface = state.interface.clone();
-                                    let rrq_id = send_neighbor_detect_packet(
+                                    let rrq_id = state.id;
+                                    send_neighbor_detect_packet(
                                         via_addr,
                                         src_addr,
                                         src_interface,
@@ -926,6 +927,7 @@ pub(crate) fn infer_macs(
                                         true,
                                         push_rd,
                                         push_sd,
+                                        rrq_id,
                                     )?;
 
                                     state.id = rrq_id;
@@ -951,7 +953,8 @@ pub(crate) fn infer_macs(
                         None => {
                             let src_addr = state.src_addr;
                             let src_interface = state.interface.clone();
-                            let rrq_id = send_neighbor_detect_packet(
+                            let rrq_id = state.id;
+                            send_neighbor_detect_packet(
                                 dst_addr,
                                 src_addr,
                                 src_interface,
@@ -959,12 +962,11 @@ pub(crate) fn infer_macs(
                                 false,
                                 push_rd,
                                 push_sd,
+                                rrq_id,
                             )?;
 
-                            state.id = rrq_id;
                             state.cached = false;
                             state.is_route = false;
-                            state.dst_addr = dst_addr;
                             state.retries += 1;
 
                             all_done = false;

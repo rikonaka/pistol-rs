@@ -324,14 +324,15 @@ fn arp_scan_buff_send(
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
-) -> Result<u64, PistolError> {
+    rrq_id: u64,
+) -> Result<(), PistolError> {
     let interface = mac_scan_found_interface(dst_ipv4.into())?;
     if interface.is_loopback() {
         debug!(
             "target {} is loopback address or this machine, skip it",
             dst_ipv4
         );
-        return Ok(0);
+        return Ok(());
     }
 
     let interface_name = interface.name.clone();
@@ -354,7 +355,6 @@ fn arp_scan_buff_send(
     // only send here
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
-    let rrq_id = random_request_id();
     let rrq = RRequest {
         interface_name: interface_name.clone(),
         id: rrq_id,
@@ -377,7 +377,7 @@ fn arp_scan_buff_send(
     if let Err(e) = push_sd.send(srq) {
         error!("send arp scan msg error: {}", e);
     }
-    Ok(rrq_id)
+    Ok(())
 }
 
 #[cfg(feature = "scan")]
@@ -621,7 +621,7 @@ pub(crate) fn mac_scan(
         let dst_addr = t.addr;
         let dst_port = 0;
         let state = MacScanState {
-            id: 0,
+            id: random_request_id(),
             addr: dst_addr,
             retries: 0,
             data_recved: false,
@@ -646,8 +646,8 @@ pub(crate) fn mac_scan(
                             state.retries + 1,
                             max_retries
                         );
-                        // retry to send arp scan packet and recv response
-                        let rrq_id = arp_scan_buff_send(dst_ipv4, timeout, push_rd, push_sd)?;
+                        let rrq_id = state.id;
+                        arp_scan_buff_send(dst_ipv4, timeout, push_rd, push_sd, rrq_id)?;
                         rrq_id_hm.insert(rrq_id, dst_addr);
 
                         state.id = rrq_id;

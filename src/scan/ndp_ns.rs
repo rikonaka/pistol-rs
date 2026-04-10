@@ -12,6 +12,7 @@ use pnet::packet::ipv6::MutableIpv6Packet;
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
+use subnetwork::Ipv6AddrExt;
 
 use crate::error::PistolError;
 use crate::layer::ICMPV6_NS_HEADER_SIZE;
@@ -25,6 +26,9 @@ pub fn build_ndp_ns_scan_packet(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
 ) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
+    let dst_link_multicast_ipv6 = dst_ipv6_ext.link_multicast();
+
     // same as arp in ipv4, but use icmpv6 neighbor solicitation
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_NS_HEADER_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -42,7 +46,7 @@ pub fn build_ndp_ns_scan_packet(
     ipv6_header.set_next_header(IpNextHeaderProtocols::Icmpv6);
     ipv6_header.set_hop_limit(255);
     ipv6_header.set_source(src_ipv6);
-    ipv6_header.set_destination(dst_ipv6);
+    ipv6_header.set_destination(dst_link_multicast_ipv6);
 
     // icmpv6
     let mut icmpv6_header =

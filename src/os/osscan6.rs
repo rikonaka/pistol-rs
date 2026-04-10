@@ -637,11 +637,18 @@ fn send_seq_probes(
             break;
         }
 
-        for _ in 0..6 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recved_packet = 0;
+        loop {
+            if recv_start.elapsed() > timeout || recved_packet >= 6 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -836,11 +843,18 @@ fn send_ie_probes(
             break;
         }
 
-        for _ in 0..2 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recved_packet = 0;
+        loop {
+            if recv_start.elapsed() > timeout || recved_packet >= 2 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -977,11 +991,18 @@ fn send_nx_probes(
             break;
         }
 
-        for _ in 0..2 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recved_packet = 0;
+        loop {
+            if recv_start.elapsed() > timeout || recved_packet >= 2 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut send_state {
                         if state.id == recv_response.id {
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -1379,11 +1400,18 @@ fn send_tx_probes(
             break;
         }
 
-        for _ in 0..6 {
-            match get_response.recv_timeout(timeout) {
+        let recv_start = Instant::now();
+        let recv_timeout_10ms = Duration::from_millis(10);
+        let mut recved_packet = 0;
+        loop {
+            if recv_start.elapsed() > timeout || recved_packet >= 6 {
+                break;
+            }
+            match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut send_state {
                         if state.id == recv_response.id {
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();

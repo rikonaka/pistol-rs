@@ -169,6 +169,16 @@ pub enum DetectReport {
     V6(Detect6),
 }
 
+/// Show the fingerprint in DetectReport.
+impl fmt::Display for DetectReport {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DetectReport::V4(o) => write!(f, "{}", o.fingerprint),
+            DetectReport::V6(o) => write!(f, "{}", o.fingerprint),
+        }
+    }
+}
+
 #[cfg(feature = "os")]
 impl DetectReport {
     pub fn addr(&self) -> IpAddr {
@@ -181,16 +191,6 @@ impl DetectReport {
         match addr {
             IpAddr::V4(_) => DetectReport::V4(Detect::new_offline_host(addr)),
             IpAddr::V6(_) => DetectReport::V6(Detect6::new_offline_host(addr)),
-        }
-    }
-    pub fn print_fingerprint(&self) {
-        match self {
-            DetectReport::V4(o) => {
-                println!("{}", o.fingerprint);
-            }
-            DetectReport::V6(o) => {
-                println!("{}", o.fingerprint);
-            }
         }
     }
 }
