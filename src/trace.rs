@@ -87,7 +87,7 @@ pub enum HopStatus {
 pub struct Trace {
     pub addr: IpAddr,
     pub hops: u8,
-    pub cost: Duration,
+    pub layer3_cost: Duration,
     pub layer2_cost: Duration,
     pub start_time: DateTime<Local>,
     pub finish_time: DateTime<Local>,
@@ -104,12 +104,12 @@ impl fmt::Display for Trace {
         table.add_row(row![
             c -> "addr",
             c -> "hops",
-            c -> "time cost"
+            c -> "cost"
         ]);
 
         let addr_str = format!("{}", self.addr);
         let hops_str = format!("{}", self.hops);
-        let rtt_str = time_to_string(self.cost);
+        let rtt_str = time_to_string(self.layer3_cost);
         table.add_row(row![c -> addr_str, c -> hops_str, c -> rtt_str]);
 
         let summary1 = format!(
@@ -131,14 +131,15 @@ impl Trace {
         Trace {
             addr,
             hops: 0,
-            cost: Duration::ZERO,
+            layer3_cost: Duration::ZERO,
             layer2_cost: Duration::ZERO,
             start_time: now,
             finish_time: now,
         }
     }
-    pub(crate) fn finish(&mut self, hops: u8) {
+    pub(crate) fn finish(&mut self, hops: u8, layer3_cost: Duration) {
         self.hops = hops;
+        self.layer3_cost = layer3_cost;
         self.finish_time = Local::now();
     }
 }
@@ -167,13 +168,15 @@ fn syn_trace_ipv4(
         ip_id -= 30
     }
     let mut last_response_ttl = 0;
+    let trace_start = Instant::now();
+
     for ttl in 1..=TRACE_MAX_HOPS {
         let random_src_port = random_port_range(1000, 65535);
         let (buff, filters) =
             tcp::build_syn_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
+        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -199,7 +202,7 @@ fn syn_trace_ipv4(
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == rrq_id && r.data.len() > 0 {
+                    if r.id == rrq_id {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -230,7 +233,7 @@ fn syn_trace_ipv4(
                         hop_status,
                         recv_response.rtt.as_secs_f64()
                     );
-                    trace.finish(ttl);
+                    trace.finish(ttl, trace_start.elapsed());
                     return Ok(trace);
                 }
                 _ => break, // if any response has received, break the retry loop, and continue to next ttl.
@@ -239,7 +242,7 @@ fn syn_trace_ipv4(
         ip_id += 1;
     }
     debug!("last ttl: {}", last_response_ttl);
-    trace.finish(last_response_ttl);
+    trace.finish(last_response_ttl, trace_start.elapsed());
     Ok(trace)
 }
 
@@ -257,13 +260,15 @@ fn syn_trace_ipv6(
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv6.into());
     let mut last_response_hop_limit = 0;
+    let trace_start = Instant::now();
+
     for hop_limit in 1..=TRACE_MAX_HOPS {
         let random_src_port = random_port_range(1000, 65535);
         let (buff, filters) =
             tcp6::build_syn_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
 
+        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -288,7 +293,7 @@ fn syn_trace_ipv6(
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == rrq_id && r.data.len() > 0 {
+                    if r.id == rrq_id {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -315,7 +320,7 @@ fn syn_trace_ipv6(
                         recv_response.rtt.as_secs_f64()
                     );
                     // tcp rst packet, means packet arrive the target machine
-                    trace.finish(hop_limit);
+                    trace.finish(hop_limit, trace_start.elapsed());
                     return Ok(trace);
                 }
                 _ => break,
@@ -323,7 +328,7 @@ fn syn_trace_ipv6(
         }
     }
     debug!("last hop limit: {}", last_response_hop_limit);
-    trace.finish(last_response_hop_limit);
+    trace.finish(last_response_hop_limit, trace_start.elapsed());
     Ok(trace)
 }
 
@@ -341,6 +346,7 @@ pub fn syn_trace(
     let dst_port = if net_info.dst_ports.len() > 0 {
         net_info.dst_ports[0]
     } else {
+        // The default port is 80 if not specified, which is the same as nmap.
         80
     };
     let src_mac = net_info.inferred_src_mac;
@@ -414,12 +420,14 @@ fn icmp_trace_ipv4(
         ip_id -= 30;
     }
     let mut last_response_ttl = 0;
+    let trace_start = Instant::now();
+
     for ttl in 1..=TRACE_MAX_HOPS {
         let (buff, filters) =
             icmp::send_icmp_trace_packet(dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16)?;
 
+        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -444,7 +452,7 @@ fn icmp_trace_ipv4(
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == rrq_id && r.data.len() > 0 {
+                    if r.id == rrq_id {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -472,7 +480,7 @@ fn icmp_trace_ipv4(
                         hop_status,
                         recv_response.rtt.as_secs_f64()
                     );
-                    trace.finish(ttl);
+                    trace.finish(ttl, trace_start.elapsed());
                     return Ok(trace);
                 }
                 _ => break,
@@ -481,7 +489,7 @@ fn icmp_trace_ipv4(
         ip_id += 1;
     }
     debug!("last ttl: {}", last_response_ttl);
-    trace.finish(last_response_ttl);
+    trace.finish(last_response_ttl, trace_start.elapsed());
     Ok(trace)
 }
 
@@ -499,8 +507,9 @@ fn icmp_trace_ipv6(
     let mut trace = Trace::new(dst_ipv6.into());
     let mut rng = rand::rng();
     let icmp_id: u16 = rng.random();
-
     let mut last_response_hop_limit = 0;
+    let trace_start = Instant::now();
+
     for hop_limit in 1..=TRACE_MAX_HOPS {
         let (buff, filters) = icmpv6::build_icmpv6_trace_packet(
             dst_ipv6,
@@ -510,8 +519,12 @@ fn icmp_trace_ipv6(
             hop_limit as u16,
         )?;
 
-        for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_request_id();
+        let rrq_id = random_request_id();
+        for i in 0..TRACE_MAX_RETRY {
+            debug!(
+                "icmpv6 trace retry {}/{} for hop limit: {}",
+                i, TRACE_MAX_RETRY, hop_limit
+            );
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -536,7 +549,7 @@ fn icmp_trace_ipv6(
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == rrq_id && r.data.len() > 0 {
+                    if r.id == rrq_id {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -564,7 +577,7 @@ fn icmp_trace_ipv6(
                         hop_status,
                         recv_response.rtt.as_secs_f64()
                     );
-                    trace.finish(hop_limit);
+                    trace.finish(hop_limit, trace_start.elapsed());
                     return Ok(trace);
                 }
                 _ => break,
@@ -572,7 +585,7 @@ fn icmp_trace_ipv6(
         }
     }
     debug!("last hop limit: {}", last_response_hop_limit);
-    trace.finish(last_response_hop_limit);
+    trace.finish(last_response_hop_limit, trace_start.elapsed());
     Ok(trace)
 }
 
@@ -650,14 +663,16 @@ fn udp_trace_ipv4(
         ip_id -= 30;
     }
     let mut last_response_ttl = 0;
+    let trace_start = Instant::now();
+
     for ttl in 1..=30 {
         let random_src_port = random_port_range(1000, 65535);
         let dst_port = START_PORT + (ttl - 1) as u16;
         let (buff, filters) =
             udp::build_udp_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
+        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -682,7 +697,7 @@ fn udp_trace_ipv4(
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == rrq_id && r.data.len() > 0 {
+                    if r.id == rrq_id {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -710,7 +725,7 @@ fn udp_trace_ipv4(
                         hop_status,
                         recv_response.rtt.as_secs_f64()
                     );
-                    trace.finish(ttl);
+                    trace.finish(ttl, trace_start.elapsed());
                     return Ok(trace);
                 }
                 _ => break,
@@ -719,7 +734,7 @@ fn udp_trace_ipv4(
         ip_id += 1;
     }
     debug!("last ttl: {}", last_response_ttl);
-    trace.finish(last_response_ttl);
+    trace.finish(last_response_ttl, trace_start.elapsed());
     Ok(trace)
 }
 
@@ -735,16 +750,17 @@ fn udp_trace_ipv6(
     get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
     let mut trace = Trace::new(dst_ipv6.into());
-
     let mut last_response_hop_limit = 0;
+    let trace_start = Instant::now();
+
     for hop_limit in 1..=30 {
         let random_src_port = random_port_range(1000, 65535);
         let dst_port = START_PORT + (hop_limit - 1) as u16;
         let (buff, filters) =
             udp6::build_udp_trace_packet(dst_ipv6, dst_port, src_ipv6, random_src_port, hop_limit)?;
 
+        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq_id = random_request_id();
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
                 id: rrq_id,
@@ -769,7 +785,7 @@ fn udp_trace_ipv6(
 
             let recv_response = match get_response.recv_timeout(timeout) {
                 Ok(r) => {
-                    if r.id == rrq_id && r.data.len() > 0 {
+                    if r.id == rrq_id {
                         r
                     } else {
                         sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
@@ -797,7 +813,7 @@ fn udp_trace_ipv6(
                         hop_status,
                         recv_response.rtt.as_secs_f64()
                     );
-                    trace.finish(hop_limit);
+                    trace.finish(hop_limit, trace_start.elapsed());
                     return Ok(trace);
                 }
                 _ => break,
@@ -805,7 +821,7 @@ fn udp_trace_ipv6(
         }
     }
     debug!("last hop limit: {}", last_response_hop_limit);
-    trace.finish(last_response_hop_limit);
+    trace.finish(last_response_hop_limit, trace_start.elapsed());
     Ok(trace)
 }
 

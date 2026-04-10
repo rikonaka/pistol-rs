@@ -113,7 +113,7 @@ impl fmt::Display for PingStatus {
 pub struct PingReport {
     pub addr: IpAddr,
     pub status: PingStatus,
-    pub cost: Duration,
+    pub layer3_cost: Duration,
     cached: bool,
 }
 
@@ -154,9 +154,9 @@ impl fmt::Display for HostPing {
                 let addr_str = format!("{}", report.addr);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
-                    time_to_string(report.cost)
+                    time_to_string(report.layer3_cost)
                 } else {
-                    let time_cost_str = time_to_string(report.cost);
+                    let time_cost_str = time_to_string(report.layer3_cost);
                     format!("{}(cached)", time_cost_str)
                 };
                 table.add_row(row![c -> addr_str, c -> status_str, c -> time_cost_str]);
@@ -250,9 +250,9 @@ impl fmt::Display for HostPings {
             let addr_str = format!("{}", report.addr);
             let status_str = format!("{}", report.status);
             let time_cost_str = if report.cached {
-                time_to_string(report.cost)
+                time_to_string(report.layer3_cost)
             } else {
-                let time_cost_str = time_to_string(report.cost);
+                let time_cost_str = time_to_string(report.layer3_cost);
                 format!("{}(cached)", time_cost_str)
             };
             table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> time_cost_str]);
@@ -729,7 +729,7 @@ fn ping(
                             let ping_report = PingReport {
                                 addr: dst_addr,
                                 status: ps,
-                                cost: rtt,
+                                layer3_cost: rtt,
                                 cached,
                             };
                             reports.push(ping_report);
@@ -838,7 +838,7 @@ pub fn ping_raw(
                     let ping_report = PingReport {
                         addr: net_info.inferred_dst_addr,
                         status,
-                        cost: rtt,
+                        layer3_cost: rtt,
                         cached: net_info.cached,
                     };
                     host_ping.finish(Some(ping_report));
@@ -850,7 +850,7 @@ pub fn ping_raw(
             let ping_report = PingReport {
                 addr: net_info.inferred_dst_addr,
                 status: PingStatus::Error,
-                cost: Duration::ZERO,
+                layer3_cost: Duration::ZERO,
                 cached: net_info.cached,
             };
             host_ping.finish(Some(ping_report));
@@ -912,7 +912,7 @@ pub fn ping_raw(
                     let ping_report = PingReport {
                         addr: net_info.inferred_dst_addr,
                         status,
-                        cost: rtt,
+                        layer3_cost: rtt,
                         cached: net_info.cached,
                     };
                     host_ping.finish(Some(ping_report));
@@ -924,7 +924,7 @@ pub fn ping_raw(
             let ping_report = PingReport {
                 addr: net_info.inferred_dst_addr,
                 status: PingStatus::Error,
-                cost: Duration::ZERO,
+                layer3_cost: Duration::ZERO,
                 cached: net_info.cached,
             };
             host_ping.finish(Some(ping_report));

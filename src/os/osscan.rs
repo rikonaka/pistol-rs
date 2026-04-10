@@ -18,7 +18,6 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 
-use crate::IpCheckMethods;
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::NetInfo;
@@ -201,24 +200,39 @@ pub(crate) fn get_scan_line(
     // Date of scan (D) in the form month/day.
     let now: DateTime<Local> = Local::now();
     let date = format!("{}", now.format("%-m/%-d"));
-    // Private IP space (PV) is Y if the target is on the 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16 private networks (RFC 1918).
-    // Otherwise it is N.
-    // Network distance (DS) is the network hop distance from the target. It is 0 if the target is localhost, 1 if directly connected on an ethernet network, or the exact distance if discovered by Nmap.
-    // If the distance is unknown, this test is omitted.
+    // Private IP space (PV) is Y if the target is on the 10.0.0.0/8, 172.16.0.0/12,
+    // or 192.168.0.0/16 private networks (RFC 1918). Otherwise it is N.
+    // Network distance (DS) is the network hop distance from the target.
+    // It is 0 if the target is localhost, 1 if directly connected on an ethernet network,
+    // or the exact distance if discovered by Nmap. If the distance is unknown, this test is omitted.
     // The distance calculation method (DC) indicates how the network distance (DS) was calculated.
     // It can take on these values:
     // L for localhost (DS=0);
     // D for a direct subnet connection (DS=1);
     // I for a TTL calculation based on an ICMP response to the U1 OS detection probe;
     // and T for a count of traceroute hops (I don't particularly understand how this sentence is implemented).
-    // This test exists because it is possible for the ICMP TTL calculation to be incorrect when intermediate machines change the TTL;
+    // This test exists because it is possible for the ICMP TTL calculation to be incorrect
+    // when intermediate machines change the TTL;
     // it distinguishes between a host that is truly directly connected and what may be just a miscalculation.
-    let (pv, ds, dc) = if dst_addr.is_loopback() {
-        ("Y", 0, "L")
-    } else if !dst_addr.is_global_x() {
-        ("Y", 1, "D")
-    } else {
-        ("N", hops, "I")
+    let (pv, ds, dc) = match dst_addr {
+        IpAddr::V4(addr) => {
+            if addr.is_loopback() {
+                ("Y", 0, "L")
+            } else if addr.is_private() {
+                ("Y", 1, "D")
+            } else {
+                ("N", hops, "I")
+            }
+        }
+        IpAddr::V6(addr) => {
+            if addr.is_loopback() {
+                ("Y", 0, "L")
+            } else if addr.is_unique_local() {
+                ("Y", 1, "D")
+            } else {
+                ("N", hops, "I")
+            }
+        }
     };
     // Good results (G) is Y if conditions and results seem good enough to submit this fingerprint to Nmap.Org.
     // It is N otherwise. Unless you force them by enabling debugging (-d) or extreme verbosity (-vv), G=N fingerprints aren't printed by Nmap.

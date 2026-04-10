@@ -121,7 +121,7 @@ pub struct Detect {
     pub alive: bool,
     pub fingerprint: Fingerprint,
     pub detects: Vec<OsInfo>,
-    pub cost: Duration,
+    pub layer3_cost: Duration,
     pub layer2_cost: Duration,
 }
 
@@ -132,7 +132,7 @@ impl Detect {
             alive: false,
             fingerprint: Fingerprint::default(),
             detects: Vec::new(),
-            cost: Duration::ZERO,
+            layer3_cost: Duration::ZERO,
             layer2_cost: Duration::ZERO,
         }
     }
@@ -145,7 +145,7 @@ pub struct Detect6 {
     pub alive: bool,
     pub fingerprint: Fingerprint6,
     pub detects: Vec<OsInfo6>,
-    pub cost: Duration,
+    pub layer3_cost: Duration,
     pub layer2_cost: Duration,
 }
 
@@ -156,7 +156,7 @@ impl Detect6 {
             alive: false,
             fingerprint: Fingerprint6::default(),
             detects: Vec::new(),
-            cost: Duration::ZERO,
+            layer3_cost: Duration::ZERO,
             layer2_cost: Duration::ZERO,
         }
     }
@@ -253,9 +253,9 @@ impl fmt::Display for OsDetects {
         for (addr, detect) in btm_addr {
             match detect {
                 DetectReport::V4(o) => {
-                    let time_cost_str = time_to_string(o.cost);
+                    let time_cost_str = time_to_string(o.layer3_cost);
                     let addr_str = format!("{}", addr);
-                    total_cost += o.cost.as_secs_f32();
+                    total_cost += o.layer3_cost.as_secs_f32();
                     if o.alive {
                         if o.detects.len() > 0 {
                             for (i, os_info) in o.detects.iter().enumerate() {
@@ -278,9 +278,9 @@ impl fmt::Display for OsDetects {
                     }
                 }
                 DetectReport::V6(o) => {
-                    let time_cost_str = time_to_string(o.cost);
+                    let time_cost_str = time_to_string(o.layer3_cost);
                     let addr_str = format!("{}", addr);
-                    total_cost += o.cost.as_secs_f32();
+                    total_cost += o.layer3_cost.as_secs_f32();
                     if o.alive {
                         if o.detects.len() > 0 {
                             for (i, os_info6) in o.detects.iter().enumerate() {
@@ -516,7 +516,7 @@ pub fn os_detect(
                                 alive: true,
                                 fingerprint,
                                 detects,
-                                cost: start_time.elapsed(),
+                                layer3_cost: start_time.elapsed(),
                                 layer2_cost: Duration::ZERO,
                             };
                             let od = DetectReport::V4(o);
@@ -582,7 +582,7 @@ pub fn os_detect(
                                 alive: true,
                                 fingerprint,
                                 detects,
-                                cost: start_time.elapsed(),
+                                layer3_cost: start_time.elapsed(),
                                 layer2_cost: Duration::ZERO,
                             };
                             let od = DetectReport::V6(o);
@@ -611,7 +611,7 @@ pub fn os_detect(
                         alive: false,
                         fingerprint: Fingerprint::default(),
                         detects: Vec::new(),
-                        cost: start_time.elapsed(),
+                        layer3_cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
                     };
                     let od = DetectReport::V4(o);
@@ -623,7 +623,7 @@ pub fn os_detect(
                         alive: false,
                         fingerprint: Fingerprint6::default(),
                         detects: Vec::new(),
-                        cost: start_time.elapsed(),
+                        layer3_cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
                     };
                     let od = DetectReport::V6(o);
@@ -696,7 +696,7 @@ pub fn os_detect_raw(
                         alive: true,
                         fingerprint,
                         detects,
-                        cost: start_time.elapsed(),
+                        layer3_cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
                     };
                     let dr = DetectReport::V4(o);
@@ -709,7 +709,7 @@ pub fn os_detect_raw(
                         alive: false,
                         fingerprint: Fingerprint::default(),
                         detects: Vec::new(),
-                        cost: start_time.elapsed(),
+                        layer3_cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
                     };
                     let dr = DetectReport::V4(o);
@@ -748,7 +748,7 @@ pub fn os_detect_raw(
                         alive: true,
                         fingerprint,
                         detects,
-                        cost: start_time.elapsed(),
+                        layer3_cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
                     };
                     let dr = DetectReport::V6(o);
@@ -762,7 +762,7 @@ pub fn os_detect_raw(
                         alive: false,
                         fingerprint: Fingerprint6::default(),
                         detects: Vec::new(),
-                        cost: start_time.elapsed(),
+                        layer3_cost: start_time.elapsed(),
                         layer2_cost: Duration::ZERO,
                     };
                     let dr = DetectReport::V6(o);

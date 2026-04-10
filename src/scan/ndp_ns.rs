@@ -78,7 +78,11 @@ pub fn build_ndp_ns_scan_packet(
             });
         }
     };
-    let checksum = icmpv6::checksum(&icmpv6_header.to_immutable(), &src_ipv6, &dst_ipv6);
+    let checksum = icmpv6::checksum(
+        &icmpv6_header.to_immutable(),
+        &src_ipv6,
+        &dst_link_multicast_ipv6,
+    );
     icmpv6_header.set_checksum(checksum);
 
     let layer3 = Layer3Filter {

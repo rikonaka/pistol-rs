@@ -86,6 +86,8 @@ pub enum PistolError {
     CanNotFoundInterfaceFilterChannel { i: String },
     #[error("no loopback protocol")]
     NoLoopbackProtocol,
+    #[error("can not found the target net info")]
+    CanNotFoundNetInfo,
 
     /* ROUTE ERROR */
     #[error("subnetwork error")]

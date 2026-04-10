@@ -49,7 +49,7 @@ use crate::utils::random_request_id;
 // const PROBE_MAX_RETIRIES: usize = 5; // nmap default
 
 // EXAMPLE
-// SCAN(V=5.61TEST1%E=6%D=9/27%OT=22%CT=443%CU=42192%PV=N%DS=5%DC=T%G=Y%TM=4E82908D%P=x86_64-unknown-linux-gnu)
+// SCAN(V=TEST1%E=6%D=9/27%OT=22%CT=443%CU=42192%PV=N%DS=5%DC=T%G=Y%TM=4E82908D%P=x86_64-unknown-linux-gnu)
 // S1(P=6000{4}28063cXX{32}0016c1b002bbd213c57562f5a01212e0f8880000020404c40402080a5be177f2ff{4}01030307%ST=0.021271%RT=0.041661)
 // S2(P=6000{4}28063cXX{32}0016c1b108d7da47c57562f6a01212e0e9d20000020404c40402080a5be17856ff{4}01030307%ST=0.121251%RT=0.144586)
 // S3(P=6000{4}28063cXX{32}0016c1b21029efebc57562f7a01212e0cf630000020404c40101080a5be178ceff{4}01030307%ST=0.221232%RT=0.268086)
@@ -535,21 +535,21 @@ fn send_seq_probes(
     let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
-    for i in 0..6 {
-        src_ports.insert(i, src_port_start * 10 + i);
+    for i in 1..=6 {
+        src_ports.insert(i, src_port_start * 10 + i - 1);
     }
     let buff_1 =
-        packet6::seq_packet_1_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&0])?;
+        packet6::seq_packet_1_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&1])?;
     let buff_2 =
-        packet6::seq_packet_2_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&1])?;
+        packet6::seq_packet_2_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&2])?;
     let buff_3 =
-        packet6::seq_packet_3_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&2])?;
+        packet6::seq_packet_3_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&3])?;
     let buff_4 =
-        packet6::seq_packet_4_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&3])?;
+        packet6::seq_packet_4_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&4])?;
     let buff_5 =
-        packet6::seq_packet_5_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&4])?;
+        packet6::seq_packet_5_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&5])?;
     let buff_6 =
-        packet6::seq_packet_6_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&5])?;
+        packet6::seq_packet_6_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&6])?;
     let mut buff_hm = HashMap::new();
     buff_hm.insert(1, buff_1);
     buff_hm.insert(2, buff_2);
@@ -665,7 +665,7 @@ fn send_seq_probes(
                         }
                     }
                 }
-                Err(e) => debug!("recv os probe seq response failed: {}", e),
+                Err(_e) => (),
             }
         }
     }
@@ -872,9 +872,7 @@ fn send_ie_probes(
                         }
                     }
                 }
-                Err(e) => {
-                    debug!("recv os probe seq response failed: {}", e);
-                }
+                Err(_e) => (),
             }
         }
     }
@@ -1020,9 +1018,7 @@ fn send_nx_probes(
                         }
                     }
                 }
-                Err(e) => {
-                    debug!("recv os probe nx response failed: {}", e);
-                }
+                Err(_e) => (),
             }
         }
     }
@@ -1130,9 +1126,7 @@ fn send_u1_probe(
                     return Ok(ecn);
                 }
             }
-            Err(e) => {
-                debug!("recv os probe ecn response failed: {}", e);
-            }
+            Err(_e) => (),
         }
     }
 
@@ -1227,9 +1221,7 @@ fn send_tecn_probe(
                     return Ok(tecn);
                 }
             }
-            Err(e) => {
-                debug!("recv os probe ecn response failed: {}", e);
-            }
+            Err(_e) => (),
         }
     }
 
@@ -1263,9 +1255,9 @@ fn send_tx_probes(
     get_response: Receiver<RResponse>,
 ) -> Result<TXRR6, PistolError> {
     let src_port_start = random_port_range(1000, 6540);
-    let mut src_ports = Vec::new();
-    for i in 0..6 {
-        src_ports.push(src_port_start * 10 + i);
+    let mut src_ports = HashMap::new();
+    for i in 2..=7 {
+        src_ports.insert(i, src_port_start * 10 + i - 2);
     }
 
     let layer3 = Layer3Filter {
@@ -1279,42 +1271,42 @@ fn send_tx_probes(
         name: String::from("os scan6 tx tcp_udp 2"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_tcp_port),
-        dst_port: Some(src_ports[0]),
+        dst_port: Some(src_ports[&2]),
         flag: None,
     };
     let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
         name: String::from("os scan6 tx tcp_udp 3"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_tcp_port),
-        dst_port: Some(src_ports[1]),
+        dst_port: Some(src_ports[&3]),
         flag: None,
     };
     let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
         name: String::from("os scan6 tx tcp_udp 4"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_open_tcp_port),
-        dst_port: Some(src_ports[2]),
+        dst_port: Some(src_ports[&4]),
         flag: None,
     };
     let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
         name: String::from("os scan6 tx tcp_udp 5"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_tcp_port),
-        dst_port: Some(src_ports[3]),
+        dst_port: Some(src_ports[&5]),
         flag: None,
     };
     let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
         name: String::from("os scan6 tx tcp_udp 6"),
         layer3: Some(layer3.clone()),
         src_port: Some(dst_closed_tcp_port),
-        dst_port: Some(src_ports[4]),
+        dst_port: Some(src_ports[&6]),
         flag: None,
     };
     let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
         name: String::from("os scan6 tx tcp_udp 7"),
         layer3: Some(layer3),
         src_port: Some(dst_closed_tcp_port),
-        dst_port: Some(src_ports[5]),
+        dst_port: Some(src_ports[&7]),
         flag: None,
     };
     let layer_match_2 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2));
@@ -1331,12 +1323,12 @@ fn send_tx_probes(
     filter_hm.insert(6, layer_match_6);
     filter_hm.insert(7, layer_match_7);
 
-    let buff_2 = packet6::t2_packet_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[0])?;
-    let buff_3 = packet6::t3_packet_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[1])?;
-    let buff_4 = packet6::t4_packet_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[2])?;
-    let buff_5 = packet6::t5_packet_layer3(dst_ipv6, dst_closed_tcp_port, src_ipv6, src_ports[3])?;
-    let buff_6 = packet6::t6_packet_layer3(dst_ipv6, dst_closed_tcp_port, src_ipv6, src_ports[4])?;
-    let buff_7 = packet6::t7_packet_layer3(dst_ipv6, dst_closed_tcp_port, src_ipv6, src_ports[5])?;
+    let buff_2 = packet6::t2_packet_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&2])?;
+    let buff_3 = packet6::t3_packet_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&3])?;
+    let buff_4 = packet6::t4_packet_layer3(dst_ipv6, dst_open_tcp_port, src_ipv6, src_ports[&4])?;
+    let buff_5 = packet6::t5_packet_layer3(dst_ipv6, dst_closed_tcp_port, src_ipv6, src_ports[&5])?;
+    let buff_6 = packet6::t6_packet_layer3(dst_ipv6, dst_closed_tcp_port, src_ipv6, src_ports[&6])?;
+    let buff_7 = packet6::t7_packet_layer3(dst_ipv6, dst_closed_tcp_port, src_ipv6, src_ports[&7])?;
     let mut buff_hm = HashMap::new();
     buff_hm.insert(2, buff_2);
     buff_hm.insert(3, buff_3);
@@ -1346,7 +1338,7 @@ fn send_tx_probes(
     buff_hm.insert(7, buff_7);
 
     let mut send_state = LoopStates::default();
-    for t in 1..=6 {
+    for t in 2..=7 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
             id: random_request_id(),
@@ -1429,9 +1421,7 @@ fn send_tx_probes(
                         }
                     }
                 }
-                Err(e) => {
-                    debug!("recv os probe tx response failed: {}", e);
-                }
+                Err(_e) => (),
             }
         }
     }

@@ -792,7 +792,7 @@ pub struct PortReport {
     pub port: u16,
     pub status: PortStatus,
     /// The cost of each target, not all.
-    pub cost: Duration,
+    pub layer3_cost: Duration,
     pub cached: bool,
     pub retries: usize,
 }
@@ -830,9 +830,9 @@ impl fmt::Display for PortScan {
                 let addr_str = format!("{}", report.origin_addr);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
-                    time_to_string(report.cost)
+                    time_to_string(report.layer3_cost)
                 } else {
-                    let time_cost_str = time_to_string(report.cost);
+                    let time_cost_str = time_to_string(report.layer3_cost);
                     format!("{}(cached)", time_cost_str)
                 };
                 let time_cost_str = format!("{}(r{})", time_cost_str, report.retries);
@@ -928,10 +928,10 @@ impl fmt::Display for PortScans {
                 let addr_str = format!("{}", report.origin_addr);
                 let status_str = format!("{}", report.status);
                 let time_cost_str = if report.cached {
-                    let time_cost_str = time_to_string(report.cost);
+                    let time_cost_str = time_to_string(report.layer3_cost);
                     format!("{}(l2c)", time_cost_str)
                 } else {
-                    time_to_string(report.cost)
+                    time_to_string(report.layer3_cost)
                 };
                 let retries_str = format!("r{}", report.retries);
                 let time_cost_str = format!("{}({})", time_cost_str, retries_str);
@@ -1269,7 +1269,7 @@ fn scan(
                         origin_addr,
                         port,
                         status: port_status,
-                        cost: response.rtt,
+                        layer3_cost: response.rtt,
                         cached,
                         retries,
                     };
@@ -1402,7 +1402,7 @@ fn scan_raw(
                         origin_addr: addr_origin,
                         port: dst_port,
                         status: port_status,
-                        cost: r.rtt,
+                        layer3_cost: r.rtt,
                         cached,
                         retries: i + 1,
                     };
@@ -1730,7 +1730,7 @@ pub(crate) fn tcp_connect_scan(
                                     origin_addr: addr_origin,
                                     port: dst_port,
                                     status: port_status,
-                                    cost: rtt,
+                                    layer3_cost: rtt,
                                     cached,
                                     retries: retries + 1,
                                 };
@@ -1789,7 +1789,7 @@ pub(crate) fn tcp_connect_scan_raw(
                 origin_addr: addr_origin,
                 port: dst_port,
                 status: port_status,
-                cost: rtt,
+                layer3_cost: rtt,
                 cached,
                 retries: i + 1,
             };
@@ -1803,7 +1803,7 @@ pub(crate) fn tcp_connect_scan_raw(
         origin_addr: addr_origin,
         port: dst_port,
         status: PortStatus::Closed,
-        cost: timeout,
+        layer3_cost: timeout,
         cached,
         retries: max_retries,
     };
