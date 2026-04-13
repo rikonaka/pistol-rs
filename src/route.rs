@@ -794,16 +794,30 @@ pub(crate) struct InferMacInputIpv6 {
 }
 
 #[derive(Debug, Clone)]
-struct InferState {
+struct InferStateIpv4 {
     id: u64,
     dst_mac: MacAddr,
     route_via: Option<RouteVia>,
     interface: NetworkInterface,
-    src_addr: IpAddr,
+    src_ipv4: Ipv4Addr,
     cached: bool,
     rtt: Duration,
     is_route: bool,
-    dst_addr: IpAddr,
+    dst_ipv4: Ipv4Addr,
+    retries: usize,
+}
+
+#[derive(Debug, Clone)]
+struct InferStateIpv6 {
+    id: u64,
+    dst_mac: MacAddr,
+    route_via: Option<RouteVia>,
+    interface: NetworkInterface,
+    src_ipv6: Ipv6Addr,
+    cached: bool,
+    rtt: Duration,
+    is_route: bool,
+    dst_ipv6: Ipv6Addr,
     retries: usize,
 }
 
@@ -820,38 +834,38 @@ fn infer_macs_ipv4(
         let src_ipv4 = it.inferred_src_ipv4;
         let dst_ipv4 = it.inferred_dst_ipv4;
         if src_ipv4.is_loopback() || dst_ipv4.is_loopback() {
-            let state = InferState {
+            let state = InferStateIpv4 {
                 id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via: None,
                 interface: fake_interface(),
-                src_addr: src_ipv4,
+                src_ipv4,
                 cached: true,
                 rtt: Duration::ZERO,
                 is_route: false,
-                dst_addr: dst_ipv4,
+                dst_ipv4,
                 retries: 0,
             };
-            loop_states.insert_only_ip(dst_ipv4, state);
+            loop_states.insert_only_ipv4(dst_ipv4, state);
         } else {
-            let (src_interface, route_via) = get_route(dst_ipv4, src_ipv4)?;
+            let (src_interface, route_via) = get_route(dst_ipv4.into(), src_ipv4.into())?;
             debug!(
                 "src interface: {}, via addr: {:?}",
                 src_interface.name, route_via
             );
-            let state = InferState {
+            let state = InferStateIpv4 {
                 id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via,
                 interface: src_interface.clone(),
-                src_addr: src_ipv4,
+                src_ipv4,
                 cached: false,
                 rtt: Duration::ZERO,
                 is_route: false,
-                dst_addr: dst_ipv4,
+                dst_ipv4,
                 retries: 0,
             };
-            loop_states.insert_only_ip(dst_ipv4, state);
+            loop_states.insert_only_ipv4(dst_ipv4, state);
         }
     }
 
@@ -872,8 +886,8 @@ fn infer_macs_ipv4(
                         RouteVia::IfIndex(if_index) => {
                             // To send to the address, we need to use this interface,
                             // and we should repalce the src_interface with the new src_interface.
-                            let dst_addr = state.dst_addr;
-                            match search_mac(dst_addr)? {
+                            let dst_ipv4 = state.dst_ipv4;
+                            match search_mac(dst_ipv4.into())? {
                                 Some(dst_mac) => {
                                     state.dst_mac = dst_mac;
                                     state.cached = true;
@@ -889,14 +903,13 @@ fn infer_macs_ipv4(
                                         }
                                     };
 
-                                    let src_addr = state.src_addr;
+                                    let src_ipv4 = state.src_ipv4;
                                     let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        dst_addr,
-                                        src_addr,
+                                    send_neighbor_detect_packet_ipv4(
+                                        dst_ipv4,
+                                        src_ipv4,
                                         src_interface,
                                         timeout,
-                                        false,
                                         push_rd,
                                         push_sd,
                                         rrq_id,
@@ -915,27 +928,33 @@ fn infer_macs_ipv4(
                         }
                         RouteVia::IpAddr(via_addr) => {
                             // In most cases, this is usually the routing address.
-                            let via_addr = if via_addr.is_unspecified() {
+                            let via_ipv4 = if via_addr.is_unspecified() {
                                 // fix 0.0.0.0 address
-                                state.dst_addr
+                                state.dst_ipv4
                             } else {
-                                via_addr
+                                match via_addr {
+                                    IpAddr::V4(v) => v,
+                                    IpAddr::V6(_) => {
+                                        return Err(PistolError::InvalidRouteViaAddress {
+                                            addr: via_addr,
+                                        });
+                                    }
+                                }
                             };
-                            match search_mac(via_addr)? {
+                            match search_mac(via_ipv4.into())? {
                                 Some(dst_mac) => {
                                     state.dst_mac = dst_mac;
                                     state.cached = true;
                                 }
                                 None => {
-                                    let src_addr = state.src_addr;
+                                    let src_ipv4 = state.src_ipv4;
                                     let src_interface = state.interface.clone();
                                     let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        via_addr,
-                                        src_addr,
+                                    send_neighbor_detect_packet_ipv4(
+                                        via_ipv4,
+                                        src_ipv4,
                                         src_interface,
                                         timeout,
-                                        true,
                                         push_rd,
                                         push_sd,
                                         rrq_id,
@@ -944,7 +963,7 @@ fn infer_macs_ipv4(
                                     state.id = rrq_id;
                                     state.cached = false;
                                     state.is_route = true;
-                                    state.dst_addr = via_addr;
+                                    state.dst_ipv4 = via_ipv4;
                                     state.retries += 1;
 
                                     all_done = false;
@@ -955,28 +974,27 @@ fn infer_macs_ipv4(
                 }
                 None => {
                     debug!("route_via is none");
-                    let dst_addr = state.dst_addr;
-                    if dst_addr_in_local_net(dst_addr) {
-                        match search_mac(dst_addr)? {
+                    let dst_ipv4 = state.dst_ipv4;
+                    if dst_addr_in_local_net(dst_ipv4.into()) {
+                        match search_mac(dst_ipv4.into())? {
                             Some(dst_mac) => {
-                                debug!("dst addr {} found in cache: {}", dst_addr, dst_mac);
+                                debug!("dst ipv4 {} found in cache: {}", dst_ipv4, dst_mac);
                                 state.dst_mac = dst_mac;
                                 state.cached = true;
                             }
                             None => {
                                 debug!(
-                                    "dst addr {} not found in cache, send packet to detect",
-                                    dst_addr
+                                    "dst ipv4 {} not found in cache, send packet to detect",
+                                    dst_ipv4
                                 );
-                                let src_addr = state.src_addr;
+                                let src_ipv4 = state.src_ipv4;
                                 let src_interface = state.interface.clone();
                                 let rrq_id = state.id;
-                                send_neighbor_detect_packet(
-                                    dst_addr,
-                                    src_addr,
+                                send_neighbor_detect_packet_ipv4(
+                                    dst_ipv4,
+                                    src_ipv4,
                                     src_interface,
                                     timeout,
-                                    false,
                                     push_rd,
                                     push_sd,
                                     rrq_id,
@@ -992,17 +1010,16 @@ fn infer_macs_ipv4(
                     } else {
                         debug!(
                             "dst addr {} is not in local net, send packet to detect route",
-                            dst_addr
+                            dst_ipv4
                         );
-                        let src_addr = state.src_addr;
+                        let src_ipv4 = state.src_ipv4;
                         let src_interface = state.interface.clone();
                         let rrq_id = state.id;
-                        send_neighbor_detect_packet(
-                            dst_addr,
-                            src_addr,
+                        send_neighbor_detect_packet_ipv4(
+                            dst_ipv4,
+                            src_ipv4,
                             src_interface,
                             timeout,
-                            true,
                             push_rd,
                             push_sd,
                             rrq_id,
@@ -1051,7 +1068,7 @@ fn infer_macs_ipv4(
 
     let mut rets = HashMap::new();
     for (_key, state) in loop_states {
-        let dst_addr = state.dst_addr;
+        let dst_addr = IpAddr::V4(state.dst_ipv4);
         let inferred_dst_mac = state.dst_mac;
         let inferred_interface = state.interface;
         let cached = state.cached;
@@ -1068,8 +1085,8 @@ fn infer_macs_ipv4(
 }
 
 /// Get destination mac address and source interface.
-pub(crate) fn infer_macs(
-    inputs: Vec<InferMacInput>,
+pub(crate) fn infer_macs_ipv6(
+    inputs: Vec<InferMacInputIpv6>,
     timeout: Duration,
     max_retries: usize,
     push_rd: Sender<RRequest>,
@@ -1078,41 +1095,41 @@ pub(crate) fn infer_macs(
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
     let mut loop_states = LoopStates::default();
     for it in inputs {
-        let src_addr = it.inferred_src_addr;
-        let dst_addr = it.inferred_dst_addr;
-        if src_addr.is_loopback() || dst_addr.is_loopback() {
-            let state = InferState {
+        let src_ipv6 = it.inferred_src_ipv6;
+        let dst_ipv6 = it.inferred_dst_ipv6;
+        if src_ipv6.is_loopback() || dst_ipv6.is_loopback() {
+            let state = InferStateIpv6 {
                 id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via: None,
                 interface: fake_interface(),
-                src_addr,
+                src_ipv6,
                 cached: true,
                 rtt: Duration::ZERO,
                 is_route: false,
-                dst_addr,
+                dst_ipv6,
                 retries: 0,
             };
-            loop_states.insert_only_ip(dst_addr, state);
+            loop_states.insert_only_ipv6(dst_ipv6, state);
         } else {
-            let (src_interface, route_via) = get_route(dst_addr, src_addr)?;
+            let (src_interface, route_via) = get_route(dst_ipv6.into(), src_ipv6.into())?;
             debug!(
                 "src interface: {}, via addr: {:?}",
                 src_interface.name, route_via
             );
-            let state = InferState {
+            let state = InferStateIpv6 {
                 id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via,
                 interface: src_interface.clone(),
-                src_addr,
+                src_ipv6,
                 cached: false,
                 rtt: Duration::ZERO,
                 is_route: false,
-                dst_addr,
+                dst_ipv6,
                 retries: 0,
             };
-            loop_states.insert_only_ip(dst_addr, state);
+            loop_states.insert_only_ipv6(dst_ipv6, state);
         }
     }
 
@@ -1133,8 +1150,8 @@ pub(crate) fn infer_macs(
                         RouteVia::IfIndex(if_index) => {
                             // To send to the address, we need to use this interface,
                             // and we should repalce the src_interface with the new src_interface.
-                            let dst_addr = state.dst_addr;
-                            match search_mac(dst_addr)? {
+                            let dst_ipv6 = state.dst_ipv6;
+                            match search_mac(dst_ipv6.into())? {
                                 Some(dst_mac) => {
                                     state.dst_mac = dst_mac;
                                     state.cached = true;
@@ -1150,11 +1167,11 @@ pub(crate) fn infer_macs(
                                         }
                                     };
 
-                                    let src_addr = state.src_addr;
+                                    let src_ipv6 = state.src_ipv6;
                                     let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        dst_addr,
-                                        src_addr,
+                                    send_neighbor_detect_packet_ipv6(
+                                        dst_ipv6,
+                                        src_ipv6,
                                         src_interface,
                                         timeout,
                                         false,
@@ -1176,24 +1193,31 @@ pub(crate) fn infer_macs(
                         }
                         RouteVia::IpAddr(via_addr) => {
                             // In most cases, this is usually the routing address.
-                            let via_addr = if via_addr.is_unspecified() {
+                            let via_ipv6 = if via_addr.is_unspecified() {
                                 // fix 0.0.0.0 address
-                                state.dst_addr
+                                state.dst_ipv6
                             } else {
-                                via_addr
+                                match via_addr {
+                                    IpAddr::V4(_) => {
+                                        return Err(PistolError::InvalidRouteViaAddress {
+                                            addr: via_addr,
+                                        });
+                                    }
+                                    IpAddr::V6(v) => v,
+                                }
                             };
-                            match search_mac(via_addr)? {
+                            match search_mac(via_ipv6.into())? {
                                 Some(dst_mac) => {
                                     state.dst_mac = dst_mac;
                                     state.cached = true;
                                 }
                                 None => {
-                                    let src_addr = state.src_addr;
+                                    let src_ipv6 = state.src_ipv6;
                                     let src_interface = state.interface.clone();
                                     let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        via_addr,
-                                        src_addr,
+                                    send_neighbor_detect_packet_ipv6(
+                                        via_ipv6,
+                                        src_ipv6,
                                         src_interface,
                                         timeout,
                                         true,
@@ -1205,7 +1229,7 @@ pub(crate) fn infer_macs(
                                     state.id = rrq_id;
                                     state.cached = false;
                                     state.is_route = true;
-                                    state.dst_addr = via_addr;
+                                    state.dst_ipv6 = via_ipv6;
                                     state.retries += 1;
 
                                     all_done = false;
@@ -1216,25 +1240,25 @@ pub(crate) fn infer_macs(
                 }
                 None => {
                     debug!("route_via is none");
-                    let dst_addr = state.dst_addr;
-                    if dst_addr_in_local_net(dst_addr) {
-                        match search_mac(dst_addr)? {
+                    let dst_ipv6 = state.dst_ipv6;
+                    if dst_addr_in_local_net(dst_ipv6.into()) {
+                        match search_mac(dst_ipv6.into())? {
                             Some(dst_mac) => {
-                                debug!("dst addr {} found in cache: {}", dst_addr, dst_mac);
+                                debug!("dst addr {} found in cache: {}", dst_ipv6, dst_mac);
                                 state.dst_mac = dst_mac;
                                 state.cached = true;
                             }
                             None => {
                                 debug!(
                                     "dst addr {} not found in cache, send packet to detect",
-                                    dst_addr
+                                    dst_ipv6
                                 );
-                                let src_addr = state.src_addr;
+                                let src_ipv6 = state.src_ipv6;
                                 let src_interface = state.interface.clone();
                                 let rrq_id = state.id;
-                                send_neighbor_detect_packet(
-                                    dst_addr,
-                                    src_addr,
+                                send_neighbor_detect_packet_ipv6(
+                                    dst_ipv6,
+                                    src_ipv6,
                                     src_interface,
                                     timeout,
                                     false,
@@ -1252,15 +1276,15 @@ pub(crate) fn infer_macs(
                         }
                     } else {
                         debug!(
-                            "dst addr {} is not in local net, send packet to detect route",
-                            dst_addr
+                            "dst ipv6 {} is not in local net, send packet to detect route",
+                            dst_ipv6
                         );
-                        let src_addr = state.src_addr;
+                        let src_ipv6 = state.src_ipv6;
                         let src_interface = state.interface.clone();
                         let rrq_id = state.id;
-                        send_neighbor_detect_packet(
-                            dst_addr,
-                            src_addr,
+                        send_neighbor_detect_packet_ipv6(
+                            dst_ipv6,
+                            src_ipv6,
                             src_interface,
                             timeout,
                             true,
@@ -1312,7 +1336,7 @@ pub(crate) fn infer_macs(
 
     let mut rets = HashMap::new();
     for (_key, state) in loop_states {
-        let dst_addr = state.dst_addr;
+        let dst_addr = IpAddr::V6(state.dst_ipv6);
         let inferred_dst_mac = state.dst_mac;
         let inferred_interface = state.interface;
         let cached = state.cached;
@@ -1326,6 +1350,72 @@ pub(crate) fn infer_macs(
         rets.insert(dst_addr, output);
     }
     Ok(rets)
+}
+
+pub(crate) fn infer_macs(
+    inputs: Vec<InferMacInput>,
+    timeout: Duration,
+    max_retries: usize,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
+) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
+    let mut infer_mac_input_ipv4 = Vec::new();
+    let mut infer_mac_input_ipv6 = Vec::new();
+
+    for it in inputs {
+        let dst_addr = it.inferred_dst_addr;
+        let src_addr = it.inferred_src_addr;
+
+        match dst_addr {
+            IpAddr::V4(dst_ipv4) => {
+                if let IpAddr::V4(src_ipv4) = src_addr {
+                    infer_mac_input_ipv4.push(InferMacInputIpv4 {
+                        inferred_dst_ipv4: dst_ipv4,
+                        inferred_src_ipv4: src_ipv4,
+                    });
+                } else {
+                    warn!("src addr {} is not ipv4 address", src_addr);
+                }
+            }
+            IpAddr::V6(dst_ipv6) => {
+                if let IpAddr::V6(src_ipv6) = src_addr {
+                    infer_mac_input_ipv6.push(InferMacInputIpv6 {
+                        inferred_dst_ipv6: dst_ipv6,
+                        inferred_src_ipv6: src_ipv6,
+                    });
+                } else {
+                    warn!("src addr {} is not ipv6 address", src_addr);
+                }
+            }
+        }
+    }
+
+    let ret_1 = infer_macs_ipv4(
+        infer_mac_input_ipv4,
+        timeout,
+        max_retries,
+        push_rd.clone(),
+        push_sd.clone(),
+        get_response.clone(),
+    )?;
+    let ret_2 = infer_macs_ipv6(
+        infer_mac_input_ipv6,
+        timeout,
+        max_retries,
+        push_rd.clone(),
+        push_sd.clone(),
+        get_response.clone(),
+    )?;
+
+    let mut hm = HashMap::new();
+    for (dst_addr, output) in ret_1 {
+        hm.insert(dst_addr, output);
+    }
+    for (dst_addr, output) in ret_2 {
+        hm.insert(dst_addr, output);
+    }
+    Ok(hm)
 }
 
 /// Returns (inferred_dst_addr, inferred_src_addr).

@@ -151,6 +151,8 @@ const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LoopKey {
     Ip(IpAddr),
+    Ipv4(Ipv4Addr),
+    Ipv6(Ipv6Addr),
     Port(u16),
     IpPort(IpAddr, u16),
 }
@@ -202,6 +204,14 @@ impl<V> LoopStates<V> {
     }
     fn insert_only_ip(&mut self, ip: IpAddr, value: V) {
         let key = LoopKey::Ip(ip);
+        self.data.insert(key, value);
+    }
+    fn insert_only_ipv4(&mut self, ipv4: Ipv4Addr, value: V) {
+        let key = LoopKey::Ipv4(ipv4);
+        self.data.insert(key, value);
+    }
+    fn insert_only_ipv6(&mut self, ipv6: Ipv6Addr, value: V) {
+        let key = LoopKey::Ipv6(ipv6);
         self.data.insert(key, value);
     }
     fn insert_only_port(&mut self, port: u16, value: V) {

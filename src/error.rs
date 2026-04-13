@@ -92,6 +92,8 @@ pub enum PistolError {
     /* ROUTE ERROR */
     #[error("subnetwork error")]
     RegexError(#[from] regex::Error),
+    #[error("invalid route via address: {addr}")]
+    InvalidRouteViaAddress { addr: IpAddr },
 
     /* OTHER ERROR */
     #[error("std error")]
