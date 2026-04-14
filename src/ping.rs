@@ -561,7 +561,7 @@ fn ping(
             let dst_addr = ni.dst_addr;
             let dst_port = 0;
             let state = PingState {
-                id: 0,
+                id: random_request_id(),
                 retries: 0,
                 data_recved: false,
                 net_info: ni.clone(),
@@ -615,7 +615,7 @@ fn ping(
                             build_ping_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
                         let interface_name = ni.interface_name.clone();
-                        let rrq_id = random_request_id();
+                        let rrq_id = state.id;
                         let rrq = RRequest {
                             interface_name: interface_name.clone(),
                             id: rrq_id,
@@ -672,7 +672,7 @@ fn ping(
                             build_ping_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
                         let interface_name = ni.interface_name.clone();
-                        let rrq_id = random_request_id();
+                        let rrq_id = state.id;
                         let rrq = RRequest {
                             interface_name: interface_name.clone(),
                             id: rrq_id,
@@ -689,10 +689,10 @@ fn ping(
                             retransmit: 1,
                         };
                         if let Err(e) = push_rd.send(rrq) {
-                            error!("ipv4 send ping recv msg error: {}", e);
+                            error!("ipv6 send ping recv msg error: {}", e);
                         }
                         if let Err(e) = push_sd.send(srq) {
-                            error!("ipv4 send ping send msg error: {}", e);
+                            error!("ipv6 send ping send msg error: {}", e);
                         }
 
                         state.retries += 1;
@@ -791,12 +791,12 @@ pub fn ping_raw(
                     });
                 }
             };
+            let rrq_id = random_request_id();
             for i in 0..max_retries {
                 let (buff, filters) =
                     build_ping_buff(dst_ipv4, Some(dst_port), src_ipv4, src_port, method)?;
 
                 let interface_name = net_info.interface_name.clone();
-                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,
@@ -866,12 +866,12 @@ pub fn ping_raw(
                 }
             };
 
+            let rrq_id = random_request_id();
             for i in 0..max_retries {
                 let (buff, filters) =
                     build_ping_buff6(dst_ipv6, Some(dst_port), src_ipv6, src_port, method)?;
 
                 let interface_name = net_info.interface_name.clone();
-                let rrq_id = random_request_id();
                 let rrq = RRequest {
                     interface_name: interface_name.clone(),
                     id: rrq_id,

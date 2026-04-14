@@ -86,8 +86,7 @@ fn build_tcp_packet<'a>(tcp_buff: &'a [u8], probe_name: &str) -> Option<TcpPacke
     }
 }
 
-/// IPv6 Payload Length field.
-/// IPv6 Traffic Class field.
+/// IPv6 Payload Length field and IPv6 Traffic Class field.
 fn ipv6_plen_tc(eth_response: &[u8], probe_name: &str) -> (f64, f64) {
     if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
         if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
@@ -114,18 +113,30 @@ fn tcp_seq(eth_response: &[u8], probe_name: &str) -> Option<u32> {
 /// The differences between consecutive sequence responses are added up, then this sum is divided by the time elapsed between the first and last probe.
 fn tcp_isr(ap: &AllPacketRR6) -> f64 {
     let mut seq_vec = Vec::new();
-    let s1 = tcp_seq(&ap.seq.seq1.response2, "seq1").unwrap_or(0);
-    let s2 = tcp_seq(&ap.seq.seq2.response2, "seq2").unwrap_or(0);
-    let s3 = tcp_seq(&ap.seq.seq3.response2, "seq3").unwrap_or(0);
-    let s4 = tcp_seq(&ap.seq.seq4.response2, "seq4").unwrap_or(0);
-    let s5 = tcp_seq(&ap.seq.seq5.response2, "seq5").unwrap_or(0);
-    let s6 = tcp_seq(&ap.seq.seq6.response2, "seq6").unwrap_or(0);
-    seq_vec.push(s1);
-    seq_vec.push(s2);
-    seq_vec.push(s3);
-    seq_vec.push(s4);
-    seq_vec.push(s5);
-    seq_vec.push(s6);
+    let s1 = tcp_seq(&ap.seq.seq1.response2, "seq1");
+    let s2 = tcp_seq(&ap.seq.seq2.response2, "seq2");
+    let s3 = tcp_seq(&ap.seq.seq3.response2, "seq3");
+    let s4 = tcp_seq(&ap.seq.seq4.response2, "seq4");
+    let s5 = tcp_seq(&ap.seq.seq5.response2, "seq5");
+    let s6 = tcp_seq(&ap.seq.seq6.response2, "seq6");
+    if let Some(s) = s1 {
+        seq_vec.push(s);
+    }
+    if let Some(s) = s2 {
+        seq_vec.push(s);
+    }
+    if let Some(s) = s3 {
+        seq_vec.push(s);
+    }
+    if let Some(s) = s4 {
+        seq_vec.push(s);
+    }
+    if let Some(s) = s5 {
+        seq_vec.push(s);
+    }
+    if let Some(s) = s6 {
+        seq_vec.push(s);
+    }
 
     let diff = get_diff(&seq_vec, false);
 
@@ -457,7 +468,7 @@ pub(crate) fn vectorize(ap: &AllPacketRR6) -> Vec<f64> {
     if features.len() != 695 {
         panic!("features length is {}, expected 695", features.len());
     }
-    // assert_eq!(features.len(), 695);
+    assert_eq!(features.len(), 695);
     features
 }
 

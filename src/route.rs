@@ -562,7 +562,7 @@ fn find_loopback_interface() -> Option<NetworkInterface> {
 */
 
 /// Check if the target IP address is in the local.
-fn dst_in_local_net(ip: IpAddr) -> bool {
+pub(crate) fn dst_in_local_net(ip: IpAddr) -> bool {
     for interface in interfaces() {
         for ipn in interface.ips {
             if ipn.contains(ip) {

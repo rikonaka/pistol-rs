@@ -1,7 +1,9 @@
 use crossbeam::channel::Receiver;
 use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
+use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
+use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Type;
 use std::collections::HashMap;
 use std::fmt;
@@ -17,7 +19,6 @@ use tracing::warn;
 
 use crate::LoopKey;
 use crate::LoopStates;
-use crate::NetInfo;
 use crate::RRequest;
 use crate::RResponse;
 use crate::SRequest;
@@ -41,7 +42,6 @@ use crate::os::rr::SEQRR6;
 use crate::os::rr::TECNRR6;
 use crate::os::rr::TXRR6;
 use crate::os::rr::U1RR6;
-use crate::trace::icmp_trace;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
 use crate::utils::random_request_id;
@@ -136,6 +136,7 @@ fn p_as_nmap_format(input: &[u8]) -> String {
         }
     }
 
+    println!("p before reduction: {}", p);
     let new_p = p_reduce(&p);
     new_p
 }
@@ -161,19 +162,24 @@ impl Default for SEQX6 {
 
 impl fmt::Display for SEQX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response2.len() > 0 {
-            let output = format!(
-                "{}(P={}%ST={:.6}%RT={:.6})",
-                self.name,
-                p_as_nmap_format(&self.rr.response2),
-                self.st.as_secs_f64(),
-                self.rt.as_secs_f64()
-            );
-            output
-        } else {
-            String::new()
-        };
-        write!(f, "{}", output)
+        match EthernetPacket::new(&self.rr.response2) {
+            Some(eth_packet) => {
+                let response3 = eth_packet.payload();
+                if response3.len() > 0 {
+                    let output = format!(
+                        "{}(P={}%ST={:.6}%RT={:.6})",
+                        self.name,
+                        p_as_nmap_format(response3),
+                        self.st.as_secs_f64(),
+                        self.rt.as_secs_f64()
+                    );
+                    write!(f, "{}", output)
+                } else {
+                    write!(f, "")
+                }
+            }
+            None => write!(f, ""),
+        }
     }
 }
 
@@ -198,19 +204,24 @@ impl Default for IEX6 {
 
 impl fmt::Display for IEX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response2.len() > 0 {
-            let output = format!(
-                "{}(P={}%ST={:.6}%RT={:.6})",
-                self.name,
-                p_as_nmap_format(&self.rr.response2),
-                self.st.as_secs_f64(),
-                self.rt.as_secs_f64()
-            );
-            output
-        } else {
-            String::new()
-        };
-        write!(f, "{}", output)
+        match EthernetPacket::new(&self.rr.response2) {
+            Some(eth_packet) => {
+                let response3 = eth_packet.payload();
+                if response3.len() > 0 {
+                    let output = format!(
+                        "{}(P={}%ST={:.6}%RT={:.6})",
+                        self.name,
+                        p_as_nmap_format(response3),
+                        self.st.as_secs_f64(),
+                        self.rt.as_secs_f64()
+                    );
+                    write!(f, "{}", output)
+                } else {
+                    write!(f, "")
+                }
+            }
+            None => write!(f, ""),
+        }
     }
 }
 
@@ -235,19 +246,24 @@ impl Default for NX6 {
 
 impl fmt::Display for NX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response2.len() > 0 {
-            let output = format!(
-                "{}(P={}%ST={:.6}%RT={:.6})",
-                self.name,
-                p_as_nmap_format(&self.rr.response2),
-                self.st.as_secs_f64(),
-                self.rt.as_secs_f64()
-            );
-            output
-        } else {
-            String::new()
-        };
-        write!(f, "{}", output)
+        match EthernetPacket::new(&self.rr.response2) {
+            Some(eth_packet) => {
+                let response3 = eth_packet.payload();
+                if response3.len() > 0 {
+                    let output = format!(
+                        "{}(P={}%ST={:.6}%RT={:.6})",
+                        self.name,
+                        p_as_nmap_format(response3),
+                        self.st.as_secs_f64(),
+                        self.rt.as_secs_f64()
+                    );
+                    write!(f, "{}", output)
+                } else {
+                    write!(f, "")
+                }
+            }
+            None => write!(f, ""),
+        }
     }
 }
 
@@ -270,18 +286,23 @@ impl Default for U1X6 {
 
 impl fmt::Display for U1X6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response2.len() > 0 {
-            let output = format!(
-                "U1(P={}%ST={:.6}%RT={:.6})",
-                p_as_nmap_format(&self.rr.response2),
-                self.st.as_secs_f64(),
-                self.rt.as_secs_f64()
-            );
-            output
-        } else {
-            String::new()
-        };
-        write!(f, "{}", output)
+        match EthernetPacket::new(&self.rr.response2) {
+            Some(eth_packet) => {
+                let response3 = eth_packet.payload();
+                if response3.len() > 0 {
+                    let output = format!(
+                        "U1(P={}%ST={:.6}%RT={:.6})",
+                        p_as_nmap_format(response3),
+                        self.st.as_secs_f64(),
+                        self.rt.as_secs_f64()
+                    );
+                    write!(f, "{}", output)
+                } else {
+                    write!(f, "")
+                }
+            }
+            None => write!(f, ""),
+        }
     }
 }
 
@@ -304,18 +325,23 @@ impl Default for TECNX6 {
 
 impl fmt::Display for TECNX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response2.len() > 0 {
-            let output = format!(
-                "TECN(P={}%ST={:.6}%RT={:.6})",
-                p_as_nmap_format(&self.rr.response2),
-                self.st.as_secs_f64(),
-                self.rt.as_secs_f64()
-            );
-            output
-        } else {
-            String::new()
-        };
-        write!(f, "{}", output)
+        match EthernetPacket::new(&self.rr.response2) {
+            Some(eth_packet) => {
+                let response3 = eth_packet.payload();
+                if response3.len() > 0 {
+                    let output = format!(
+                        "TECN(P={}%ST={:.6}%RT={:.6})",
+                        p_as_nmap_format(response3),
+                        self.st.as_secs_f64(),
+                        self.rt.as_secs_f64()
+                    );
+                    write!(f, "{}", output)
+                } else {
+                    write!(f, "")
+                }
+            }
+            None => write!(f, ""),
+        }
     }
 }
 
@@ -340,19 +366,24 @@ impl Default for TX6 {
 
 impl fmt::Display for TX6 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = if self.rr.response2.len() > 0 {
-            let output = format!(
-                "{}(P={}%ST={:.6}%RT={:.6})",
-                self.name,
-                p_as_nmap_format(&self.rr.response2),
-                self.st.as_secs_f64(),
-                self.rt.as_secs_f64()
-            );
-            output
-        } else {
-            String::new()
-        };
-        write!(f, "{}", output)
+        match EthernetPacket::new(&self.rr.response2) {
+            Some(eth_packet) => {
+                let response3 = eth_packet.payload();
+                if response3.len() > 0 {
+                    let output = format!(
+                        "{}(P={}%ST={:.6}%RT={:.6})",
+                        self.name,
+                        p_as_nmap_format(response3),
+                        self.st.as_secs_f64(),
+                        self.rt.as_secs_f64()
+                    );
+                    write!(f, "{}", output)
+                } else {
+                    write!(f, "")
+                }
+            }
+            None => write!(f, ""),
+        }
     }
 }
 
@@ -527,7 +558,7 @@ fn send_seq_probes(
     interface_name: String,
     timeout: Duration,
     max_retries: usize,
-    scan_start: Instant,
+    detect_begin: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -591,7 +622,7 @@ fn send_seq_probes(
 
     let ether_type = EtherTypes::Ipv6;
     let mut seq_hm = HashMap::new();
-    let mut scan_start_hm = HashMap::new();
+    let mut st_hm = HashMap::new();
     loop {
         let mut all_done = true;
         for (key, state) in &mut loop_states {
@@ -600,12 +631,11 @@ fn send_seq_probes(
                     let filter = filter_hm[t].clone();
                     let buff = buff_hm[&t].clone();
 
-                    let created = Instant::now();
                     let rrq = RRequest {
                         interface_name: interface_name.clone(),
                         id: state.id,
                         filters: vec![filter],
-                        created,
+                        created: Instant::now(),
                         elapsed: timeout,
                     };
                     let srq = SRequest {
@@ -623,7 +653,7 @@ fn send_seq_probes(
                         error!("send os probe seq send msg failed: {}", e);
                     }
 
-                    scan_start_hm.insert(*t, scan_start.elapsed());
+                    st_hm.insert(*t, detect_begin.elapsed());
                     state.retries += 1;
                     all_done = false;
                 }
@@ -640,6 +670,12 @@ fn send_seq_probes(
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
         let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
             if recv_start.elapsed() > timeout || recved_packet >= 6 {
                 break;
@@ -662,6 +698,7 @@ fn send_seq_probes(
                                 };
                                 seq_hm.insert(*t, rr);
                             }
+                            break;
                         }
                     }
                 }
@@ -689,12 +726,12 @@ fn send_seq_probes(
         .get(&6)
         .map_or(RequestResponse::default(), |x| x.clone());
 
-    let st1 = scan_start_hm[&1];
-    let st2 = scan_start_hm[&2];
-    let st3 = scan_start_hm[&3];
-    let st4 = scan_start_hm[&4];
-    let st5 = scan_start_hm[&5];
-    let st6 = scan_start_hm[&6];
+    let st1 = st_hm[&1];
+    let st2 = st_hm[&2];
+    let st3 = st_hm[&3];
+    let st4 = st_hm[&4];
+    let st5 = st_hm[&5];
+    let st6 = st_hm[&6];
 
     let rt1 = st1 + seq1.rtt;
     let rt2 = st2 + seq2.rtt;
@@ -737,7 +774,7 @@ fn send_ie_probes(
     interface_name: String,
     timeout: Duration,
     max_retries: usize,
-    scan_start: Instant,
+    detect_begin: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -800,21 +837,21 @@ fn send_ie_probes(
         loop_states.insert_port(t, state);
     }
 
-    let mut ie_hm = HashMap::new();
-    let mut scan_start_hm = HashMap::new();
     let ether_type = EtherTypes::Ipv6;
+    let mut ie_hm = HashMap::new();
+    let mut st_hm = HashMap::new();
+
     loop {
         let mut all_done = true;
         for (key, state) in &mut loop_states {
             if state.retries < max_retries && !state.recved {
                 if let LoopKey::Port(t) = key {
                     let buff = buff_hm[t].clone();
-                    let start = Instant::now();
                     let rrq = RRequest {
                         interface_name: interface_name.clone(),
                         id: state.id,
                         filters: filters.clone(),
-                        created: start,
+                        created: Instant::now(),
                         elapsed: timeout,
                     };
                     let srq = SRequest {
@@ -832,7 +869,7 @@ fn send_ie_probes(
                         error!("send os probe ie send msg failed: {}", e);
                     }
 
-                    scan_start_hm.insert(*t, scan_start.elapsed());
+                    st_hm.insert(*t, detect_begin.elapsed());
                     state.retries += 1;
                     all_done = false;
                 }
@@ -846,6 +883,12 @@ fn send_ie_probes(
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
         let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
             if recv_start.elapsed() > timeout || recved_packet >= 2 {
                 break;
@@ -884,8 +927,8 @@ fn send_ie_probes(
         .get(&2)
         .map_or(RequestResponse::default(), |x| x.clone());
 
-    let st1 = scan_start_hm[&1];
-    let st2 = scan_start_hm[&2];
+    let st1 = st_hm[&1];
+    let st2 = st_hm[&2];
 
     let rt1 = st1 + ie1.rtt;
     let rt2 = st2 + ie2.rtt;
@@ -909,7 +952,7 @@ fn send_nx_probes(
     interface_name: String,
     timeout: Duration,
     max_retries: usize,
-    scan_start: Instant,
+    detect_begin: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -935,7 +978,7 @@ fn send_nx_probes(
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
-    let mut send_state = LoopStates::default();
+    let mut loop_states = LoopStates::default();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
@@ -943,24 +986,24 @@ fn send_nx_probes(
             retries: 0,
             recved: false,
         };
-        send_state.insert_port(t, state);
+        loop_states.insert_port(t, state);
     }
 
-    let mut nx_hm = HashMap::new();
-    let mut scan_start_hm = HashMap::new();
     let ether_type = EtherTypes::Ipv6;
+    let mut nx_hm = HashMap::new();
+    let mut st_hm = HashMap::new();
+
     loop {
         let mut all_done = true;
-        for (key, state) in &mut send_state {
+        for (key, state) in &mut loop_states {
             if let LoopKey::Port(t) = key {
                 let buff = buff_hm[t].clone();
                 if state.retries < max_retries && !state.recved {
-                    let start = Instant::now();
                     let rrq = RRequest {
                         interface_name: interface_name.clone(),
                         id: state.id,
                         filters: vec![filter.clone()],
-                        created: start,
+                        created: Instant::now(),
                         elapsed: timeout,
                     };
                     let srq = SRequest {
@@ -978,7 +1021,7 @@ fn send_nx_probes(
                         error!("send os probe nx send msg failed: {}", e);
                     }
 
-                    scan_start_hm.insert(*t, scan_start.elapsed());
+                    st_hm.insert(*t, detect_begin.elapsed());
                     state.retries += 1;
                     all_done = false;
                 }
@@ -992,13 +1035,19 @@ fn send_nx_probes(
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
         let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
             if recv_start.elapsed() > timeout || recved_packet >= 2 {
                 break;
             }
             match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
-                    for (key, state) in &mut send_state {
+                    for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
                             recved_packet += 1;
                             if let LoopKey::Port(t) = key {
@@ -1030,8 +1079,8 @@ fn send_nx_probes(
         .get(&1)
         .map_or(RequestResponse::default(), |x| x.clone());
 
-    let sti = scan_start_hm[&1];
-    let sts = scan_start_hm[&2];
+    let sti = st_hm[&1];
+    let sts = st_hm[&2];
 
     let rti = sti + ni.rtt;
     let rts = sts + ns.rtt;
@@ -1056,7 +1105,7 @@ fn send_u1_probe(
     interface_name: String,
     timeout: Duration,
     max_retries: usize,
-    scan_start: Instant,
+    detect_begin: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1083,8 +1132,9 @@ fn send_u1_probe(
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
     let ether_type = EtherTypes::Ipv6;
     let rrq_id = random_request_id();
+    let mut st = Duration::ZERO;
+
     for _ in 0..max_retries {
-        let st = scan_start.elapsed();
         let rrq = RRequest {
             interface_name: interface_name.clone(),
             id: rrq_id,
@@ -1106,6 +1156,7 @@ fn send_u1_probe(
         if let Err(e) = push_sd.send(srq) {
             error!("send os probe u1 send msg failed: {}", e);
         }
+        st = detect_begin.elapsed();
 
         match get_response.recv_timeout(timeout) {
             Ok(recv_response) => {
@@ -1138,8 +1189,8 @@ fn send_u1_probe(
 
     let u1 = U1RR6 {
         u1: rr,
-        st: Duration::ZERO,
-        rt: Duration::ZERO,
+        st,
+        rt: detect_begin.elapsed(),
     };
     return Ok(u1);
 }
@@ -1153,7 +1204,7 @@ fn send_tecn_probe(
     interface_name: String,
     timeout: Duration,
     max_retries: usize,
-    start_time: Instant,
+    detect_begin: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1178,9 +1229,10 @@ fn send_tecn_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let st = start_time.elapsed();
     let ether_type = EtherTypes::Ipv6;
     let rrq_id = random_request_id();
+    let mut st = Duration::ZERO;
+
     for _ in 0..max_retries {
         let rrq = RRequest {
             interface_name: interface_name.clone(),
@@ -1203,6 +1255,8 @@ fn send_tecn_probe(
         if let Err(e) = push_sd.send(srq) {
             error!("send os probe ecn send msg failed: {}", e);
         }
+        st = detect_begin.elapsed();
+
         match get_response.recv_timeout(timeout) {
             Ok(recv_response) => {
                 if rrq_id == recv_response.id {
@@ -1233,8 +1287,8 @@ fn send_tecn_probe(
 
     let tecn = TECNRR6 {
         tecn: rr,
-        st: Duration::ZERO,
-        rt: Duration::ZERO,
+        st,
+        rt: detect_begin.elapsed(),
     };
     Ok(tecn)
 }
@@ -1249,7 +1303,7 @@ fn send_tx_probes(
     interface_name: String,
     timeout: Duration,
     max_retries: usize,
-    scan_start: Instant,
+    detect_begin: Instant,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
@@ -1337,7 +1391,7 @@ fn send_tx_probes(
     buff_hm.insert(6, buff_6);
     buff_hm.insert(7, buff_7);
 
-    let mut send_state = LoopStates::default();
+    let mut loop_states = LoopStates::default();
     for t in 2..=7 {
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
@@ -1345,15 +1399,16 @@ fn send_tx_probes(
             retries: 0,
             recved: false,
         };
-        send_state.insert_port(t, state);
+        loop_states.insert_port(t, state);
     }
 
     let ether_type = EtherTypes::Ipv6;
     let mut tx_hm = HashMap::new();
-    let mut scan_start_hm = HashMap::new();
+    let mut st_hm = HashMap::new();
+
     loop {
         let mut all_done = true;
-        for (key, state) in &mut send_state {
+        for (key, state) in &mut loop_states {
             if let LoopKey::Port(t) = key {
                 if state.retries < max_retries && !state.recved {
                     let buff = buff_hm[t].clone();
@@ -1381,7 +1436,7 @@ fn send_tx_probes(
                         error!("send os probe tx send msg failed: {}", e);
                     }
 
-                    scan_start_hm.insert(*t, scan_start.elapsed());
+                    st_hm.insert(*t, detect_begin.elapsed());
                     state.retries += 1;
                     all_done = false;
                 }
@@ -1395,13 +1450,19 @@ fn send_tx_probes(
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
         let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
             if recv_start.elapsed() > timeout || recved_packet >= 6 {
                 break;
             }
             match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
-                    for (key, state) in &mut send_state {
+                    for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
                             recved_packet += 1;
                             if let LoopKey::Port(t) = key {
@@ -1445,12 +1506,12 @@ fn send_tx_probes(
         .get(&7)
         .map_or(RequestResponse::default(), |x| x.clone());
 
-    let st2 = scan_start_hm[&2];
-    let st3 = scan_start_hm[&3];
-    let st4 = scan_start_hm[&4];
-    let st5 = scan_start_hm[&5];
-    let st6 = scan_start_hm[&6];
-    let st7 = scan_start_hm[&7];
+    let st2 = st_hm[&2];
+    let st3 = st_hm[&3];
+    let st4 = st_hm[&4];
+    let st5 = st_hm[&5];
+    let st6 = st_hm[&6];
+    let st7 = st_hm[&7];
 
     let rt2 = st2 + t2.rtt;
     let rt3 = st3 + t3.rtt;
@@ -1601,11 +1662,11 @@ fn send_all_probes(
     Ok(ap)
 }
 
-fn predict_value(features: &[f64], wvec: &[Vec<f64>]) -> Vec<f64> {
+fn predict_value(features: &Vec<f64>, wvec: &Vec<Vec<f64>>) -> Vec<f64> {
     // features [695]
     // wvec [92, 695]
     let vec_time = |x: &[f64], y: &[f64]| -> f64 {
-        assert_eq!(x.len(), y.len());
+        // assert_eq!(x.len(), y.len());
         let mut sum = 0.0;
         for (a, b) in zip(x, y) {
             sum += a * b;
@@ -1613,7 +1674,7 @@ fn predict_value(features: &[f64], wvec: &[Vec<f64>]) -> Vec<f64> {
         sum
     };
 
-    let mut dec_value = [0f64; 92];
+    let mut dec_value: [f64; 92] = [0.0; 92];
     for (idx, w) in wvec.iter().enumerate() {
         dec_value[idx] = vec_time(features, w);
     }
@@ -1623,9 +1684,9 @@ fn predict_value(features: &[f64], wvec: &[Vec<f64>]) -> Vec<f64> {
 }
 
 fn novelty_of(features: &[f64], mean: &[f64], variance: &[f64]) -> f64 {
-    assert_eq!(features.len(), 695);
-    assert_eq!(mean.len(), 695);
-    assert_eq!(variance.len(), 695);
+    // assert_eq!(features.len(), 695);
+    // assert_eq!(mean.len(), 695);
+    // assert_eq!(variance.len(), 695);
 
     let mut sum = 0.0;
     for i in 0..695 {
@@ -1704,32 +1765,23 @@ pub(crate) fn os_probe_thread6(
     debug!("send all probes done");
 
     let good_results = true;
-    let icmp_trace_net_info = NetInfo {
-        inferred_dst_mac: dst_mac,
-        inferred_src_mac: src_mac,
-        inferred_dst_addr: dst_ipv6.into(),
-        inferred_src_addr: src_ipv6.into(),
-        dst_addr: dst_ipv6.into(),
-        src_addr: Some(src_ipv6.into()),
-        dst_ports: Vec::new(),
-        src_port: None,
-        interface_name: interface_name.clone(),
-        cached: true,
-        cost: Duration::ZERO,
-        valid: true,
-    };
-    let trace = icmp_trace(icmp_trace_net_info, timeout, push_rd, push_sd, get_response)?;
-    let hops = trace.hops;
+
     // form get_scan_line function
     let scan = get_scan_line(
         dst_mac,
+        dst_ipv6.into(),
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
-        dst_ipv6.into(),
-        hops,
+        src_mac,
+        src_ipv6.into(),
+        interface_name.clone(),
+        timeout,
+        push_rd,
+        push_sd,
+        get_response,
         good_results,
-    );
+    )?;
 
     let features = vectorize(&ap);
     debug!("featured vectorize done");
@@ -1941,124 +1993,3 @@ pub(crate) fn os_probe_thread6(
     debug!("ipv6 fingerprint:\n{}", target_fingerprint);
     Ok((target_fingerprint, ret))
 }
-
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_something() {
-        let p = "000XXXXXX";
-        let ret = p_reduce(p);
-        println!("{}", ret);
-
-        let p = "0000XXXXXX";
-        let ret = p_reduce(p);
-        println!("{}", ret);
-
-        let p = "0000XXXXXXX";
-        let ret = p_reduce(p);
-        println!("{}", ret);
-    }
-    #[test]
-    // #[should_panic]
-    fn test_send_tx() {
-        let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
-        let src_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x0020c, 0x29ff, 0xfe2c, 0x09e4);
-        let dst_open_port = 22;
-        let dst_closed_port = 9876;
-
-        let src_port_start = random_port_range(1000, 6540);
-        let mut src_ports = Vec::new();
-        for i in 0..6 {
-            src_ports.push(src_port_start * 10 + i);
-        }
-        println!("src_ports: {:?}", src_ports);
-
-        let layer3 = Layer3Filter {
-            name: String::from("test layer3"),
-            layer2: None,
-            src_addr: Some(dst_ipv6.into()),
-            dst_addr: Some(src_ipv6.into()),
-        };
-
-        let layer4_tcp_udp_2 = Layer4FilterTcpUdp {
-            name: String::from("test tcp_udp 2"),
-            layer3: Some(layer3),
-            src_port: Some(dst_open_port),
-            dst_port: Some(src_ports[0]),
-        };
-        let layer4_tcp_udp_3 = Layer4FilterTcpUdp {
-            name: String::from("test tcp_udp 3"),
-            layer3: Some(layer3),
-            src_port: Some(dst_open_port),
-            dst_port: Some(src_ports[1]),
-        };
-        let layer4_tcp_udp_4 = Layer4FilterTcpUdp {
-            name: String::from("test tcp_udp 4"),
-            layer3: Some(layer3),
-            src_port: Some(dst_open_port),
-            dst_port: Some(src_ports[2]),
-        };
-        let layer4_tcp_udp_5 = Layer4FilterTcpUdp {
-            name: String::from("test tcp_udp 5"),
-            layer3: Some(layer3),
-            src_port: Some(dst_closed_port),
-            dst_port: Some(src_ports[3]),
-        };
-        let layer4_tcp_udp_6 = Layer4FilterTcpUdp {
-            name: String::from("test tcp_udp 6"),
-            layer3: Some(layer3),
-            src_port: Some(dst_closed_port),
-            dst_port: Some(src_ports[4]),
-        };
-        let layer4_tcp_udp_7 = Layer4FilterTcpUdp {
-            name: String::from("test tcp_udp 7"),
-            layer3: Some(layer3),
-            src_port: Some(dst_closed_port),
-            dst_port: Some(src_ports[5]),
-        };
-        let filter_2 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_2);
-        let filter_3 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_3);
-        let filter_4 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_4);
-        let filter_5 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_5);
-        let filter_6 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_6);
-        let filter_7 = PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp_7);
-        let filters = vec![filter_2, filter_3, filter_4, filter_5, filter_6, filter_7];
-
-        let buff_2 =
-            packet6::t2_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[0]).unwrap();
-        let buff_3 =
-            packet6::t3_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[1]).unwrap();
-        let buff_4 =
-            packet6::t4_packet_layer3(dst_ipv6, dst_open_port, src_ipv6, src_ports[2]).unwrap();
-        let buff_5 =
-            packet6::t5_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[3]).unwrap();
-        let buff_6 =
-            packet6::t6_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[4]).unwrap();
-        let buff_7 =
-            packet6::t7_packet_layer3(dst_ipv6, dst_closed_port, src_ipv6, src_ports[5]).unwrap();
-        let buffs = vec![buff_2, buff_3, buff_4, buff_5, buff_6, buff_7];
-
-        let i = 0;
-        let filter = filters[i].clone();
-        let buff = buffs[i].clone();
-        let timeout = Duration::new(3, 0);
-
-        let receiver = ask_runner(vec![filter]).unwrap();
-        let layer3 = Layer3::new(dst_ipv6.into(), src_ipv6.into(), timeout, true);
-        let start = Instant::now();
-        layer3.send(&buff).unwrap();
-        let eth_response = match receiver.recv_timeout(timeout) {
-            Ok(b) => b,
-            Err(e) => {
-                debug!("{} recv icmpv6 ping response timeout: {}", dst_ipv6, e);
-                Vec::new()
-            }
-        };
-        let _rtt = start.elapsed();
-
-        println!("eth_response len: {}", eth_response.len());
-    }
-}
-*/

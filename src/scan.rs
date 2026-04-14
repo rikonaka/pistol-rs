@@ -274,8 +274,8 @@ pub(crate) fn arp_scan_raw(
     debug!("use interface {} and src ipv4 {}", interface.name, src_ipv4);
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
+    let rrq_id = random_request_id();
     for _ in 0..max_retries {
-        let rrq_id = random_request_id();
         let rrq = RRequest {
             interface_name: interface_name.clone(),
             id: rrq_id,
@@ -1113,7 +1113,7 @@ fn scan(
                 let cached = ni.cached;
 
                 let state = PortScanState {
-                    id: 0,
+                    id: random_request_id(),
                     retries: 0,
                     recved: false,
                     dst_mac,
@@ -1157,7 +1157,7 @@ fn scan(
                             build_scan_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
 
                         let interface_name = state.interface_name.clone();
-                        let rrq_id = random_request_id();
+                        let rrq_id = state.id;
                         let rrq = RRequest {
                             interface_name: interface_name.clone(),
                             id: rrq_id,
@@ -1200,7 +1200,7 @@ fn scan(
                             build_scan_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
 
                         let interface_name = state.interface_name.clone();
-                        let rrq_id = random_request_id();
+                        let rrq_id = state.id;
                         let rrq = RRequest {
                             interface_name: interface_name.clone(),
                             id: rrq_id,
@@ -1318,8 +1318,8 @@ fn scan_raw(
     // It is only used here to determine whether the target is ipv4 or ipv6.
     // The real dst_addr is inferred from infer_addr.
     let cached = net_info.cached;
+    let rrq_id = random_request_id();
     for i in 0..max_retries {
-        let rrq_id = random_request_id();
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 let src_ipv4 = match net_info.inferred_src_addr {

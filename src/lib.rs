@@ -34,10 +34,12 @@ use pnet::transport::TransportChannelType::Layer3;
 use pnet::transport::transport_channel;
 use serde::Deserialize;
 use serde::Serialize;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::collections::hash_map::IntoIter;
-use std::collections::hash_map::Iter;
-use std::collections::hash_map::IterMut;
+use std::collections::btree_map::IntoIter;
+use std::collections::btree_map::Iter;
+use std::collections::btree_map::IterMut;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
@@ -148,22 +150,40 @@ const NETWORK_CACHE_PATH: &str = ".plnetcache";
 // it will be considered expired and will be deleted.
 const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub enum LoopKey {
     Ip(IpAddr),
     Port(u16),
     IpPort(IpAddr, u16),
 }
 
+impl Ord for LoopKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (LoopKey::Ip(a), LoopKey::Ip(b)) => a.cmp(b),
+            (LoopKey::Port(a), LoopKey::Port(b)) => a.cmp(b),
+            (LoopKey::IpPort(a1, p1), LoopKey::IpPort(a2, p2)) => (a1, p1).cmp(&(a2, p2)),
+
+            // the order of the three types is: Ip < Port < IpPort
+            (LoopKey::Ip(_), LoopKey::Port(_)) => Ordering::Less,
+            (LoopKey::Ip(_), LoopKey::IpPort(_, _)) => Ordering::Less,
+            (LoopKey::Port(_), LoopKey::Ip(_)) => Ordering::Greater,
+            (LoopKey::Port(_), LoopKey::IpPort(_, _)) => Ordering::Less,
+            (LoopKey::IpPort(_, _), LoopKey::Ip(_)) => Ordering::Greater,
+            (LoopKey::IpPort(_, _), LoopKey::Port(_)) => Ordering::Greater,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LoopStates<V> {
     /// The key of the HashMap is the {IP}_{PORT}.
-    data: HashMap<LoopKey, V>,
+    data: BTreeMap<LoopKey, V>,
 }
 
 impl<V> Default for LoopStates<V> {
     fn default() -> Self {
-        let data: HashMap<LoopKey, V> = HashMap::new();
+        let data: BTreeMap<LoopKey, V> = BTreeMap::new();
         Self { data }
     }
 }
@@ -202,6 +222,10 @@ impl<V> LoopStates<V> {
     }
     fn insert_ip(&mut self, ip: IpAddr, value: V) {
         let key = LoopKey::Ip(ip);
+        self.data.insert(key, value);
+    }
+    fn insert_port(&mut self, port: u16, value: V) {
+        let key = LoopKey::Port(port);
         self.data.insert(key, value);
     }
 }

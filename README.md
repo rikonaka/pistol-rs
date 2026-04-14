@@ -2,7 +2,7 @@
 
 The library must be run as root (Linux, *BSD), the `stable` version of rust is recommended.
 
-Every codes was written and checked by humans.
+Every codes was written and checked by humans. I use AI, but I do not trust AI.
 
 nmap db version: 7.97
 

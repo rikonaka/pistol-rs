@@ -69,6 +69,7 @@ use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
+use crate::route::dst_in_local_net;
 use crate::trace::icmp_trace;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
@@ -188,13 +189,19 @@ impl Fingerprint {
 
 pub(crate) fn get_scan_line(
     dst_mac: MacAddr,
+    dst_addr: IpAddr,
     dst_open_tcp_port: u16,
     dst_closed_tcp_port: u16,
     dst_closed_udp_port: u16,
-    dst_addr: IpAddr,
-    hops: u8,
+    src_mac: MacAddr,
+    src_addr: IpAddr,
+    interface_name: String,
+    timeout: Duration,
+    push_rd: Sender<RRequest>,
+    push_sd: Sender<SRequest>,
+    get_response: Receiver<RResponse>,
     good_results: bool,
-) -> String {
+) -> Result<String, PistolError> {
     // Nmap version number (V), we will our own version number like pistol_4.0.16 here.
     let v = format!("p{}", env!("CARGO_PKG_VERSION"));
     // Date of scan (D) in the form month/day.
@@ -214,26 +221,69 @@ pub(crate) fn get_scan_line(
     // This test exists because it is possible for the ICMP TTL calculation to be incorrect
     // when intermediate machines change the TTL;
     // it distinguishes between a host that is truly directly connected and what may be just a miscalculation.
-    let (pv, ds, dc) = match dst_addr {
+    let pv = match dst_addr {
         IpAddr::V4(addr) => {
-            if addr.is_loopback() {
-                ("Y", 0, "L")
-            } else if addr.is_private() {
-                ("Y", 1, "D")
+            if addr.is_loopback() || addr.is_private() {
+                "Y"
             } else {
-                ("N", hops, "I")
+                "N"
             }
         }
         IpAddr::V6(addr) => {
-            if addr.is_loopback() {
-                ("Y", 0, "L")
-            } else if addr.is_unique_local() {
-                ("Y", 1, "D")
+            if addr.is_loopback() || addr.is_unique_local() || addr.is_unicast_link_local() {
+                "Y"
             } else {
-                ("N", hops, "I")
+                "N"
             }
         }
     };
+
+    // Network distance (DS) is the network hop distance from the target.
+    // It is 0 if the target is localhost,
+    // 1 if directly connected on an ethernet network,
+    // or the exact distance if discovered by Nmap.
+    // If the distance is unknown, this test is omitted.
+    let ds = if dst_addr == src_addr || dst_addr.is_loopback() || dst_addr.is_unspecified() {
+        0
+    } else if dst_in_local_net(dst_addr) {
+        1
+    } else {
+        debug!("send trace packet");
+        let icmp_trace_net_info = NetInfo {
+            inferred_dst_mac: dst_mac,
+            inferred_src_mac: src_mac,
+            inferred_dst_addr: dst_addr,
+            inferred_src_addr: src_addr,
+            dst_addr: dst_addr,
+            src_addr: Some(src_addr),
+            dst_ports: Vec::new(),
+            src_port: None,
+            interface_name: interface_name,
+            cached: true,
+            cost: Duration::ZERO,
+            valid: true,
+        };
+        let trace = icmp_trace(icmp_trace_net_info, timeout, push_rd, push_sd, get_response)?;
+        trace.hops
+    };
+
+    // The distance calculation method (DC) indicates how the network distance (DS) was calculated.
+    // It can take on these values:
+    // L for localhost (DS=0);
+    // D for a direct subnet connection (DS=1);
+    // I for a TTL calculation based on an ICMP response to the U1 OS detection probe;
+    // and T for a count of traceroute hops.
+    // This test exists because it is possible for the ICMP TTL calculation to be incorrect
+    // when intermediate machines change the TTL;
+    // it distinguishes between a host that is truly directly connected
+    // and what may be just a miscalculation.
+    // Note: here we ignore the I.
+    let dc = match ds {
+        0 => "L",
+        1 => "D",
+        _ => "T",
+    };
+
     // Good results (G) is Y if conditions and results seem good enough to submit this fingerprint to Nmap.Org.
     // It is N otherwise. Unless you force them by enabling debugging (-d) or extreme verbosity (-vv), G=N fingerprints aren't printed by Nmap.
     let g = if good_results { "Y" } else { "N" };
@@ -282,7 +332,7 @@ pub(crate) fn get_scan_line(
             info_str
         }
     };
-    info_str
+    Ok(info_str)
 }
 
 fn send_seq_probes(
@@ -343,7 +393,7 @@ fn send_seq_probes(
 
         // 1 means buff_1, 2 means buff_2, and so on.
         let state = OsProbeState {
-            id: 0,
+            id: random_request_id(),
             retries: 0,
             recved: false,
         };
@@ -359,7 +409,7 @@ fn send_seq_probes(
                 if let LoopKey::Port(t) = key {
                     let filter = filter_hm[t].clone();
                     let buff = buff_hm[t].clone();
-                    let rrq_id = random_request_id();
+                    let rrq_id = state.id;
                     let rrq = RRequest {
                         interface_name: interface_name.clone(),
                         id: rrq_id,
@@ -399,16 +449,22 @@ fn send_seq_probes(
 
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
-        let mut recvd_packet = 0;
+        let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
-            if recv_start.elapsed() >= timeout || recvd_packet >= 6 {
+            if recv_start.elapsed() >= timeout || recved_packet >= 6 {
                 break;
             }
             match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
-                            recvd_packet += 1;
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -502,9 +558,8 @@ fn send_ie_probes(
     let mut loop_states = LoopStates::default();
     for t in 1..=2 {
         // 1 means buff_1, 2 means buff_2, and so on.
-        let rrq_id = random_request_id();
         let state = OsProbeState {
-            id: rrq_id,
+            id: random_request_id(),
             retries: 0,
             recved: false,
         };
@@ -556,16 +611,22 @@ fn send_ie_probes(
 
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
-        let mut recvd_packet = 0;
+        let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
-            if recv_start.elapsed() >= timeout || recvd_packet >= 2 {
+            if recv_start.elapsed() >= timeout || recved_packet >= 2 {
                 break;
             }
             match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
-                            recvd_packet += 1;
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -845,16 +906,22 @@ fn send_tx_probes(
 
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
-        let mut recvd_packet = 0;
+        let mut recved_packet = 0;
+        for (_key, state) in &loop_states {
+            if state.recved {
+                recved_packet += 1;
+            }
+        }
+
         loop {
-            if recv_start.elapsed() >= timeout || recvd_packet >= 6 {
+            if recv_start.elapsed() >= timeout || recved_packet >= 6 {
                 break;
             }
             match get_response.recv_timeout(recv_timeout_10ms) {
                 Ok(recv_response) => {
                     for (key, state) in &mut loop_states {
                         if state.id == recv_response.id {
-                            recvd_packet += 1;
+                            recved_packet += 1;
                             if let LoopKey::Port(t) = key {
                                 let rtt = recv_response.rtt;
                                 let response = recv_response.data.clone();
@@ -867,8 +934,8 @@ fn send_tx_probes(
                                     rtt,
                                 };
                                 tx_hm.insert(*t, rr);
-                                break;
                             }
+                            break;
                         }
                     }
                 }
@@ -2053,33 +2120,21 @@ pub(crate) fn os_probe_thread(
 
     let good_results = true;
 
-    debug!("send trace packet");
-
-    let icmp_trace_net_info = NetInfo {
-        inferred_dst_mac: dst_mac,
-        inferred_src_mac: src_mac,
-        inferred_dst_addr: dst_ipv4.into(),
-        inferred_src_addr: src_ipv4.into(),
-        dst_addr: dst_ipv4.into(),
-        src_addr: Some(src_ipv4.into()),
-        dst_ports: Vec::new(),
-        src_port: None,
-        interface_name: interface_name.clone(),
-        cached: true,
-        cost: Duration::ZERO,
-        valid: true,
-    };
-    let trace = icmp_trace(icmp_trace_net_info, timeout, push_rd, push_sd, get_response)?;
-    let htops = trace.hops;
     let scan = get_scan_line(
         dst_mac,
+        dst_ipv4.into(),
         dst_open_tcp_port,
         dst_closed_tcp_port,
         dst_closed_udp_port,
-        dst_ipv4.into(),
-        htops,
+        src_mac,
+        src_ipv4.into(),
+        interface_name.clone(),
+        timeout,
+        push_rd,
+        push_sd,
+        get_response,
         good_results,
-    );
+    )?;
 
     // Use seq to judge target is alive or not.
     let seqx = seq_fingerprint(&ap);
