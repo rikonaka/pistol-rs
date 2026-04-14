@@ -95,7 +95,7 @@ use crate::ping::HostPings;
 use crate::route::InferMacInput;
 use crate::route::SystemNetCache;
 use crate::route::infer_addr;
-use crate::route::infer_macs;
+use crate::route::infer_mac;
 #[cfg(feature = "scan")]
 use crate::scan::MacScans;
 #[cfg(feature = "scan")]
@@ -151,8 +151,6 @@ const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LoopKey {
     Ip(IpAddr),
-    Ipv4(Ipv4Addr),
-    Ipv6(Ipv6Addr),
     Port(u16),
     IpPort(IpAddr, u16),
 }
@@ -202,20 +200,8 @@ impl<V> LoopStates<V> {
         let key = LoopKey::IpPort(ip, port);
         self.data.insert(key, value);
     }
-    fn insert_only_ip(&mut self, ip: IpAddr, value: V) {
+    fn insert_ip(&mut self, ip: IpAddr, value: V) {
         let key = LoopKey::Ip(ip);
-        self.data.insert(key, value);
-    }
-    fn insert_only_ipv4(&mut self, ipv4: Ipv4Addr, value: V) {
-        let key = LoopKey::Ipv4(ipv4);
-        self.data.insert(key, value);
-    }
-    fn insert_only_ipv6(&mut self, ipv6: Ipv6Addr, value: V) {
-        let key = LoopKey::Ipv6(ipv6);
-        self.data.insert(key, value);
-    }
-    fn insert_only_port(&mut self, port: u16, value: V) {
-        let key = LoopKey::Port(port);
         self.data.insert(key, value);
     }
 }
@@ -789,7 +775,7 @@ impl NetInfo {
         // and we don't want to wait too long for the response.
         let timeout = Duration::from_secs_f32(0.5);
         let max_retries = 2;
-        let imo = infer_macs(
+        let imo = infer_mac(
             im_inputs,
             timeout,
             max_retries,

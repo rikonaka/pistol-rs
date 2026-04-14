@@ -347,7 +347,7 @@ fn send_seq_probes(
             retries: 0,
             recved: false,
         };
-        loop_states.insert_only_port(t, state);
+        loop_states.insert_port(t, state);
     }
 
     let ether_type = EtherTypes::Ipv4;
@@ -508,7 +508,7 @@ fn send_ie_probes(
             retries: 0,
             recved: false,
         };
-        loop_states.insert_only_port(t, state);
+        loop_states.insert_port(t, state);
     }
 
     let mut ie_hm = HashMap::new();
@@ -797,7 +797,7 @@ fn send_tx_probes(
             retries: 0,
             recved: false,
         };
-        loop_states.insert_only_port(t, state);
+        loop_states.insert_port(t, state);
     }
 
     let ether_type = EtherTypes::Ipv4;
