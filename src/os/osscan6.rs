@@ -124,7 +124,7 @@ fn p_reduce(p: &str) -> String {
 fn p_as_nmap_format(input: &[u8]) -> String {
     let mut p = String::new();
     let ip_start = 16;
-    let ip_end = ip_start + 32 * 2;
+    let ip_end = ip_start + 64; // 32 * 2
 
     for (i, b) in input.iter().enumerate() {
         if i >= ip_start && i < ip_end {
