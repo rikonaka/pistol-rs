@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tracing::debug;
 use tracing::warn;
 
-use crate::os::operator::get_diff;
+use crate::os::operator::get_diffs;
 use crate::os::rr::AllPacketRR6;
 use crate::utils::v4u8_to_u32;
 
@@ -225,7 +225,7 @@ fn tcp_isr(ap: &AllPacketRR6) -> f64 {
         seq_vec.push(s);
     }
 
-    let diff = get_diff(&seq_vec, false);
+    let diff = get_diffs(&seq_vec, false);
 
     if diff.len() > 0 {
         let mut sum = 0.0;
@@ -249,29 +249,16 @@ fn ipv6_hlim(eth_response: &[u8], probe_name: &str) -> f64 {
     match build_ipv6_packet(eth_response, probe_name) {
         Some(ipv6_packet) => {
             let hlim = ipv6_packet.get_hop_limit() as f64;
-            let er_lim = 5.0;
             let regual_hlim_vec = vec![32.0, 64.0, 128.0, 255.0];
-            let mut fin_hlim = 0.0;
-            for r_ttl in regual_hlim_vec {
-                let diff_ttl = if r_ttl > hlim {
-                    r_ttl - hlim
-                } else {
-                    hlim - r_ttl
-                };
-                if diff_ttl <= er_lim {
-                    fin_hlim = r_ttl;
+            let mut guess = 255.0;
+
+            for r_hlim in regual_hlim_vec {
+                if hlim <= r_hlim {
+                    guess = r_hlim;
+                    break;
                 }
             }
-
-            if fin_hlim != 0.0 {
-                fin_hlim
-            } else {
-                warn!(
-                    "ipv6 hlim is {}, which is unusual, for probe {}",
-                    hlim, probe_name
-                );
-                -1.0
-            }
+            guess
         }
         None => {
             warn!(

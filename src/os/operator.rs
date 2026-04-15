@@ -173,7 +173,7 @@ impl PistolUnsigned for u32 {
     const MAX: Self = u32::MAX;
 }
 
-pub(crate) fn get_diff<T>(input: &[T], sorted: bool) -> Vec<T>
+pub(crate) fn get_diffs<T>(input: &[T], sorted: bool) -> Vec<T>
 where
     T: PistolUnsigned + Sub<Output = T> + Not<Output = T> + Ord + Clone + PartialOrd,
 {
@@ -237,7 +237,7 @@ pub(crate) fn tcp_gcd(seqrr: &SEQRR) -> Option<(u32, Vec<u32>)> {
         }
     }
 
-    let diff = get_diff(&seq_vec, false);
+    let diff = get_diffs(&seq_vec, false);
     if diff.len() > 1 {
         let gcd = match gcdx(&diff) {
             Some(g) => g,
@@ -355,7 +355,7 @@ pub(crate) fn tcp_ti_ci_ii(
     }
     /// If all of the IP IDs are identical, the test is set to that value in hex.
     fn hex_judgement(ip_id_vec: &[u16]) -> bool {
-        let diff = get_diff(ip_id_vec, false);
+        let diff = get_diffs(ip_id_vec, false);
         let mut sum = 0;
         for d in diff {
             sum += d;
@@ -442,7 +442,7 @@ pub(crate) fn tcp_ti_ci_ii(
         }
     }
 
-    let seq_diff = get_diff(&seq_ip_id_vec, false);
+    let seq_diff = get_diffs(&seq_ip_id_vec, false);
 
     // TI is based on responses to the TCP SEQ probes.
     let ti = if seq_ip_id_vec.len() >= 3 {
@@ -495,7 +495,7 @@ pub(crate) fn tcp_ti_ci_ii(
             None => (),
         }
     }
-    let t_diff = get_diff(&t_ip_id_vec, false);
+    let t_diff = get_diffs(&t_ip_id_vec, false);
 
     let ci = if t_ip_id_vec.len() >= 2 {
         if z_judgement(&t_ip_id_vec) {
@@ -545,7 +545,7 @@ pub(crate) fn tcp_ti_ci_ii(
             None => (),
         }
     }
-    let ie_diff = get_diff(&ie_ip_id_vec, false);
+    let ie_diff = get_diffs(&ie_ip_id_vec, false);
     // println!("{:?}", ie_ip_id_vec);
     // println!("{:?}", ie_diff);
 
@@ -754,7 +754,7 @@ pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Option<String> {
         // If any of the timestamp values are zero, TS is set to 0.
         String::from("0")
     } else {
-        let diff = get_diff(&tsval_vec, false);
+        let diff = get_diffs(&tsval_vec, false);
         let ts = if diff.len() > 0 {
             let mut sum = 0.0;
             for d in &diff {
@@ -1012,29 +1012,16 @@ pub(crate) fn tcp_udp_icmp_tg(eth_response: &[u8], probe_name: &str) -> Option<u
     match build_ipv4_packet(eth_response, probe_name) {
         Some(ipv4_packet) => {
             let ipv4_ttl = ipv4_packet.get_ttl() as u16;
-
-            let er_lim = 5;
             let regual_ttl_vec = vec![32, 64, 128, 255];
-            let mut guess_value = 0;
+            let mut guess = 255;
 
             for r_ttl in regual_ttl_vec {
-                let diff_ttl = if r_ttl > ipv4_ttl {
-                    r_ttl - ipv4_ttl
-                } else {
-                    ipv4_ttl - r_ttl
-                };
-                if diff_ttl <= er_lim {
-                    guess_value = r_ttl;
+                if ipv4_ttl <= r_ttl {
+                    guess = r_ttl;
                     break;
                 }
             }
-
-            if guess_value != 0 {
-                Some(guess_value)
-            } else {
-                // take the observed value
-                Some(ipv4_ttl)
-            }
+            Some(guess)
         }
         None => {
             warn!("no ipv4 packet in response, cannot calculate tg");

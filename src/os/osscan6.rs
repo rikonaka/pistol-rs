@@ -67,77 +67,63 @@ use crate::utils::random_request_id;
 // T7(P=6000{4}583a3cXX{32}0101ca5800{4}6001234500280630XX{32}c1bc01bbc5756300095eb241a029ffffec59000003030f0102040109080aff{4}00{4}0402%ST=1.06173%RT=1.07961)
 // EXTRA(FL=12345)
 
-fn p_reduce(p: &str) -> String {
+fn p_compress(p: &str) -> String {
+    let chars: Vec<char> = p.chars().collect();
     let mut new_p = String::new();
-    let mut count = 0;
-
-    let p_chars: Vec<char> = p.chars().collect();
-    // println!("1 {}", p);
     let mut i = 0;
 
-    loop {
-        // 000001
-        if i + 1 > p_chars.len() {
-            break;
-        }
+    while i + 1 < chars.len() {
+        let cur1 = chars[i];
+        let cur2 = chars[i + 1];
 
-        let ch_i = p_chars[i];
-        let ch_i_next = if i + 1 >= p_chars.len() {
-            0 as char
-        } else {
-            p_chars[i + 1]
-        };
+        let mut count = 1;
+        let mut j = i + 2;
 
-        let ch_i_p_2 = if i + 2 >= p_chars.len() {
-            0 as char
-        } else {
-            p_chars[i + 2]
-        };
-        let ch_i_next_p_2 = if i + 3 >= p_chars.len() {
-            0 as char
-        } else {
-            p_chars[i + 3]
-        };
-
-        if ch_i == ch_i_p_2 && ch_i_next == ch_i_next_p_2 {
+        while j + 1 < chars.len() && chars[j] == cur1 && chars[j + 1] == cur2 {
             count += 1;
-            i += 2;
-        } else {
-            if count != 0 {
-                i += 2;
-            } else {
-                i += 1;
-            }
-            if count == 0 {
-                new_p += &format!("{}", ch_i);
-            } else {
-                new_p += &format!("{}{}{{{}}}", ch_i, ch_i_next, count + 1);
-            }
-            count = 0;
+            j += 2;
         }
+
+        // If a pair of characters repeats more than twice,
+        // it is replaced by the characters followed by the count in curly braces.
+        if count > 2 {
+            new_p.push(cur1);
+            new_p.push(cur2);
+            new_p.push_str(&format!("{{{}}}", count));
+        } else {
+            for k in 0..count {
+                new_p.push(chars[i + k * 2]);
+                new_p.push(chars[i + k * 2 + 1]);
+            }
+        }
+
+        i = j;
+    }
+
+    if i < chars.len() {
+        new_p.push(chars[i]);
     }
 
     // println!("2 {}", new_p.trim());
     new_p.trim().to_string()
 }
 
-fn p_as_nmap_format(input: &[u8]) -> String {
+fn p_convert_to_nmap_format(input: &[u8]) -> String {
     let mut p = String::new();
-    let ip_start = 16;
-    let ip_end = ip_start + 64; // 32 * 2
+    let ip_start = 8;
+    let ip_end = ip_start + 32;
 
     for (i, b) in input.iter().enumerate() {
         if i >= ip_start && i < ip_end {
             // The characters XX are put in place of source and destination addresses,
             // which are private and anyway not useful for training the classifier.
-            p += "X";
+            p += "XX";
         } else {
-            p += &format!("{:x}", b);
+            p += &format!("{:02x}", b);
         }
     }
 
-    println!("p before reduction: {}", p);
-    let new_p = p_reduce(&p);
+    let new_p = p_compress(&p);
     new_p
 }
 
@@ -169,7 +155,7 @@ impl fmt::Display for SEQX6 {
                     let output = format!(
                         "{}(P={}%ST={:.6}%RT={:.6})",
                         self.name,
-                        p_as_nmap_format(response3),
+                        p_convert_to_nmap_format(response3),
                         self.st.as_secs_f64(),
                         self.rt.as_secs_f64()
                     );
@@ -211,7 +197,7 @@ impl fmt::Display for IEX6 {
                     let output = format!(
                         "{}(P={}%ST={:.6}%RT={:.6})",
                         self.name,
-                        p_as_nmap_format(response3),
+                        p_convert_to_nmap_format(response3),
                         self.st.as_secs_f64(),
                         self.rt.as_secs_f64()
                     );
@@ -253,7 +239,7 @@ impl fmt::Display for NX6 {
                     let output = format!(
                         "{}(P={}%ST={:.6}%RT={:.6})",
                         self.name,
-                        p_as_nmap_format(response3),
+                        p_convert_to_nmap_format(response3),
                         self.st.as_secs_f64(),
                         self.rt.as_secs_f64()
                     );
@@ -292,7 +278,7 @@ impl fmt::Display for U1X6 {
                 if response3.len() > 0 {
                     let output = format!(
                         "U1(P={}%ST={:.6}%RT={:.6})",
-                        p_as_nmap_format(response3),
+                        p_convert_to_nmap_format(response3),
                         self.st.as_secs_f64(),
                         self.rt.as_secs_f64()
                     );
@@ -331,7 +317,7 @@ impl fmt::Display for TECNX6 {
                 if response3.len() > 0 {
                     let output = format!(
                         "TECN(P={}%ST={:.6}%RT={:.6})",
-                        p_as_nmap_format(response3),
+                        p_convert_to_nmap_format(response3),
                         self.st.as_secs_f64(),
                         self.rt.as_secs_f64()
                     );
@@ -373,7 +359,7 @@ impl fmt::Display for TX6 {
                     let output = format!(
                         "{}(P={}%ST={:.6}%RT={:.6})",
                         self.name,
-                        p_as_nmap_format(response3),
+                        p_convert_to_nmap_format(response3),
                         self.st.as_secs_f64(),
                         self.rt.as_secs_f64()
                     );
@@ -1781,11 +1767,11 @@ pub(crate) fn os_probe_thread6(
     )?;
 
     let features = vectorize(&ap);
-    debug!("featured vectorize done");
+    debug!("featured vectorize done: {:?}", features);
     let features = apply_scale(&features, &linear.scale);
-    debug!("apply scale done");
+    debug!("apply scale done: {:?}", features);
     let predict = predict_value(&features, &linear.w);
-    debug!("predict done");
+    debug!("predict done: {:?}", predict);
 
     let mut detect_rets = Vec::new();
     for (i, (name, &score)) in zip(&linear.infolist, &predict).into_iter().enumerate() {
