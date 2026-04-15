@@ -58,7 +58,7 @@ pub(crate) fn time_to_string(cost: Duration) -> String {
 }
 
 /// Big endian, convert 4 bytes to u32.
-pub(crate) fn vec_to_u32(input: &[u8]) -> u32 {
+pub(crate) fn v4u8_to_u32(input: &[u8]) -> u32 {
     if input.len() > 4 {
         warn!("input length should be less than or equal to 4");
     }
@@ -92,7 +92,7 @@ impl PistolHex {
     pub(crate) fn decode_as_u32(&self) -> Result<u32, PistolError> {
         match hex::decode(&self.hex) {
             Ok(d) => {
-                let v = vec_to_u32(&d);
+                let v = v4u8_to_u32(&d);
                 Ok(v)
             }
             Err(e) => Err(e.into()),
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn test_convert() {
         let v = [1, 1, 1, 1];
-        let r = vec_to_u32(&v);
+        let r = v4u8_to_u32(&v);
         assert_eq!(r, 16843009);
 
         let s = "51E80C";

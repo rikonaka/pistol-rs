@@ -563,7 +563,6 @@ fn send_seq_probes(
     push_sd: Sender<SRequest>,
     get_response: Receiver<RResponse>,
 ) -> Result<SEQRR6, PistolError> {
-    let begin = Instant::now();
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
     for i in 1..=6 {
@@ -740,7 +739,6 @@ fn send_seq_probes(
     let rt5 = st5 + seq5.rtt;
     let rt6 = st6 + seq6.rtt;
 
-    let elapsed = begin.elapsed().as_secs_f64();
     let seqrr = SEQRR6 {
         seq1,
         seq2,
@@ -748,7 +746,6 @@ fn send_seq_probes(
         seq4,
         seq5,
         seq6,
-        elapsed,
         st1,
         rt1,
         st2,

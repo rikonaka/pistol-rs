@@ -1,6 +1,8 @@
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Packet;
+use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
 use pnet::packet::tcp::TcpPacket;
@@ -11,7 +13,7 @@ use tracing::warn;
 
 use crate::os::operator::get_diff;
 use crate::os::rr::AllPacketRR6;
-use crate::utils::vec_to_u32;
+use crate::utils::v4u8_to_u32;
 
 const CWR_MASK: u8 = 0b10000000;
 const ECE_MASK: u8 = 0b01000000;
@@ -46,19 +48,26 @@ fn get_eth_response_by_name(ap: &AllPacketRR6, name: &str) -> Arc<[u8]> {
     }
 }
 
-fn build_eth_packet<'a>(eth_buff: &'a [u8], probe_name: &str) -> Option<EthernetPacket<'a>> {
-    match EthernetPacket::new(eth_buff) {
-        Some(p) => Some(p),
+fn build_ipv6_packet<'a>(eth_response: &'a [u8], probe_name: &str) -> Option<Ipv6Packet<'a>> {
+    let eth_packet = match EthernetPacket::new(eth_response) {
+        Some(p) => p,
         None => {
-            warn!("build ethernet packet failed for probe {}", probe_name);
-            None
+            warn!("build eth packet failed for probe {}", probe_name);
+            return None;
         }
+    };
+    let ethertype = eth_packet.get_ethertype();
+    if ethertype != EtherTypes::Ipv6 {
+        warn!(
+            "ethertype is not ipv6 for probe {}, ethertype: {:?}",
+            probe_name, ethertype
+        );
+        return None;
     }
-}
 
-fn build_ipv6_packet<'a>(ipv6_buff: &'a [u8], probe_name: &str) -> Option<Ipv6Packet<'a>> {
-    match Ipv6Packet::new(ipv6_buff) {
-        Some(p) => Some(p),
+    let ipv6_buff = eth_packet.payload().to_vec();
+    match Ipv6Packet::owned(ipv6_buff) {
+        Some(ipv6_packet) => Some(ipv6_packet),
         None => {
             warn!("build ipv6 packet failed for probe {}", probe_name);
             None
@@ -66,9 +75,44 @@ fn build_ipv6_packet<'a>(ipv6_buff: &'a [u8], probe_name: &str) -> Option<Ipv6Pa
     }
 }
 
-fn build_icmpv6_packet<'a>(icmpv6_buff: &'a [u8], probe_name: &str) -> Option<Icmpv6Packet<'a>> {
-    match Icmpv6Packet::new(icmpv6_buff) {
-        Some(p) => Some(p),
+fn build_icmpv6_packet<'a>(eth_response: &'a [u8], probe_name: &str) -> Option<Icmpv6Packet<'a>> {
+    let eth_packet = match EthernetPacket::new(eth_response) {
+        Some(p) => p,
+        None => {
+            warn!("build eth packet failed for probe {}", probe_name);
+            return None;
+        }
+    };
+
+    let ethertype = eth_packet.get_ethertype();
+    if ethertype != EtherTypes::Ipv6 {
+        warn!(
+            "ethertype is not ipv6 for probe {}, ethertype: {:?}",
+            probe_name, ethertype
+        );
+        return None;
+    }
+
+    let ipv6_packet = match Ipv6Packet::new(eth_packet.payload()) {
+        Some(p) => p,
+        None => {
+            warn!("build ipv6 packet failed for probe {}", probe_name);
+            return None;
+        }
+    };
+
+    let next_header = ipv6_packet.get_next_header();
+    if next_header != IpNextHeaderProtocols::Icmpv6 {
+        warn!(
+            "next header is not icmpv6 for probe {}, next header: {:?}",
+            probe_name, next_header
+        );
+        return None;
+    }
+
+    let icmpv6_buff = ipv6_packet.payload().to_vec();
+    match Icmpv6Packet::owned(icmpv6_buff) {
+        Some(icmpv6_packet) => Some(icmpv6_packet),
         None => {
             warn!("build icmpv6 packet failed for probe {}", probe_name);
             None
@@ -76,9 +120,43 @@ fn build_icmpv6_packet<'a>(icmpv6_buff: &'a [u8], probe_name: &str) -> Option<Ic
     }
 }
 
-fn build_tcp_packet<'a>(tcp_buff: &'a [u8], probe_name: &str) -> Option<TcpPacket<'a>> {
-    match TcpPacket::new(tcp_buff) {
-        Some(p) => Some(p),
+fn build_tcp_packet<'a>(eth_response: &'a [u8], probe_name: &str) -> Option<TcpPacket<'a>> {
+    let eth_packet = match EthernetPacket::new(eth_response) {
+        Some(p) => p,
+        None => {
+            warn!("build eth packet failed for probe {}", probe_name);
+            return None;
+        }
+    };
+    let ethertype = eth_packet.get_ethertype();
+    if ethertype != EtherTypes::Ipv6 {
+        warn!(
+            "ethertype is not ipv6 for probe {}, ethertype: {:?}",
+            probe_name, ethertype
+        );
+        return None;
+    }
+
+    let ipv6_packet = match Ipv6Packet::new(eth_packet.payload()) {
+        Some(p) => p,
+        None => {
+            warn!("build ipv6 packet failed for probe {}", probe_name);
+            return None;
+        }
+    };
+
+    let next_header = ipv6_packet.get_next_header();
+    if next_header != IpNextHeaderProtocols::Tcp {
+        warn!(
+            "next header is not tcp for probe {}, next header: {:?}",
+            probe_name, next_header
+        );
+        return None;
+    }
+
+    let tcp_buff = ipv6_packet.payload().to_vec();
+    match TcpPacket::owned(tcp_buff) {
+        Some(tcp_packet) => Some(tcp_packet),
         None => {
             warn!("build tcp packet failed for probe {}", probe_name);
             None
@@ -88,25 +166,34 @@ fn build_tcp_packet<'a>(tcp_buff: &'a [u8], probe_name: &str) -> Option<TcpPacke
 
 /// IPv6 Payload Length field and IPv6 Traffic Class field.
 fn ipv6_plen_tc(eth_response: &[u8], probe_name: &str) -> (f64, f64) {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
+    match build_ipv6_packet(eth_response, probe_name) {
+        Some(ipv6_packet) => {
             let plen = ipv6_packet.get_payload_length() as f64;
             let tc = ipv6_packet.get_traffic_class() as f64;
-            return (plen, tc);
+            (plen, tc)
+        }
+        None => {
+            warn!(
+                "build ipv6 packet failed for probe {}, return default value for plen and tc",
+                probe_name
+            );
+            (-1.0, -1.0)
         }
     }
-    (-1.0, -1.0)
 }
 
 /// Get tcp sequence number.
 fn tcp_seq(eth_response: &[u8], probe_name: &str) -> Option<u32> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            let tcp_packet = build_tcp_packet(ipv6_packet.payload(), probe_name)?;
-            return Some(tcp_packet.get_sequence());
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => Some(tcp_packet.get_sequence()),
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for sequence number",
+                probe_name
+            );
+            None
         }
     }
-    None
 }
 
 /// TCP ISN counter rate. This is derived from the S1–S6 sequence probes, which are sent 100 ms apart.
@@ -140,251 +227,301 @@ fn tcp_isr(ap: &AllPacketRR6) -> f64 {
 
     let diff = get_diff(&seq_vec, false);
 
-    let mut sum: u64 = 0; // avoid overflow
-    for d in diff {
-        sum += d as u64;
+    if diff.len() > 0 {
+        let mut sum = 0.0;
+        for d in &diff {
+            // The 0.1 is the time interval between two probes,
+            // which is estimated by program, so there is a certain error here.
+            let f = (*d as f64) / 0.1;
+            sum += f;
+        }
+        let avg = sum / diff.len() as f64;
+        let isr = if avg < 1.0 { 0.0 } else { 8.0 * avg.log2() };
+        isr
+    } else {
+        warn!("tcp sequence number diff is empty, return default value for ISR");
+        -1.0
     }
-
-    let e = (ap.seq.elapsed / 6.0) * 5.0;
-    // println!("sum: {}", sum);
-    // println!("e: {}", e);
-    sum as f64 / e as f64
 }
 
 /// A guess at the original value of the IPv6 Hop Limit field.
 fn ipv6_hlim(eth_response: &[u8], probe_name: &str) -> f64 {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        let hlim = match build_ipv6_packet(eth_packet.payload(), probe_name) {
-            Some(ipv6_packet) => ipv6_packet.get_hop_limit() as f64,
-            None => {
-                warn!("ipv6 hlim build ipv6 packet failed");
-                0.0
+    match build_ipv6_packet(eth_response, probe_name) {
+        Some(ipv6_packet) => {
+            let hlim = ipv6_packet.get_hop_limit() as f64;
+            let er_lim = 5.0;
+            let regual_hlim_vec = vec![32.0, 64.0, 128.0, 255.0];
+            let mut fin_hlim = 0.0;
+            for r_ttl in regual_hlim_vec {
+                let diff_ttl = if r_ttl > hlim {
+                    r_ttl - hlim
+                } else {
+                    hlim - r_ttl
+                };
+                if diff_ttl <= er_lim {
+                    fin_hlim = r_ttl;
+                }
             }
-        };
-        let er_lim = 5.0;
-        let regual_hlim_vec = vec![32.0, 64.0, 128.0, 255.0];
-        let mut fin_hlim = 0.0;
-        for r in regual_hlim_vec {
-            if hlim > r {
-                if hlim - r <= er_lim {
-                    fin_hlim = r;
-                }
+
+            if fin_hlim != 0.0 {
+                fin_hlim
             } else {
-                if r - hlim <= er_lim {
-                    fin_hlim = r;
-                }
+                warn!(
+                    "ipv6 hlim is {}, which is unusual, for probe {}",
+                    hlim, probe_name
+                );
+                -1.0
             }
         }
-
-        if fin_hlim != 0.0 {
-            return fin_hlim;
+        None => {
+            warn!(
+                "build ipv6 packet failed for probe {}, return default value for hlim",
+                probe_name
+            );
+            // default value of machine learning alg
+            -1.0
         }
     }
-    // default value of machine learning alg
-    -1.0
 }
 
 /// TCP window size.
 fn tcp_window(eth_response: &[u8], probe_name: &str) -> f64 {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                return tcp_packet.get_window() as f64;
-            }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => tcp_packet.get_window() as f64,
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for window size",
+                probe_name
+            );
+            // default value of machine learning alg
+            -1.0
         }
     }
-    // default value of machine learning alg
-    -1.0
 }
 
 /// TCP flags. Each flag becomes a feature with the value 0 or 1.
 /// TCP_FLAG_F, TCP_FLAG_S, TCP_FLAG_R, TCP_FLAG_P, TCP_FLAG_A, TCP_FLAG_U, TCP_FLAG_E, TCP_FLAG_C.
 fn tcp_flags(eth_response: &[u8], probe_name: &str) -> Vec<f64> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let flags = tcp_packet.get_flags();
-                let cwr = ((flags & CWR_MASK) >> 7) as f64;
-                let ece = ((flags & ECE_MASK) >> 6) as f64;
-                let urg = ((flags & URG_MASK) >> 5) as f64;
-                let ack = ((flags & ACK_MASK) >> 4) as f64;
-                let psh = ((flags & PSH_MASK) >> 3) as f64;
-                let rst = ((flags & RST_MASK) >> 2) as f64;
-                let syn = ((flags & SYN_MASK) >> 1) as f64;
-                let fin = ((flags & FIN_MASK) >> 0) as f64;
-                let ret = vec![fin, syn, rst, psh, ack, urg, ece, cwr];
-                return ret;
-            }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let flags = tcp_packet.get_flags();
+            let cwr = ((flags & CWR_MASK) >> 7) as f64;
+            let ece = ((flags & ECE_MASK) >> 6) as f64;
+            let urg = ((flags & URG_MASK) >> 5) as f64;
+            let ack = ((flags & ACK_MASK) >> 4) as f64;
+            let psh = ((flags & PSH_MASK) >> 3) as f64;
+            let rst = ((flags & RST_MASK) >> 2) as f64;
+            let syn = ((flags & SYN_MASK) >> 1) as f64;
+            let fin = ((flags & FIN_MASK) >> 0) as f64;
+            vec![fin, syn, rst, psh, ack, urg, ece, cwr]
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp flags",
+                probe_name
+            );
+            // default value of machine learning alg
+            vec![-1.0; 8]
         }
     }
-    // default value of machine learning alg
-    vec![-1.0; 8]
 }
 
 /// These are the four bits of the reserved part of the TCP header.
 /// RFC 3540 defines TCP_FLAG_RES8 as the nonce sum (NS) bit.
 /// TCP_FLAG_RES8, TCP_FLAG_RES9, TCP_FLAG_RES10, TCP_FLAG_RES11.
 fn tcp_reserved(eth_response: &[u8], probe_name: &str) -> Vec<f64> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let mask_1: u8 = 0b1000;
-                let mask_2: u8 = 0b0100;
-                let mask_3: u8 = 0b0010;
-                let mask_4: u8 = 0b0001;
-                let reserved = tcp_packet.get_reserved();
-                let v1 = ((reserved & mask_1) >> 3) as f64;
-                let v2 = ((reserved & mask_2) >> 2) as f64;
-                let v3 = ((reserved & mask_3) >> 1) as f64;
-                let v4 = ((reserved & mask_4) >> 0) as f64;
-                let ret = vec![v4, v3, v2, v1];
-                return ret;
-            }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let reserved = tcp_packet.get_reserved();
+            let mask_1: u8 = 0b1000;
+            let mask_2: u8 = 0b0100;
+            let mask_3: u8 = 0b0010;
+            let mask_4: u8 = 0b0001;
+            let v1 = ((reserved & mask_1) >> 3) as f64;
+            let v2 = ((reserved & mask_2) >> 2) as f64;
+            let v3 = ((reserved & mask_3) >> 1) as f64;
+            let v4 = ((reserved & mask_4) >> 0) as f64;
+            vec![v4, v3, v2, v1]
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp reserved bits",
+                probe_name
+            );
+            // default value of machine learning alg
+            vec![-1.0; 4]
         }
     }
-    // default value of machine learning alg
-    vec![-1.0; 4]
 }
 
 /// Type codes for the first 16 TCP options.
 fn tcp_option_code(eth_response: &[u8], probe_name: &str) -> Vec<f64> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let options = tcp_packet.get_options();
-                let mut ret = Vec::new();
-                for option in options {
-                    ret.push(option.number.0 as f64);
-                }
-                if ret.len() < 16 {
-                    for _ in 0..(16 - ret.len()) {
-                        ret.push(-1.0);
-                    }
-                }
-                if ret.len() > 16 {
-                    ret = ret[0..16].to_vec();
-                }
-                return ret;
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options = tcp_packet.get_options();
+            let mut ret = Vec::new();
+            for option in options {
+                ret.push(option.number.0 as f64);
             }
+            if ret.len() < 16 {
+                for _ in 0..(16 - ret.len()) {
+                    ret.push(-1.0);
+                }
+            }
+            if ret.len() > 16 {
+                ret = ret[0..16].to_vec();
+            }
+            ret
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp option codes",
+                probe_name
+            );
+            // default value of machine learning alg
+            vec![-1.0; 16]
         }
     }
-    // default value of machine learning alg
-    vec![-1.0; 16]
 }
 
 /// Lengths of the first 16 TCP options.
 fn tcp_option_len(eth_response: &[u8], probe_name: &str) -> Vec<f64> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let options = tcp_packet.get_options();
-                let mut ret = Vec::new();
-                for option in options {
-                    let t = &option.length;
-                    // println!("{:?}", t);
-                    if t.len() != 0 {
-                        ret.push(t[0] as f64);
-                    } else {
-                        ret.push(1.0); // only header
-                    }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options = tcp_packet.get_options();
+            let mut ret = Vec::new();
+            for option in options {
+                let t = &option.length;
+                // println!("{:?}", t);
+                if t.len() != 0 {
+                    ret.push(t[0] as f64);
+                } else {
+                    ret.push(1.0); // only header
                 }
-                if ret.len() < 16 {
-                    for _ in 0..(16 - ret.len()) {
-                        ret.push(-1.0);
-                    }
-                }
-                // println!("{}", ret.len());
-                if ret.len() > 16 {
-                    ret = ret[0..16].to_vec();
-                }
-                return ret;
             }
+            if ret.len() < 16 {
+                for _ in 0..(16 - ret.len()) {
+                    ret.push(-1.0);
+                }
+            }
+            // println!("{}", ret.len());
+            if ret.len() > 16 {
+                ret = ret[0..16].to_vec();
+            }
+            return ret;
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp option lengths",
+                probe_name
+            );
+            // default value of machine learning alg
+            vec![-1.0; 16]
         }
     }
-    // default value of machine learning alg
-    vec![-1.0; 16]
 }
 
 /// Value of the first MSS option, if present.
 fn tcp_option_mss(eth_response: &[u8], probe_name: &str) -> f64 {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let options = tcp_packet.get_options();
-                for option in options {
-                    match option.number {
-                        TcpOptionNumbers::MSS => {
-                            let data = if option.data.len() > 4 {
-                                &option.data[0..4]
-                            } else {
-                                &option.data
-                            };
-                            let mss = vec_to_u32(data);
-                            return mss as f64;
-                        }
-                        _ => (),
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options = tcp_packet.get_options();
+            for option in options {
+                match option.number {
+                    TcpOptionNumbers::MSS => {
+                        let data = if option.data.len() > 4 {
+                            &option.data[0..4]
+                        } else {
+                            &option.data
+                        };
+                        let mss = v4u8_to_u32(data);
+                        return mss as f64;
                     }
+                    _ => (),
                 }
             }
+            -1.0
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp option mss",
+                probe_name
+            );
+            // default value of machine learning alg
+            -1.0
         }
     }
-    // default value of machine learning alg
-    -1.0
 }
 
 /// 1 if the SACK-permitted option is present, 0 otherwise.
 fn tcp_option_sackok(eth_response: &[u8], probe_name: &str) -> f64 {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let options = tcp_packet.get_options();
-                for option in options {
-                    match option.number {
-                        TcpOptionNumbers::SACK_PERMITTED => {
-                            return 1.0;
-                        }
-                        _ => (),
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options = tcp_packet.get_options();
+            for option in options {
+                match option.number {
+                    TcpOptionNumbers::SACK_PERMITTED => {
+                        return 1.0;
                     }
+                    _ => (),
                 }
             }
+            -1.0
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp option sackok",
+                probe_name
+            );
+            // default value of machine learning alg
+            -1.0
         }
     }
-    // default value of machine learning alg
-    -1.0
 }
 
 fn tcp_option_wscale(eth_response: &[u8], probe_name: &str) -> f64 {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv6_packet.payload(), probe_name) {
-                let options = tcp_packet.get_options();
-                for option in options {
-                    match option.number {
-                        TcpOptionNumbers::WSCALE => {
-                            if option.data.len() > 0 {
-                                return option.data[0] as f64;
-                            }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options = tcp_packet.get_options();
+            for option in options {
+                match option.number {
+                    TcpOptionNumbers::WSCALE => {
+                        if option.data.len() > 0 {
+                            return option.data[0] as f64;
                         }
-                        _ => (),
                     }
+                    _ => (),
                 }
             }
+            -1.0
+        }
+        None => {
+            warn!(
+                "build tcp packet failed for probe {}, return default value for tcp option wscale",
+                probe_name
+            );
+            // default value of machine learning alg
+            -1.0
         }
     }
-    -1.0
 }
 
 fn icmpv6_type_code(eth_response: &[u8], probe_name: &str) -> (f64, f64) {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv6_packet) = build_ipv6_packet(eth_packet.payload(), probe_name) {
-            if let Some(icmpv6_packet) = build_icmpv6_packet(ipv6_packet.payload(), probe_name) {
-                let icmpv6_type = icmpv6_packet.get_icmpv6_type().0 as f64;
-                let icmpv6_code = icmpv6_packet.get_icmpv6_code().0 as f64;
-                return (icmpv6_type, icmpv6_code);
-            }
+    match build_icmpv6_packet(eth_response, probe_name) {
+        Some(icmpv6_packet) => {
+            let icmpv6_type = icmpv6_packet.get_icmpv6_type().0 as f64;
+            let icmpv6_code = icmpv6_packet.get_icmpv6_code().0 as f64;
+            return (icmpv6_type, icmpv6_code);
+        }
+        None => {
+            warn!(
+                "build icmpv6 packet failed for probe {}, return default value for icmpv6 type and code",
+                probe_name
+            );
+            // default value of machine learning alg
+            return (-1.0, -1.0);
         }
     }
-    (-1.0, -1.0)
 }
 
 pub(crate) fn vectorize(ap: &AllPacketRR6) -> Vec<f64> {

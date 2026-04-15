@@ -91,7 +91,6 @@ pub struct SEQRR6 {
     pub seq4: RequestResponse,
     pub seq5: RequestResponse,
     pub seq6: RequestResponse,
-    pub elapsed: f64,
     pub st1: Duration,
     pub rt1: Duration,
     pub st2: Duration,

@@ -1,9 +1,11 @@
 use crc32fast;
 use gcdx::gcdx;
 use pnet::packet::Packet;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
+use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpOptionNumbers;
@@ -17,7 +19,7 @@ use crate::os::rr::IERR;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
-use crate::utils::vec_to_u32;
+use crate::utils::v4u8_to_u32;
 
 const CWR_MASK: u8 = 0b10000000;
 const ECE_MASK: u8 = 0b01000000;
@@ -28,26 +30,26 @@ const RST_MASK: u8 = 0b00000100;
 const SYN_MASK: u8 = 0b00000010;
 const FIN_MASK: u8 = 0b00000001;
 
-// Because different programs wait, process, and send probebao for different times,
-// so there is a certain error in the two indicators calculated based on time.
-// Program estimation error, ISR, SP use.
-// const PROGRAM_ESTIMATION_ERROR_ISR: f64 = 0.35;
-// const PROGRAM_ESTIMATION_ERROR_SP: f64 = 0.35;
-const ISR_ERROR: f64 = 0.0;
-const SP_ERROR: f64 = 0.0;
-
-fn build_eth_packet<'a>(eth_buff: &'a [u8], probe_name: &str) -> Option<EthernetPacket<'a>> {
-    match EthernetPacket::new(eth_buff) {
-        Some(p) => Some(p),
+fn build_ipv4_packet<'a>(eth_response: &'a [u8], probe_name: &str) -> Option<Ipv4Packet<'a>> {
+    let eth_packet = match EthernetPacket::new(eth_response) {
+        Some(p) => p,
         None => {
             warn!("build {} ethernet packet failed", probe_name);
-            None
+            return None;
         }
-    }
-}
+    };
 
-fn build_ipv4_packet<'a>(ipv4_buff: &'a [u8], probe_name: &str) -> Option<Ipv4Packet<'a>> {
-    match Ipv4Packet::new(ipv4_buff) {
+    let ethertype = eth_packet.get_ethertype();
+    if ethertype != EtherTypes::Ipv4 {
+        warn!(
+            "build {} ipv4 packet failed, response packet is not ipv4 packet",
+            probe_name
+        );
+        return None;
+    }
+
+    let ipv4_buff = eth_packet.payload().to_vec();
+    match Ipv4Packet::owned(ipv4_buff) {
         Some(p) => Some(p),
         None => {
             warn!("build {} ipv4 packet failed", probe_name);
@@ -56,8 +58,43 @@ fn build_ipv4_packet<'a>(ipv4_buff: &'a [u8], probe_name: &str) -> Option<Ipv4Pa
     }
 }
 
-fn build_tcp_packet<'a>(tcp_buff: &'a [u8], probe_name: &str) -> Option<TcpPacket<'a>> {
-    match TcpPacket::new(tcp_buff) {
+fn build_tcp_packet<'a>(eth_response: &'a [u8], probe_name: &str) -> Option<TcpPacket<'a>> {
+    let eth_packet = match EthernetPacket::new(eth_response) {
+        Some(p) => p,
+        None => {
+            warn!("build {} ethernet packet failed", probe_name);
+            return None;
+        }
+    };
+
+    let ethertype = eth_packet.get_ethertype();
+    if ethertype != EtherTypes::Ipv4 {
+        warn!(
+            "build {} icmp packet failed, response packet is not ipv4 packet",
+            probe_name
+        );
+        return None;
+    }
+
+    let ipv4_packet = match Ipv4Packet::new(eth_packet.payload()) {
+        Some(p) => p,
+        None => {
+            warn!("build {} ipv4 packet failed", probe_name);
+            return None;
+        }
+    };
+
+    let protocol = ipv4_packet.get_next_level_protocol();
+    if protocol != IpNextHeaderProtocols::Tcp {
+        warn!(
+            "build {} tcp packet failed, response packet is not tcp packet",
+            probe_name
+        );
+        return None;
+    }
+
+    let tcp_buff = ipv4_packet.payload().to_vec();
+    match TcpPacket::owned(tcp_buff) {
         Some(p) => Some(p),
         None => {
             warn!("build {} tcp packet failed", probe_name);
@@ -66,8 +103,43 @@ fn build_tcp_packet<'a>(tcp_buff: &'a [u8], probe_name: &str) -> Option<TcpPacke
     }
 }
 
-fn build_icmp_packet<'a>(icmp_buff: &'a [u8], probe_name: &str) -> Option<IcmpPacket<'a>> {
-    match IcmpPacket::new(icmp_buff) {
+fn build_icmp_packet<'a>(eth_response: &'a [u8], probe_name: &str) -> Option<IcmpPacket<'a>> {
+    let eth_packet = match EthernetPacket::new(eth_response) {
+        Some(p) => p,
+        None => {
+            warn!("build {} ethernet packet failed", probe_name);
+            return None;
+        }
+    };
+
+    let ethertype = eth_packet.get_ethertype();
+    if ethertype != EtherTypes::Ipv4 {
+        warn!(
+            "build {} icmp packet failed, response packet is not ipv4 packet",
+            probe_name
+        );
+        return None;
+    }
+
+    let ipv4_packet = match Ipv4Packet::new(eth_packet.payload()) {
+        Some(p) => p,
+        None => {
+            warn!("build {} ipv4 packet failed", probe_name);
+            return None;
+        }
+    };
+
+    let protocol = ipv4_packet.get_next_level_protocol();
+    if protocol != IpNextHeaderProtocols::Icmp {
+        warn!(
+            "build {} icmp packet failed, response packet is not icmp packet",
+            probe_name
+        );
+        return None;
+    }
+
+    let icmp_buff = ipv4_packet.payload().to_vec();
+    match IcmpPacket::owned(icmp_buff) {
         Some(p) => Some(p),
         None => {
             warn!("build {} icmp packet failed", probe_name);
@@ -76,25 +148,11 @@ fn build_icmp_packet<'a>(icmp_buff: &'a [u8], probe_name: &str) -> Option<IcmpPa
     }
 }
 
-fn build_udp_packet<'a>(udp_buff: &'a [u8], probe_name: &str) -> Option<UdpPacket<'a>> {
-    match UdpPacket::new(udp_buff) {
-        Some(p) => Some(p),
-        None => {
-            warn!("build {} udp packet failed", probe_name);
-            None
-        }
-    }
-}
-
 fn get_tcp_seq(eth_response: &[u8], probe_name: &str) -> Option<u32> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                return Some(tcp_packet.get_sequence());
-            }
-        }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => Some(tcp_packet.get_sequence()),
+        None => None,
     }
-    None
 }
 
 pub(crate) trait PistolUnsigned {
@@ -126,7 +184,7 @@ where
         // Therefore, we'll perform a sorting process first,
         // and then calculate the diff value.
         let mut sorted_input = input.to_vec();
-        if !sorted {
+        if sorted {
             sorted_input.sort();
         }
 
@@ -225,7 +283,7 @@ pub(crate) fn tcp_isr(diff: Vec<u32>) -> Option<(u32, Vec<f64>)> {
         let isr = if avg < 1.0 {
             0
         } else {
-            ((8.0 - ISR_ERROR) * avg.log2()).round() as u32
+            (8.0 * avg.log2()).round() as u32
         };
         Some((isr, seq_rates))
     } else {
@@ -252,7 +310,7 @@ pub(crate) fn tcp_sp(seq_rates: Vec<f64>, gcd: u32) -> u32 {
         } else {
             // Otherwise the binary logarithm of the result is computed,
             // then it is multiplied by eight, rounded to the nearest integer, and stored as SP.
-            ((8.0 - SP_ERROR) * sd.log2()).round() as u32
+            (8.0 * sd.log2()).round() as u32
         };
         // println!("sp: {}, sd: {}, gcd: {}", sp, sd, gcd);
         sp
@@ -262,12 +320,10 @@ pub(crate) fn tcp_sp(seq_rates: Vec<f64>, gcd: u32) -> u32 {
 }
 
 fn get_ip_id(eth_response: &[u8], probe_name: &str) -> Option<u16> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            return Some(ipv4_packet.get_identification());
-        }
+    match build_ipv4_packet(eth_response, probe_name) {
+        Some(ipv4_packet) => Some(ipv4_packet.get_identification()),
+        None => None,
     }
-    None
 }
 
 /// IP ID sequence generation algorithm (TI, CI, II).
@@ -636,29 +692,28 @@ pub(crate) fn tcp_ss(
 }
 
 fn get_tsval(eth_response: &[u8], probe_name: &str) -> Option<u32> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                let options_vec = tcp_packet.get_options();
-                for option in options_vec {
-                    match option.number {
-                        TcpOptionNumbers::TIMESTAMPS => {
-                            // get first 4 u8 values
-                            let tsval_vec = if option.data.len() >= 4 {
-                                &option.data[0..4]
-                            } else {
-                                &option.data
-                            };
-                            let tsval = vec_to_u32(tsval_vec);
-                            return Some(tsval);
-                        }
-                        _ => (),
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options_vec = tcp_packet.get_options();
+            for option in options_vec {
+                match option.number {
+                    TcpOptionNumbers::TIMESTAMPS => {
+                        // get first 4 u8 values
+                        let tsval_vec = if option.data.len() >= 4 {
+                            &option.data[0..4]
+                        } else {
+                            &option.data
+                        };
+                        let tsval = v4u8_to_u32(tsval_vec);
+                        return Some(tsval);
                     }
+                    _ => (),
                 }
             }
+            None
         }
+        None => None,
     }
-    None
 }
 
 /// TCP timestamp option algorithm (TS).
@@ -735,86 +790,84 @@ pub(crate) fn tcp_ts(seqrr: &SEQRR) -> Option<String> {
 }
 
 pub(crate) fn tcp_o(eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                let options_vec = tcp_packet.get_options();
-                let mut o_ret = String::new();
-                for option in options_vec {
-                    match option.number {
-                        TcpOptionNumbers::MSS => {
-                            let data = if option.data.len() > 4 {
-                                &option.data[0..4]
-                            } else {
-                                &option.data
-                            };
-                            let mss = vec_to_u32(data);
-                            let o_str = format!("M{:X}", mss);
-                            o_ret += &o_str;
-                        }
-                        TcpOptionNumbers::SACK_PERMITTED => {
-                            o_ret += "S";
-                        }
-                        TcpOptionNumbers::EOL => {
-                            o_ret += "L";
-                        }
-                        TcpOptionNumbers::NOP => {
-                            o_ret += "N";
-                        }
-                        TcpOptionNumbers::WSCALE => {
-                            let data = if option.data.len() > 4 {
-                                &option.data[0..4]
-                            } else {
-                                &option.data
-                            };
-
-                            let wscale = vec_to_u32(data);
-                            let o_str = format!("W{:X}", wscale);
-                            o_ret += &o_str;
-                        }
-                        TcpOptionNumbers::TIMESTAMPS => {
-                            o_ret += "T";
-                            let t0 = if option.data.len() > 0 {
-                                if option.data.len() >= 4 {
-                                    &option.data[0..4]
-                                } else {
-                                    &[0; 4]
-                                }
-                            } else {
-                                &[0; 4]
-                            };
-
-                            let t1 = if option.data.len() > 4 {
-                                if option.data.len() >= 8 {
-                                    &option.data[4..8]
-                                } else {
-                                    &[0; 4]
-                                }
-                            } else {
-                                &[0; 4]
-                            };
-
-                            let t0_u32 = vec_to_u32(t0);
-                            let t1_u32 = vec_to_u32(t1);
-                            if t0_u32 == 0 {
-                                o_ret += "0";
-                            } else {
-                                o_ret += "1";
-                            }
-                            if t1_u32 == 0 {
-                                o_ret += "0";
-                            } else {
-                                o_ret += "1";
-                            }
-                        }
-                        _ => (),
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let options_vec = tcp_packet.get_options();
+            let mut o_ret = String::new();
+            for option in options_vec {
+                match option.number {
+                    TcpOptionNumbers::MSS => {
+                        let data = if option.data.len() > 4 {
+                            &option.data[0..4]
+                        } else {
+                            &option.data
+                        };
+                        let mss = v4u8_to_u32(data);
+                        let o_str = format!("M{:X}", mss);
+                        o_ret += &o_str;
                     }
+                    TcpOptionNumbers::SACK_PERMITTED => {
+                        o_ret += "S";
+                    }
+                    TcpOptionNumbers::EOL => {
+                        o_ret += "L";
+                    }
+                    TcpOptionNumbers::NOP => {
+                        o_ret += "N";
+                    }
+                    TcpOptionNumbers::WSCALE => {
+                        let data = if option.data.len() > 4 {
+                            &option.data[0..4]
+                        } else {
+                            &option.data
+                        };
+
+                        let wscale = v4u8_to_u32(data);
+                        let o_str = format!("W{:X}", wscale);
+                        o_ret += &o_str;
+                    }
+                    TcpOptionNumbers::TIMESTAMPS => {
+                        o_ret += "T";
+                        let t0 = if option.data.len() > 0 {
+                            if option.data.len() >= 4 {
+                                &option.data[0..4]
+                            } else {
+                                &[0; 4]
+                            }
+                        } else {
+                            &[0; 4]
+                        };
+
+                        let t1 = if option.data.len() > 4 {
+                            if option.data.len() >= 8 {
+                                &option.data[4..8]
+                            } else {
+                                &[0; 4]
+                            }
+                        } else {
+                            &[0; 4]
+                        };
+
+                        let t0_u32 = v4u8_to_u32(t0);
+                        let t1_u32 = v4u8_to_u32(t1);
+                        if t0_u32 == 0 {
+                            o_ret += "0";
+                        } else {
+                            o_ret += "1";
+                        }
+                        if t1_u32 == 0 {
+                            o_ret += "0";
+                        } else {
+                            o_ret += "1";
+                        }
+                    }
+                    _ => (),
                 }
-                return Some(o_ret);
             }
+            Some(o_ret)
         }
+        None => None,
     }
-    None
 }
 
 /// TCP options (O, O1–O6).
@@ -837,16 +890,12 @@ pub(crate) fn tcp_ox(
     (o1, o2, o3, o4, o5, o6)
 }
 
+/// get window size.
 pub(crate) fn tcp_w(eth_response: &[u8], probe_name: &str) -> Option<u16> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                let window = tcp_packet.get_window();
-                return Some(window);
-            }
-        }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => Some(tcp_packet.get_window()),
+        None => None,
     }
-    None
 }
 
 /// TCP initial window size (W, W1–W6).
@@ -880,47 +929,58 @@ pub(crate) fn tcp_udp_icmp_r(eth_response: &[u8]) -> String {
 
 /// IP don't fragment bit (DF).
 pub(crate) fn tcp_udp_df(eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
+    match build_ipv4_packet(eth_response, probe_name) {
+        Some(ipv4_packet) => {
             let ipv4_flags = ipv4_packet.get_flags();
             let df_mask: u8 = 0b0010;
-            let ret = if (ipv4_flags & df_mask) != 0 {
-                String::from("Y")
+            if (ipv4_flags & df_mask) != 0 {
+                Some(String::from("Y"))
             } else {
-                String::from("N")
-            };
-            return Some(ret);
+                Some(String::from("N"))
+            }
         }
+        None => None,
     }
-    None
 }
 
 fn udp_hops(u1rr: &U1RR, probe_name: &str) -> Option<u8> {
     let ipv4_request = &u1rr.u1.request3;
-    if let Some(request_ipv4_packet) = build_ipv4_packet(ipv4_request, probe_name) {
-        // must have request
-        let eth_response = &u1rr.u1.response2;
-        if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-            if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-                if let Some(icmp_packet) = build_icmp_packet(ipv4_packet.payload(), probe_name) {
-                    let r_ipv4_buff = &icmp_packet.payload()[4..];
-                    if let Some(r_ipv4_packet) = build_ipv4_packet(r_ipv4_buff, probe_name) {
-                        let ttl_1 = request_ipv4_packet.get_ttl();
-                        let ttl_2 = r_ipv4_packet.get_ttl();
-                        let hops = if ttl_1 > ttl_2 {
-                            ttl_1 - ttl_2
-                        } else {
-                            ttl_2 - ttl_1
-                        };
-                        // It is not uncommon for Nmap to receive no response to the U1 probe.
-                        return Some(hops);
-                    }
+    let eth_response = &u1rr.u1.response2;
+    // must have request
+    let request_ipv4_packet = match build_ipv4_packet(ipv4_request, probe_name) {
+        Some(p) => p,
+        None => {
+            warn!("no ipv4 packet in u1 request, cannot calculate hops");
+            return None;
+        }
+    };
+
+    match build_icmp_packet(eth_response, probe_name) {
+        Some(icmp_packet) => {
+            let r_ipv4_buff = &icmp_packet.payload()[4..];
+            match Ipv4Packet::new(r_ipv4_buff) {
+                Some(r_ipv4_packet) => {
+                    let ttl_1 = request_ipv4_packet.get_ttl();
+                    let ttl_2 = r_ipv4_packet.get_ttl();
+                    let hops = if ttl_1 > ttl_2 {
+                        ttl_1 - ttl_2
+                    } else {
+                        ttl_2 - ttl_1
+                    };
+                    Some(hops)
+                }
+                None => {
+                    warn!("no ipv4 packet in u1 icmp response, cannot calculate hops");
+                    None
                 }
             }
         }
+        None => {
+            // It is common for Nmap to receive no response when target is Windows.
+            warn!("no icmp packet in u1 response, cannot calculate hops");
+            None
+        }
     }
-    // It is common for Nmap to receive no response when target is Windows.
-    None
 }
 
 /// IP initial time-to-live (T).
@@ -928,231 +988,249 @@ pub(crate) fn tcp_udp_icmp_t(eth_response: &[u8], u1rr: &U1RR, probe_name: &str)
     let hops = udp_hops(u1rr, probe_name);
     match hops {
         Some(hops) => {
-            if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-                if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
+            match build_ipv4_packet(eth_response, probe_name) {
+                Some(ipv4_packet) => {
                     let ipv4_ttl = ipv4_packet.get_ttl();
                     // avoid overflow in integer addition
-                    return Some(hops as u16 + ipv4_ttl as u16);
+                    Some(hops as u16 + ipv4_ttl as u16)
+                }
+                None => {
+                    warn!("no ipv4 packet in u1 icmp response, cannot calculate ttl");
+                    None
                 }
             }
         }
-        None => (), // no udp return, ignore t and use tg instead
+        None => {
+            // no udp return, ignore t and use tg instead
+            None
+        }
     }
-    None
 }
 
 /// IP initial time-to-live guess (TG).
 pub(crate) fn tcp_udp_icmp_tg(eth_response: &[u8], probe_name: &str) -> Option<u16> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
+    match build_ipv4_packet(eth_response, probe_name) {
+        Some(ipv4_packet) => {
             let ipv4_ttl = ipv4_packet.get_ttl() as u16;
 
             let er_lim = 5;
             let regual_ttl_vec = vec![32, 64, 128, 255];
             let mut guess_value = 0;
 
-            for r in regual_ttl_vec {
-                if ipv4_ttl > r {
-                    if ipv4_ttl - r <= er_lim {
-                        guess_value = r;
-                    }
+            for r_ttl in regual_ttl_vec {
+                let diff_ttl = if r_ttl > ipv4_ttl {
+                    r_ttl - ipv4_ttl
                 } else {
-                    if r - ipv4_ttl <= er_lim {
-                        guess_value = r;
-                    }
+                    ipv4_ttl - r_ttl
+                };
+                if diff_ttl <= er_lim {
+                    guess_value = r_ttl;
+                    break;
                 }
             }
 
             if guess_value != 0 {
-                return Some(guess_value);
+                Some(guess_value)
             } else {
                 // take the observed value
-                return Some(ipv4_ttl);
+                Some(ipv4_ttl)
             }
         }
+        None => {
+            warn!("no ipv4 packet in response, cannot calculate tg");
+            None
+        }
     }
-    None
 }
 
 /// Explicit congestion notification (CC).
 pub(crate) fn tcp_cc(eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                let tcp_flag = tcp_packet.get_flags();
-                let ret = if (tcp_flag & ECE_MASK != 0) && (tcp_flag & CWR_MASK == 0) {
-                    // Only the ECE bit is set (not CWR). This host supports ECN.
-                    String::from("Y")
-                } else if (tcp_flag & CWR_MASK == 0) && (tcp_flag & ECE_MASK == 0) {
-                    // Neither of these two bits is set. The target does not support ECN.
-                    String::from("N")
-                } else if (tcp_flag & CWR_MASK != 0) && (tcp_flag & ECE_MASK != 0) {
-                    // Both bits are set. The target does not support ECN, but it echoes back what it thinks is a reserved bit.
-                    String::from("S")
-                } else {
-                    // The one remaining combination of these two bits (other).
-                    String::from("O")
-                };
-                return Some(ret);
-            }
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let tcp_flag = tcp_packet.get_flags();
+            let ret = if (tcp_flag & ECE_MASK != 0) && (tcp_flag & CWR_MASK == 0) {
+                // Only the ECE bit is set (not CWR). This host supports ECN.
+                String::from("Y")
+            } else if (tcp_flag & CWR_MASK == 0) && (tcp_flag & ECE_MASK == 0) {
+                // Neither of these two bits is set. The target does not support ECN.
+                String::from("N")
+            } else if (tcp_flag & CWR_MASK != 0) && (tcp_flag & ECE_MASK != 0) {
+                // Both bits are set. The target does not support ECN, but it echoes back what it thinks is a reserved bit.
+                String::from("S")
+            } else {
+                // The one remaining combination of these two bits (other).
+                String::from("O")
+            };
+            Some(ret)
         }
+        None => None,
     }
-    None
 }
 
 /// TCP miscellaneous quirks (Q).
 pub(crate) fn tcp_q(eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                let mut ret = String::new();
-                let tcp_reserved = tcp_packet.get_reserved();
-                if tcp_reserved != 0 {
-                    // The first is that the reserved field in the TCP header (right after the header length) is nonzero.
-                    // This is particularly likely to happen in response to the ECN test as that one sets a reserved bit in the probe.
-                    // If this is seen in a packet, an "R" is recorded in the Q string.
-                    ret += "R"
-                }
-                if tcp_packet.get_urgent_ptr() != 0 {
-                    // The other quirk Nmap tests for is a nonzero urgent pointer field value when the URG flag is not set.
-                    // This is also particularly likely to be seen in response to the ECN probe, which sets a non-zero urgent field.
-                    // A "U" is appended to the Q string when this is seen.
-                    ret += "U"
-                }
-                return Some(ret);
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let mut ret = String::new();
+            let tcp_reserved = tcp_packet.get_reserved();
+            if tcp_reserved != 0 {
+                // The first is that the reserved field in the TCP header (right after the header length) is nonzero.
+                // This is particularly likely to happen in response to the ECN test as that one sets a reserved bit in the probe.
+                // If this is seen in a packet, an "R" is recorded in the Q string.
+                ret += "R"
             }
+            if tcp_packet.get_urgent_ptr() != 0 {
+                // The other quirk Nmap tests for is a nonzero urgent pointer field value when the URG flag is not set.
+                // This is also particularly likely to be seen in response to the ECN probe, which sets a non-zero urgent field.
+                // A "U" is appended to the Q string when this is seen.
+                ret += "U"
+            }
+            return Some(ret);
         }
+        None => None,
     }
-    None
 }
 
 /// TCP sequence number (S).
 pub(crate) fn tcp_s(ipv4_request: &[u8], eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(ipv4_packet_request) = build_ipv4_packet(ipv4_request, probe_name) {
-        if let Some(tcp_packet_request) =
-            build_tcp_packet(ipv4_packet_request.payload(), probe_name)
-        {
-            if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-                if let Some(ipv4_packet_response) =
-                    build_ipv4_packet(eth_packet.payload(), probe_name)
-                {
-                    if let Some(tcp_packet_response) =
-                        build_tcp_packet(ipv4_packet_response.payload(), probe_name)
-                    {
-                        let ack_request = tcp_packet_request.get_acknowledgement();
-                        let seq_response = tcp_packet_response.get_sequence();
-                        let ret = if seq_response == 0 {
-                            // Sequence number is zero.
-                            String::from("Z")
-                        } else if seq_response == ack_request {
-                            // Sequence number is the same as the acknowledgment number in the probe.
-                            String::from("A")
-                        } else if seq_response == (ack_request + 1) {
-                            // Sequence number is the same as the acknowledgment number in the probe plus one.
-                            String::from("A+")
-                        } else {
-                            // Sequence number is something else (other).
-                            String::from("O")
-                        };
-                        return Some(ret);
-                    }
-                }
-            }
+    let ipv4_request_packet = match Ipv4Packet::new(ipv4_request) {
+        Some(p) => p,
+        None => {
+            warn!("no ipv4 packet in request, cannot calculate tcp s");
+            return None;
         }
+    };
+
+    let tcp_request_packet = match TcpPacket::new(ipv4_request_packet.payload()) {
+        Some(p) => p,
+        None => {
+            warn!("no tcp packet in request, cannot calculate tcp s");
+            return None;
+        }
+    };
+
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_response_packet) => {
+            let ack_request = tcp_request_packet.get_acknowledgement();
+            let seq_response = tcp_response_packet.get_sequence();
+            let ret = if seq_response == 0 {
+                // Sequence number is zero.
+                String::from("Z")
+            } else if seq_response == ack_request {
+                // Sequence number is the same as the acknowledgment number in the probe.
+                String::from("A")
+            } else if seq_response == (ack_request + 1) {
+                // Sequence number is the same as the acknowledgment number in the probe plus one.
+                String::from("A+")
+            } else {
+                // Sequence number is something else (other).
+                String::from("O")
+            };
+            Some(ret)
+        }
+        None => None,
     }
-    None
 }
 
 /// TCP acknowledgment number (A).
 pub(crate) fn tcp_a(ipv4_request: &[u8], eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(ipv4_packet_request) = build_ipv4_packet(ipv4_request, probe_name) {
-        if let Some(tcp_packet_request) =
-            build_tcp_packet(ipv4_packet_request.payload(), probe_name)
-        {
-            if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-                if let Some(ipv4_packet_response) =
-                    build_ipv4_packet(eth_packet.payload(), probe_name)
-                {
-                    if let Some(tcp_packet_response) =
-                        build_tcp_packet(ipv4_packet_response.payload(), probe_name)
-                    {
-                        let seq_request = tcp_packet_request.get_sequence();
-                        let ack_response = tcp_packet_response.get_acknowledgement();
-                        let ret = if ack_response == 0 {
-                            // Acknowledgment number is zero.
-                            String::from("Z")
-                        } else if ack_response == seq_request {
-                            // Acknowledgment number is the same as the sequence number in the probe.
-                            String::from("S")
-                        } else if ack_response == (seq_request + 1) {
-                            // Acknowledgment number is the same as the sequence number in the probe plus one.
-                            String::from("S+")
-                        } else {
-                            // Acknowledgment number is something else (other).
-                            String::from("O")
-                        };
-                        return Some(ret);
-                    }
-                }
-            }
+    let ipv4_request_packet = match Ipv4Packet::new(ipv4_request) {
+        Some(p) => p,
+        None => {
+            warn!("no ipv4 packet in request, cannot calculate tcp a");
+            return None;
         }
+    };
+
+    let tcp_request_packet = match TcpPacket::new(ipv4_request_packet.payload()) {
+        Some(p) => p,
+        None => {
+            warn!("no tcp packet in request, cannot calculate tcp a");
+            return None;
+        }
+    };
+
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_response_packet) => {
+            let seq_request = tcp_request_packet.get_sequence();
+            let ack_response = tcp_response_packet.get_acknowledgement();
+            let ret = if ack_response == 0 {
+                // Acknowledgment number is zero.
+                String::from("Z")
+            } else if ack_response == seq_request {
+                // Acknowledgment number is the same as the sequence number in the probe.
+                String::from("S")
+            } else if ack_response == (seq_request + 1) {
+                // Acknowledgment number is the same as the sequence number in the probe plus one.
+                String::from("S+")
+            } else {
+                // Acknowledgment number is something else (other).
+                String::from("O")
+            };
+            return Some(ret);
+        }
+        None => None,
     }
-    None
 }
 
 /// TCP flags (F).
 pub(crate) fn tcp_f(eth_response: &[u8], probe_name: &str) -> Option<String> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
-                let tcp_flag = tcp_packet.get_flags();
-                let mut ret = String::new();
-                if tcp_flag & ECE_MASK != 0 {
-                    // ECN Echo (ECE)
-                    ret += "E";
-                }
-                if tcp_flag & URG_MASK != 0 {
-                    // Urgent Data (URG)
-                    ret += "U";
-                }
-                if tcp_flag & ACK_MASK != 0 {
-                    // Acknowledgment (ACK)
-                    ret += "A";
-                }
-                if tcp_flag & PSH_MASK != 0 {
-                    // Push (PSH)
-                    ret += "P";
-                }
-                if tcp_flag & RST_MASK != 0 {
-                    // Reset (RST)
-                    ret += "R";
-                }
-                if tcp_flag & SYN_MASK != 0 {
-                    // Synchronize (SYN)
-                    ret += "S";
-                }
-                if tcp_flag & FIN_MASK != 0 {
-                    // Final (FIN)
-                    ret += "F";
-                }
-                return Some(ret);
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let tcp_flag = tcp_packet.get_flags();
+            let mut ret = String::new();
+            if tcp_flag & ECE_MASK != 0 {
+                // ECN Echo (ECE)
+                ret += "E";
             }
+            if tcp_flag & URG_MASK != 0 {
+                // Urgent Data (URG)
+                ret += "U";
+            }
+            if tcp_flag & ACK_MASK != 0 {
+                // Acknowledgment (ACK)
+                ret += "A";
+            }
+            if tcp_flag & PSH_MASK != 0 {
+                // Push (PSH)
+                ret += "P";
+            }
+            if tcp_flag & RST_MASK != 0 {
+                // Reset (RST)
+                ret += "R";
+            }
+            if tcp_flag & SYN_MASK != 0 {
+                // Synchronize (SYN)
+                ret += "S";
+            }
+            if tcp_flag & FIN_MASK != 0 {
+                // Final (FIN)
+                ret += "F";
+            }
+            Some(ret)
         }
+        None => None,
     }
-    None
 }
 
 /// TCP RST data checksum (RD).
 pub(crate) fn tcp_rd(eth_response: &[u8], probe_name: &str) -> Option<u32> {
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(tcp_packet) = build_tcp_packet(ipv4_packet.payload(), probe_name) {
+    match build_tcp_packet(eth_response, probe_name) {
+        Some(tcp_packet) => {
+            let tcp_flag = tcp_packet.get_flags();
+            if tcp_flag & RST_MASK != 0 {
+                // tcp rst packet has payload, calculate checksum
                 let tcp_payload = tcp_packet.payload();
-                return Some(crc32fast::hash(tcp_payload));
+                Some(crc32fast::hash(tcp_payload))
+            } else {
+                None
             }
         }
+        None => {
+            warn!("no tcp packet in response, cannot calculate tcp rd");
+            None
+        }
     }
-    None
 }
 
 /// IP total length (IPL).
@@ -1168,74 +1246,91 @@ pub(crate) fn udp_un(u1: &U1RR, probe_name: &str) -> Option<u32> {
     // A few implementations (mostly ethernet switches and some specialized embedded devices) set it anyway.
     // The value of those last four bytes is recorded in this field.
     let eth_response = &u1.u1.response2;
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
+    match build_ipv4_packet(eth_response, probe_name) {
+        Some(ipv4_packet) => {
             let icmp_buff = ipv4_packet.payload();
             if icmp_buff.len() > 4 {
-                let rest_of_header = if icmp_buff.len() >= 8 {
+                let rest_of_header = if icmp_buff.len() > 7 {
                     &icmp_buff[4..8]
-                } else {
+                } else if icmp_buff.len() > 4 {
                     &icmp_buff[4..icmp_buff.len() - 1]
+                } else {
+                    &[]
                 };
-                let un = vec_to_u32(rest_of_header);
-                return Some(un);
+                let un = v4u8_to_u32(rest_of_header);
+                Some(un)
             } else {
-                return Some(0);
+                Some(0)
             }
         }
+        None => {
+            warn!("no ipv4 packet in response, cannot calculate udp un");
+            None
+        }
     }
-    None
 }
 
 /// Returned probe IP total length value (RIPL).
 pub(crate) fn udp_ripl(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(icmp_packet) = build_icmp_packet(ipv4_packet.payload(), probe_name) {
-                let ripl = icmp_packet.payload().len() - 4;
-                let ret = if ripl == 328 {
-                    // If the correct value of 0x148 (328) is returned, the value G (for good) is stored instead of the actual value.
-                    String::from("G")
-                } else {
-                    format!("{:X}", ripl)
-                };
-                return Some(ret);
+    match build_icmp_packet(eth_response, probe_name) {
+        Some(icmp_packet) => {
+            let ripl = icmp_packet.payload().len() - 4;
+            if ripl == 328 {
+                // If the correct value of 0x148 (328) is returned, the value G (for good) is stored instead of the actual value.
+                Some(String::from("G"))
+            } else {
+                Some(format!("{:X}", ripl))
             }
         }
+        None => {
+            warn!("no icmp packet in response, cannot calculate udp ripl");
+            None
+        }
     }
-    None
 }
 
 /// Returned probe IP ID value (RID).
 pub(crate) fn udp_rid(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
-            if let Some(icmp_packet) = build_icmp_packet(ipv4_packet.payload(), probe_name) {
-                let r_ipv4_buff = &icmp_packet.payload()[4..];
-                if let Some(r_ipv4_packet) = build_ipv4_packet(r_ipv4_buff, probe_name) {
-                    let rid = r_ipv4_packet.get_identification();
-                    let ret = if rid == 0x1042 {
-                        // The U1 probe has a static IP ID value of 0x1042.
-                        // If that value is returned in the port unreachable message, the value G is stored for this test.
-                        String::from("G")
-                    } else {
-                        format!("{:X}", rid)
-                    };
-                    return Some(ret);
-                }
+    let icmp_packet = match build_icmp_packet(eth_response, probe_name) {
+        Some(p) => p,
+        None => {
+            warn!("no icmp packet in response, cannot calculate udp rid");
+            return None;
+        }
+    };
+
+    let icmp_payload = icmp_packet.payload();
+    if icmp_payload.len() <= 4 {
+        warn!("icmp payload too short, cannot calculate udp rid");
+        return None;
+    }
+
+    let r_ipv4_buff = &icmp_payload[4..];
+    match Ipv4Packet::new(r_ipv4_buff) {
+        Some(r_ipv4_packet) => {
+            let rid = r_ipv4_packet.get_identification();
+            if rid == 0x1042 {
+                // The U1 probe has a static IP ID value of 0x1042.
+                // If that value is returned in the port unreachable message, the value G is stored for this test.
+                Some(String::from("G"))
+            } else {
+                Some(format!("{:X}", rid))
             }
         }
+        None => {
+            warn!("no ipv4 packet in icmp response, cannot calculate udp rid");
+            None
+        }
     }
-    None
 }
 
 /// Integrity of returned probe IP checksum value (RIPCK).
 pub(crate) fn udp_ripck(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
-    if let Some(eth_packet) = build_eth_packet(eth_response, probe_name) {
-        if let Some(ipv4_packet) = build_ipv4_packet(eth_packet.payload(), probe_name) {
+    match build_ipv4_packet(eth_response, probe_name) {
+        Some(ipv4_packet) => {
             let o_checksum = ipv4_packet.get_checksum();
             let t_checksum = ipv4::checksum(&ipv4_packet.to_immutable());
             let ret = if o_checksum == t_checksum {
@@ -1251,8 +1346,11 @@ pub(crate) fn udp_ripck(u1: &U1RR, probe_name: &str) -> Option<String> {
             };
             return Some(ret);
         }
+        None => {
+            warn!("no ipv4 packet in response, cannot calculate udp ripck");
+            None
+        }
     }
-    None
 }
 
 /// Integrity of returned probe UDP checksum (RUCK).
@@ -1260,91 +1358,109 @@ pub(crate) fn udp_ruck(u1: &U1RR, probe_name: &str) -> Option<String> {
     let ipv4_request = &u1.u1.request3;
     let eth_response = &u1.u1.response2;
 
-    let ipv4_packet_request = match build_ipv4_packet(ipv4_request, probe_name) {
+    let ipv4_request_packet = match Ipv4Packet::new(ipv4_request) {
         Some(p) => p,
-        None => return None, // must have request
+        None => {
+            warn!("no ipv4 packet in request, cannot calculate udp ruck");
+            return None; // must have request
+        }
     };
-    let udp_packet_request = match build_udp_packet(ipv4_packet_request.payload(), probe_name) {
+    let udp_request_packet = match UdpPacket::new(ipv4_request_packet.payload()) {
         Some(p) => p,
-        None => return None,
+        None => {
+            warn!("no udp packet in request, cannot calculate udp ruck");
+            return None;
+        }
     };
-    let checksum_request = udp_packet_request.get_checksum();
+    let checksum_request = udp_request_packet.get_checksum();
 
-    let eth_packet = match build_eth_packet(eth_response, probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let ipv4_packet_response = match build_ipv4_packet(eth_packet.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let icmp_packet_response = match build_icmp_packet(ipv4_packet_response.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let r_ipv4_buff = &icmp_packet_response.payload()[4..];
-    let r_ipv4_packet_response = match build_ipv4_packet(r_ipv4_buff, probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let udp_packet_response = match build_udp_packet(r_ipv4_packet_response.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let checksum_response = udp_packet_response.get_checksum();
-    let ret = if checksum_response == checksum_request {
-        // The UDP header checksum value should be returned exactly as it was sent.
-        // If it is, G is recorded for this test. Otherwise the value actually returned is recorded.
-        String::from("G")
-    } else {
-        format!("{:X}", checksum_response)
-    };
-    Some(ret)
+    match build_icmp_packet(eth_response, probe_name) {
+        Some(icmp_response_packet) => {
+            let icmp_response_payload = icmp_response_packet.payload();
+            if icmp_response_payload.len() <= 4 {
+                warn!("icmp payload too short, cannot calculate udp ruck");
+                return None;
+            }
+            let r_ipv4_buff = &icmp_response_payload[4..];
+            let r_ipv4_packet = match Ipv4Packet::new(r_ipv4_buff) {
+                Some(p) => p,
+                None => {
+                    warn!("no ipv4 packet in icmp response, cannot calculate udp ruck");
+                    return None;
+                }
+            };
+            let r_udp_packet = match UdpPacket::new(r_ipv4_packet.payload()) {
+                Some(p) => p,
+                None => {
+                    warn!("no udp packet in icmp response, cannot calculate udp ruck");
+                    return None;
+                }
+            };
+            let checksum_response = r_udp_packet.get_checksum();
+            if checksum_response == checksum_request {
+                // The UDP header checksum value should be returned exactly as it was sent.
+                // If it is, G is recorded for this test. Otherwise the value actually returned is recorded.
+                Some(String::from("G"))
+            } else {
+                Some(format!("{:X}", checksum_response))
+            }
+        }
+        None => {
+            warn!("no icmp packet in response, cannot calculate udp ruck");
+            None
+        }
+    }
 }
 
 /// Integrity of returned UDP data (RUD).
 pub(crate) fn udp_rud(u1: &U1RR, probe_name: &str) -> Option<String> {
     let eth_response = &u1.u1.response2;
-    let eth_packet = match build_eth_packet(eth_response, probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let ipv4_packet_response = match build_ipv4_packet(eth_packet.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let icmp_packet_response = match build_icmp_packet(ipv4_packet_response.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let r_ipv4_buff = &icmp_packet_response.payload()[4..];
-    let r_ipv4_packet_response = match build_ipv4_packet(r_ipv4_buff, probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
-    let r_udp_packet_response =
-        match build_udp_packet(&r_ipv4_packet_response.payload(), probe_name) {
-            Some(p) => p,
-            None => return None,
-        };
-    let payload_c_judge = |payload: &[u8]| -> bool {
-        for p in payload {
-            if *p != 0x43 {
-                return false;
+    match build_icmp_packet(eth_response, probe_name) {
+        Some(icmp_response_packet) => {
+            let icmp_response_payload = icmp_response_packet.payload();
+            if icmp_response_payload.len() <= 4 {
+                warn!("icmp payload too short, cannot calculate udp rud");
+                return None;
             }
+            let r_ipv4_buff = &icmp_response_payload[4..];
+            let r_ipv4_packet = match Ipv4Packet::new(r_ipv4_buff) {
+                Some(p) => p,
+                None => {
+                    warn!("no ipv4 packet in icmp response, cannot calculate udp rud");
+                    return None;
+                }
+            };
+            let r_udp_packet = match UdpPacket::new(r_ipv4_packet.payload()) {
+                Some(p) => p,
+                None => {
+                    warn!("no udp packet in icmp response, cannot calculate udp rud");
+                    return None;
+                }
+            };
+            let payload_c_judge = |payload: &[u8]| -> bool {
+                for p in payload {
+                    if *p != 0x43 {
+                        return false;
+                    }
+                }
+                true
+            };
+            let c = payload_c_judge(r_udp_packet.payload());
+            let ret = if c || r_udp_packet.payload().len() == 0 {
+                // This test checks the integrity of the (possibly truncated) returned UDP payload.
+                // If all the payload bytes are the expected 'C' (0x43), or if the payload was truncated to zero length, G is recorded;
+                String::from("G")
+            } else {
+                // Otherwise, I (invalid) is recorded.
+                String::from("I")
+            };
+            Some(ret)
         }
-        true
-    };
-    let c = payload_c_judge(r_udp_packet_response.payload());
-    let ret = if c || r_udp_packet_response.payload().len() == 0 {
-        // This test checks the integrity of the (possibly truncated) returned UDP payload.
-        // If all the payload bytes are the expected 'C' (0x43), or if the payload was truncated to zero length, G is recorded;
-        String::from("G")
-    } else {
-        // Otherwise, I (invalid) is recorded.
-        String::from("I")
-    };
-    Some(ret)
+        None => {
+            warn!("no icmp packet in response, cannot calculate udp rud");
+            None
+        }
+    }
 }
 
 /// Don't fragment (ICMP) (DFI).
@@ -1356,38 +1472,43 @@ pub(crate) fn icmp_dfi(ie: &IERR, probe_name: &str) -> Option<String> {
     let eth_response_1 = &ie.ie1.response2;
     let eth_response_2 = &ie.ie2.response2;
 
-    let ipv4_packet_1 = match build_ipv4_packet(ipv4_request_1, probe_name) {
+    let ipv4_packet_1 = match Ipv4Packet::new(ipv4_request_1) {
         Some(p) => p,
-        None => return None,
+        None => {
+            warn!("no ipv4 packet in first request, cannot calculate icmp dfi");
+            return None;
+        }
     };
     let flag_1 = ipv4_packet_1.get_flags();
     let df_1_set = if flag_1 & df_mask != 0 { true } else { false };
 
-    let ipv4_packet_2 = match build_ipv4_packet(ipv4_request_2, probe_name) {
+    let ipv4_packet_2 = match Ipv4Packet::new(ipv4_request_2) {
         Some(p) => p,
-        None => return None,
+        None => {
+            warn!("no ipv4 packet in second request, cannot calculate icmp dfi");
+            return None;
+        }
     };
     let flag_2 = ipv4_packet_2.get_flags();
     let df_2_set = if flag_2 & df_mask != 0 { true } else { false };
 
-    let eth_packet_1 = match build_eth_packet(eth_response_1, probe_name) {
+    let ipv4_packet_3 = match build_ipv4_packet(eth_response_1, probe_name) {
         Some(p) => p,
-        None => return None,
+        None => {
+            warn!("no ipv4 packet in first response, cannot calculate icmp dfi");
+            return None;
+        }
     };
-    let ipv4_packet_3 = match build_ipv4_packet(eth_packet_1.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
-    };
+
     let flag_3 = ipv4_packet_3.get_flags();
     let df_3_set = if flag_3 & df_mask != 0 { true } else { false };
 
-    let eth_packet_2 = match build_eth_packet(eth_response_2, probe_name) {
+    let ipv4_packet_4 = match build_ipv4_packet(eth_response_2, probe_name) {
         Some(p) => p,
-        None => return None,
-    };
-    let ipv4_packet_4 = match build_ipv4_packet(eth_packet_2.payload(), probe_name) {
-        Some(p) => p,
-        None => return None,
+        None => {
+            warn!("no ipv4 packet in second response, cannot calculate icmp dfi");
+            return None;
+        }
     };
     let flag_4 = ipv4_packet_4.get_flags();
     let df_4_set = if flag_4 & df_mask != 0 { true } else { false };
@@ -1415,46 +1536,42 @@ pub(crate) fn icmp_cd(ie: &IERR, probe_name: &str) -> Option<String> {
     let eth_response_2 = &ie.ie2.response2;
 
     if eth_response_1.len() > 0 && eth_response_2.len() > 0 {
-        let ipv4_packet_1 = match build_ipv4_packet(&ipv4_request_1, probe_name) {
+        let ipv4_packet_1 = match Ipv4Packet::new(ipv4_request_1) {
             Some(p) => p,
-            None => return None,
+            None => {
+                warn!("no ipv4 packet in first request, cannot calculate icmp cd");
+                return None;
+            }
         };
-        let icmp_packet_1 = match build_icmp_packet(ipv4_packet_1.payload(), probe_name) {
+        let icmp_packet_1 = match IcmpPacket::new(ipv4_packet_1.payload()) {
             Some(p) => p,
-            None => return None,
+            None => {
+                warn!("no icmp packet in first request, cannot calculate icmp cd");
+                return None;
+            }
         };
-        let ipv4_packet_2 = match build_ipv4_packet(&ipv4_request_2, probe_name) {
+        let ipv4_packet_2 = match Ipv4Packet::new(ipv4_request_2) {
             Some(p) => p,
-            None => return None,
+            None => {
+                warn!("no ipv4 packet in second request, cannot calculate icmp cd");
+                return None;
+            }
         };
-        let icmp_packet_2 = match build_icmp_packet(ipv4_packet_2.payload(), probe_name) {
+        let icmp_packet_2 = match IcmpPacket::new(ipv4_packet_2.payload()) {
             Some(p) => p,
-            None => return None,
+            None => {
+                warn!("no icmp packet in second request, cannot calculate icmp cd");
+                return None;
+            }
         };
         let code_1 = icmp_packet_1.get_icmp_code();
         let code_2 = icmp_packet_2.get_icmp_code();
 
-        let eth_packet_1 = match build_eth_packet(eth_response_1, probe_name) {
+        let icmp_packet_3 = match build_icmp_packet(eth_response_1, probe_name) {
             Some(p) => p,
             None => return None,
         };
-        let ipv4_packet_3 = match build_ipv4_packet(eth_packet_1.payload(), probe_name) {
-            Some(p) => p,
-            None => return None,
-        };
-        let icmp_packet_3 = match build_icmp_packet(ipv4_packet_3.payload(), probe_name) {
-            Some(p) => p,
-            None => return None,
-        };
-        let eth_packet_2 = match build_eth_packet(eth_response_2, probe_name) {
-            Some(p) => p,
-            None => return None,
-        };
-        let ipv4_packet_4 = match build_ipv4_packet(eth_packet_2.payload(), probe_name) {
-            Some(p) => p,
-            None => return None,
-        };
-        let icmp_packet_4 = match build_icmp_packet(ipv4_packet_4.payload(), probe_name) {
+        let icmp_packet_4 = match build_icmp_packet(eth_response_2, probe_name) {
             Some(p) => p,
             None => return None,
         };
@@ -1466,19 +1583,18 @@ pub(crate) fn icmp_cd(ie: &IERR, probe_name: &str) -> Option<String> {
         //     code_1.0, code_2.0, code_3.0, code_4.0
         // );
 
-        let ret = if (code_3 == IcmpCode(0)) && (code_4 == IcmpCode(0)) {
+        if (code_3 == IcmpCode(0)) && (code_4 == IcmpCode(0)) {
             // Both code values are zero.
-            String::from("Z")
+            Some(String::from("Z"))
         } else if (code_1 == code_3) && (code_2 == code_4) {
             // Both code values are the same as in the corresponding probe.
-            String::from("S")
+            Some(String::from("S"))
         } else if code_3 == code_4 {
             // When they both use the same non-zero number, it is shown here.
-            format!("{:X}", code_3.0)
+            Some(format!("{:X}", code_3.0))
         } else {
-            String::from("O")
-        };
-        Some(ret)
+            Some(String::from("O"))
+        }
     } else {
         Some(String::new())
     }
