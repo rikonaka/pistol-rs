@@ -196,8 +196,8 @@ fn tcp_seq(eth_response: &[u8], probe_name: &str) -> Option<u32> {
     }
 }
 
-/// TCP ISN counter rate. This is derived from the S1–S6 sequence probes, which are sent 100 ms apart.
-/// The differences between consecutive sequence responses are added up, then this sum is divided by the time elapsed between the first and last probe.
+/// TCP ISN counter rate.
+/// This calculation method differs from that of IPv4.
 fn tcp_isr(ap: &AllPacketRR6) -> f64 {
     let mut seq_vec = Vec::new();
     let s1 = tcp_seq(&ap.seq.seq1.response2, "seq1");
@@ -229,14 +229,13 @@ fn tcp_isr(ap: &AllPacketRR6) -> f64 {
 
     if diff.len() > 0 {
         let mut sum = 0.0;
-        for d in &diff {
-            // The 0.1 is the time interval between two probes,
-            // which is estimated by program, so there is a certain error here.
-            let f = (*d as f64) / 0.1;
+        for &d in &diff {
+            let f = d as f64;
             sum += f;
         }
-        let avg = sum / diff.len() as f64;
-        let isr = if avg < 1.0 { 0.0 } else { 8.0 * avg.log2() };
+
+        let t = ap.seq.st6 - ap.seq.st1;
+        let isr = sum / t.as_secs_f64();
         isr
     } else {
         warn!("tcp sequence number diff is empty, return default value for ISR");

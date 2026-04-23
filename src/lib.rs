@@ -3411,7 +3411,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(2.5);
-        pistol.set_log_level("debug");
+        // pistol.set_log_level("debug");
 
         // fe80::c395:cac0:2c61:5162
         let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0xc395, 0xcac0, 0x2c61, 0x5162);

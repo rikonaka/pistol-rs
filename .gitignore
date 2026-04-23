@@ -20,4 +20,3 @@ Cargo.lock
 *.pcapng
 *.pcap
 .plnetcache
-*.txt

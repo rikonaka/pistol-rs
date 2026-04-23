@@ -776,38 +776,25 @@ fn send_ie_probes(
     };
     // They do, however, respond with different ICMPv6 errors with icmpv6 types 1, 2, 3, 4.
     let layer4_icmpv6_1 = Layer4FilterIcmpv6 {
-        name: String::from("os scan6 ie icmpv6 type 1"),
+        name: String::from("os scan6 ie icmpv6"),
         layer3: Some(layer3.clone()),
-        icmpv6_type: Some(Icmpv6Type(1)),
+        icmpv6_type: Some(Icmpv6Type(129)),
         icmpv6_code: None,
         payload: None,
     };
     let layer4_icmpv6_2 = Layer4FilterIcmpv6 {
-        name: String::from("os scan6 ie icmpv6 type 2"),
+        name: String::from("os scan6 ie icmpv6"),
         layer3: Some(layer3.clone()),
-        icmpv6_type: Some(Icmpv6Type(2)),
-        icmpv6_code: None,
-        payload: None,
-    };
-    let layer4_icmpv6_3 = Layer4FilterIcmpv6 {
-        name: String::from("os scan6 ie icmpv6 type 3"),
-        layer3: Some(layer3.clone()),
-        icmpv6_type: Some(Icmpv6Type(3)),
-        icmpv6_code: None,
-        payload: None,
-    };
-    let layer4_icmpv6_4 = Layer4FilterIcmpv6 {
-        name: String::from("os scan6 ie icmpv6 type 4"),
-        layer3: Some(layer3),
         icmpv6_type: Some(Icmpv6Type(4)),
         icmpv6_code: None,
         payload: None,
     };
+
     let filter_1 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_1));
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_2));
-    let filter_3 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_3));
-    let filter_4 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6_4));
-    let filters = vec![filter_1, filter_2, filter_3, filter_4];
+    let mut filters = HashMap::new();
+    filters.insert(1, filter_1);
+    filters.insert(2, filter_2);
 
     let mut loop_states = LoopStates::default();
     for t in 1..=2 {
@@ -830,10 +817,11 @@ fn send_ie_probes(
             if state.retries < max_retries && !state.recved {
                 if let LoopKey::Port(t) = key {
                     let buff = buff_hm[t].clone();
+                    let filter = filters[t].clone();
                     let rrq = RRequest {
                         interface_name: interface_name.clone(),
                         id: state.id,
-                        filters: filters.clone(),
+                        filters: vec![filter],
                         created: Instant::now(),
                         elapsed: timeout,
                     };

@@ -764,17 +764,17 @@ impl Layer4FilterIcmp {
             }
             _ => return false,
         };
-        match self.icmp_type {
-            Some(t) => {
-                if t != r_type {
+        match &self.icmp_type {
+            Some(icmp_types) => {
+                if *icmp_types != r_type {
                     return false;
                 }
             }
             None => (),
         }
-        match self.icmp_code {
-            Some(c) => {
-                if c != r_code {
+        match &self.icmp_code {
+            Some(icmp_codes) => {
+                if *icmp_codes != r_code {
                     return false;
                 }
             }
@@ -833,22 +833,22 @@ impl Layer4FilterIcmpv6 {
             }
             _ => return false,
         };
-        match self.icmpv6_type {
-            Some(t) => {
-                if t != r_type {
+        match &self.icmpv6_type {
+            Some(icmp_types) => {
+                if *icmp_types != r_type {
                     return false;
                 }
             }
             None => (),
         }
-        match self.icmpv6_code {
-            Some(c) => {
-                if c != r_code {
+        match &self.icmpv6_code {
+            Some(icmp_codes) => {
+                if *icmp_codes != r_code {
                     return false;
                 }
             }
             None => (),
-        };
+        }
         match self.payload {
             Some(payload) => payload.do_match_ipv6(&icmpv6_payload),
             None => true,
