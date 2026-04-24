@@ -3442,6 +3442,33 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
             println!("{}", d);
         }
     }
+    #[cfg(feature = "vs")]
+    #[test]
+    fn test_vs_scan() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(2.5);
+
+        let dst_addr = Ipv4Addr::new(192, 168, 5, 78);
+        let target = Target::new(dst_addr.into(), Some(vec![22, 80, 8080]));
+        // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
+        // only_tcp_recommended = true: only try the tcp probe recommended port
+        // only_udp_recommended = true: only try the udp probe recommended port
+        let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
+        let intensity = 7; // nmap default
+        let threads = 8;
+        let ret = pistol
+            .vs_scan(
+                &[target],
+                threads,
+                only_null_probe,
+                only_tcp_recommended,
+                only_udp_recommended,
+                intensity,
+            )
+            .unwrap();
+        println!("{}", ret);
+    }
     #[cfg(feature = "scan")]
     #[test]
     fn example_mac_scan() {
