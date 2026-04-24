@@ -8,6 +8,7 @@ use crossbeam::channel::unbounded;
 use dns_lookup::lookup_host;
 use pcapture::Capture;
 use pnet::datalink;
+use pnet::datalink::DataLinkSender;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
@@ -30,6 +31,7 @@ use pnet::packet::tcp::TcpPacket;
 #[cfg(feature = "debug")]
 use pnet::packet::udp::UdpPacket;
 use pnet::transport::TransportChannelType::Layer3;
+use pnet::transport::TransportSender;
 use pnet::transport::transport_channel;
 use serde::Deserialize;
 use serde::Serialize;
@@ -856,7 +858,198 @@ impl NetInfo {
     }
 }
 
+struct L2Sender {
+    sender: Box<dyn DataLinkSender>,
+}
+
+struct L3Sender {
+    sender_ipv4: TransportSender,
+    sender_ipv6: TransportSender,
+}
+
 const MAX_HISTORY_PACKETS: usize = 10_000;
+
+struct Domain {
+    l2senders: HashMap<String, L2Sender>,
+    l3senders: HashMap<String, L3Sender>,
+}
+
+impl Domain {
+    fn init_sender_layer2(&mut self) -> Result<(), PistolError> {
+        for interface in datalink::interfaces() {
+            debug!("init l2 sender for interface: {}", interface.name);
+            // layer2 channel
+            let config = datalink::Config {
+                write_buffer_size: ETHERNET_BUFF_SIZE,
+                read_buffer_size: ETHERNET_BUFF_SIZE,
+                read_timeout: None,
+                write_timeout: None,
+                channel_type: datalink::ChannelType::Layer2,
+                bpf_fd_attempts: 1000,
+                linux_fanout: None,
+                promiscuous: false,
+                socket_fd: None,
+            };
+
+            let (sender, _receiver) = match datalink::channel(&interface, config) {
+                Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
+                Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
+                Err(e) => return Err(e.into()),
+            };
+
+            let l2_sender = L2Sender { sender };
+            self.l2senders.insert(interface.name.clone(), l2_sender);
+        }
+
+        Ok(())
+    }
+    fn init_sender_layer3(&mut self) -> Result<(), PistolError> {
+        for interface in datalink::interfaces() {
+            debug!("init l3 sender for interface: {}", interface.name);
+
+            // layer3 channel
+            let (loopback_sender_ipv4, _receiver) =
+                transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv4))?;
+            let (loopback_sender_ipv6, _receiver) =
+                transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv6))?;
+
+            let l3_sender = L3Sender {
+                sender_ipv4: loopback_sender_ipv4,
+                sender_ipv6: loopback_sender_ipv6,
+            };
+            self.l3senders.insert(interface.name.clone(), l3_sender);
+        }
+        Ok(())
+    }
+    fn init_receiver(
+        interface: &NetworkInterface,
+        filter: Option<String>,
+        receiver: Receiver<RRequest>,
+        push_response: Sender<RResponse>,
+    ) -> Result<(), PistolError> {
+        debug!("start receiver for interface_name: {}", interface.name);
+        let mut cap = Capture::new(&interface.name)?;
+        cap.set_timeout(10);
+        cap.set_promiscuous_mode(true);
+        // cap.set_immediate_mode(true);
+        if let Some(filter) = filter {
+            cap.set_filter(&filter);
+        }
+
+        // The history_packets is used to store recently received packets,
+        // which will be matched with new filters when they arrive.
+        // This is to avoid missing packets that arrive before filters,
+        // since libpcap will not loss any packets,
+        // we can store all received packets in memory and match them with new filters when they arrive.
+        struct HistoryPacket {
+            data: Arc<[u8]>,
+            processed: bool,
+        }
+
+        let mut history_packets: Vec<HistoryPacket> = Vec::with_capacity(MAX_HISTORY_PACKETS);
+        let mut r_requests = HashMap::new();
+        let timeout_10ms = Duration::from_millis(10);
+        loop {
+            // Fetch packets first, then check if there are new filters to match,
+            // this can avoid missing packets that arrive before filters.
+            for packet in cap.fetch_as_vec()? {
+                let hp = HistoryPacket {
+                    data: Arc::from(packet),
+                    processed: false,
+                };
+                history_packets.push(hp);
+            }
+
+            if history_packets.len() > MAX_HISTORY_PACKETS {
+                // remove old packets to avoid memory overflow, keep the latest MAX_HISTORY_PACKETS packets
+                history_packets =
+                    history_packets.split_off(history_packets.len() - MAX_HISTORY_PACKETS);
+            }
+
+            loop {
+                match receiver.recv_timeout(timeout_10ms) {
+                    Ok(r) => {
+                        debug!("recv rrq_id: {}", r.id);
+                        r_requests.insert(r.id, r);
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            let mut drop_rrq_ids = Vec::new();
+            let mut need_drop = false;
+
+            for (rrq_id, rrq) in &r_requests {
+                for packet in &mut history_packets {
+                    if packet.processed {
+                        continue;
+                    }
+                    // Not drop any message here.
+                    let (check_rets, filter_name) = rrq.check_packet(&packet.data);
+                    if check_rets {
+                        debug!(
+                            "rrq_id matched: {}, interface_name: {}, filter_name: {}",
+                            rrq_id, interface.name, filter_name
+                        );
+                        #[cfg(feature = "debug")]
+                        debug_show_packet(&packet.data, Some(EtherTypes::Arp));
+
+                        // Send matched packet back to thread.
+                        let rtt = rrq.created.elapsed();
+                        let recv_response = RResponse {
+                            id: rrq.id,
+                            data: packet.data.clone(),
+                            rtt,
+                        };
+                        if let Err(e) = push_response.send(recv_response) {
+                            error!("receiver [{}] send response failed: {}", interface.name, e);
+                        }
+
+                        packet.processed = true;
+
+                        // Drop this rrq since it has matched a packet,
+                        // and we don't want to match multiple packets for one rrq.
+                        drop_rrq_ids.push(rrq_id.clone());
+                        need_drop = true;
+
+                        break;
+                    }
+                }
+            }
+
+            for (rrq_id, rrq) in &r_requests {
+                // Sometimes if we drop msg too quickly, as well as the sender in msg will be droped too,
+                // when worker's receiver wanna recv back packet,
+                // the 'receiving on an empty and disconnected channel' error raise,
+                // which will cause the worker can not receive matched packets back from runner,
+                // and then the worker will start next retry process, it will cause unnecessary traffic on network,
+                // so I set the timeout for each msg to be 5 times of the timeout for receiving and sending packets.
+                if rrq.created.elapsed() > rrq.elapsed * 5 {
+                    // timeout, remove this msg
+                    drop_rrq_ids.push(rrq_id.clone());
+                    need_drop = true;
+                }
+            }
+            if need_drop {
+                debug!("drop rrq ids: {:?}", drop_rrq_ids);
+                for di in drop_rrq_ids {
+                    let _droped_msg = r_requests.remove(&di);
+                }
+            }
+        }
+    }
+    fn run() {
+        let interface_name_sender = interface_name.clone();
+        let interface_name_receiver = interface_name.clone();
+        let push_response = self.push_response.clone();
+        let _send_handle =
+            thread::spawn(move || Self::send(interface_name_sender, sm_receiver, timeout));
+        let _recv_handle =
+            thread::spawn(move || Self::recv(interface_name_receiver, rm_receiver, push_response));
+    }
+    fn send_msg() {}
+    fn recv_msg() {}
+}
 
 #[derive(Debug, Clone)]
 pub struct Pistol {
