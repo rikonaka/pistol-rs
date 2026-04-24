@@ -35,14 +35,8 @@ serde = { version = "1.0.228", features = ["derive"] }
 pcapture = { version = "0.3.18", features = ["pcapng", "libpcap"] }
 
 [features]
-default = ["scan", "ping", "flood", "os", "vs", "trace"]
-dev = ["scan", "ping", "flood", "os", "vs", "trace", "debug"]
-scan = []
-ping = []
-flood = []
-os = []
-vs = []
-trace = []
+default = []
+dev = ["debug"]
 debug = []
 
 [[example]]

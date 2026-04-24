@@ -1,61 +1,33 @@
-#[cfg(feature = "vs")]
 use chrono::DateTime;
-#[cfg(feature = "vs")]
 use chrono::Local;
-#[cfg(feature = "vs")]
 use dbparser::ServiceProbe;
-#[cfg(feature = "vs")]
 use prettytable::Cell;
-#[cfg(feature = "vs")]
 use prettytable::Row;
-#[cfg(feature = "vs")]
 use prettytable::Table;
-#[cfg(feature = "vs")]
 use prettytable::row;
-#[cfg(feature = "vs")]
 use std::collections::BTreeMap;
-#[cfg(feature = "vs")]
 use std::fmt;
-#[cfg(feature = "vs")]
 use std::io::Cursor;
-#[cfg(feature = "vs")]
 use std::io::Read;
-#[cfg(feature = "vs")]
 use std::net::IpAddr;
-#[cfg(feature = "vs")]
 use std::sync::mpsc::channel;
-#[cfg(feature = "vs")]
 use std::time::Duration;
-#[cfg(feature = "vs")]
 use std::time::Instant;
-#[cfg(feature = "vs")]
 use threadpool::ThreadPool;
-#[cfg(feature = "vs")]
 use tracing::debug;
-#[cfg(feature = "vs")]
 use tracing::error;
-#[cfg(feature = "vs")]
 use zip::ZipArchive;
 
-#[cfg(feature = "vs")]
 use crate::Target;
-#[cfg(feature = "vs")]
 use crate::error::PistolError;
-#[cfg(feature = "vs")]
 use crate::utils::time_to_string;
-#[cfg(feature = "vs")]
 use crate::vs::dbparser::nmap_service_probes_parser;
-#[cfg(feature = "vs")]
 use crate::vs::vscan::MatchX;
-#[cfg(feature = "vs")]
 use crate::vs::vscan::vs_scan_thread;
 
-#[cfg(feature = "vs")]
 pub mod dbparser;
-#[cfg(feature = "vs")]
 pub mod vscan;
 
-#[cfg(feature = "vs")]
 #[derive(Debug, Clone)]
 pub struct PortService {
     pub addr: IpAddr,
@@ -65,7 +37,6 @@ pub struct PortService {
     pub time_cost: Duration,
 }
 
-#[cfg(feature = "vs")]
 #[derive(Debug, Clone)]
 pub struct PistolVsScans {
     pub port_services: Vec<PortService>,
@@ -73,7 +44,6 @@ pub struct PistolVsScans {
     pub finish_time: DateTime<Local>,
 }
 
-#[cfg(feature = "vs")]
 impl fmt::Display for PistolVsScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -140,7 +110,6 @@ impl fmt::Display for PistolVsScans {
     }
 }
 
-#[cfg(feature = "vs")]
 impl PistolVsScans {
     pub fn new() -> PistolVsScans {
         PistolVsScans {
@@ -155,7 +124,6 @@ impl PistolVsScans {
     }
 }
 
-#[cfg(feature = "vs")]
 fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
     let data = include_bytes!("./db/nmap-service-probes.zip");
     let reader = Cursor::new(data);
@@ -172,7 +140,6 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
     }
 }
 
-#[cfg(feature = "vs")]
 pub fn vs_scan(
     targets: &[Target],
     threads: usize,
@@ -238,7 +205,6 @@ pub fn vs_scan(
     Ok(ret)
 }
 
-#[cfg(feature = "vs")]
 pub fn vs_scan_raw(
     dst_addr: IpAddr,
     dst_port: u16,
@@ -283,7 +249,6 @@ pub fn vs_scan_raw(
     }
 }
 
-#[cfg(feature = "vs")]
 #[cfg(test)]
 mod tests {
     use super::*;

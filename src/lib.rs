@@ -8,7 +8,6 @@ use crossbeam::channel::unbounded;
 use dns_lookup::lookup_host;
 use pcapture::Capture;
 use pnet::datalink;
-#[cfg(feature = "scan")]
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
@@ -44,9 +43,7 @@ use std::fmt;
 use std::fs;
 use std::hash::Hash;
 use std::net::IpAddr;
-#[cfg(feature = "os")]
 use std::net::Ipv4Addr;
-#[cfg(feature = "os")]
 use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::str::FromStr;
@@ -76,44 +73,34 @@ mod utils;
 mod vs;
 
 use crate::error::PistolError;
-#[cfg(feature = "flood")]
 use crate::flood::Flood;
-#[cfg(feature = "flood")]
 use crate::flood::Floods;
 use crate::layer::ETHERNET_BUFF_SIZE;
 use crate::layer::ETHERNET_HEADER_SIZE;
 use crate::layer::PacketFilter;
 use crate::layer::find_interface_by_name;
-#[cfg(feature = "os")]
 use crate::os::OsDetect;
-#[cfg(feature = "os")]
 use crate::os::OsDetects;
-#[cfg(feature = "os")]
 use crate::os::dbparser::NmapOsDb;
-#[cfg(feature = "ping")]
 use crate::ping::HostPing;
-#[cfg(feature = "ping")]
 use crate::ping::HostPings;
 use crate::route::InferMacInput;
 use crate::route::SystemNetCache;
 use crate::route::infer_addr;
 use crate::route::infer_mac;
-#[cfg(feature = "scan")]
 use crate::scan::MacScans;
-#[cfg(feature = "scan")]
 use crate::scan::PortScan;
-#[cfg(feature = "scan")]
 use crate::scan::PortScans;
-#[cfg(feature = "trace")]
 use crate::trace::Trace;
-#[cfg(feature = "vs")]
 use crate::vs::PistolVsScans;
-#[cfg(feature = "vs")]
 use crate::vs::PortService;
 
 pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
 /// Whether to cache the network information of the program runtime process to avoid repeated calculations.
+#[cfg(feature = "debug")]
+pub static CACHE_NET: bool = true;
+#[cfg(not(feature = "debug"))]
 pub static CACHE_NET: bool = false;
 
 /// Cache the network information of the program runtime process to avoid repeated calculations.
@@ -714,7 +701,6 @@ struct NetInfo {
     valid: bool,
 }
 
-#[cfg(feature = "ping")]
 impl fmt::Display for NetInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.valid {
@@ -1132,11 +1118,9 @@ impl Pistol {
     ) -> Result<(), PistolError> {
         debug!("start receiver for interface_name: {}", interface_name);
         let mut cap = Capture::new(&interface_name)?;
-        cap.set_timeout(50);
+        cap.set_timeout(10);
         cap.set_promiscuous_mode(true);
         // cap.set_immediate_mode(true);
-
-        let timeout_10ms = Duration::from_millis(10);
 
         // The history_packets is used to store recently received packets,
         // which will be matched with new filters when they arrive.
@@ -1150,6 +1134,7 @@ impl Pistol {
 
         let mut history_packets: Vec<HistoryPacket> = Vec::with_capacity(MAX_HISTORY_PACKETS);
         let mut r_requests = HashMap::new();
+        let timeout_10ms = Duration::from_millis(10);
         loop {
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
@@ -1239,7 +1224,9 @@ impl Pistol {
             }
         }
     }
-    fn runner(
+    /// Start sender and receiver for the given interface name,
+    /// and connect them with the domain through channels.
+    fn start_sr(
         &self,
         timeout: Duration,
         interface_name: String,
@@ -1254,6 +1241,8 @@ impl Pistol {
         let _recv_handle =
             thread::spawn(move || Self::recv(interface_name_receiver, rm_receiver, push_response));
     }
+    /// The domain is used to distribute the send and receive requests
+    /// to the corresponding sender and receiver according to the interface name in the request.
     fn domain(
         &self,
         get_rd: Receiver<RRequest>,
@@ -1262,11 +1251,17 @@ impl Pistol {
         let to_receivers = self.to_receivers.clone();
         let push_senders = self.push_senders.clone();
         let timeout_5ms = Duration::from_millis(5);
-        let _domain_handle = thread::spawn(move || {
+        let _domain_handle_1 = thread::spawn(move || {
             loop {
                 match get_rd.recv_timeout(timeout_5ms) {
                     Ok(r) => {
                         debug!("domain switch rd interface name: {}", r.interface_name);
+                        if r.interface_name.trim().len() == 0 {
+                            error!(
+                                "pistol domain receive recv msg with empty interface name, drop it"
+                            );
+                            continue;
+                        }
                         let sender = to_receivers[&r.interface_name].clone();
                         if let Err(e) = sender.send(r) {
                             error!("pistol domain distribute recv msg failed: {}", e)
@@ -1274,9 +1269,19 @@ impl Pistol {
                     }
                     Err(_e) => (),
                 }
+            }
+        });
+        let _domain_handle_2 = thread::spawn(move || {
+            loop {
                 match get_sd.recv_timeout(timeout_5ms) {
                     Ok(s) => {
                         debug!("domain switch sd interface name: {}", s.interface_name);
+                        if s.interface_name.trim().len() == 0 {
+                            error!(
+                                "pistol domain receive send msg with empty interface name, drop it"
+                            );
+                            continue;
+                        }
                         let sender = push_senders[&s.interface_name].clone();
                         if let Err(e) = sender.send(s) {
                             error!("pistol domain distribute send msg failed: {}", e)
@@ -1297,7 +1302,7 @@ impl Pistol {
             let (rm_sender, rm_receiver) = unbounded::<RRequest>();
             self.push_senders.insert(ni.name.clone(), sm_sender);
             self.to_receivers.insert(ni.name.clone(), rm_sender);
-            self.runner(self.timeout, ni.name, sm_receiver, rm_receiver);
+            self.start_sr(self.timeout, ni.name, sm_receiver, rm_receiver);
         }
 
         let get_rd = self.get_rd.clone();
@@ -1323,7 +1328,7 @@ impl Pistol {
             let (s_r_msg, r_r_msg) = unbounded::<RRequest>();
             self.push_senders.insert(i.name.clone(), s_s_msg);
             self.to_receivers.insert(i.name.clone(), s_r_msg);
-            self.runner(self.timeout, i.name, r_s_msg, r_r_msg);
+            self.start_sr(self.timeout, i.name, r_s_msg, r_r_msg);
         }
 
         let get_rd = self.get_rd.clone();
@@ -1368,7 +1373,7 @@ impl Pistol {
             let (rm_sender, rm_receiver) = unbounded::<RRequest>();
             self.push_senders.insert(ni.name.clone(), sm_sender);
             self.to_receivers.insert(ni.name.clone(), rm_sender);
-            self.runner(self.timeout, ni.name, sm_receiver, rm_receiver);
+            self.start_sr(self.timeout, ni.name, sm_receiver, rm_receiver);
         }
 
         let get_rd = self.get_rd.clone();
@@ -1447,7 +1452,6 @@ impl Pistol {
     /// 8 packets received by filter, 0 packets dropped by kernel
     /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.071 seconds (123.61 hosts/sec). 4 responded
     /// ```
-    #[cfg(feature = "scan")]
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
         self.init_domain_without_net_infos()?;
         scan::mac_scan(
@@ -1462,7 +1466,6 @@ impl Pistol {
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
     /// If a reply is received within the specified timeout, it returns the MAC address of the target and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn arp_scan_raw(
         &mut self,
         dst_ipv4: Ipv4Addr,
@@ -1481,7 +1484,6 @@ impl Pistol {
     /// It sends an NDP Neighbor Solicitation to the target IPv6 address and waits for a reply.
     /// If a reply is received within the specified timeout,
     /// it returns the MAC address of the target and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn ndp_ns_scan_raw(
         &mut self,
         dst_ipv6: Ipv6Addr,
@@ -1504,7 +1506,6 @@ impl Pistol {
     /// We then labels them as unfiltered, meaning that they are reachable by the ACK packet,
     /// but whether they are open or closed is undetermined.
     /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
-    #[cfg(feature = "scan")]
     pub fn tcp_ack_scan(
         &mut self,
         targets: &[Target],
@@ -1528,7 +1529,6 @@ impl Pistol {
     /// Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered, Unfiltered)
     /// and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_ack_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1566,7 +1566,6 @@ impl Pistol {
     /// for the services which take the connection and then have it immediately shutdown.
     /// Note: this method will use multiple threads to send packets in parallel,
     /// so it very cause a expansive system cost.
-    #[cfg(feature = "scan")]
     pub fn tcp_connect_scan(
         &mut self,
         targets: &[Target],
@@ -1602,7 +1601,6 @@ impl Pistol {
     /// If the connection is successful, it indicates that the port is open.
     /// If the connection is refused, it indicates that the port is closed.
     /// If there is no response within the specified timeout, it indicates that the port is filtered
-    #[cfg(feature = "scan")]
     pub fn tcp_connect_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1646,7 +1644,6 @@ impl Pistol {
     /// if the port is closed and no response at all if the port is open.
     /// As long as none of those three bits are included,
     /// any combination of the other three (FIN, PSH, and URG) are OK.
-    #[cfg(feature = "scan")]
     pub fn tcp_fin_scan(
         &mut self,
         targets: &[Target],
@@ -1669,7 +1666,6 @@ impl Pistol {
     /// It sends a TCP FIN packet to the target IP address and port, and waits for a response.
     /// Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_fin_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1696,7 +1692,6 @@ impl Pistol {
     /// According to RFC 793 (TCP),
     /// a RST packet should be generated in response to such a probe whether the port is open or closed.
     /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
-    #[cfg(feature = "scan")]
     pub fn tcp_maimon_scan(
         &mut self,
         targets: &[Target],
@@ -1719,7 +1714,6 @@ impl Pistol {
     /// It sends a TCP Maimon packet (FIN/ACK) to the target IP address and port,
     /// and waits for a response. Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_maimon_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1747,7 +1741,6 @@ impl Pistol {
     /// and no response at all if the port is open.
     /// As long as none of those three bits are included,
     /// any combination of the other three (FIN, PSH, and URG) are OK.
-    #[cfg(feature = "scan")]
     pub fn tcp_null_scan(
         &mut self,
         targets: &[Target],
@@ -1770,7 +1763,6 @@ impl Pistol {
     /// It sends a TCP Null packet (no flags set) to the target IP address and port,
     /// and waits for a response. Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_null_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1804,7 +1796,6 @@ impl Pistol {
     /// It can be performed quickly,
     /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
     /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
-    #[cfg(feature = "scan")]
     pub fn tcp_syn_scan(
         &mut self,
         targets: &[Target],
@@ -1827,7 +1818,6 @@ impl Pistol {
     /// It sends a TCP SYN packet to the target IP address and port, and waits for a response.
     /// Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_syn_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1856,7 +1846,6 @@ impl Pistol {
     /// On some systems, open ports use a positive window size (even for RST packets)
     /// while closed ones have a zero window.
     /// Window scan sends the same bare ACK probe as ACK scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_window_scan(
         &mut self,
         targets: &[Target],
@@ -1879,7 +1868,6 @@ impl Pistol {
     /// It sends a TCP Window packet to the target IP address and port, and waits for a response.
     /// Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_window_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1906,7 +1894,6 @@ impl Pistol {
     /// if the port is closed and no response at all if the port is open.
     /// As long as none of those three bits are included,
     /// any combination of the other three (FIN, PSH, and URG) are OK.
-    #[cfg(feature = "scan")]
     pub fn tcp_xmas_scan(
         &mut self,
         targets: &[Target],
@@ -1929,7 +1916,6 @@ impl Pistol {
     /// It sends a TCP Xmas packet (FIN, PSH, URG flags set) to the target IP address and port,
     /// and waits for a response. Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered) and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn tcp_xmas_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -1961,7 +1947,6 @@ impl Pistol {
     /// For most ports, this packet will be empty (no payload),
     /// but for a few of the more common ports a protocol-specific payload will be sent.
     /// Based on the response, or lack thereof, the port is assigned to one of four states.
-    #[cfg(feature = "scan")]
     pub fn udp_scan(
         &mut self,
         targets: &[Target],
@@ -1985,7 +1970,6 @@ impl Pistol {
     /// Based on the response received (or lack thereof),
     /// it determines the port status (Open, Closed, Filtered, Unfiltered)
     /// and the duration taken for the scan.
-    #[cfg(feature = "scan")]
     pub fn udp_scan_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2021,7 +2005,6 @@ impl Pistol {
     /// that the host is available.
     /// These two queries can be valuable when administrators specifically block echo request packets
     /// while forgetting that other ICMP queries can be used for the same purpose.
-    #[cfg(feature = "ping")]
     pub fn icmp_address_mask_ping(
         &mut self,
         targets: &[Target],
@@ -2048,7 +2031,6 @@ impl Pistol {
     /// It sends an ICMP Address Mask Request to the target IP address
     /// and waits for a reply. If a reply is received within the specified timeout,
     /// it returns the PingStatus indicating whether the host is reachable.
-    #[cfg(feature = "ping")]
     pub fn icmp_address_mask_ping_raw(
         &mut self,
         dst_ipv4: Ipv4Addr,
@@ -2081,7 +2063,6 @@ impl Pistol {
     /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
     /// But for system administrators monitoring an internal network,
     /// this can be a practical and efficient approach.
-    #[cfg(feature = "ping")]
     pub fn icmp_echo_ping(
         &mut self,
         targets: &[Target],
@@ -2104,7 +2085,6 @@ impl Pistol {
     /// It sends an ICMP Echo Request to the target IP address
     /// and waits for a reply. If a reply is received within the specified timeout,
     /// it returns the PingStatus indicating whether the host is reachable.
-    #[cfg(feature = "ping")]
     pub fn icmp_echo_ping_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2135,7 +2115,6 @@ impl Pistol {
     /// A timestamp reply (ICMP code 14) or address mask reply (code 18) discloses that the host is available.
     /// These two queries can be valuable when administrators specifically block echo request packets
     /// while forgetting that other ICMP queries can be used for the same purpose.
-    #[cfg(feature = "ping")]
     pub fn icmp_timestamp_ping(
         &mut self,
         targets: &[Target],
@@ -2162,7 +2141,6 @@ impl Pistol {
     /// It sends an ICMP Timestamp Request to the target IP address
     /// and waits for a reply. If a reply is received within the specified timeout,
     /// it returns the PingStatus indicating whether the host is reachable.
-    #[cfg(feature = "ping")]
     pub fn icmp_timestamp_ping_raw(
         &mut self,
         dst_ipv4: Ipv4Addr,
@@ -2190,7 +2168,6 @@ impl Pistol {
     /// and waits for a reply. If a reply is received within the specified timeout,
     /// it returns the PingStatus indicating whether the host is reachable,
     /// along with the duration taken for the ping.
-    #[cfg(feature = "ping")]
     pub fn icmp_ping_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2219,7 +2196,6 @@ impl Pistol {
     /// For this reason, ICMPv6-only scans are rarely reliable enough against unknown targets over the Internet.
     /// But for system administrators monitoring an internal network,
     /// this can be a practical and efficient approach.
-    #[cfg(feature = "ping")]
     pub fn icmpv6_ping(
         &mut self,
         targets: &[Target],
@@ -2246,7 +2222,6 @@ impl Pistol {
     /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    #[cfg(feature = "ping")]
     pub fn tcp_ack_ping(
         &mut self,
         targets: &[Target],
@@ -2270,7 +2245,6 @@ impl Pistol {
     /// Based on the response received (or lack thereof),
     /// it determines the ping status (Success, Timeout, Unreachable)
     /// and the duration taken for the ping.
-    #[cfg(feature = "ping")]
     pub fn tcp_ack_ping_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2294,7 +2268,6 @@ impl Pistol {
     /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    #[cfg(feature = "ping")]
     pub fn tcp_syn_ping(
         &mut self,
         targets: &[Target],
@@ -2318,7 +2291,6 @@ impl Pistol {
     /// Based on the response received (or lack thereof),
     /// it determines the ping status (Success, Timeout, Unreachable)
     /// and the duration taken for the ping.
-    #[cfg(feature = "ping")]
     pub fn tcp_syn_ping_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2342,7 +2314,6 @@ impl Pistol {
     /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    #[cfg(feature = "ping")]
     pub fn udp_ping(
         &mut self,
         targets: &[Target],
@@ -2366,7 +2337,6 @@ impl Pistol {
     /// Based on the response received (or lack thereof),
     /// it determines the ping status (Success, Timeout, Unreachable)
     /// and the duration taken for the ping.
-    #[cfg(feature = "ping")]
     pub fn udp_ping_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2392,7 +2362,6 @@ impl Pistol {
     /// to discover the path to the destination.
     /// The recommended timeout value is 5 seconds,
     /// which is consistent with the default value of traceroute.
-    #[cfg(feature = "trace")]
     pub fn icmp_trace(
         &mut self,
         dst_addr: IpAddr,
@@ -2414,7 +2383,6 @@ impl Pistol {
     /// to discover the path to the destination.
     /// The recommended timeout value is 5 seconds,
     /// which is consistent with the default value of traceroute.
-    #[cfg(feature = "trace")]
     pub fn syn_trace(
         &mut self,
         dst_addr: IpAddr,
@@ -2439,7 +2407,6 @@ impl Pistol {
     /// to discover the path to the destination.
     /// The recommended timeout value is 5 seconds,
     /// which is consistent with the default value of traceroute.
-    #[cfg(feature = "trace")]
     pub fn udp_trace(
         &mut self,
         dst_addr: IpAddr,
@@ -2469,7 +2436,6 @@ impl Pistol {
     /// the network is forced to respond with an equal number of reply packets.
     /// This causes the target to become inaccessible to normal traffic.
     /// Total number of packets sent = retransmit x threads.
-    #[cfg(feature = "flood")]
     pub fn icmp_flood(
         &mut self,
         targets: &[Target],
@@ -2492,7 +2458,6 @@ impl Pistol {
     }
     /// The raw version of icmp_flood function.
     /// It performs an ICMP flood attack on the specified destination address.
-    #[cfg(feature = "flood")]
     pub fn icmp_flood_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2519,7 +2484,6 @@ impl Pistol {
     /// and it is very difficult to distinguish between a Legitimate ACK and an attacking ACK,
     /// as they look the same.
     /// Total number of packets sent = retransmit x threads.
-    #[cfg(feature = "flood")]
     pub fn tcp_ack_flood(
         &mut self,
         targets: &[Target],
@@ -2542,7 +2506,6 @@ impl Pistol {
     }
     /// The raw version of tcp_ack_flood function.
     /// It performs a TCP ACK flood attack on the specified destination address and port.
-    #[cfg(feature = "flood")]
     pub fn tcp_ack_flood_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2572,7 +2535,6 @@ impl Pistol {
     /// the network is forced to respond with an equal number of reply packets.
     /// This causes the target to become inaccessible to normal traffic.
     /// Total number of packets sent = retransmit x threads.
-    #[cfg(feature = "flood")]
     pub fn tcp_ack_psh_flood(
         &mut self,
         targets: &[Target],
@@ -2596,7 +2558,6 @@ impl Pistol {
     /// The raw version of tcp_ack_psh_flood function.
     /// It performs a TCP ACK flood with PSH flag set attack
     /// on the specified destination address and port.
-    #[cfg(feature = "flood")]
     pub fn tcp_ack_psh_flood_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2623,7 +2584,6 @@ impl Pistol {
     /// This leaves the server waiting for a response that never comes,
     /// consuming resources for each of these half-open connections.
     /// Total number of packets sent = retransmit x threads.
-    #[cfg(feature = "flood")]
     pub fn tcp_syn_flood(
         &mut self,
         targets: &[Target],
@@ -2646,7 +2606,6 @@ impl Pistol {
     }
     /// The raw version of tcp_syn_flood function.
     /// It performs a TCP SYN flood attack on the specified destination address and port.
-    #[cfg(feature = "flood")]
     pub fn tcp_syn_flood_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2669,7 +2628,6 @@ impl Pistol {
     /// Check for applications listening at each port.
     /// Realize that no application is listening at many of these ports.
     /// Respond with an Internet Control Message Protocol (ICMP) Destination Unreachable packet.
-    #[cfg(feature = "flood")]
     pub fn udp_flood(
         &mut self,
         targets: &[Target],
@@ -2692,7 +2650,6 @@ impl Pistol {
     }
     /// The raw version of udp_flood function.
     /// It performs a UDP flood attack on the specified destination address and port.
-    #[cfg(feature = "flood")]
     pub fn udp_flood_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2715,7 +2672,6 @@ impl Pistol {
     /// and parses them into a structured format.
     /// Each entry in the database is represented as an NmapOsDb struct,
     /// which contains information about a specific operating system fingerprint.
-    #[cfg(feature = "os")]
     pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolError> {
         os::dbparser::nmap_os_db_parser(lines)
     }
@@ -2724,7 +2680,6 @@ impl Pistol {
     /// to gather information about the target system's network stack behavior.
     /// By analyzing the responses to these probes,
     /// it max_retries to identify the operating system running on the target machine.
-    #[cfg(feature = "os")]
     pub fn os_detect(
         &mut self,
         targets: &[Target],
@@ -2750,7 +2705,6 @@ impl Pistol {
     /// using the specified open and closed ports.
     /// By analyzing the responses to these probes,
     /// it max_retries to identify the operating system running on the target machine.
-    #[cfg(feature = "os")]
     pub fn os_detect_raw(
         &mut self,
         dst_addr: IpAddr,
@@ -2783,7 +2737,6 @@ impl Pistol {
     /// to identify the services running on them.
     /// By analyzing the responses to these probes,
     /// it max_retries to determine the service type and version.
-    #[cfg(feature = "vs")]
     pub fn vs_scan(
         &self,
         targets: &[Target],
@@ -2808,7 +2761,6 @@ impl Pistol {
     /// to identify the service running on that port.
     /// By analyzing the responses to these probes,
     /// it max_retries to determine the service type and version.
-    #[cfg(feature = "vs")]
     pub fn vs_scan_raw(
         &self,
         dst_addr: IpAddr,
@@ -2846,7 +2798,7 @@ pub struct Target {
     addr: IpAddr,
     ports: Vec<u16>,
     // stores user input for non-IP addresses, such as domain names or subnets
-    origin: Option<String>,
+    pub origin: Option<String>,
 }
 
 impl fmt::Display for Target {
@@ -3099,7 +3051,6 @@ mod tests {
         // println!("{:?}", top_1000_tcp_ports);
     }
 
-    #[cfg(feature = "scan")]
     #[test]
     fn test_mac_scan() {
         let mut pistol = Pistol::new();
@@ -3111,7 +3062,6 @@ mod tests {
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "scan")]
     #[test]
     fn test_arp_scan_raw() {
         let mut pistol = Pistol::new();
@@ -3123,7 +3073,6 @@ mod tests {
         let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
     }
-    #[cfg(feature = "scan")]
     #[test]
     fn test_tcp_syn_scan() {
         let mut pistol = Pistol::new();
@@ -3140,12 +3089,11 @@ mod tests {
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "scan")]
     #[test]
-    fn test_tcp_syn_scan_local() {
+    fn test_tcp_syn_scan_many_ports() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(0.5);
+        pistol.set_timeout(3.0);
         // pistol.set_log_level("debug");
 
         let src_ipv4 = None;
@@ -3157,9 +3105,8 @@ mod tests {
             Some(dst_ports),
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
-        println!("{}", ret);
+        println!("{}", ret.as_str(true));
     }
-    #[cfg(feature = "scan")]
     #[test]
     fn test_tcp_syn_scan_loopback() {
         let mut pistol = Pistol::new();
@@ -3176,7 +3123,6 @@ mod tests {
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "scan")]
     #[test]
     fn test_tcp_connect_scan() {
         let mut pistol = Pistol::new();
@@ -3288,7 +3234,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let rets_str_2 = process(nmap_fingerprint_str_2);
         println!("{}", rets_str_2);
     }
-    #[cfg(feature = "os")]
     #[test]
     fn test_os_detect() {
         // nmap
@@ -3340,7 +3285,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
             println!("{}", d);
         }
     }
-    #[cfg(feature = "trace")]
     #[test]
     fn test_icmp_trace() {
         let mut pistol = Pistol::new();
@@ -3353,7 +3297,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let ret = pistol.icmp_trace(dst_ipv6.into(), src_addr).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "trace")]
     #[test]
     fn test_syn_trace() {
         let mut pistol = Pistol::new();
@@ -3370,7 +3313,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
             .unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "trace")]
     #[test]
     fn test_syn_trace2() {
         let mut pistol = Pistol::new();
@@ -3387,7 +3329,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
             .unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "os")]
     #[test]
     fn test_os_detect6() {
         // nmap
@@ -3442,7 +3383,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
             println!("{}", d);
         }
     }
-    #[cfg(feature = "vs")]
     #[test]
     fn test_vs_scan() {
         let mut pistol = Pistol::new();
@@ -3469,7 +3409,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
             .unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "scan")]
     #[test]
     fn example_mac_scan() {
         let mut pistol = Pistol::new();
@@ -3483,7 +3422,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "scan")]
     #[test]
     fn example_tcp_syn_scan() {
         let mut pistol = Pistol::new();
@@ -3513,7 +3451,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let ret = pistol.tcp_syn_scan(&targets, src_addr, src_port).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "os")]
     #[test]
     fn example_os_detect() {
         let mut pistol = Pistol::new();
@@ -3543,7 +3480,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "os")]
     #[test]
     fn example_os_detect_ipv6() {
         let mut pistol = Pistol::new();
@@ -3567,7 +3503,6 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let ret = pistol.os_detect(&[target], threads, top_k).unwrap();
         println!("{}", ret);
     }
-    #[cfg(feature = "vs")]
     #[test]
     fn example_vs_scan() {
         let mut pistol = Pistol::new();

@@ -1,94 +1,50 @@
-#[cfg(feature = "ping")]
 use chrono::DateTime;
-#[cfg(feature = "ping")]
 use chrono::Local;
-#[cfg(feature = "ping")]
 use crossbeam::channel::Receiver;
-#[cfg(feature = "ping")]
 use crossbeam::channel::Sender;
-#[cfg(feature = "ping")]
 use pnet::packet::Packet;
-#[cfg(feature = "ping")]
 use pnet::packet::ethernet::EtherTypes;
-#[cfg(feature = "ping")]
 use pnet::packet::ethernet::EthernetPacket;
-#[cfg(feature = "ping")]
 use pnet::packet::ipv4::Ipv4Packet;
-#[cfg(feature = "ping")]
 use pnet::packet::ipv6::Ipv6Packet;
-#[cfg(feature = "ping")]
 use prettytable::Cell;
-#[cfg(feature = "ping")]
 use prettytable::Row;
-#[cfg(feature = "ping")]
 use prettytable::Table;
-#[cfg(feature = "ping")]
 use prettytable::row;
-#[cfg(feature = "ping")]
 use std::collections::BTreeMap;
-#[cfg(feature = "ping")]
 use std::fmt;
-#[cfg(feature = "ping")]
 use std::net::IpAddr;
-#[cfg(feature = "ping")]
 use std::net::Ipv4Addr;
-#[cfg(feature = "ping")]
 use std::net::Ipv6Addr;
-#[cfg(feature = "ping")]
 use std::sync::Arc;
-#[cfg(feature = "ping")]
 use std::time::Duration;
-#[cfg(feature = "ping")]
 use std::time::Instant;
-#[cfg(feature = "ping")]
 use tracing::error;
-#[cfg(feature = "ping")]
 use tracing::warn;
 
-#[cfg(feature = "ping")]
 pub mod icmp;
-#[cfg(feature = "ping")]
 pub mod icmpv6;
 
-#[cfg(feature = "ping")]
 use crate::LoopStates;
-#[cfg(feature = "ping")]
 use crate::NetInfo;
-#[cfg(feature = "ping")]
 use crate::RRequest;
-#[cfg(feature = "ping")]
 use crate::RResponse;
-#[cfg(feature = "ping")]
 use crate::SRequest;
-#[cfg(feature = "ping")]
 use crate::error::PistolError;
-#[cfg(feature = "ping")]
 use crate::layer::PacketFilter;
-#[cfg(feature = "ping")]
 use crate::scan::PortStatus;
-#[cfg(feature = "ping")]
 use crate::scan::tcp;
-#[cfg(feature = "ping")]
 use crate::scan::tcp6;
-#[cfg(feature = "ping")]
 use crate::scan::udp;
-#[cfg(feature = "ping")]
 use crate::scan::udp6;
-#[cfg(feature = "ping")]
 use crate::utils::random_port;
-#[cfg(feature = "ping")]
 use crate::utils::random_request_id;
-#[cfg(feature = "ping")]
 use crate::utils::time_to_string;
 
-#[cfg(feature = "ping")]
 const SYN_PING_DEFAULT_PORT: u16 = 80;
-#[cfg(feature = "ping")]
 const ACK_PING_DEFAULT_PORT: u16 = 80;
-#[cfg(feature = "ping")]
 const UDP_PING_DEFAULT_PORT: u16 = 125;
 
-#[cfg(feature = "ping")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingStatus {
     Up,
@@ -96,7 +52,6 @@ pub enum PingStatus {
     Error,
 }
 
-#[cfg(feature = "ping")]
 impl fmt::Display for PingStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
@@ -108,7 +63,6 @@ impl fmt::Display for PingStatus {
     }
 }
 
-#[cfg(feature = "ping")]
 #[derive(Debug, Clone, Copy)]
 pub struct PingReport {
     pub addr: IpAddr,
@@ -123,7 +77,6 @@ impl PingReport {
     }
 }
 
-#[cfg(feature = "ping")]
 #[derive(Debug, Clone, Copy)]
 pub struct HostPing {
     pub layer2_cost: Duration,
@@ -133,7 +86,6 @@ pub struct HostPing {
     pub max_retries: usize,
 }
 
-#[cfg(feature = "ping")]
 impl fmt::Display for HostPing {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.finish_time - self.start_time;
@@ -185,7 +137,6 @@ impl fmt::Display for HostPing {
     }
 }
 
-#[cfg(feature = "ping")]
 impl HostPing {
     pub(crate) fn new(max_retries: usize) -> Self {
         Self {
@@ -205,7 +156,6 @@ impl HostPing {
     }
 }
 
-#[cfg(feature = "ping")]
 #[derive(Debug, Clone)]
 pub struct HostPings {
     /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
@@ -217,7 +167,6 @@ pub struct HostPings {
     pub max_retries: usize,
 }
 
-#[cfg(feature = "ping")]
 impl fmt::Display for HostPings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total_cost = self.finish_time - self.start_time;
@@ -280,7 +229,6 @@ impl fmt::Display for HostPings {
     }
 }
 
-#[cfg(feature = "ping")]
 impl HostPings {
     pub(crate) fn new(max_retries: usize) -> HostPings {
         HostPings {
@@ -297,7 +245,6 @@ impl HostPings {
     }
 }
 
-#[cfg(feature = "ping")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingMethods {
     Syn,
@@ -309,7 +256,6 @@ pub enum PingMethods {
     Icmpv6Echo,
 }
 
-#[cfg(feature = "ping")]
 fn build_ping_buff(
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
@@ -366,7 +312,6 @@ fn build_ping_buff(
     }
 }
 
-#[cfg(feature = "ping")]
 fn build_ping_buff6(
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
@@ -418,7 +363,6 @@ fn build_ping_buff6(
     }
 }
 
-#[cfg(feature = "ping")]
 fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingStatus, PistolError> {
     let parse_ipv4 = |dst_ipv4: Ipv4Addr| -> Result<PingStatus, PistolError> {
         let eth_response_clone = eth_response.clone();
@@ -542,7 +486,6 @@ struct PingState {
     net_info: NetInfo,
 }
 
-#[cfg(feature = "ping")]
 fn ping(
     net_infos: Vec<NetInfo>,
     method: PingMethods,
@@ -748,7 +691,6 @@ fn ping(
     Ok(pistol_pings)
 }
 
-#[cfg(feature = "ping")]
 pub fn ping_raw(
     net_info: NetInfo,
     method: PingMethods,
@@ -933,7 +875,6 @@ pub fn ping_raw(
     }
 }
 
-#[cfg(feature = "ping")]
 pub fn tcp_syn_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -955,7 +896,6 @@ pub fn tcp_syn_ping(
 
 /// TCP SYN Ping, raw version.
 /// Only for one target and one port.
-#[cfg(feature = "ping")]
 pub fn tcp_syn_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -975,7 +915,6 @@ pub fn tcp_syn_ping_raw(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn tcp_ack_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -997,7 +936,6 @@ pub fn tcp_ack_ping(
 
 /// TCP ACK Ping, raw version.
 /// Only for one target and one port.
-#[cfg(feature = "ping")]
 pub fn tcp_ack_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1017,7 +955,6 @@ pub fn tcp_ack_ping_raw(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn udp_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1038,7 +975,6 @@ pub fn udp_ping(
 }
 
 /// UDP Ping, raw version.
-#[cfg(feature = "ping")]
 pub fn udp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1058,7 +994,6 @@ pub fn udp_ping_raw(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_echo_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1078,7 +1013,6 @@ pub fn icmp_echo_ping(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_echo_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1098,7 +1032,6 @@ pub fn icmp_echo_ping_raw(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1118,7 +1051,6 @@ pub fn icmp_timestamp_ping(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_timestamp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1138,7 +1070,6 @@ pub fn icmp_timestamp_ping_raw(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1158,7 +1089,6 @@ pub fn icmp_address_mask_ping(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_address_mask_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1178,7 +1108,6 @@ pub fn icmp_address_mask_ping_raw(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmpv6_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1198,7 +1127,6 @@ pub fn icmpv6_ping(
     )
 }
 
-#[cfg(feature = "ping")]
 pub fn icmp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,

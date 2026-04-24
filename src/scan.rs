@@ -1,118 +1,65 @@
 /* Scan */
-#[cfg(any(feature = "scan", feature = "ping"))]
 use bitcode;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::DateTime;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use chrono::Local;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crossbeam::channel::Receiver;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crossbeam::channel::Sender;
-#[cfg(feature = "scan")]
-use pnet::datalink::MacAddr;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::datalink::NetworkInterface;
-#[cfg(feature = "scan")]
 use pnet::datalink::interfaces;
-#[cfg(any(feature = "scan", feature = "ping"))]
+use prettytable::Cell;
+use prettytable::Row;
+use prettytable::Table;
+use prettytable::row;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::fmt;
+use std::fs;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
+use std::sync::Mutex;
+use std::thread;
+use std::thread::sleep;
+use std::time::Duration;
+use std::time::Instant;
+use subnetwork::Ipv6AddrExt;
+use tracing::error;
+
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::arp::ArpPacket;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ethernet::EtherTypes;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::icmpv6::Icmpv6Types;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use pnet::packet::ipv6::Ipv6Packet;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use prettytable::Cell;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use prettytable::Row;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use prettytable::Table;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use prettytable::row;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::collections::BTreeMap;
-#[cfg(feature = "scan")]
-use std::collections::HashMap;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::fmt;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::fs;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use std::net::IpAddr;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::net::Ipv4Addr;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::net::Ipv6Addr;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use std::sync::Arc;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::sync::Mutex;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::thread;
-#[cfg(feature = "scan")]
-use std::thread::sleep;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::time::Duration;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use std::time::Instant;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use subnetwork::Ipv6AddrExt;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use tracing::debug;
-#[cfg(any(feature = "scan", feature = "ping"))]
-use tracing::error;
 
 pub(crate) mod arp;
 pub(crate) mod ndp_ns;
 pub(crate) mod ndp_rs;
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub(crate) mod tcp;
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub(crate) mod tcp6;
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub(crate) mod udp;
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub(crate) mod udp6;
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::GLOBAL_NET_CACHES;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::LoopStates;
-#[cfg(feature = "scan")]
 use crate::NetInfo;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::PacketFilter;
-#[cfg(feature = "scan")]
 use crate::RRequest;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::RResponse;
-#[cfg(feature = "scan")]
 use crate::SRequest;
-#[cfg(feature = "scan")]
 use crate::Target;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::error::PistolError;
-#[cfg(any(feature = "scan", feature = "ping"))]
 use crate::layer::ipv6_multicast_mac;
-#[cfg(any(feature = "scan", feature = "ping"))]
-#[cfg(feature = "scan")]
 use crate::scan::arp::build_arp_scan_buff;
-#[cfg(feature = "scan")]
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
-#[cfg(feature = "scan")]
 use crate::utils::random_port;
-#[cfg(feature = "scan")]
 use crate::utils::random_request_id;
-#[cfg(feature = "scan")]
 use crate::utils::time_to_string;
 
 const NMAP_MAC_PREFIXES_BIN_PATH: &str = "./src/db/nmap-mac-prefixes.bin";
@@ -126,7 +73,6 @@ fn update_neighbor_cache(addr: IpAddr, mac: MacAddr, rtt: Duration) -> Result<()
     Ok(())
 }
 
-#[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct MacReport {
     pub addr: IpAddr,
@@ -138,7 +84,6 @@ pub struct MacReport {
     pub retries: usize,
 }
 
-#[cfg(feature = "scan")]
 #[derive(Debug, Clone)]
 pub struct MacScans {
     pub mac_reports: Vec<MacReport>,
@@ -147,7 +92,6 @@ pub struct MacScans {
     max_retries: usize,
 }
 
-#[cfg(feature = "scan")]
 impl fmt::Display for MacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -194,7 +138,6 @@ impl fmt::Display for MacScans {
     }
 }
 
-#[cfg(feature = "scan")]
 impl MacScans {
     pub(crate) fn new(max_retries: usize) -> MacScans {
         MacScans {
@@ -210,7 +153,6 @@ impl MacScans {
     }
 }
 
-#[cfg(feature = "scan")]
 fn loopback_interface() -> Result<NetworkInterface, PistolError> {
     for interface in interfaces() {
         if interface.is_loopback() {
@@ -221,7 +163,6 @@ fn loopback_interface() -> Result<NetworkInterface, PistolError> {
 }
 
 /// mac scan target is only can be localnet address.
-#[cfg(feature = "scan")]
 fn mac_scan_found_interface(dst_addr: IpAddr) -> Result<NetworkInterface, PistolError> {
     if dst_addr.is_loopback() {
         return loopback_interface();
@@ -242,7 +183,6 @@ fn mac_scan_found_interface(dst_addr: IpAddr) -> Result<NetworkInterface, Pistol
     })
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
@@ -318,7 +258,6 @@ pub(crate) fn arp_scan_raw(
     Ok((None, Duration::ZERO))
 }
 
-#[cfg(feature = "scan")]
 fn arp_scan_buff_send(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
@@ -380,7 +319,6 @@ fn arp_scan_buff_send(
     Ok(())
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
@@ -457,7 +395,6 @@ pub(crate) fn ndp_ns_scan_raw(
     }
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn ndp_ns_scan_buff_send(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
@@ -605,7 +542,6 @@ fn get_nmap_mac_prefixes() -> Result<HashMap<String, String>, PistolError> {
     Ok(nmap_mac_prefixes)
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn mac_scan(
     targets: &[Target],
     timeout: Duration,
@@ -738,7 +674,6 @@ pub(crate) fn mac_scan(
 }
 
 /// Remove connect and idle scan from here.
-#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ScanMethod {
     Syn,
@@ -751,7 +686,6 @@ pub(crate) enum ScanMethod {
     Udp,
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PortStatus {
     Open,
@@ -766,7 +700,6 @@ pub enum PortStatus {
     Offline,
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 impl fmt::Display for PortStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
@@ -784,7 +717,6 @@ impl fmt::Display for PortStatus {
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
 pub struct PortReport {
     pub addr: IpAddr,
@@ -803,7 +735,6 @@ impl PortReport {
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone, Copy)]
 pub struct PortScan {
     /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
@@ -815,7 +746,6 @@ pub struct PortScan {
     pub max_retries: usize,
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 impl fmt::Display for PortScan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
@@ -863,7 +793,6 @@ impl fmt::Display for PortScan {
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 impl PortScan {
     pub(crate) fn new(max_retries: usize) -> Self {
         let now = Local::now();
@@ -881,7 +810,6 @@ impl PortScan {
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 #[derive(Debug, Clone)]
 pub struct PortScans {
     /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
@@ -895,9 +823,8 @@ pub struct PortScans {
     pub max_retries: usize,
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
-impl fmt::Display for PortScans {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl PortScans {
+    pub fn as_str(&self, hide_closed: bool) -> String {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
             Cell::new("Port Scans").style_spec("c").with_hspan(5),
@@ -908,6 +835,9 @@ impl fmt::Display for PortScans {
         // sorted the resutls
         let mut btm_addr: BTreeMap<IpAddr, BTreeMap<u16, PortReport>> = BTreeMap::new();
         for report in &self.port_reports {
+            if report.status == PortStatus::Closed && hide_closed {
+                continue;
+            }
             if let Some(btm_port) = btm_addr.get_mut(&report.addr) {
                 btm_port.insert(report.port, report.clone());
             } else {
@@ -959,11 +889,17 @@ impl fmt::Display for PortScans {
             format!("l2c means layer2 mac address from cache, r1 means retry 1 time, and so on.");
         let summary = format!("{}\n{}\n{}", summary1, summary2, summary3);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
-        write!(f, "{}", table)
+
+        table.to_string()
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
+impl fmt::Display for PortScans {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str(false))
+    }
+}
+
 impl PortScans {
     pub(crate) fn new(max_retries: usize) -> Self {
         let now = Local::now();
@@ -981,7 +917,6 @@ impl PortScans {
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 fn build_scan_buff(
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
@@ -1003,7 +938,6 @@ fn build_scan_buff(
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 fn build_scan_buff6(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
@@ -1025,7 +959,6 @@ fn build_scan_buff6(
     }
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 fn parse_response(eth_response: Arc<[u8]>, method: ScanMethod) -> Result<PortStatus, PistolError> {
     let parse_ipv4 = || -> Result<PortStatus, PistolError> {
         let eth_response = eth_response.clone();
@@ -1086,7 +1019,6 @@ struct PortScanState {
 }
 
 /// General scan function.
-#[cfg(any(feature = "scan", feature = "ping"))]
 fn scan(
     net_infos: Vec<NetInfo>,
     method: ScanMethod,
@@ -1132,6 +1064,13 @@ fn scan(
     }
 
     loop {
+        #[cfg(feature = "debug")]
+        let all_probes = loop_states.data.len();
+        #[cfg(feature = "debug")]
+        let mut send_probes = 0;
+        #[cfg(feature = "debug")]
+        let send_start = Instant::now();
+
         let mut all_done = true;
         for (_key, state) in &mut loop_states {
             let dst_mac = state.dst_mac;
@@ -1184,6 +1123,11 @@ fn scan(
                         state.retries += 1;
                         state.id = rrq_id;
                         all_done = false;
+
+                        #[cfg(feature = "debug")]
+                        {
+                            send_probes += 1;
+                        }
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
@@ -1227,20 +1171,34 @@ fn scan(
                         state.retries += 1;
                         state.id = rrq_id;
                         all_done = false;
+
+                        #[cfg(feature = "debug")]
+                        {
+                            send_probes += 1;
+                        }
                     }
                 }
             }
         }
 
+        #[cfg(feature = "debug")]
+        println!(
+            "send {}/{} scan packets cost {:.2}s",
+            send_probes,
+            all_probes,
+            send_start.elapsed().as_secs_f32()
+        );
+
         if all_done {
             break;
         }
 
-        let mut responses = Vec::new();
-        let start_recv = Instant::now();
+        let mut responses: Vec<RResponse> = Vec::new();
+        let recv_start = Instant::now();
         let timeout_10ms = Duration::from_millis(10);
+
         loop {
-            if start_recv.elapsed() > timeout {
+            if recv_start.elapsed() > timeout {
                 break;
             }
             match get_response.recv_timeout(timeout_10ms) {
@@ -1250,6 +1208,15 @@ fn scan(
                     continue;
                 }
             };
+        }
+
+        #[cfg(feature = "debug")]
+        {
+            println!(
+                "recv {} responses cost {:.2}s",
+                responses.len(),
+                recv_start.elapsed().as_secs_f32()
+            );
         }
 
         for response in &responses {
@@ -1283,7 +1250,6 @@ fn scan(
     Ok(port_scans)
 }
 
-#[cfg(feature = "scan")]
 fn scan_raw(
     net_info: NetInfo,
     method: ScanMethod,
@@ -1417,7 +1383,6 @@ fn scan_raw(
     Ok(port_scan)
 }
 
-#[cfg(any(feature = "scan", feature = "ping"))]
 pub(crate) fn tcp_syn_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1438,7 +1403,6 @@ pub(crate) fn tcp_syn_scan(
 }
 
 /// TCP SYN Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_syn_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1458,7 +1422,6 @@ pub(crate) fn tcp_syn_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_fin_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1479,7 +1442,6 @@ pub(crate) fn tcp_fin_scan(
 }
 
 /// TCP FIN Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_fin_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1499,7 +1461,6 @@ pub(crate) fn tcp_fin_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_ack_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1520,7 +1481,6 @@ pub(crate) fn tcp_ack_scan(
 }
 
 /// TCP ACK Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_ack_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1540,7 +1500,6 @@ pub(crate) fn tcp_ack_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_null_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1561,7 +1520,6 @@ pub(crate) fn tcp_null_scan(
 }
 
 /// TCP Null Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_null_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1581,7 +1539,6 @@ pub(crate) fn tcp_null_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_xmas_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1602,7 +1559,6 @@ pub(crate) fn tcp_xmas_scan(
 }
 
 /// TCP Xmas Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_xmas_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1622,7 +1578,6 @@ pub(crate) fn tcp_xmas_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_window_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1643,7 +1598,6 @@ pub(crate) fn tcp_window_scan(
 }
 
 /// TCP Window Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_window_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1663,7 +1617,6 @@ pub(crate) fn tcp_window_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_maimon_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1684,7 +1637,6 @@ pub(crate) fn tcp_maimon_scan(
 }
 
 /// TCP Maimon Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_maimon_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1704,7 +1656,6 @@ pub(crate) fn tcp_maimon_scan_raw(
     )
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_connect_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1765,7 +1716,6 @@ pub(crate) fn tcp_connect_scan(
 }
 
 /// TCP connect() Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn tcp_connect_scan_raw(
     net_info: NetInfo,
     timeout: Duration,
@@ -1811,7 +1761,6 @@ pub(crate) fn tcp_connect_scan_raw(
     Ok(port_scan)
 }
 
-#[cfg(feature = "scan")]
 pub(crate) fn udp_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
@@ -1832,7 +1781,6 @@ pub(crate) fn udp_scan(
 }
 
 /// UDP Scan, raw version.
-#[cfg(feature = "scan")]
 pub(crate) fn udp_scan_raw(
     net_info: NetInfo,
     timeout: Duration,

@@ -1,71 +1,38 @@
-#[cfg(feature = "flood")]
 use chrono::DateTime;
-#[cfg(feature = "flood")]
 use chrono::Local;
-#[cfg(feature = "flood")]
 use crossbeam::channel::Sender;
-#[cfg(feature = "flood")]
 use pnet::datalink::MacAddr;
-#[cfg(feature = "flood")]
 use pnet::packet::ethernet::EtherTypes;
-#[cfg(feature = "flood")]
 use prettytable::Cell;
-#[cfg(feature = "flood")]
 use prettytable::Row;
-#[cfg(feature = "flood")]
 use prettytable::Table;
-#[cfg(feature = "flood")]
 use prettytable::row;
-#[cfg(feature = "flood")]
 use std::collections::BTreeMap;
-#[cfg(feature = "flood")]
 use std::fmt;
-#[cfg(feature = "flood")]
 use std::net::IpAddr;
-#[cfg(feature = "flood")]
 use std::net::Ipv4Addr;
-#[cfg(feature = "flood")]
 use std::net::Ipv6Addr;
-#[cfg(feature = "flood")]
 use std::sync::mpsc::channel;
-#[cfg(feature = "flood")]
 use std::thread;
-#[cfg(feature = "flood")]
 use std::time::Duration;
-#[cfg(feature = "flood")]
 use std::time::Instant;
-#[cfg(feature = "flood")]
 use tracing::error;
 
-#[cfg(feature = "flood")]
 pub mod icmp;
-#[cfg(feature = "flood")]
 pub mod icmpv6;
-#[cfg(feature = "flood")]
 pub mod tcp;
-#[cfg(feature = "flood")]
 pub mod tcp6;
-#[cfg(feature = "flood")]
 pub mod udp;
-#[cfg(feature = "flood")]
 pub mod udp6;
 
-#[cfg(feature = "flood")]
 use crate::NetInfo;
-#[cfg(feature = "flood")]
 use crate::SRequest;
-#[cfg(feature = "flood")]
 use crate::error::PistolError;
-#[cfg(feature = "flood")]
 use crate::utils::random_ipv4_addr;
-#[cfg(feature = "flood")]
 use crate::utils::random_ipv6_addr;
-#[cfg(feature = "flood")]
 use crate::utils::random_port;
-#[cfg(feature = "flood")]
 use crate::utils::time_to_string;
 
-#[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
 pub struct FloodReport {
     pub addr: IpAddr,
@@ -74,7 +41,6 @@ pub struct FloodReport {
     pub cost: Duration,
 }
 
-#[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
 pub struct Flood {
     pub layer2_cost: Duration,
@@ -83,7 +49,6 @@ pub struct Flood {
     pub finish_time: DateTime<Local>,
 }
 
-#[cfg(feature = "flood")]
 impl Flood {
     pub(crate) fn new() -> Self {
         Self {
@@ -99,7 +64,6 @@ impl Flood {
     }
 }
 
-#[cfg(feature = "flood")]
 #[derive(Debug, Clone)]
 pub struct Floods {
     pub layer2_cost: Duration,
@@ -108,7 +72,6 @@ pub struct Floods {
     pub finish_time: DateTime<Local>,
 }
 
-#[cfg(feature = "flood")]
 impl fmt::Display for Floods {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         const BYTES_PER_MB: u64 = 1024;
@@ -163,7 +126,6 @@ impl fmt::Display for Floods {
     }
 }
 
-#[cfg(feature = "flood")]
 impl Floods {
     pub(crate) fn new() -> Floods {
         Floods {
@@ -179,7 +141,6 @@ impl Floods {
     }
 }
 
-#[cfg(feature = "flood")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FloodMethods {
     Icmp,
@@ -189,7 +150,6 @@ pub enum FloodMethods {
     Udp,
 }
 
-#[cfg(feature = "flood")]
 fn ipv4_flood_thread(
     dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
@@ -228,7 +188,6 @@ fn ipv4_flood_thread(
     Ok(send_buff_size)
 }
 
-#[cfg(feature = "flood")]
 fn ipv6_flood_thread(
     dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
@@ -267,7 +226,6 @@ fn ipv6_flood_thread(
     Ok(send_buff_size)
 }
 
-#[cfg(feature = "flood")]
 fn flood(
     net_infos: Vec<NetInfo>,
     method: FloodMethods,
@@ -398,7 +356,6 @@ fn flood(
     Ok(pistol_floods)
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn flood_raw(
     net_info: NetInfo,
     method: FloodMethods,
@@ -538,7 +495,6 @@ pub(crate) fn flood_raw(
     }
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn icmp_flood(
     net_infos: Vec<NetInfo>,
     retransmit: usize,
@@ -556,7 +512,6 @@ pub(crate) fn icmp_flood(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn icmp_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
@@ -574,7 +529,6 @@ pub(crate) fn icmp_flood_raw(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn tcp_syn_flood(
     net_infos: Vec<NetInfo>,
     retransmit: usize,
@@ -592,7 +546,6 @@ pub(crate) fn tcp_syn_flood(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn tcp_syn_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
@@ -610,7 +563,6 @@ pub(crate) fn tcp_syn_flood_raw(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn tcp_ack_flood(
     net_infos: Vec<NetInfo>,
     retransmit: usize,
@@ -628,7 +580,6 @@ pub(crate) fn tcp_ack_flood(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn tcp_ack_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
@@ -646,7 +597,6 @@ pub(crate) fn tcp_ack_flood_raw(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn tcp_ack_psh_flood(
     net_infos: Vec<NetInfo>,
     retransmit: usize,
@@ -664,7 +614,6 @@ pub(crate) fn tcp_ack_psh_flood(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn tcp_ack_psh_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
@@ -682,7 +631,6 @@ pub(crate) fn tcp_ack_psh_flood_raw(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn udp_flood(
     net_infos: Vec<NetInfo>,
     retransmit: usize,
@@ -700,7 +648,6 @@ pub(crate) fn udp_flood(
     )
 }
 
-#[cfg(feature = "flood")]
 pub(crate) fn udp_flood_raw(
     net_info: NetInfo,
     retransmit: usize,
@@ -718,7 +665,6 @@ pub(crate) fn udp_flood_raw(
     )
 }
 
-#[cfg(feature = "flood")]
 #[cfg(test)]
 mod tests {
     use super::*;

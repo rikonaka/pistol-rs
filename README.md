@@ -31,8 +31,6 @@ On Windows, download `winpcap` [here](https://www.winpcap.org/install/) or `npca
 
 ## Cargo Feature Flags
 
-Since version v3.2.0, features are supported, keywords including `scan`, `ping`, `flood`, `os`, `vs`, `trace`.
-
 Sinece version v4.1.0, for Linux, add `libpcap` option when receiving data packets (originally `libpnet` only).
 
 The reason for adding this option is that when I was doing performance testing, I found that when performing port detection on a large scale, `libpnet` would have some unexpected problems. For example, on the timeline, the received packet appeared before the sent packet, causing the program to be unable to correctly match the data packets, resulting in some ports being open but `pistol` showing them as not open.
