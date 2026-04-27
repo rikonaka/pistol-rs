@@ -6,13 +6,13 @@ use thiserror::Error;
 pub enum PistolError {
     /* OS DETECT ERROR */
     #[error("not enough port value for os detect")]
-    OSDetectPortsNotEnough,
+    OsDetectPortsNotEnough,
     #[error("os detect results is null")]
-    OSDetectResultsNullError,
+    OsDetectResultsNullError,
     #[error("system time error")]
     SystemTimeError(#[from] std::time::SystemTimeError),
     #[error("os db parser error: {name}-{line}")]
-    OSDBParseError { name: String, line: String },
+    OsDbParseError { name: String, line: String },
     #[error("service probes parser error: {name}-{line}")]
     ServiceProbesParseError { name: String, line: String },
     #[error("service probes protocol unknown: {protocol}")]

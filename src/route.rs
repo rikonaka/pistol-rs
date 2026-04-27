@@ -15,6 +15,7 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::process::Command;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
@@ -22,12 +23,16 @@ use tracing::error;
 use tracing::warn;
 
 use crate::GLOBAL_NET_CACHES;
+use crate::LoopKey;
 use crate::LoopStates;
+use crate::PistolStream;
 use crate::RRequest;
 use crate::RResponse;
 use crate::SRequest;
+use crate::SendPacketInput;
 use crate::error::PistolError;
 use crate::fake_interface;
+use crate::layer::PacketFilter;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
 use crate::layer::ipv6_multicast_mac;
@@ -614,65 +619,36 @@ pub(crate) fn search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolErro
     Ok(gncs.system_network_cache.search_mac(dst_addr))
 }
 
-fn send_neighbor_detect_packet(
+fn build_neighbor_detect_packet(
     dst_addr: IpAddr,
     src_addr: IpAddr,
     interface: NetworkInterface,
-    timeout: Duration,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    rrq_id: u64,
-) -> Result<(), PistolError> {
-    fn send_neighbor_detect_packet4(
+) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+    fn build_neighbor_detect_packet4(
         dst_ipv4: Ipv4Addr,
         src_ipv4: Ipv4Addr,
         interface: NetworkInterface,
-        timeout: Duration,
-        push_rd: Sender<RRequest>,
-        push_sd: Sender<SRequest>,
-        rrq_id: u64,
-    ) -> Result<(), PistolError> {
+    ) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
         let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-        let interface_name = interface.name.clone();
         let dst_mac = MacAddr::broadcast();
         let (buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
-
-        let rrq = RRequest {
-            interface_name: interface_name.clone(),
-            id: rrq_id,
-            filters,
-            created: Instant::now(),
-            elapsed: timeout,
-        };
-        let srq = SRequest {
-            interface_name: interface_name.clone(),
+        let send_packet_input = SendPacketInput {
             dst_mac,
             src_mac,
-            eth_payload: buff,
             eth_type: EtherTypes::Arp,
+            l3_payload: buff,
+            if_name: interface.name.clone(),
             retransmit: 1,
         };
-
-        if let Err(e) = push_rd.send(rrq) {
-            warn!("send rrq error: {}", e);
-        }
-        if let Err(e) = push_sd.send(srq) {
-            warn!("send srq error: {}", e);
-        }
-        Ok(())
+        Ok((send_packet_input, filters))
     }
-    fn send_neighbor_detect_packet6(
+    fn build_neighbor_detect_packet6(
         dst_ipv6: Ipv6Addr,
         src_ipv6: Ipv6Addr,
         interface: NetworkInterface,
-        timeout: Duration,
         is_route: bool,
-        push_rd: Sender<RRequest>,
-        push_sd: Sender<SRequest>,
-        rrq_id: u64,
-    ) -> Result<(), PistolError> {
+    ) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
         let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-        let interface_name = interface.name.clone();
 
         if is_route {
             debug!(
@@ -680,29 +656,15 @@ fn send_neighbor_detect_packet(
                 dst_ipv6
             );
             let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-            let rrq = RRequest {
-                interface_name: interface_name.clone(),
-                id: rrq_id,
-                filters,
-                created: Instant::now(),
-                elapsed: timeout,
-            };
-            let srq = SRequest {
-                interface_name: interface_name.clone(),
+            let send_packet_input = SendPacketInput {
                 dst_mac,
                 src_mac,
-                eth_payload: buff,
                 eth_type: EtherTypes::Ipv6,
+                l3_payload: buff,
+                if_name: interface.name.clone(),
                 retransmit: 1,
             };
-
-            if let Err(e) = push_rd.send(rrq) {
-                warn!("send rrq error: {}", e);
-            }
-            if let Err(e) = push_sd.send(srq) {
-                warn!("send srq error: {}", e);
-            }
-            Ok(())
+            Ok((send_packet_input, filters))
         } else {
             debug!(
                 "dst {} is in local net, send NDP NS to detect the dst mac",
@@ -710,41 +672,25 @@ fn send_neighbor_detect_packet(
             );
             let dst_mac = ipv6_multicast_mac(dst_ipv6);
             let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-            let rrq = RRequest {
-                interface_name: interface_name.clone(),
-                id: rrq_id,
-                filters,
-                created: Instant::now(),
-                elapsed: timeout,
-            };
-            let srq = SRequest {
-                interface_name: interface_name.clone(),
+            let send_packet_input = SendPacketInput {
                 dst_mac,
                 src_mac,
-                eth_payload: buff,
                 eth_type: EtherTypes::Ipv6,
+                l3_payload: buff,
+                if_name: interface.name.clone(),
                 retransmit: 1,
             };
-
-            if let Err(e) = push_rd.send(rrq) {
-                warn!("send rrq error: {}", e);
-            }
-            if let Err(e) = push_sd.send(srq) {
-                warn!("send srq error: {}", e);
-            }
-            Ok(())
+            Ok((send_packet_input, filters))
         }
     }
 
     match (dst_addr, src_addr) {
-        (IpAddr::V4(dst_ipv4), IpAddr::V4(src_ipv4)) => send_neighbor_detect_packet4(
-            dst_ipv4, src_ipv4, interface, timeout, push_rd, push_sd, rrq_id,
-        ),
+        (IpAddr::V4(dst_ipv4), IpAddr::V4(src_ipv4)) => {
+            build_neighbor_detect_packet4(dst_ipv4, src_ipv4, interface)
+        }
         (IpAddr::V6(dst_ipv6), IpAddr::V6(src_ipv6)) => {
             let is_route = !dst_in_local_net(dst_addr);
-            send_neighbor_detect_packet6(
-                dst_ipv6, src_ipv6, interface, timeout, is_route, push_rd, push_sd, rrq_id,
-            )
+            build_neighbor_detect_packet6(dst_ipv6, src_ipv6, interface, is_route)
         }
         _ => Err(PistolError::IpVersionNotMatch),
     }
@@ -807,7 +753,6 @@ pub(crate) struct InferMacInput {
 
 #[derive(Debug, Clone)]
 struct InferState {
-    id: u64,
     dst_mac: MacAddr,
     route_via: Option<RouteVia>,
     interface: NetworkInterface,
@@ -823,17 +768,17 @@ pub(crate) fn infer_mac(
     inputs: Vec<InferMacInput>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
+    let mut stream = PistolStream::new();
+    let filter = Some(String::from("arp"));
+    stream.init(filter)?;
+
     let mut loop_states = LoopStates::default();
     for it in inputs {
         let src_addr = it.inferred_src_addr;
         let dst_addr = it.inferred_dst_addr;
         if src_addr.is_loopback() || dst_addr.is_loopback() {
             let state = InferState {
-                id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via: None,
                 interface: fake_interface(),
@@ -852,7 +797,6 @@ pub(crate) fn infer_mac(
                 src_interface.name, route_via
             );
             let state = InferState {
-                id: random_request_id(),
                 dst_mac: MacAddr::zero(),
                 route_via,
                 interface: src_interface.clone(),
@@ -876,8 +820,6 @@ pub(crate) fn infer_mac(
                 continue;
             }
 
-            let push_rd = push_rd.clone();
-            let push_sd = push_sd.clone();
             match state.route_via {
                 Some(route_via) => {
                     match route_via {
@@ -902,16 +844,13 @@ pub(crate) fn infer_mac(
                                     };
 
                                     let src_addr = state.src_addr;
-                                    let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        dst_addr,
-                                        src_addr,
-                                        src_interface,
-                                        timeout,
-                                        push_rd,
-                                        push_sd,
-                                        rrq_id,
-                                    )?;
+                                    let (send_packet_input, filtesr) =
+                                        build_neighbor_detect_packet(
+                                            dst_addr,
+                                            src_addr,
+                                            src_interface,
+                                        )?;
+                                    stream.send_packet(send_packet_input)?;
 
                                     state.cached = false;
                                     state.is_route = false;
@@ -940,18 +879,15 @@ pub(crate) fn infer_mac(
                                 None => {
                                     let src_addr = state.src_addr;
                                     let src_interface = state.interface.clone();
-                                    let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        via_addr,
-                                        src_addr,
-                                        src_interface,
-                                        timeout,
-                                        push_rd,
-                                        push_sd,
-                                        rrq_id,
-                                    )?;
+                                    let (send_packet_input, filters) =
+                                        build_neighbor_detect_packet(
+                                            via_addr,
+                                            src_addr,
+                                            src_interface,
+                                        )?;
 
-                                    state.id = rrq_id;
+                                    stream.send_packet(send_packet_input)?;
+
                                     state.cached = false;
                                     state.is_route = true;
                                     state.dst_addr = via_addr;
@@ -981,16 +917,12 @@ pub(crate) fn infer_mac(
                                 );
                                 let src_addr = state.src_addr;
                                 let src_interface = state.interface.clone();
-                                let rrq_id = state.id;
-                                send_neighbor_detect_packet(
+                                let (send_packet_input, filters) = build_neighbor_detect_packet(
                                     dst_addr,
                                     src_addr,
                                     src_interface,
-                                    timeout,
-                                    push_rd,
-                                    push_sd,
-                                    rrq_id,
                                 )?;
+                                stream.send_packet(send_packet_input)?;
 
                                 state.cached = false;
                                 state.is_route = false;
@@ -1024,10 +956,9 @@ pub(crate) fn infer_mac(
                                     );
 
                                     let src_addr = state.src_addr;
-                                    let rrq_id = state.id;
-                                    send_neighbor_detect_packet(
-                                        dr.via, src_addr, dr.dev, timeout, push_rd, push_sd, rrq_id,
-                                    )?;
+                                    let (send_packet_input, filters) =
+                                        build_neighbor_detect_packet(dr.via, src_addr, dr.dev)?;
+                                    stream.send_packet(send_packet_input)?;
 
                                     state.cached = false;
                                     state.is_route = false;
@@ -1048,30 +979,24 @@ pub(crate) fn infer_mac(
             break;
         }
 
-        let recv_start = Instant::now();
-        let timeout_10ms = Duration::from_millis(10);
-        loop {
-            if recv_start.elapsed() > timeout {
-                break;
-            }
-            let recv_response = match get_response.recv_timeout(timeout_10ms) {
-                Ok(r) => r,
-                Err(_e) => continue,
-            };
+        let responses = stream.get_packet(timeout)?;
 
-            for (_key, state) in &mut loop_states {
-                if state.id == recv_response.id {
-                    match parse_mac_scan_response(recv_response.data.clone()) {
-                        Some((addr, mac)) => {
-                            state.dst_mac = mac;
-                            state.rtt = recv_response.rtt;
-                            update_neighbor_cache(addr, mac, Some(recv_response.rtt))?;
+        for response in responses {
+            match parse_mac_scan_response(response) {
+                Some((addr, mac)) => {
+                    for (key, state) in loop_states {
+                        if let LoopKey::Ip(ip) = key {
+                            if ip == addr {
+                                state.dst_mac = mac;
+                                state.rtt = recv_response.rtt;
+                            }
                         }
-                        None => continue,
                     }
-                    break;
+                    update_neighbor_cache(addr, mac, Some(recv_response.rtt))?;
                 }
+                None => continue,
             }
+            break;
         }
     }
 

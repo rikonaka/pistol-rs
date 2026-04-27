@@ -52,7 +52,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv4Pool;
@@ -80,7 +79,6 @@ use crate::flood::Floods;
 use crate::layer::ETHERNET_BUFF_SIZE;
 use crate::layer::ETHERNET_HEADER_SIZE;
 use crate::layer::PacketFilter;
-use crate::layer::find_interface_by_name;
 use crate::os::OsDetect;
 use crate::os::OsDetects;
 use crate::os::dbparser::NmapOsDb;
@@ -726,6 +724,15 @@ impl fmt::Display for NetInfo {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DetectInfo {
+    inferred_src_addr: IpAddr,
+    dst_ports: Vec<u16>,
+    src_port: Option<u16>,
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+}
+
 impl NetInfo {
     fn invalid() -> Self {
         NetInfo {
@@ -743,19 +750,10 @@ impl NetInfo {
             valid: false,
         }
     }
-    fn detects(
-        inputs: Vec<NetInfoInput>,
-        push_rd: Sender<RRequest>,
-        push_sd: Sender<SRequest>,
-        get_response: Receiver<RResponse>,
-    ) -> Result<Vec<Self>, PistolError> {
-        let mut rets = Vec::new();
-        let mut inferred_src_addr_hm = HashMap::new();
-        let mut im_inputs = Vec::new();
-        let mut dst_ports_hm = HashMap::new();
-        let mut src_port_hm = HashMap::new();
-        let mut dst_addr_hm = HashMap::new();
-        let mut src_addr_hm = HashMap::new();
+    fn detects(inputs: Vec<NetInfoInput>) -> Result<Vec<Self>, PistolError> {
+        let mut infos = HashMap::new();
+        let mut infer_mac_inputs = Vec::new();
+
         for it in inputs {
             let dst_addr = it.dst_addr;
             let src_addr = it.src_addr;
@@ -769,38 +767,45 @@ impl NetInfo {
                 "inferred dst_addr({}) and src_addr({})",
                 inferred_dst_addr, inferred_src_addr
             );
-            inferred_src_addr_hm.insert(inferred_dst_addr, inferred_src_addr);
 
-            let mi = InferMacInput {
+            let infer_mac_input = InferMacInput {
                 inferred_dst_addr,
                 inferred_src_addr,
             };
-            im_inputs.push(mi);
-            dst_ports_hm.insert(inferred_dst_addr, it.dst_ports.clone());
-            src_port_hm.insert(inferred_dst_addr, it.src_port);
-            src_addr_hm.insert(inferred_dst_addr, src_addr);
-            dst_addr_hm.insert(inferred_dst_addr, dst_addr);
+
+            let state = DetectInfo {
+                inferred_src_addr,
+                dst_ports: it.dst_ports.clone(),
+                src_port: it.src_port,
+                dst_addr,
+                src_addr,
+            };
+
+            infer_mac_inputs.push(infer_mac_input);
+            infos.insert(inferred_dst_addr, state);
         }
 
         // Use a small timeout to infer mac address,
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
-        let timeout = Duration::from_secs_f32(0.5);
+        let timeout = Duration::from_millis(10);
         let max_retries = 2;
-        let imo = infer_mac(
-            im_inputs,
-            timeout,
-            max_retries,
-            push_rd,
-            push_sd,
-            get_response,
-        )?;
 
-        for (inferred_dst_addr, imo) in imo {
+        let infer_mac_outputs = infer_mac(infer_mac_inputs, timeout, max_retries)?;
+
+        let mut rets = Vec::new();
+        for (inferred_dst_addr, imo) in infer_mac_outputs {
             let inferred_dst_mac = imo.inferred_dst_mac;
-            let dst_ports = dst_ports_hm[&inferred_dst_addr].clone();
             let src_interface = imo.inferred_interface;
-            let inferred_src_addr = inferred_src_addr_hm[&inferred_dst_addr];
+
+            let info = match infos.get(&inferred_dst_addr) {
+                Some(i) => i,
+                None => continue,
+            };
+
+            let dst_ports = info.dst_ports.clone();
+            let inferred_src_addr = info.inferred_src_addr;
+
             if inferred_dst_mac == MacAddr::zero()
                 && !inferred_dst_addr.is_loopback()
                 && !inferred_src_addr.is_loopback()
@@ -824,14 +829,14 @@ impl NetInfo {
                         inferred_dst_addr, inferred_dst_mac, rtt_str
                     );
                 }
-                let src_port = src_port_hm[&inferred_dst_addr];
                 let cached = imo.cached;
                 let inferred_src_mac = src_interface
                     .mac
                     .ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+                let src_port = info.src_port;
                 let interface_name = src_interface.name.clone();
-                let dst_addr = dst_addr_hm[&inferred_dst_addr];
-                let src_addr = src_addr_hm[&inferred_dst_addr];
+                let dst_addr = info.dst_addr;
+                let src_addr = info.src_addr;
                 debug!(
                     "inferred_dst_addr({}) of dst_addr({})",
                     inferred_dst_addr, dst_addr,
@@ -867,14 +872,30 @@ struct L3Sender {
     sender_ipv6: TransportSender,
 }
 
-const MAX_HISTORY_PACKETS: usize = 10_000;
-
-struct Domain {
-    l2senders: HashMap<String, L2Sender>,
-    l3senders: HashMap<String, L3Sender>,
+struct PistolStream {
+    l2_senders: HashMap<String, L2Sender>,
+    l3_senders: HashMap<String, L3Sender>,
+    l2_cap: HashMap<String, Capture>,
 }
 
-impl Domain {
+#[derive(Debug, Clone)]
+struct SendPacketInput {
+    dst_mac: MacAddr,
+    src_mac: MacAddr,
+    eth_type: EtherType,
+    l3_payload: Arc<[u8]>,
+    if_name: String,
+    retransmit: usize,
+}
+
+impl PistolStream {
+    fn new() -> Self {
+        Self {
+            l2_senders: HashMap::new(),
+            l3_senders: HashMap::new(),
+            l2_cap: HashMap::new(),
+        }
+    }
     fn init_sender_layer2(&mut self) -> Result<(), PistolError> {
         for interface in datalink::interfaces() {
             debug!("init l2 sender for interface: {}", interface.name);
@@ -898,7 +919,7 @@ impl Domain {
             };
 
             let l2_sender = L2Sender { sender };
-            self.l2senders.insert(interface.name.clone(), l2_sender);
+            self.l2_senders.insert(interface.name.clone(), l2_sender);
         }
 
         Ok(())
@@ -917,138 +938,172 @@ impl Domain {
                 sender_ipv4: loopback_sender_ipv4,
                 sender_ipv6: loopback_sender_ipv6,
             };
-            self.l3senders.insert(interface.name.clone(), l3_sender);
+            self.l3_senders.insert(interface.name.clone(), l3_sender);
         }
         Ok(())
     }
-    fn init_receiver(
-        interface: &NetworkInterface,
-        filter: Option<String>,
-        receiver: Receiver<RRequest>,
-        push_response: Sender<RResponse>,
-    ) -> Result<(), PistolError> {
-        debug!("start receiver for interface_name: {}", interface.name);
-        let mut cap = Capture::new(&interface.name)?;
-        cap.set_timeout(10);
-        cap.set_promiscuous_mode(true);
-        // cap.set_immediate_mode(true);
-        if let Some(filter) = filter {
-            cap.set_filter(&filter);
+    fn init_receiver(&mut self, filter: Option<String>) -> Result<(), PistolError> {
+        for interface in datalink::interfaces() {
+            debug!("start receiver for interface_name: {}", interface.name);
+            let mut cap = Capture::new(&interface.name)?;
+            // 10MB
+            cap.set_buffer_size(10 * 1024 * 1024);
+            cap.set_timeout(10);
+            cap.set_promiscuous_mode(true);
+            // cap.set_immediate_mode(true);
+            if let Some(filter) = &filter {
+                cap.set_filter(filter);
+            }
+            self.l2_cap.insert(interface.name.clone(), cap);
         }
+        Ok(())
+    }
+    /// Initialize the PistolStream,
+    /// which includes initializing the layer2 sender,
+    /// layer3 sender and receiver.
+    fn init(&mut self, filter: Option<String>) -> Result<(), PistolError> {
+        self.init_sender_layer2()?;
+        self.init_sender_layer3()?;
+        self.init_receiver(filter)?;
 
-        // The history_packets is used to store recently received packets,
-        // which will be matched with new filters when they arrive.
-        // This is to avoid missing packets that arrive before filters,
-        // since libpcap will not loss any packets,
-        // we can store all received packets in memory and match them with new filters when they arrive.
-        struct HistoryPacket {
-            data: Arc<[u8]>,
-            processed: bool,
+        Ok(())
+    }
+    fn send_packet(&mut self, input: SendPacketInput) -> Result<(), PistolError> {
+        let l3_payload = input.l3_payload;
+        let dst_mac = input.dst_mac;
+        let src_mac = input.src_mac;
+        let eth_type = input.eth_type;
+        let if_name = input.if_name;
+        let retransmit = input.retransmit;
+
+        let payload_len = l3_payload.len();
+        let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
+        let mut buff = vec![0u8; ethernet_buff_len];
+        let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
+            Some(p) => p,
+            None => {
+                return Err(PistolError::BuildPacketError {
+                    location: Location::caller().to_string(),
+                });
+            }
+        };
+        ethernet_packet.set_destination(dst_mac);
+        ethernet_packet.set_source(src_mac);
+        ethernet_packet.set_ethertype(eth_type);
+        ethernet_packet.set_payload(&l3_payload);
+
+        let m = format!(
+            "dm: {}, sm: {}, et: {}, l: {}",
+            dst_mac,
+            src_mac,
+            eth_type.to_string().to_lowercase(),
+            l3_payload.len()
+        );
+        debug!(m);
+
+        if dst_mac == src_mac {
+            for (ifn, l3s) in &mut self.l3_senders {
+                if *ifn != if_name {
+                    continue;
+                }
+                let mut l3_payload = l3_payload.to_vec();
+                match eth_type {
+                    EtherTypes::Ipv4 => {
+                        let mut packet = MutableIpv4Packet::new(&mut l3_payload).ok_or(
+                            PistolError::BuildPacketError {
+                                location: Location::caller().to_string(),
+                            },
+                        )?;
+                        packet.set_source(Ipv4Addr::LOCALHOST);
+                        packet.set_destination(Ipv4Addr::LOCALHOST);
+                        for _ in 0..retransmit {
+                            l3s.sender_ipv4
+                                .send_to(&packet, Ipv4Addr::LOCALHOST.into())?;
+                        }
+                    }
+                    EtherTypes::Ipv6 => {
+                        let mut packet = MutableIpv6Packet::new(&mut l3_payload).ok_or(
+                            PistolError::BuildPacketError {
+                                location: Location::caller().to_string(),
+                            },
+                        )?;
+                        packet.set_source(Ipv6Addr::LOCALHOST);
+                        packet.set_destination(Ipv6Addr::LOCALHOST);
+                        for _ in 0..retransmit {
+                            l3s.sender_ipv6
+                                .send_to(&packet, Ipv6Addr::LOCALHOST.into())?;
+                        }
+                    }
+                    _ => {
+                        error!(
+                            "unsupported ether_type for loopback packet: {}, drop it",
+                            eth_type
+                        );
+                    }
+                }
+            }
+        } else {
+            let l3_payload_len = l3_payload.len();
+            let ethernet_buff_len = ETHERNET_HEADER_SIZE + l3_payload_len;
+            let mut buff = vec![0u8; ethernet_buff_len];
+            let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
+                Some(p) => p,
+                None => {
+                    return Err(PistolError::BuildPacketError {
+                        location: Location::caller().to_string(),
+                    });
+                }
+            };
+            ethernet_packet.set_destination(dst_mac);
+            ethernet_packet.set_source(src_mac);
+            ethernet_packet.set_ethertype(eth_type);
+            ethernet_packet.set_payload(&l3_payload);
+
+            let m = format!(
+                "dm: {}, sm: {}, et: {}, l: {}",
+                dst_mac,
+                src_mac,
+                eth_type.to_string().to_lowercase(),
+                l3_payload.len()
+            );
+
+            for (ifn, l2_sender) in &mut self.l2_senders {
+                if *ifn != if_name {
+                    continue;
+                }
+                // If retransmit is 1, it means no retransmission, just send once,
+                // and if retransmit is greater than 1, it means retransmission,
+                // send multiple times (used in flood attack).
+                for _ in 0..retransmit {
+                    if let Some(r) = l2_sender.sender.send_to(&buff, None) {
+                        match r {
+                            Ok(_) => debug!("send packet success, {}", m),
+                            Err(e) => error!("send packet error, {}, {}", m, e),
+                        }
+                    }
+                }
+            }
         }
-
-        let mut history_packets: Vec<HistoryPacket> = Vec::with_capacity(MAX_HISTORY_PACKETS);
-        let mut r_requests = HashMap::new();
-        let timeout_10ms = Duration::from_millis(10);
+        Ok(())
+    }
+    fn get_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
+        let mut matched_packets: Vec<Arc<[u8]>> = Vec::new();
+        let start = Instant::now();
         loop {
+            if start.elapsed() > timeout {
+                break;
+            }
+
             // Fetch packets first, then check if there are new filters to match,
             // this can avoid missing packets that arrive before filters.
-            for packet in cap.fetch_as_vec()? {
-                let hp = HistoryPacket {
-                    data: Arc::from(packet),
-                    processed: false,
-                };
-                history_packets.push(hp);
-            }
-
-            if history_packets.len() > MAX_HISTORY_PACKETS {
-                // remove old packets to avoid memory overflow, keep the latest MAX_HISTORY_PACKETS packets
-                history_packets =
-                    history_packets.split_off(history_packets.len() - MAX_HISTORY_PACKETS);
-            }
-
-            loop {
-                match receiver.recv_timeout(timeout_10ms) {
-                    Ok(r) => {
-                        debug!("recv rrq_id: {}", r.id);
-                        r_requests.insert(r.id, r);
-                    }
-                    Err(_) => break,
-                }
-            }
-
-            let mut drop_rrq_ids = Vec::new();
-            let mut need_drop = false;
-
-            for (rrq_id, rrq) in &r_requests {
-                for packet in &mut history_packets {
-                    if packet.processed {
-                        continue;
-                    }
-                    // Not drop any message here.
-                    let (check_rets, filter_name) = rrq.check_packet(&packet.data);
-                    if check_rets {
-                        debug!(
-                            "rrq_id matched: {}, interface_name: {}, filter_name: {}",
-                            rrq_id, interface.name, filter_name
-                        );
-                        #[cfg(feature = "debug")]
-                        debug_show_packet(&packet.data, Some(EtherTypes::Arp));
-
-                        // Send matched packet back to thread.
-                        let rtt = rrq.created.elapsed();
-                        let recv_response = RResponse {
-                            id: rrq.id,
-                            data: packet.data.clone(),
-                            rtt,
-                        };
-                        if let Err(e) = push_response.send(recv_response) {
-                            error!("receiver [{}] send response failed: {}", interface.name, e);
-                        }
-
-                        packet.processed = true;
-
-                        // Drop this rrq since it has matched a packet,
-                        // and we don't want to match multiple packets for one rrq.
-                        drop_rrq_ids.push(rrq_id.clone());
-                        need_drop = true;
-
-                        break;
-                    }
-                }
-            }
-
-            for (rrq_id, rrq) in &r_requests {
-                // Sometimes if we drop msg too quickly, as well as the sender in msg will be droped too,
-                // when worker's receiver wanna recv back packet,
-                // the 'receiving on an empty and disconnected channel' error raise,
-                // which will cause the worker can not receive matched packets back from runner,
-                // and then the worker will start next retry process, it will cause unnecessary traffic on network,
-                // so I set the timeout for each msg to be 5 times of the timeout for receiving and sending packets.
-                if rrq.created.elapsed() > rrq.elapsed * 5 {
-                    // timeout, remove this msg
-                    drop_rrq_ids.push(rrq_id.clone());
-                    need_drop = true;
-                }
-            }
-            if need_drop {
-                debug!("drop rrq ids: {:?}", drop_rrq_ids);
-                for di in drop_rrq_ids {
-                    let _droped_msg = r_requests.remove(&di);
+            for (_ifname, cap) in &mut self.l2_cap {
+                for packet in cap.fetch_as_vec()? {
+                    matched_packets.push(Arc::from(packet));
                 }
             }
         }
+        Ok(matched_packets)
     }
-    fn run() {
-        let interface_name_sender = interface_name.clone();
-        let interface_name_receiver = interface_name.clone();
-        let push_response = self.push_response.clone();
-        let _send_handle =
-            thread::spawn(move || Self::send(interface_name_sender, sm_receiver, timeout));
-        let _recv_handle =
-            thread::spawn(move || Self::recv(interface_name_receiver, rm_receiver, push_response));
-    }
-    fn send_msg() {}
-    fn recv_msg() {}
 }
 
 #[derive(Debug, Clone)]
@@ -1181,331 +1236,8 @@ impl Pistol {
         }
         Ok(())
     }
-    fn send(
-        interface_name: String,
-        receiver: Receiver<SRequest>,
-        timeout: Duration,
-    ) -> Result<(), PistolError> {
-        debug!("start sender for interface_name: {}", interface_name);
-
-        // layer2 channel
-        let config = datalink::Config {
-            write_buffer_size: ETHERNET_BUFF_SIZE,
-            read_buffer_size: ETHERNET_BUFF_SIZE,
-            read_timeout: Some(timeout),
-            write_timeout: Some(timeout),
-            channel_type: datalink::ChannelType::Layer2,
-            bpf_fd_attempts: 1000,
-            linux_fanout: None,
-            promiscuous: false,
-            socket_fd: None,
-        };
-
-        let interface = match find_interface_by_name(&interface_name) {
-            Some(i) => i,
-            None => {
-                return Err(PistolError::CanNotFoundInterface { i: interface_name });
-            }
-        };
-
-        let (mut sender, _) = match datalink::channel(&interface, config) {
-            Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => return Err(PistolError::CreateDatalinkChannelFailed),
-            Err(e) => return Err(e.into()),
-        };
-
-        // layer3 channel
-        let (mut loopback_sender_ipv4, _receiver) =
-            transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv4))?;
-        let (mut loopback_sender_ipv6, _receiver) =
-            transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv6))?;
-        let loopback_addr_ipv4 = Ipv4Addr::new(127, 0, 0, 1);
-        let loopback_addr_ipv6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
-
-        let timeout_10ms = Duration::from_millis(10);
-        loop {
-            let srq = match receiver.recv_timeout(timeout_10ms) {
-                Ok(s) => s,
-                Err(_e) => continue,
-            };
-            if srq.dst_mac == srq.src_mac {
-                // This case is for loopback interface.
-                let mut eth_payload = srq.eth_payload.to_vec();
-                match srq.eth_type {
-                    EtherTypes::Ipv4 => {
-                        let mut packet = MutableIpv4Packet::new(&mut eth_payload).ok_or(
-                            PistolError::BuildPacketError {
-                                location: Location::caller().to_string(),
-                            },
-                        )?;
-                        packet.set_source(loopback_addr_ipv4);
-                        packet.set_destination(loopback_addr_ipv4);
-                        loopback_sender_ipv4.send_to(packet, loopback_addr_ipv4.into())?;
-                    }
-                    EtherTypes::Ipv6 => {
-                        let mut packet = MutableIpv6Packet::new(&mut eth_payload).ok_or(
-                            PistolError::BuildPacketError {
-                                location: Location::caller().to_string(),
-                            },
-                        )?;
-                        packet.set_source(loopback_addr_ipv6);
-                        packet.set_destination(loopback_addr_ipv6);
-                        loopback_sender_ipv6.send_to(packet, loopback_addr_ipv6.into())?;
-                    }
-                    _ => {
-                        error!(
-                            "unsupported ether_type for loopback packet: {}, drop it",
-                            srq.eth_type
-                        );
-                    }
-                };
-            } else {
-                let payload = srq.eth_payload;
-                let dst_mac = srq.dst_mac;
-                let src_mac = srq.src_mac;
-                let ether_type = srq.eth_type;
-                let retransmit = srq.retransmit;
-
-                let payload_len = payload.len();
-                let ethernet_buff_len = ETHERNET_HEADER_SIZE + payload_len;
-                let mut buff = vec![0u8; ethernet_buff_len];
-                let mut ethernet_packet = match MutableEthernetPacket::new(&mut buff) {
-                    Some(p) => p,
-                    None => {
-                        return Err(PistolError::BuildPacketError {
-                            location: Location::caller().to_string(),
-                        });
-                    }
-                };
-                ethernet_packet.set_destination(dst_mac);
-                ethernet_packet.set_source(src_mac);
-                ethernet_packet.set_ethertype(ether_type);
-                ethernet_packet.set_payload(&payload);
-
-                let m = format!(
-                    "dm: {}, sm: {}, et: {}, l: {}",
-                    dst_mac,
-                    src_mac,
-                    ether_type.to_string().to_lowercase(),
-                    payload.len()
-                );
-
-                // If retransmit is 1, it means no retransmission, just send once,
-                // and if retransmit is greater than 1, it means retransmission,
-                // send multiple times (used in flood attack).
-                for _ in 0..retransmit {
-                    if let Some(r) = sender.send_to(&buff, None) {
-                        match r {
-                            Ok(_) => debug!("send packet success, {}", m),
-                            Err(e) => error!("send packet error, {}, {}", m, e),
-                        }
-                    }
-                }
-            }
-        }
-    }
-    fn recv(
-        interface_name: String,
-        receiver: Receiver<RRequest>,
-        push_response: Sender<RResponse>,
-    ) -> Result<(), PistolError> {
-        debug!("start receiver for interface_name: {}", interface_name);
-        let mut cap = Capture::new(&interface_name)?;
-        cap.set_timeout(10);
-        cap.set_promiscuous_mode(true);
-        // cap.set_immediate_mode(true);
-
-        // The history_packets is used to store recently received packets,
-        // which will be matched with new filters when they arrive.
-        // This is to avoid missing packets that arrive before filters,
-        // since libpcap will not loss any packets,
-        // we can store all received packets in memory and match them with new filters when they arrive.
-        struct HistoryPacket {
-            data: Arc<[u8]>,
-            processed: bool,
-        }
-
-        let mut history_packets: Vec<HistoryPacket> = Vec::with_capacity(MAX_HISTORY_PACKETS);
-        let mut r_requests = HashMap::new();
-        let timeout_10ms = Duration::from_millis(10);
-        loop {
-            // Fetch packets first, then check if there are new filters to match,
-            // this can avoid missing packets that arrive before filters.
-            for packet in cap.fetch_as_vec()? {
-                let hp = HistoryPacket {
-                    data: Arc::from(packet),
-                    processed: false,
-                };
-                history_packets.push(hp);
-            }
-
-            if history_packets.len() > MAX_HISTORY_PACKETS {
-                // remove old packets to avoid memory overflow, keep the latest MAX_HISTORY_PACKETS packets
-                history_packets =
-                    history_packets.split_off(history_packets.len() - MAX_HISTORY_PACKETS);
-            }
-
-            loop {
-                match receiver.recv_timeout(timeout_10ms) {
-                    Ok(r) => {
-                        debug!("recv rrq_id: {}", r.id);
-                        r_requests.insert(r.id, r);
-                    }
-                    Err(_) => break,
-                }
-            }
-
-            let mut drop_rrq_ids = Vec::new();
-            let mut need_drop = false;
-
-            for (rrq_id, rrq) in &r_requests {
-                for packet in &mut history_packets {
-                    if packet.processed {
-                        continue;
-                    }
-                    // Not drop any message here.
-                    let (check_rets, filter_name) = rrq.check_packet(&packet.data);
-                    if check_rets {
-                        debug!(
-                            "rrq_id matched: {}, interface_name: {}, filter_name: {}",
-                            rrq_id, interface_name, filter_name
-                        );
-                        #[cfg(feature = "debug")]
-                        debug_show_packet(&packet.data, Some(EtherTypes::Arp));
-
-                        // Send matched packet back to thread.
-                        let rtt = rrq.created.elapsed();
-                        let recv_response = RResponse {
-                            id: rrq.id,
-                            data: packet.data.clone(),
-                            rtt,
-                        };
-                        if let Err(e) = push_response.send(recv_response) {
-                            error!("receiver [{}] send response failed: {}", interface_name, e);
-                        }
-
-                        packet.processed = true;
-
-                        // Drop this rrq since it has matched a packet,
-                        // and we don't want to match multiple packets for one rrq.
-                        drop_rrq_ids.push(rrq_id.clone());
-                        need_drop = true;
-
-                        break;
-                    }
-                }
-            }
-
-            for (rrq_id, rrq) in &r_requests {
-                // Sometimes if we drop msg too quickly, as well as the sender in msg will be droped too,
-                // when worker's receiver wanna recv back packet,
-                // the 'receiving on an empty and disconnected channel' error raise,
-                // which will cause the worker can not receive matched packets back from runner,
-                // and then the worker will start next retry process, it will cause unnecessary traffic on network,
-                // so I set the timeout for each msg to be 5 times of the timeout for receiving and sending packets.
-                if rrq.created.elapsed() > rrq.elapsed * 5 {
-                    // timeout, remove this msg
-                    drop_rrq_ids.push(rrq_id.clone());
-                    need_drop = true;
-                }
-            }
-            if need_drop {
-                debug!("drop rrq ids: {:?}", drop_rrq_ids);
-                for di in drop_rrq_ids {
-                    let _droped_msg = r_requests.remove(&di);
-                }
-            }
-        }
-    }
-    /// Start sender and receiver for the given interface name,
-    /// and connect them with the domain through channels.
-    fn start_sr(
-        &self,
-        timeout: Duration,
-        interface_name: String,
-        sm_receiver: Receiver<SRequest>,
-        rm_receiver: Receiver<RRequest>,
-    ) {
-        let interface_name_sender = interface_name.clone();
-        let interface_name_receiver = interface_name.clone();
-        let push_response = self.push_response.clone();
-        let _send_handle =
-            thread::spawn(move || Self::send(interface_name_sender, sm_receiver, timeout));
-        let _recv_handle =
-            thread::spawn(move || Self::recv(interface_name_receiver, rm_receiver, push_response));
-    }
-    /// The domain is used to distribute the send and receive requests
-    /// to the corresponding sender and receiver according to the interface name in the request.
-    fn domain(
-        &self,
-        get_rd: Receiver<RRequest>,
-        get_sd: Receiver<SRequest>,
-    ) -> Result<(), PistolError> {
-        let to_receivers = self.to_receivers.clone();
-        let push_senders = self.push_senders.clone();
-        let timeout_5ms = Duration::from_millis(5);
-        let _domain_handle_1 = thread::spawn(move || {
-            loop {
-                match get_rd.recv_timeout(timeout_5ms) {
-                    Ok(r) => {
-                        debug!("domain switch rd interface name: {}", r.interface_name);
-                        if r.interface_name.trim().len() == 0 {
-                            error!(
-                                "pistol domain receive recv msg with empty interface name, drop it"
-                            );
-                            continue;
-                        }
-                        let sender = to_receivers[&r.interface_name].clone();
-                        if let Err(e) = sender.send(r) {
-                            error!("pistol domain distribute recv msg failed: {}", e)
-                        }
-                    }
-                    Err(_e) => (),
-                }
-            }
-        });
-        let _domain_handle_2 = thread::spawn(move || {
-            loop {
-                match get_sd.recv_timeout(timeout_5ms) {
-                    Ok(s) => {
-                        debug!("domain switch sd interface name: {}", s.interface_name);
-                        if s.interface_name.trim().len() == 0 {
-                            error!(
-                                "pistol domain receive send msg with empty interface name, drop it"
-                            );
-                            continue;
-                        }
-                        let sender = push_senders[&s.interface_name].clone();
-                        if let Err(e) = sender.send(s) {
-                            error!("pistol domain distribute send msg failed: {}", e)
-                        }
-                    }
-                    Err(_e) => (),
-                }
-            }
-        });
-        Ok(())
-    }
-    /// Initialize domain and multiple runners for multiple targets without source address info.
-    /// For mac scan like function which does not need mac info.
-    fn init_domain_without_net_infos(&mut self) -> Result<(), PistolError> {
-        self.init_logger()?;
-        for ni in interfaces() {
-            let (sm_sender, sm_receiver) = unbounded::<SRequest>();
-            let (rm_sender, rm_receiver) = unbounded::<RRequest>();
-            self.push_senders.insert(ni.name.clone(), sm_sender);
-            self.to_receivers.insert(ni.name.clone(), rm_sender);
-            self.start_sr(self.timeout, ni.name, sm_receiver, rm_receiver);
-        }
-
-        let get_rd = self.get_rd.clone();
-        let get_sd = self.get_sd.clone();
-        self.domain(get_rd, get_sd)?;
-
-        Ok(())
-    }
     /// Initialize domain and multiple runners for multiple targets.
-    fn init_domain(
+    fn get_netinfo(
         &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
@@ -1513,21 +1245,6 @@ impl Pistol {
     ) -> Result<(Vec<NetInfo>, Duration), PistolError> {
         self.init_logger()?;
         let now = Instant::now();
-        // start runners and listen on all interfaces,
-        // since we don't know which interface will be used for each target,
-        // we need to listen on all interfaces.
-        for i in interfaces() {
-            let (s_s_msg, r_s_msg) = unbounded::<SRequest>();
-            let (s_r_msg, r_r_msg) = unbounded::<RRequest>();
-            self.push_senders.insert(i.name.clone(), s_s_msg);
-            self.to_receivers.insert(i.name.clone(), s_r_msg);
-            self.start_sr(self.timeout, i.name, r_s_msg, r_r_msg);
-        }
-
-        let get_rd = self.get_rd.clone();
-        let get_sd = self.get_sd.clone();
-        self.domain(get_rd, get_sd)?;
-
         let mut net_info_inputs = Vec::new();
         for t in targets {
             let dst_addr = t.addr;
@@ -1541,11 +1258,7 @@ impl Pistol {
             net_info_inputs.push(input);
         }
 
-        let push_rd = self.push_rd.clone();
-        let push_sd = self.push_sd.clone();
-        let get_response = self.get_response.clone();
-
-        let net_infos = NetInfo::detects(net_info_inputs, push_rd, push_sd, get_response)?;
+        let net_infos = NetInfo::detects(net_info_inputs)?;
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
@@ -1558,21 +1271,6 @@ impl Pistol {
     ) -> Result<(NetInfo, Duration), PistolError> {
         self.init_logger()?;
         let now = Instant::now();
-        // start runners and listen on all interfaces,
-        // since we don't know which interface will be used for each target,
-        // we need to listen on all interfaces.
-        for ni in interfaces() {
-            let (sm_sender, sm_receiver) = unbounded::<SRequest>();
-            let (rm_sender, rm_receiver) = unbounded::<RRequest>();
-            self.push_senders.insert(ni.name.clone(), sm_sender);
-            self.to_receivers.insert(ni.name.clone(), rm_sender);
-            self.start_sr(self.timeout, ni.name, sm_receiver, rm_receiver);
-        }
-
-        let get_rd = self.get_rd.clone();
-        let get_sd = self.get_sd.clone();
-        self.domain(get_rd, get_sd)?;
-
         let input = NetInfoInput {
             dst_addr,
             dst_ports,
@@ -1580,12 +1278,7 @@ impl Pistol {
             src_port,
         };
 
-        let push_rd = self.push_rd.clone();
-        let push_sd = self.push_sd.clone();
-        let get_response = self.get_response.clone();
-
-        let net_infos = NetInfo::detects(vec![input], push_rd, push_sd, get_response)?;
-
+        let net_infos = NetInfo::detects(vec![input])?;
         if net_infos.len() > 0 {
             Ok((net_infos[0].clone(), now.elapsed()))
         } else {
@@ -1646,7 +1339,6 @@ impl Pistol {
     /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.071 seconds (123.61 hosts/sec). 4 responded
     /// ```
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
-        self.init_domain_without_net_infos()?;
         scan::mac_scan(
             targets,
             self.timeout,
@@ -1663,7 +1355,6 @@ impl Pistol {
         &mut self,
         dst_ipv4: Ipv4Addr,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        self.init_domain_without_net_infos()?;
         scan::arp_scan_raw(
             dst_ipv4,
             self.timeout,
@@ -1681,7 +1372,6 @@ impl Pistol {
         &mut self,
         dst_ipv6: Ipv6Addr,
     ) -> Result<(Option<MacAddr>, Duration), PistolError> {
-        self.init_domain_without_net_infos()?;
         scan::ndp_ns_scan_raw(
             dst_ipv6,
             self.timeout,
@@ -1705,7 +1395,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_ack_scan(
             net_infos,
             self.timeout,
@@ -1843,7 +1533,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan(
             net_infos,
             self.timeout,
@@ -1891,7 +1581,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan(
             net_infos,
             self.timeout,
@@ -1940,7 +1630,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan(
             net_infos,
             self.timeout,
@@ -1995,7 +1685,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan(
             net_infos,
             self.timeout,
@@ -2045,7 +1735,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan(
             net_infos,
             self.timeout,
@@ -2093,7 +1783,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan(
             net_infos,
             self.timeout,
@@ -2146,7 +1836,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::udp_scan(
             net_infos,
             self.timeout,
@@ -2208,7 +1898,7 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_address_mask_ping(
             net_infos,
             self.timeout,
@@ -2262,7 +1952,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_echo_ping(
             net_infos,
             self.timeout,
@@ -2318,7 +2008,7 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_timestamp_ping(
             net_infos,
             self.timeout,
@@ -2399,7 +2089,7 @@ impl Pistol {
             Some(ipv6) => Some(IpAddr::V6(ipv6)),
             None => None,
         };
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::icmpv6_ping(
             net_infos,
             self.timeout,
@@ -2421,7 +2111,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::tcp_ack_ping(
             net_infos,
             self.timeout,
@@ -2467,7 +2157,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::tcp_syn_ping(
             net_infos,
             self.timeout,
@@ -2513,7 +2203,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::udp_ping(
             net_infos,
             self.timeout,
@@ -2638,7 +2328,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::icmp_flood(
             net_infos,
             retransmit,
@@ -2686,7 +2376,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::tcp_ack_flood(
             net_infos,
             retransmit,
@@ -2737,7 +2427,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::tcp_ack_psh_flood(
             net_infos,
             retransmit,
@@ -2786,7 +2476,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::tcp_syn_flood(
             net_infos,
             retransmit,
@@ -2830,7 +2520,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::udp_flood(
             net_infos,
             retransmit,
@@ -2879,7 +2569,7 @@ impl Pistol {
         threads: usize,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
-        let (net_infos, dur) = self.init_domain(targets, None, None)?;
+        let (net_infos, dur) = self.get_netinfo(targets, None, None)?;
         let mut ret = os::os_detect(
             net_infos,
             threads,
@@ -3126,7 +2816,7 @@ mod tests {
     fn test_net_info_detect() {
         let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let mut pistol = Pistol::new();
-        let (net_infos, cost) = pistol.init_domain(&targets, None, None).unwrap();
+        let (net_infos, cost) = pistol.get_netinfo(&targets, None, None).unwrap();
         println!(
             "net_infos len: {}, cost: {:.2}s",
             net_infos.len(),

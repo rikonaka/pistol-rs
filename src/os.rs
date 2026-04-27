@@ -448,7 +448,7 @@ pub fn os_detect(
                         );
                         os_detect_ret
                     } else {
-                        Err(PistolError::OSDetectPortsNotEnough)
+                        Err(PistolError::OsDetectPortsNotEnough)
                     };
                     let od = match detect_rets {
                         Ok(Some((fingerprint, detects))) => {
@@ -514,7 +514,7 @@ pub fn os_detect(
                         );
                         os_detect_ret
                     } else {
-                        Err(PistolError::OSDetectPortsNotEnough)
+                        Err(PistolError::OsDetectPortsNotEnough)
                     };
                     let od = match detect_rets {
                         Ok((fingerprint, detects)) => {

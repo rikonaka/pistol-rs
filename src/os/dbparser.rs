@@ -763,7 +763,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                             name.to_string()
                         }
                         None => {
-                            return Err(PistolError::OSDBParseError {
+                            return Err(PistolError::OsDbParseError {
                                 name: String::from("Fingerprint"),
                                 line,
                             });
@@ -795,7 +795,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 class_push(class4);
                                 Ok(class)
                             }
-                            None => Err(PistolError::OSDBParseError {
+                            None => Err(PistolError::OsDbParseError {
                                 name: String::from("Class"),
                                 line,
                             }),
@@ -809,7 +809,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(cpe.to_string())
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: String::from("CPE"),
                                     line,
                                 });
@@ -854,7 +854,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(seq)
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: String::from("SEQ"),
                                     line,
                                 });
@@ -893,7 +893,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(ops)
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: String::from("OPS"),
                                     line,
                                 });
@@ -932,7 +932,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(win)
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: String::from("WIN"),
                                     line,
                                 });
@@ -974,7 +974,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(ecn)
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: String::from("ECN"),
                                     line,
                                 });
@@ -1025,7 +1025,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(txdb)
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: format!("TX"),
                                     line,
                                 });
@@ -1076,7 +1076,7 @@ pub fn nmap_os_db_parser(lines: Vec<String>) -> Result<Vec<NmapOsDb>, PistolErro
                                 Ok(u1)
                             }
                             None => {
-                                return Err(PistolError::OSDBParseError {
+                                return Err(PistolError::OsDbParseError {
                                     name: format!("U1"),
                                     line,
                                 });
