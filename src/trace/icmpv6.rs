@@ -1,3 +1,4 @@
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -14,6 +15,7 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
 
+use crate::SendPacketInput;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
@@ -28,12 +30,15 @@ use crate::trace::HopStatus;
 const ICMPV6_DATA_SIZE: usize = 32;
 
 pub(crate) fn build_icmpv6_trace_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    if_name: String,
     hop_limit: u8,
     icmpv6_id: u16,
     seq: u16,
-) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -126,12 +131,20 @@ pub(crate) fn build_icmpv6_trace_packet(
     let filter_2 = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
 
     let ipv6_buff = Arc::new(ipv6_buff);
-    Ok((ipv6_buff, vec![filter_1, filter_2]))
+
+    let send_packet_input = SendPacketInput {
+        dst_mac,
+        src_mac,
+        eth_type: EtherTypes::Ipv6,
+        l3_payload: ipv6_buff.clone(),
+        if_name,
+        retransmit: 1,
+    };
+
+    Ok((send_packet_input, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_icmpv6_trace_response(
-    eth_response: Arc<[u8]>,
-) -> Result<HopStatus, PistolError> {
+pub(crate) fn parse_icmpv6_trace_response(eth_response: &[u8]) -> Result<HopStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {

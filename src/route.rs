@@ -1,5 +1,3 @@
-use crossbeam::channel::Receiver;
-use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
@@ -17,7 +15,6 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 use tracing::debug;
 use tracing::error;
 use tracing::warn;
@@ -26,9 +23,6 @@ use crate::GLOBAL_NET_CACHES;
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::PistolStream;
-use crate::RRequest;
-use crate::RResponse;
-use crate::SRequest;
 use crate::SendPacketInput;
 use crate::error::PistolError;
 use crate::fake_interface;
@@ -40,7 +34,7 @@ use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::scan::ndp_rs::build_ndp_ra_scan_packet;
 use crate::scan::parse_mac_scan_response;
-use crate::utils::random_request_id;
+use crate::update_neighbor_cache;
 
 #[cfg(any(
     target_os = "linux",
@@ -56,21 +50,6 @@ fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
         }
     }
     None
-}
-
-fn update_neighbor_cache(
-    addr: IpAddr,
-    mac: MacAddr,
-    rtt: Option<Duration>,
-) -> Result<(), PistolError> {
-    // release the lock when leaving the function
-    let mut gncs = GLOBAL_NET_CACHES
-        .lock()
-        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-    gncs.system_network_cache
-        .update_neighbor_cache(addr, mac, rtt);
-    debug!("update neighbor cache finish: {:?}", (*gncs));
-    Ok(())
 }
 
 fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
@@ -742,7 +721,6 @@ pub(crate) struct InferMacOutput {
     pub(crate) inferred_dst_mac: MacAddr,
     pub(crate) inferred_interface: NetworkInterface,
     pub(crate) cached: bool,
-    pub(crate) rtt: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -758,7 +736,6 @@ struct InferState {
     interface: NetworkInterface,
     src_addr: IpAddr,
     cached: bool,
-    rtt: Duration,
     is_route: bool,
     dst_addr: IpAddr,
     retries: usize,
@@ -784,7 +761,6 @@ pub(crate) fn infer_mac(
                 interface: fake_interface(),
                 src_addr,
                 cached: true,
-                rtt: Duration::ZERO,
                 is_route: false,
                 dst_addr,
                 retries: 0,
@@ -802,7 +778,6 @@ pub(crate) fn infer_mac(
                 interface: src_interface.clone(),
                 src_addr,
                 cached: false,
-                rtt: Duration::ZERO,
                 is_route: false,
                 dst_addr,
                 retries: 0,
@@ -814,6 +789,7 @@ pub(crate) fn infer_mac(
     // Get mac of via address if its on cache or send packet to get it if not cached,
     // and store the receiver for waiting response in the next step.
     loop {
+        let mut all_filters = Vec::new();
         let mut all_done = true;
         for (_key, state) in &mut loop_states {
             if state.retries >= max_retries {
@@ -844,13 +820,13 @@ pub(crate) fn infer_mac(
                                     };
 
                                     let src_addr = state.src_addr;
-                                    let (send_packet_input, filtesr) =
-                                        build_neighbor_detect_packet(
-                                            dst_addr,
-                                            src_addr,
-                                            src_interface,
-                                        )?;
-                                    stream.send_packet(send_packet_input)?;
+                                    let (spi, filters) = build_neighbor_detect_packet(
+                                        dst_addr,
+                                        src_addr,
+                                        src_interface,
+                                    )?;
+                                    all_filters.extend(filters);
+                                    stream.send_packet(spi)?;
 
                                     state.cached = false;
                                     state.is_route = false;
@@ -879,14 +855,13 @@ pub(crate) fn infer_mac(
                                 None => {
                                     let src_addr = state.src_addr;
                                     let src_interface = state.interface.clone();
-                                    let (send_packet_input, filters) =
-                                        build_neighbor_detect_packet(
-                                            via_addr,
-                                            src_addr,
-                                            src_interface,
-                                        )?;
-
-                                    stream.send_packet(send_packet_input)?;
+                                    let (spi, filters) = build_neighbor_detect_packet(
+                                        via_addr,
+                                        src_addr,
+                                        src_interface,
+                                    )?;
+                                    all_filters.extend(filters);
+                                    stream.send_packet(spi)?;
 
                                     state.cached = false;
                                     state.is_route = true;
@@ -917,12 +892,13 @@ pub(crate) fn infer_mac(
                                 );
                                 let src_addr = state.src_addr;
                                 let src_interface = state.interface.clone();
-                                let (send_packet_input, filters) = build_neighbor_detect_packet(
+                                let (spi, filters) = build_neighbor_detect_packet(
                                     dst_addr,
                                     src_addr,
                                     src_interface,
                                 )?;
-                                stream.send_packet(send_packet_input)?;
+                                all_filters.extend(filters);
+                                stream.send_packet(spi)?;
 
                                 state.cached = false;
                                 state.is_route = false;
@@ -956,9 +932,10 @@ pub(crate) fn infer_mac(
                                     );
 
                                     let src_addr = state.src_addr;
-                                    let (send_packet_input, filters) =
+                                    let (spi, filters) =
                                         build_neighbor_detect_packet(dr.via, src_addr, dr.dev)?;
-                                    stream.send_packet(send_packet_input)?;
+                                    all_filters.extend(filters);
+                                    stream.send_packet(spi)?;
 
                                     state.cached = false;
                                     state.is_route = false;
@@ -979,24 +956,29 @@ pub(crate) fn infer_mac(
             break;
         }
 
-        let responses = stream.get_packet(timeout)?;
+        let response = stream.recv_packet(timeout)?;
 
-        for response in responses {
-            match parse_mac_scan_response(response) {
-                Some((addr, mac)) => {
-                    for (key, state) in loop_states {
-                        if let LoopKey::Ip(ip) = key {
-                            if ip == addr {
-                                state.dst_mac = mac;
-                                state.rtt = recv_response.rtt;
+        for r in &response {
+            for f in &all_filters {
+                // make sure the response is we want
+                if f.check(r) {
+                    match parse_mac_scan_response(r) {
+                        Some((addr, mac)) => {
+                            for (key, state) in &mut loop_states {
+                                if let LoopKey::Ip(ip) = key {
+                                    if *ip == addr {
+                                        state.dst_mac = mac;
+                                        break;
+                                    }
+                                }
                             }
+                            update_neighbor_cache(addr, mac)?;
                         }
+                        None => continue,
                     }
-                    update_neighbor_cache(addr, mac, Some(recv_response.rtt))?;
+                    break;
                 }
-                None => continue,
             }
-            break;
         }
     }
 
@@ -1006,12 +988,10 @@ pub(crate) fn infer_mac(
         let inferred_dst_mac = state.dst_mac;
         let inferred_interface = state.interface;
         let cached = state.cached;
-        let rtt = state.rtt;
         let output = InferMacOutput {
             inferred_dst_mac,
             inferred_interface,
             cached,
-            rtt,
         };
         rets.insert(dst_addr, output);
     }
@@ -1665,18 +1645,12 @@ impl Neighbors {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct Neighbor {
-    pub(crate) mac: MacAddr,
-    pub(crate) rtt: Option<Duration>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SystemNetCache {
     pub(crate) default_route: Option<DefaultRoute>,
     pub(crate) default_route6: Option<DefaultRoute>,
     pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
-    pub(crate) neighbors: HashMap<IpAddr, Neighbor>,
+    pub(crate) neighbors: HashMap<IpAddr, MacAddr>,
 }
 
 impl fmt::Display for SystemNetCache {
@@ -1703,7 +1677,7 @@ impl fmt::Display for SystemNetCache {
 
         let mut neighbor = Vec::new();
         for (k, v) in &self.neighbors {
-            neighbor.push(format!("{}({})", k, v.mac));
+            neighbor.push(format!("{}({})", k, v));
         }
         let neighbor_string = format!("neighbor cache: {}", neighbor.join(","));
         output.push(neighbor_string);
@@ -1718,7 +1692,7 @@ impl SystemNetCache {
         let neighbors = Neighbors::init()?;
         let mut fix_neighbors = HashMap::new();
         for (&k, &v) in &neighbors {
-            fix_neighbors.insert(k, Neighbor { mac: v, rtt: None });
+            fix_neighbors.insert(k, v);
         }
         debug!("neighbor cache: {:?}", neighbors);
         let snc = SystemNetCache {
@@ -1731,21 +1705,15 @@ impl SystemNetCache {
     }
     pub(crate) fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
         match self.neighbors.get(&ip) {
-            Some(&m) => {
-                debug!("search neighbor cache hit: ip {}, mac {}", ip, m.mac);
-                Some(m.mac)
+            Some(&mac) => {
+                debug!("search neighbor cache hit: ip {}, mac {}", ip, mac);
+                Some(mac)
             }
             None => None,
         }
     }
-    pub(crate) fn update_neighbor_cache(
-        &mut self,
-        ip: IpAddr,
-        mac: MacAddr,
-        rtt: Option<Duration>,
-    ) {
-        let neighbor = Neighbor { mac, rtt };
-        self.neighbors.insert(ip, neighbor);
+    pub(crate) fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
+        self.neighbors.insert(ip, mac);
         debug!("update the neigh cache done: {:?}", self.neighbors);
     }
     pub(crate) fn search_route_table(&self, dst_addr: IpAddr) -> Option<RouteInfo> {

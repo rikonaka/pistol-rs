@@ -24,7 +24,6 @@ use std::net::TcpStream;
 use std::panic::Location;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
@@ -139,7 +138,7 @@ pub(crate) fn build_syn_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_syn_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_syn_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -275,7 +274,7 @@ pub(crate) fn build_fin_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_fin_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_fin_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -412,7 +411,7 @@ pub(crate) fn build_ack_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_ack_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_ack_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -545,7 +544,7 @@ pub(crate) fn build_null_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_null_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_null_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -679,7 +678,7 @@ pub(crate) fn build_xmas_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_xmas_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_xmas_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -812,9 +811,7 @@ pub(crate) fn build_window_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_window_scan_response(
-    eth_response: Arc<[u8]>,
-) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_window_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -952,9 +949,7 @@ pub(crate) fn build_maimon_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_maimon_scan_response(
-    eth_response: Arc<[u8]>,
-) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_maimon_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
@@ -1003,15 +998,14 @@ pub(crate) fn send_connect_scan_packet(
     dst_addr: IpAddr,
     dst_port: u16,
     timeout: Duration,
-) -> Result<(PortStatus, Duration), PistolError> {
-    let start = Instant::now();
+) -> Result<PortStatus, PistolError> {
     let addr = match dst_addr {
         IpAddr::V4(dst_ipv4) => SocketAddr::V4(SocketAddrV4::new(dst_ipv4, dst_port)),
         IpAddr::V6(dst_ipv6) => SocketAddr::V6(SocketAddrV6::new(dst_ipv6, dst_port, 0, 0)),
     };
     match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(_) => Ok((PortStatus::Open, start.elapsed())),
-        Err(_) => Ok((PortStatus::Closed, start.elapsed())),
+        Ok(_) => Ok(PortStatus::Open),
+        Err(_) => Ok(PortStatus::Closed),
     }
 }
 

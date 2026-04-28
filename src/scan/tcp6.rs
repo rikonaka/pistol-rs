@@ -127,7 +127,7 @@ pub(crate) fn build_syn_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_syn_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_syn_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -258,7 +258,7 @@ pub(crate) fn build_fin_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_fin_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_fin_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -389,7 +389,7 @@ pub(crate) fn build_ack_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_ack_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_ack_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -517,7 +517,7 @@ pub(crate) fn build_null_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_null_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_null_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -645,7 +645,7 @@ pub(crate) fn build_xmas_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_xmas_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_xmas_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
         Icmpv6Code(3), // address unreachable
@@ -774,7 +774,7 @@ pub(crate) fn send_window_scan_packet(
 }
 
 pub(crate) fn parse_window_scan_response(
-    eth_response: Arc<[u8]>,
+    eth_response: &[u8],
 ) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited
@@ -909,7 +909,7 @@ pub(crate) fn build_maimon_scan_packet(
 }
 
 pub(crate) fn parse_maimon_scan_response(
-    eth_response: Arc<[u8]>,
+    eth_response: &[u8],
 ) -> Result<PortStatus, PistolError> {
     let codes = vec![
         Icmpv6Code(1), // communication with destination administratively prohibited

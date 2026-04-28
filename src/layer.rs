@@ -890,6 +890,41 @@ impl PacketFilter {
             PacketFilter::Layer4FilterIcmpv6(icmpv6) => icmpv6.name.clone(),
         }
     }
+    pub(crate) fn tcp_udp_ip_port(&self) -> Option<(IpAddr, u16)> {
+        match self {
+            PacketFilter::Layer4FilterTcpUdp(tcp_udp) => {
+                if let Some(layer3) = &tcp_udp.layer3 {
+                    if let Some(src_port) = tcp_udp.src_port {
+                        if let Some(src_addr) = layer3.src_addr {
+                            return Some((src_addr, src_port));
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+        None
+    }
+    pub(crate) fn icmp_ip(&self) -> Option<IpAddr> {
+        match self {
+            PacketFilter::Layer4FilterIcmp(icmp) => {
+                if let Some(layer3) = &icmp.layer3 {
+                    if let Some(src_addr) = layer3.src_addr {
+                        return Some(src_addr);
+                    }
+                }
+            }
+            PacketFilter::Layer4FilterIcmpv6(icmpv6) => {
+                if let Some(layer3) = &icmpv6.layer3 {
+                    if let Some(src_addr) = layer3.src_addr {
+                        return Some(src_addr);
+                    }
+                }
+            }
+            _ => (),
+        }
+        None
+    }
 }
 
 pub(crate) fn ipv6_multicast_mac(ip: Ipv6Addr) -> MacAddr {

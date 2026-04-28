@@ -115,7 +115,7 @@ pub(crate) fn build_udp_scan_packet(
     Ok((ip_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_udp_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_udp_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes_1 = vec![
         destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
     ];

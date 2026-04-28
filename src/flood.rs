@@ -263,7 +263,7 @@ fn flood(
 
                         let tx = tx.clone();
                         let push_sd = push_sd.clone();
-                        let interface_name = ni.interface_name.clone();
+                        let interface_name = ni.if_name.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv4_flood_thread(
@@ -309,7 +309,7 @@ fn flood(
 
                         let tx = tx.clone();
                         let push_sd = push_sd.clone();
-                        let interface_name = ni.interface_name.clone();
+                        let interface_name = ni.if_name.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv6_flood_thread(
@@ -406,7 +406,7 @@ pub(crate) fn flood_raw(
                             udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
                         }
                     };
-                    let interface_name = net_info.interface_name.clone();
+                    let interface_name = net_info.if_name.clone();
                     let srq = SRequest {
                         interface_name,
                         dst_mac,
@@ -467,7 +467,7 @@ pub(crate) fn flood_raw(
                         }
                     };
 
-                    let interface_name = net_info.interface_name.clone();
+                    let interface_name = net_info.if_name.clone();
                     let srq = SRequest {
                         interface_name,
                         dst_mac,

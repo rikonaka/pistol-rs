@@ -1,3 +1,4 @@
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -17,6 +18,7 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::sync::Arc;
 
+use crate::SendPacketInput;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -39,13 +41,16 @@ const SACK_PERM_SIZE: usize = 2;
 const TCP_OPTIONS_SIZE: usize = MSS_SIZE + SACK_PERM_SIZE + TIMESTAMP_SIZE + NOP_SIZE + WSCALE_SIZE;
 
 pub(crate) fn build_syn_trace_packet(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    if_name: String,
     ip_id: u16,
     ttl: u8,
-) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
@@ -141,10 +146,20 @@ pub(crate) fn build_syn_trace_packet(
     let filter_2 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
 
     let ip_buff = Arc::new(ip_buff);
-    Ok((ip_buff, vec![filter_1, filter_2]))
+
+    let send_packet_input = SendPacketInput {
+        dst_mac,
+        src_mac,
+        eth_type: EtherTypes::Ipv4,
+        l3_payload: ip_buff.clone(),
+        if_name,
+        retransmit: 1,
+    };
+
+    Ok((send_packet_input, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_syn_trace_response(eth_response: Arc<[u8]>) -> Result<HopStatus, PistolError> {
+pub(crate) fn parse_syn_trace_response(eth_response: &[u8]) -> Result<HopStatus, PistolError> {
     if eth_response.len() > 0 {
         if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
             if eth_packet.get_ethertype() == EtherTypes::Ipv4 {

@@ -108,7 +108,7 @@ pub(crate) fn send_udp_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_udp_scan_response(eth_response: Arc<[u8]>) -> Result<PortStatus, PistolError> {
+pub(crate) fn parse_udp_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     let codes_1 = vec![
         Icmpv6Code(4), // port unreachable
     ];

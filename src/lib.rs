@@ -137,6 +137,16 @@ const NETWORK_CACHE_PATH: &str = ".plnetcache";
 // it will be considered expired and will be deleted.
 const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
 
+fn update_neighbor_cache(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
+    // release the lock when leaving the function
+    let mut gncs = GLOBAL_NET_CACHES
+        .lock()
+        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
+    gncs.system_network_cache.update_neighbor_cache(addr, mac);
+    debug!("update neighbor cache finish: {:?}", (*gncs));
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub enum LoopKey {
     Ip(IpAddr),
@@ -694,7 +704,7 @@ struct NetInfo {
     dst_ports: Vec<u16>,
     /// User input source port.
     src_port: Option<u16>,
-    interface_name: String,
+    if_name: String,
     /// Whether the network information is cached or inferred.
     cached: bool,
     cost: Duration,
@@ -711,7 +721,7 @@ impl fmt::Display for NetInfo {
                 self.inferred_dst_addr,
                 self.inferred_src_addr,
                 self.dst_ports,
-                self.interface_name
+                self.if_name
             );
             write!(f, "{}", output)
         } else {
@@ -744,7 +754,7 @@ impl NetInfo {
             src_addr: None,
             dst_ports: Vec::new(),
             src_port: None,
-            interface_name: String::new(),
+            if_name: String::new(),
             cached: true,
             cost: Duration::ZERO,
             valid: false,
@@ -850,7 +860,7 @@ impl NetInfo {
                     src_addr,
                     dst_ports,
                     src_port,
-                    interface_name,
+                    if_name: interface_name,
                     cached,
                     cost: Duration::ZERO,
                     valid: true,
@@ -1086,7 +1096,7 @@ impl PistolStream {
         }
         Ok(())
     }
-    fn get_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
+    fn recv_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
         let mut matched_packets: Vec<Arc<[u8]>> = Vec::new();
         let start = Instant::now();
         loop {
@@ -1468,7 +1478,7 @@ impl Pistol {
                 src_addr: src_addr,
                 dst_ports: t.ports.clone(),
                 src_port,
-                interface_name: String::new(),
+                if_name: String::new(),
                 cached: false,
                 cost: Duration::ZERO,
                 valid: true,
@@ -1502,7 +1512,7 @@ impl Pistol {
             src_addr: src_addr,
             dst_ports: vec![dst_port],
             src_port,
-            interface_name: String::new(),
+            if_name: String::new(),
             cached: false,
             cost: Duration::ZERO,
             valid: true,

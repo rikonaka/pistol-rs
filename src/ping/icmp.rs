@@ -112,7 +112,7 @@ pub(crate) fn build_icmp_echo_packet(
     Ok((ip_buff, vec![filter]))
 }
 
-pub(crate) fn parse_icmp_echo_response(eth_response: Arc<[u8]>) -> Result<PingStatus, PistolError> {
+pub(crate) fn parse_icmp_echo_response(eth_response: &[u8]) -> Result<PingStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
         destination_unreachable::IcmpCodes::DestinationHostUnreachable,     // 1
@@ -225,7 +225,7 @@ pub(crate) fn build_icmp_timestamp_packet(
 }
 
 pub(crate) fn parse_icmp_timestamp_response(
-    eth_response: Arc<[u8]>,
+    eth_response: &[u8],
 ) -> Result<PingStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
@@ -327,7 +327,7 @@ pub(crate) fn build_icmp_address_mask_packet(
 }
 
 pub(crate) fn parse_icmp_address_mask_response(
-    eth_response: Arc<[u8]>,
+    eth_response: &[u8],
 ) -> Result<PingStatus, PistolError> {
     let codes = vec![
         destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2

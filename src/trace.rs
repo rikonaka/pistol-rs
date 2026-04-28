@@ -26,7 +26,6 @@ use crate::RResponse;
 use crate::SRequest;
 use crate::error::PistolError;
 use crate::utils::random_port_range;
-use crate::utils::random_request_id;
 use crate::utils::time_to_string;
 
 pub mod icmp;
@@ -137,7 +136,6 @@ fn syn_trace_ipv4(
         let (buff, filters) =
             tcp::build_syn_trace_packet(dst_ipv4, dst_port, src_ipv4, random_src_port, ip_id, ttl)?;
 
-        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
             let rrq = RRequest {
                 interface_name: interface_name.clone(),
@@ -322,7 +320,7 @@ pub fn syn_trace(
                     });
                 }
             };
-            let interface_name = net_info.interface_name.clone();
+            let interface_name = net_info.if_name.clone();
             syn_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
@@ -345,7 +343,7 @@ pub fn syn_trace(
                     });
                 }
             };
-            let interface_name = net_info.interface_name.clone();
+            let interface_name = net_info.if_name.clone();
             syn_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
@@ -569,7 +567,7 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.interface_name.clone();
+            let interface_name = net_info.if_name.clone();
             icmp_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
@@ -589,7 +587,7 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.interface_name.clone();
+            let interface_name = net_info.if_name.clone();
             icmp_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
@@ -804,7 +802,7 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.interface_name.clone();
+            let interface_name = net_info.if_name.clone();
             udp_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
@@ -824,7 +822,7 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.interface_name.clone();
+            let interface_name = net_info.if_name.clone();
             udp_trace_ipv6(
                 dst_mac,
                 dst_ipv6,

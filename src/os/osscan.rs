@@ -258,7 +258,7 @@ pub(crate) fn get_scan_line(
             src_addr: Some(src_addr),
             dst_ports: Vec::new(),
             src_port: None,
-            interface_name: interface_name,
+            if_name: interface_name,
             cached: true,
             cost: Duration::ZERO,
             valid: true,

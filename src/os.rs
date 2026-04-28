@@ -422,7 +422,7 @@ pub fn os_detect(
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 let get_response = get_response.clone();
-                let interface_name = ni.interface_name.clone();
+                let interface_name = ni.if_name.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -487,7 +487,7 @@ pub fn os_detect(
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 let get_response = get_response.clone();
-                let interface_name = ni.interface_name.clone();
+                let interface_name = ni.if_name.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -598,7 +598,7 @@ pub fn os_detect_raw(
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
-    let interface_name = net_info.interface_name.clone();
+    let interface_name = net_info.if_name.clone();
 
     let dst_open_tcp_port = net_info.dst_ports[0];
     let dst_closed_tcp_port = net_info.dst_ports[1];

@@ -1,7 +1,6 @@
 use chrono::DateTime;
 use chrono::Local;
-use crossbeam::channel::Receiver;
-use crossbeam::channel::Sender;
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -18,7 +17,6 @@ use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 use tracing::error;
 use tracing::warn;
 
@@ -27,9 +25,8 @@ pub mod icmpv6;
 
 use crate::LoopStates;
 use crate::NetInfo;
-use crate::RRequest;
-use crate::RResponse;
-use crate::SRequest;
+use crate::PistolStream;
+use crate::SendPacketInput;
 use crate::error::PistolError;
 use crate::layer::PacketFilter;
 use crate::scan::PortStatus;
@@ -38,7 +35,6 @@ use crate::scan::tcp6;
 use crate::scan::udp;
 use crate::scan::udp6;
 use crate::utils::random_port;
-use crate::utils::random_request_id;
 use crate::utils::time_to_string;
 
 const SYN_PING_DEFAULT_PORT: u16 = 80;
@@ -67,7 +63,7 @@ impl fmt::Display for PingStatus {
 pub struct PingReport {
     pub addr: IpAddr,
     pub status: PingStatus,
-    pub layer3_cost: Duration,
+    pub retries: usize,
     cached: bool,
 }
 
@@ -98,20 +94,15 @@ impl fmt::Display for HostPing {
         table.add_row(row![
             c -> "addr",
             c -> "status",
-            c -> "time cost"
+            c -> "retries",
         ]);
 
         match self.ping_report {
             Some(report) => {
                 let addr_str = format!("{}", report.addr);
                 let status_str = format!("{}", report.status);
-                let time_cost_str = if report.cached {
-                    time_to_string(report.layer3_cost)
-                } else {
-                    let time_cost_str = time_to_string(report.layer3_cost);
-                    format!("{}(cached)", time_cost_str)
-                };
-                table.add_row(row![c -> addr_str, c -> status_str, c -> time_cost_str]);
+                let retries_str = format!("{}", report.retries);
+                table.add_row(row![c -> addr_str, c -> status_str, c -> retries_str]);
             }
             None => (),
         }
@@ -180,7 +171,7 @@ impl fmt::Display for HostPings {
             c -> "id",
             c -> "addr",
             c -> "status",
-            c -> "time cost"
+            c -> "retries",
         ]);
 
         // sorted
@@ -198,13 +189,8 @@ impl fmt::Display for HostPings {
             }
             let addr_str = format!("{}", report.addr);
             let status_str = format!("{}", report.status);
-            let time_cost_str = if report.cached {
-                time_to_string(report.layer3_cost)
-            } else {
-                let time_cost_str = time_to_string(report.layer3_cost);
-                format!("{}(cached)", time_cost_str)
-            };
-            table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> time_cost_str]);
+            let retries_str = format!("{}", report.retries);
+            table.add_row(row![c -> i, c -> addr_str, c -> status_str, c -> retries_str]);
             i += 1;
         }
 
@@ -257,114 +243,150 @@ pub enum PingMethods {
 }
 
 fn build_ping_buff(
+    dst_mac: MacAddr,
     dst_ipv4: Ipv4Addr,
     dst_port: Option<u16>,
+    src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
+    if_name: String,
     method: PingMethods,
-) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
-    match method {
-        PingMethods::Syn => {
-            let dst_port = match dst_port {
-                Some(p) => p,
-                None => SYN_PING_DEFAULT_PORT,
-            };
-            let (buff, filters) =
-                tcp::build_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
-            Ok((buff, filters))
+) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+    let build_now = || -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+        match method {
+            PingMethods::Syn => {
+                let dst_port = match dst_port {
+                    Some(p) => p,
+                    None => SYN_PING_DEFAULT_PORT,
+                };
+                let (buff, filters) =
+                    tcp::build_syn_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
+                Ok((buff, filters))
+            }
+            PingMethods::Ack => {
+                let dst_port = match dst_port {
+                    Some(p) => p,
+                    None => ACK_PING_DEFAULT_PORT,
+                };
+                let (buff, filters) =
+                    tcp::build_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
+                Ok((buff, filters))
+            }
+            PingMethods::Udp => {
+                let dst_port = match dst_port {
+                    Some(p) => p,
+                    None => UDP_PING_DEFAULT_PORT,
+                };
+                let (buff, filters) =
+                    udp::build_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
+                Ok((buff, filters))
+            }
+            PingMethods::IcmpEcho => {
+                let (buff, filters) = icmp::build_icmp_echo_packet(dst_ipv4, src_ipv4)?;
+                Ok((buff, filters))
+            }
+            PingMethods::IcmpTimeStamp => {
+                let (buff, filters) = icmp::build_icmp_timestamp_packet(dst_ipv4, src_ipv4)?;
+                Ok((buff, filters))
+            }
+            PingMethods::IcmpAddressMask => {
+                let (buff, filters) = icmp::build_icmp_address_mask_packet(dst_ipv4, src_ipv4)?;
+                Ok((buff, filters))
+            }
+            PingMethods::Icmpv6Echo => {
+                return Err(PistolError::PingDetectionMethodError {
+                    target: dst_ipv4.into(),
+                    method: String::from("icmpv6"),
+                });
+            }
         }
-        PingMethods::Ack => {
-            let dst_port = match dst_port {
-                Some(p) => p,
-                None => ACK_PING_DEFAULT_PORT,
-            };
-            let (buff, filters) =
-                tcp::build_ack_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
-            Ok((buff, filters))
-        }
-        PingMethods::Udp => {
-            let dst_port = match dst_port {
-                Some(p) => p,
-                None => UDP_PING_DEFAULT_PORT,
-            };
-            let (buff, filters) =
-                udp::build_udp_scan_packet(dst_ipv4, dst_port, src_ipv4, src_port)?;
-            Ok((buff, filters))
-        }
-        PingMethods::IcmpEcho => {
-            let (buff, filters) = icmp::build_icmp_echo_packet(dst_ipv4, src_ipv4)?;
-            Ok((buff, filters))
-        }
-        PingMethods::IcmpTimeStamp => {
-            let (buff, filters) = icmp::build_icmp_timestamp_packet(dst_ipv4, src_ipv4)?;
-            Ok((buff, filters))
-        }
-        PingMethods::IcmpAddressMask => {
-            let (buff, filters) = icmp::build_icmp_address_mask_packet(dst_ipv4, src_ipv4)?;
-            Ok((buff, filters))
-        }
-        PingMethods::Icmpv6Echo => {
-            return Err(PistolError::PingDetectionMethodError {
-                target: dst_ipv4.into(),
-                method: String::from("icmpv6"),
-            });
-        }
-    }
+    };
+
+    let (buff, filters) = build_now()?;
+
+    let send_packet_input = SendPacketInput {
+        dst_mac,
+        src_mac,
+        l3_payload: buff,
+        eth_type: EtherTypes::Ipv4,
+        if_name,
+        retransmit: 1,
+    };
+
+    Ok((send_packet_input, filters))
 }
 
 fn build_ping_buff6(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: Option<u16>,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
+    if_name: String,
     method: PingMethods,
-) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
-    match method {
-        PingMethods::Syn => {
-            let dst_port = match dst_port {
-                Some(p) => p,
-                None => SYN_PING_DEFAULT_PORT,
-            };
-            let (buff, filters) =
-                tcp6::build_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)?;
-            Ok((buff, filters))
+) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+    let build_now = || -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+        match method {
+            PingMethods::Syn => {
+                let dst_port = match dst_port {
+                    Some(p) => p,
+                    None => SYN_PING_DEFAULT_PORT,
+                };
+                let (buff, filters) =
+                    tcp6::build_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)?;
+                Ok((buff, filters))
+            }
+            PingMethods::Ack => {
+                let dst_port = match dst_port {
+                    Some(p) => p,
+                    None => ACK_PING_DEFAULT_PORT,
+                };
+                let (buff, filters) =
+                    tcp6::build_ack_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)?;
+                Ok((buff, filters))
+            }
+            PingMethods::Udp => {
+                let dst_port = match dst_port {
+                    Some(p) => p,
+                    None => UDP_PING_DEFAULT_PORT,
+                };
+                let (buff, filters) =
+                    udp6::send_udp_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)?;
+                Ok((buff, filters))
+            }
+            PingMethods::IcmpEcho | PingMethods::IcmpTimeStamp | PingMethods::IcmpAddressMask => {
+                warn!(
+                    "run IcmpEcho/IcmpTimeStamp/IcmpAddressMask as Icmpv6Echo ping method on ipv6 target"
+                );
+                return Err(PistolError::PingDetectionMethodError {
+                    target: dst_ipv6.into(),
+                    method: String::from("icmp"),
+                });
+            }
+            PingMethods::Icmpv6Echo => {
+                let (buff, filters) = icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6)?;
+                Ok((buff, filters))
+            }
         }
-        PingMethods::Ack => {
-            let dst_port = match dst_port {
-                Some(p) => p,
-                None => ACK_PING_DEFAULT_PORT,
-            };
-            let (buff, filters) =
-                tcp6::build_ack_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)?;
-            Ok((buff, filters))
-        }
-        PingMethods::Udp => {
-            let dst_port = match dst_port {
-                Some(p) => p,
-                None => UDP_PING_DEFAULT_PORT,
-            };
-            let (buff, filters) =
-                udp6::send_udp_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port)?;
-            Ok((buff, filters))
-        }
-        PingMethods::IcmpEcho | PingMethods::IcmpTimeStamp | PingMethods::IcmpAddressMask => {
-            warn!(
-                "run IcmpEcho/IcmpTimeStamp/IcmpAddressMask as Icmpv6Echo ping method on ipv6 target"
-            );
-            return Err(PistolError::PingDetectionMethodError {
-                target: dst_ipv6.into(),
-                method: String::from("icmp"),
-            });
-        }
-        PingMethods::Icmpv6Echo => {
-            let (buff, filters) = icmpv6::send_icmpv6_ping_packet(dst_ipv6, src_ipv6)?;
-            Ok((buff, filters))
-        }
-    }
+    };
+
+    let (buff, filters) = build_now()?;
+
+    let send_packet_input = SendPacketInput {
+        dst_mac,
+        src_mac,
+        l3_payload: buff,
+        eth_type: EtherTypes::Ipv4,
+        if_name,
+        retransmit: 1,
+    };
+
+    Ok((send_packet_input, filters))
 }
 
-fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingStatus, PistolError> {
-    let parse_ipv4 = |dst_ipv4: Ipv4Addr| -> Result<PingStatus, PistolError> {
+fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus, PistolError> {
+    let parse_ipv4 = |src_ipv4: Ipv4Addr| -> Result<PingStatus, PistolError> {
         let eth_response_clone = eth_response.clone();
         match method {
             PingMethods::Syn => {
@@ -405,12 +427,12 @@ fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingSt
                 Ok(ping_status)
             }
             PingMethods::Icmpv6Echo => Err(PistolError::PingDetectionMethodError {
-                target: dst_ipv4.into(),
+                target: src_ipv4.into(),
                 method: String::from("icmpv6"),
             }),
         }
     };
-    let parse_ipv6 = |dst_ipv6: Ipv6Addr| -> Result<PingStatus, PistolError> {
+    let parse_ipv6 = |src_ipv6: Ipv6Addr| -> Result<PingStatus, PistolError> {
         let eth_response_clone = eth_response.clone();
         match method {
             PingMethods::Syn => {
@@ -443,7 +465,7 @@ fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingSt
                     "run IcmpEcho/IcmpTimeStamp/IcmpAddressMask as Icmpv6Echo ping method on ipv6 target"
                 );
                 return Err(PistolError::PingDetectionMethodError {
-                    target: dst_ipv6.into(),
+                    target: src_ipv6.into(),
                     method: String::from("icmp"),
                 });
             }
@@ -458,15 +480,15 @@ fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingSt
         Some(eth_packet) => match eth_packet.get_ethertype() {
             EtherTypes::Ipv4 => match Ipv4Packet::new(eth_packet.payload()) {
                 Some(ip_packet) => {
-                    let dst_ipv4 = ip_packet.get_destination();
-                    return parse_ipv4(dst_ipv4);
+                    let src_ipv4 = ip_packet.get_source();
+                    return parse_ipv4(src_ipv4);
                 }
                 None => (),
             },
             EtherTypes::Ipv6 => match Ipv6Packet::new(eth_packet.payload()) {
                 Some(ip_packet) => {
-                    let dst_ipv6 = ip_packet.get_destination();
-                    return parse_ipv6(dst_ipv6);
+                    let src_ipv6 = ip_packet.get_source();
+                    return parse_ipv6(src_ipv6);
                 }
                 None => (),
             },
@@ -480,7 +502,6 @@ fn parse_response(method: PingMethods, eth_response: Arc<[u8]>) -> Result<PingSt
 
 #[derive(Debug, Clone)]
 struct PingState {
-    id: u64,
     retries: usize,
     data_recved: bool,
     net_info: NetInfo,
@@ -491,10 +512,10 @@ fn ping(
     method: PingMethods,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
+
     let mut pistol_pings = HostPings::new(max_retries);
     let mut reports = Vec::new();
 
@@ -502,36 +523,32 @@ fn ping(
     for ni in net_infos {
         if ni.valid {
             let dst_addr = ni.dst_addr;
-            let dst_port = 0;
             let state = PingState {
-                id: random_request_id(),
                 retries: 0,
                 data_recved: false,
                 net_info: ni.clone(),
             };
-            loop_states.insert_ip_port(dst_addr, dst_port, state);
+            loop_states.insert_ip(dst_addr, state);
         }
     }
 
     loop {
         let mut all_done = true;
+        let mut all_filters = Vec::new();
         for (_key, state) in &mut loop_states {
             let ni = state.net_info.clone();
             let dst_mac = ni.inferred_dst_mac;
             let dst_addr = ni.inferred_dst_addr;
             let src_mac = ni.inferred_src_mac;
             let src_port = ni.src_port;
+            let if_name = ni.if_name.clone();
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
                     let src_port = match src_port {
                         Some(p) => p,
                         None => random_port(),
                     };
-                    let dst_port = if ni.dst_ports.len() > 0 {
-                        Some(ni.dst_ports[0])
-                    } else {
-                        None
-                    };
+
                     let src_ipv4 = match ni.inferred_src_addr {
                         IpAddr::V4(src) => src,
                         _ => {
@@ -548,38 +565,22 @@ fn ping(
                     ];
 
                     let dst_port = if !no_port_vec.contains(&method) {
-                        dst_port
+                        if ni.dst_ports.len() > 0 {
+                            Some(ni.dst_ports[0])
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
 
                     if state.retries < max_retries && !state.data_recved {
-                        let (buff, filters) =
-                            build_ping_buff(dst_ipv4, dst_port, src_ipv4, src_port, method)?;
-
-                        let interface_name = ni.interface_name.clone();
-                        let rrq_id = state.id;
-                        let rrq = RRequest {
-                            interface_name: interface_name.clone(),
-                            id: rrq_id,
-                            filters,
-                            created: Instant::now(),
-                            elapsed: timeout,
-                        };
-                        let srq = SRequest {
-                            interface_name: interface_name.clone(),
-                            dst_mac,
-                            src_mac,
-                            eth_payload: buff,
-                            eth_type: EtherTypes::Ipv4,
-                            retransmit: 1,
-                        };
-                        if let Err(e) = push_rd.send(rrq) {
-                            error!("ipv4 send ping recv msg error: {}", e);
-                        }
-                        if let Err(e) = push_sd.send(srq) {
-                            error!("ipv4 send ping send msg error: {}", e);
-                        }
+                        let (spi, filters) = build_ping_buff(
+                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
+                            method,
+                        )?;
+                        all_filters.extend(filters);
+                        stream.send_packet(spi)?;
 
                         state.retries += 1;
                         all_done = false;
@@ -611,32 +612,12 @@ fn ping(
                         };
 
                     if state.retries < max_retries && !state.data_recved {
-                        let (buff, filters) =
-                            build_ping_buff6(dst_ipv6, dst_port, src_ipv6, src_port, method)?;
-
-                        let interface_name = ni.interface_name.clone();
-                        let rrq_id = state.id;
-                        let rrq = RRequest {
-                            interface_name: interface_name.clone(),
-                            id: rrq_id,
-                            filters,
-                            created: Instant::now(),
-                            elapsed: timeout,
-                        };
-                        let srq = SRequest {
-                            interface_name: interface_name.clone(),
-                            dst_mac,
-                            src_mac,
-                            eth_payload: buff,
-                            eth_type: EtherTypes::Ipv6,
-                            retransmit: 1,
-                        };
-                        if let Err(e) = push_rd.send(rrq) {
-                            error!("ipv6 send ping recv msg error: {}", e);
-                        }
-                        if let Err(e) = push_sd.send(srq) {
-                            error!("ipv6 send ping send msg error: {}", e);
-                        }
+                        let (spi, filters) = build_ping_buff6(
+                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
+                            method,
+                        )?;
+                        all_filters.extend(filters);
+                        stream.send_packet(spi)?;
 
                         state.retries += 1;
                         all_done = false;
@@ -648,41 +629,48 @@ fn ping(
         if all_done {
             break;
         }
-        let timeout_10ms = Duration::from_millis(10);
-        let recv_start = Instant::now();
-        loop {
-            if recv_start.elapsed() > timeout {
-                break;
-            }
 
-            let recv_response = match get_response.recv_timeout(timeout_10ms) {
-                Ok(r) => r,
-                Err(_e) => continue,
-            };
+        let response = stream.recv_packet(timeout)?;
 
-            for (_key, state) in &mut loop_states {
-                if state.id == recv_response.id {
-                    match parse_response(method, recv_response.data.clone()) {
-                        Ok(ps) => {
-                            state.data_recved = true;
-                            let dst_addr = state.net_info.inferred_dst_addr;
-                            let rtt = recv_response.rtt;
-                            let cached = state.net_info.cached;
+        for r in &response {
+            for f in &all_filters {
+                if f.check(&r) {
+                    let addr = if let Some(addr) = f.icmp_ip() {
+                        // icmp ping or icmpv6 ping
+                        Some(addr)
+                    } else if let Some((addr, _port)) = f.tcp_udp_ip_port() {
+                        // tcp ping or udp ping
+                        Some(addr)
+                    } else {
+                        None
+                    };
 
-                            let ping_report = PingReport {
-                                addr: dst_addr,
-                                status: ps,
-                                layer3_cost: rtt,
-                                cached,
-                            };
-                            reports.push(ping_report);
-                        }
-                        Err(e) => {
-                            error!("parse ping response error: {}", e);
-                            continue;
+                    if let Some(addr) = addr {
+                        for (_key, state) in &mut loop_states {
+                            if state.net_info.inferred_dst_addr == addr {
+                                match parse_response(r, method) {
+                                    Ok(ps) => {
+                                        state.data_recved = true;
+                                        let dst_addr = state.net_info.inferred_dst_addr;
+                                        let cached = state.net_info.cached;
+                                        let retries = state.retries;
+
+                                        let ping_report = PingReport {
+                                            addr: dst_addr,
+                                            status: ps,
+                                            retries,
+                                            cached,
+                                        };
+                                        reports.push(ping_report);
+                                    }
+                                    Err(e) => {
+                                        error!("parse ping response error: {}", e);
+                                        continue;
+                                    }
+                                }
+                            }
                         }
                     }
-                    break;
                 }
             }
         }
@@ -696,10 +684,10 @@ pub fn ping_raw(
     method: PingMethods,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
+
     let mut host_ping = HostPing::new(max_retries);
     if !net_info.valid {
         host_ping.finish(None);
@@ -722,8 +710,9 @@ pub fn ping_raw(
         Some(p) => p,
         None => random_port(),
     };
+    let if_name = net_info.if_name.clone();
 
-    match net_info.inferred_dst_addr {
+    let (spi, filters) = match net_info.inferred_dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match net_info.inferred_src_addr {
                 IpAddr::V4(src) => src,
@@ -733,70 +722,17 @@ pub fn ping_raw(
                     });
                 }
             };
-            let rrq_id = random_request_id();
-            for i in 0..max_retries {
-                let (buff, filters) =
-                    build_ping_buff(dst_ipv4, Some(dst_port), src_ipv4, src_port, method)?;
-
-                let interface_name = net_info.interface_name.clone();
-                let rrq = RRequest {
-                    interface_name: interface_name.clone(),
-                    id: rrq_id,
-                    filters,
-                    created: Instant::now(),
-                    elapsed: timeout,
-                };
-                let srq = SRequest {
-                    interface_name: interface_name.clone(),
-                    dst_mac,
-                    src_mac,
-                    eth_payload: buff,
-                    eth_type: EtherTypes::Ipv4,
-                    retransmit: 1,
-                };
-                if let Err(e) = push_rd.send(rrq) {
-                    error!("ipv4 send ping recv msg error: {}", e);
-                }
-                if let Err(e) = push_sd.send(srq) {
-                    error!("ipv4 send ping send msg error: {}", e);
-                }
-
-                let recv_response = match get_response.recv_timeout(timeout) {
-                    Ok(r) => {
-                        if r.id == rrq_id {
-                            r
-                        } else {
-                            continue;
-                        }
-                    }
-                    Err(_e) => {
-                        continue;
-                    }
-                };
-
-                let status = parse_response(method, recv_response.data)?;
-                if status == PingStatus::Up || i == max_retries - 1 {
-                    let rtt = recv_response.rtt;
-                    let ping_report = PingReport {
-                        addr: net_info.inferred_dst_addr,
-                        status,
-                        layer3_cost: rtt,
-                        cached: net_info.cached,
-                    };
-                    host_ping.finish(Some(ping_report));
-                    return Ok(host_ping);
-                }
-            }
-
-            // never reached here in normal case
-            let ping_report = PingReport {
-                addr: net_info.inferred_dst_addr,
-                status: PingStatus::Error,
-                layer3_cost: Duration::ZERO,
-                cached: net_info.cached,
-            };
-            host_ping.finish(Some(ping_report));
-            Ok(host_ping)
+            let (spi, filters) = build_ping_buff(
+                dst_mac,
+                dst_ipv4,
+                Some(dst_port),
+                src_mac,
+                src_ipv4,
+                src_port,
+                if_name,
+                method,
+            )?;
+            (spi, filters)
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match net_info.inferred_src_addr {
@@ -807,91 +743,75 @@ pub fn ping_raw(
                     });
                 }
             };
+            let (spi, filters) = build_ping_buff6(
+                dst_mac,
+                dst_ipv6,
+                Some(dst_port),
+                src_mac,
+                src_ipv6,
+                src_port,
+                if_name,
+                method,
+            )?;
+            (spi, filters)
+        }
+    };
 
-            let rrq_id = random_request_id();
-            for i in 0..max_retries {
-                let (buff, filters) =
-                    build_ping_buff6(dst_ipv6, Some(dst_port), src_ipv6, src_port, method)?;
+    let dst_addr = net_info.inferred_dst_addr;
 
-                let interface_name = net_info.interface_name.clone();
-                let rrq = RRequest {
-                    interface_name: interface_name.clone(),
-                    id: rrq_id,
-                    filters,
-                    created: Instant::now(),
-                    elapsed: timeout,
-                };
-                let srq = SRequest {
-                    interface_name: interface_name.clone(),
-                    dst_mac,
-                    src_mac,
-                    eth_payload: buff,
-                    eth_type: EtherTypes::Ipv4,
-                    retransmit: 1,
-                };
-                if let Err(e) = push_rd.send(rrq) {
-                    error!("ipv4 send ping recv msg error: {}", e);
-                }
-                if let Err(e) = push_sd.send(srq) {
-                    error!("ipv4 send ping send msg error: {}", e);
-                }
+    for i in 0..max_retries {
+        stream.send_packet(spi.clone())?;
+        let response = stream.recv_packet(timeout)?;
 
-                let recv_response = match get_response.recv_timeout(timeout) {
-                    Ok(r) => {
-                        if r.id == rrq_id {
-                            r
-                        } else {
-                            continue;
+        for r in &response {
+            for f in &filters {
+                if f.check(&r) {
+                    let addr = if let Some(addr) = f.icmp_ip() {
+                        // icmp ping or icmpv6 ping
+                        Some(addr)
+                    } else if let Some((addr, _port)) = f.tcp_udp_ip_port() {
+                        // tcp ping or udp ping
+                        Some(addr)
+                    } else {
+                        None
+                    };
+
+                    if let Some(addr) = addr {
+                        if addr == dst_addr {
+                            let status = parse_response(r, method)?;
+                            let retries = i + 1;
+                            let ping_report = PingReport {
+                                addr: net_info.inferred_dst_addr,
+                                status,
+                                retries,
+                                cached: net_info.cached,
+                            };
+                            host_ping.finish(Some(ping_report));
+                            return Ok(host_ping);
                         }
                     }
-                    Err(_e) => {
-                        continue;
-                    }
-                };
-                let status = parse_response(method, recv_response.data)?;
-                if status == PingStatus::Up || i == max_retries - 1 {
-                    let rtt = recv_response.rtt;
-                    let ping_report = PingReport {
-                        addr: net_info.inferred_dst_addr,
-                        status,
-                        layer3_cost: rtt,
-                        cached: net_info.cached,
-                    };
-                    host_ping.finish(Some(ping_report));
-                    return Ok(host_ping);
                 }
             }
-
-            // never reached here in normal case
-            let ping_report = PingReport {
-                addr: net_info.inferred_dst_addr,
-                status: PingStatus::Error,
-                layer3_cost: Duration::ZERO,
-                cached: net_info.cached,
-            };
-            host_ping.finish(Some(ping_report));
-            Ok(host_ping)
         }
     }
+
+    // never reached here in normal case
+    let ping_report = PingReport {
+        addr: net_info.inferred_dst_addr,
+        status: PingStatus::Error,
+        retries: max_retries,
+        cached: net_info.cached,
+    };
+    host_ping.finish(Some(ping_report));
+    Ok(host_ping)
 }
 
 pub fn tcp_syn_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
-    ping(
-        net_infos,
-        PingMethods::Syn,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping(net_infos, PingMethods::Syn, timeout, max_retries)
 }
 
 /// TCP SYN Ping, raw version.
@@ -900,38 +820,16 @@ pub fn tcp_syn_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::Syn,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::Syn, timeout, max_retries)
 }
 
 pub fn tcp_ack_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
-    ping(
-        net_infos,
-        PingMethods::Ack,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping(net_infos, PingMethods::Ack, timeout, max_retries)
 }
 
 /// TCP ACK Ping, raw version.
@@ -940,38 +838,16 @@ pub fn tcp_ack_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::Ack,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::Ack, timeout, max_retries)
 }
 
 pub fn udp_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
-    ping(
-        net_infos,
-        PingMethods::Udp,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping(net_infos, PingMethods::Udp, timeout, max_retries)
 }
 
 /// UDP Ping, raw version.
@@ -979,113 +855,52 @@ pub fn udp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::Udp,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::Udp, timeout, max_retries)
 }
 
 pub fn icmp_echo_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
-    ping(
-        net_infos,
-        PingMethods::IcmpEcho,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping(net_infos, PingMethods::IcmpEcho, timeout, max_retries)
 }
 
 pub fn icmp_echo_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::IcmpEcho,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_retries)
 }
 
 pub fn icmp_timestamp_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
-    ping(
-        net_infos,
-        PingMethods::IcmpTimeStamp,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping(net_infos, PingMethods::IcmpTimeStamp, timeout, max_retries)
 }
 
 pub fn icmp_timestamp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::IcmpTimeStamp,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::IcmpTimeStamp, timeout, max_retries)
 }
 
 pub fn icmp_address_mask_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
     ping(
         net_infos,
         PingMethods::IcmpAddressMask,
         timeout,
         max_retries,
-        push_rd,
-        push_sd,
-        get_response,
     )
 }
 
@@ -1093,55 +908,22 @@ pub fn icmp_address_mask_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::IcmpAddressMask,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::IcmpAddressMask, timeout, max_retries)
 }
 
 pub fn icmpv6_ping(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPings, PistolError> {
-    ping(
-        net_infos,
-        PingMethods::Icmpv6Echo,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping(net_infos, PingMethods::Icmpv6Echo, timeout, max_retries)
 }
 
 pub fn icmp_ping_raw(
     net_info: NetInfo,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(
-        net_info,
-        PingMethods::IcmpEcho,
-        timeout,
-        max_retries,
-        push_rd,
-        push_sd,
-        get_response,
-    )
+    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_retries)
 }

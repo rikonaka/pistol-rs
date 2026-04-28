@@ -108,7 +108,7 @@ pub(crate) fn send_icmpv6_ping_packet(
 }
 
 pub(crate) fn parse_icmpv6_ping_response(
-    eth_response: Arc<[u8]>,
+    eth_response: &[u8],
 ) -> Result<PingStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
