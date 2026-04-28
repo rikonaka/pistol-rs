@@ -135,7 +135,7 @@ pub(crate) fn build_udp_trace_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2, filter_3]))
 }
 
-pub(crate) fn recv_udp_trace_packet(eth_response: Arc<[u8]>) -> Result<HopStatus, PistolError> {
+pub(crate) fn recv_udp_trace_packet(eth_response: &[u8]) -> Result<HopStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {

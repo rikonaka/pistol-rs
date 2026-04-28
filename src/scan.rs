@@ -887,10 +887,7 @@ fn build_scan_buff6(
     Ok((send_packet_input, filters))
 }
 
-fn parse_response(
-    eth_response: &[u8],
-    method: ScanMethod,
-) -> Result<PortStatus, PistolError> {
+fn parse_response(eth_response: &[u8], method: ScanMethod) -> Result<PortStatus, PistolError> {
     let parse_ipv4 = || -> Result<PortStatus, PistolError> {
         let eth_response = eth_response.clone();
         match method {

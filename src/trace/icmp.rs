@@ -1,3 +1,4 @@
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -11,7 +12,6 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
 use pnet::packet::ipv4::Ipv4Packet;
-use pnet::datalink::MacAddr;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use std::net::Ipv4Addr;
 use std::panic::Location;
