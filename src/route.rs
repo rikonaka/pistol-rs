@@ -814,7 +814,7 @@ pub(crate) fn infer_mac(
                                         Some(i) => i,
                                         None => {
                                             return Err(PistolError::CanNotFoundInterface {
-                                                i: format!("interface_name({})", if_index),
+                                                i: format!("if_name({})", if_index),
                                             });
                                         }
                                     };
@@ -1208,8 +1208,8 @@ impl fmt::Display for RouteTable {
                 RouteAddr::IpAddr(i) => i.to_string(),
                 RouteAddr::IpNetwork(i) => i.to_string(),
             };
-            let interface_name = n.dev.name.clone();
-            new_routes.insert(addr, interface_name);
+            let if_name = n.dev.name.clone();
+            new_routes.insert(addr, if_name);
         }
         let mut output = String::new();
         match &self.default_route {

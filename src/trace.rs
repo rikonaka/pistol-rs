@@ -115,7 +115,7 @@ fn syn_trace_ipv4(
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -138,14 +138,14 @@ fn syn_trace_ipv4(
 
         for _ in 0..TRACE_MAX_RETRY {
             let rrq = RRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
             let srq = SRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 dst_mac,
                 src_mac,
                 eth_payload: buff.clone(),
@@ -212,7 +212,7 @@ fn syn_trace_ipv6(
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -230,14 +230,14 @@ fn syn_trace_ipv6(
         let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
             let rrq = RRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
             let srq = SRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 dst_mac,
                 src_mac,
                 eth_payload: buff.clone(),
@@ -320,14 +320,14 @@ pub fn syn_trace(
                     });
                 }
             };
-            let interface_name = net_info.if_name.clone();
+            let if_name = net_info.if_name.clone();
             syn_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
                 dst_port,
                 src_mac,
                 src_ipv4,
-                interface_name,
+                if_name,
                 timeout,
                 push_rd,
                 push_sd,
@@ -343,14 +343,14 @@ pub fn syn_trace(
                     });
                 }
             };
-            let interface_name = net_info.if_name.clone();
+            let if_name = net_info.if_name.clone();
             syn_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
                 dst_port,
                 src_mac,
                 src_ipv6,
-                interface_name,
+                if_name,
                 timeout,
                 push_rd,
                 push_sd,
@@ -365,7 +365,7 @@ fn icmp_trace_ipv4(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -388,14 +388,14 @@ fn icmp_trace_ipv4(
         let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
             let rrq = RRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
             let srq = SRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 dst_mac,
                 src_mac,
                 eth_payload: buff.clone(),
@@ -457,7 +457,7 @@ fn icmp_trace_ipv6(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -485,14 +485,14 @@ fn icmp_trace_ipv6(
                 i, TRACE_MAX_RETRY, hop_limit
             );
             let rrq = RRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
             let srq = SRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 dst_mac,
                 src_mac,
                 eth_payload: buff.clone(),
@@ -567,13 +567,13 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.if_name.clone();
+            let if_name = net_info.if_name.clone();
             icmp_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
                 src_mac,
                 src_ipv4,
-                interface_name,
+                if_name,
                 timeout,
                 push_rd,
                 push_sd,
@@ -587,13 +587,13 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.if_name.clone();
+            let if_name = net_info.if_name.clone();
             icmp_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
                 src_mac,
                 src_ipv6,
-                interface_name,
+                if_name,
                 timeout,
                 push_rd,
                 push_sd,
@@ -608,7 +608,7 @@ fn udp_trace_ipv4(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -632,14 +632,14 @@ fn udp_trace_ipv4(
         let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
             let rrq = RRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
             let srq = SRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 dst_mac,
                 src_mac,
                 eth_payload: buff.clone(),
@@ -701,7 +701,7 @@ fn udp_trace_ipv6(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     push_rd: Sender<RRequest>,
     push_sd: Sender<SRequest>,
@@ -720,14 +720,14 @@ fn udp_trace_ipv6(
         let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
             let rrq = RRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 id: rrq_id,
                 filters: filters.clone(),
                 created: Instant::now(),
                 elapsed: timeout,
             };
             let srq = SRequest {
-                interface_name: interface_name.clone(),
+                if_name: if_name.clone(),
                 dst_mac,
                 src_mac,
                 eth_payload: buff.clone(),
@@ -802,13 +802,13 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.if_name.clone();
+            let if_name = net_info.if_name.clone();
             udp_trace_ipv4(
                 dst_mac,
                 dst_ipv4,
                 src_mac,
                 src_ipv4,
-                interface_name,
+                if_name,
                 timeout,
                 push_rd,
                 push_sd,
@@ -822,13 +822,13 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let interface_name = net_info.if_name.clone();
+            let if_name = net_info.if_name.clone();
             udp_trace_ipv6(
                 dst_mac,
                 dst_ipv6,
                 src_mac,
                 src_ipv6,
-                interface_name,
+                if_name,
                 timeout,
                 push_rd,
                 push_sd,

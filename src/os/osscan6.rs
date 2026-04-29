@@ -541,7 +541,7 @@ fn send_seq_probes(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -617,14 +617,14 @@ fn send_seq_probes(
                     let buff = buff_hm[&t].clone();
 
                     let rrq = RRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         id: state.id,
                         filters: vec![filter],
                         created: Instant::now(),
                         elapsed: timeout,
                     };
                     let srq = SRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         dst_mac,
                         src_mac,
                         eth_payload: buff,
@@ -754,7 +754,7 @@ fn send_ie_probes(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -819,14 +819,14 @@ fn send_ie_probes(
                     let buff = buff_hm[t].clone();
                     let filter = filters[t].clone();
                     let rrq = RRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         id: state.id,
                         filters: vec![filter],
                         created: Instant::now(),
                         elapsed: timeout,
                     };
                     let srq = SRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         dst_mac,
                         src_mac,
                         eth_payload: buff,
@@ -920,7 +920,7 @@ fn send_nx_probes(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -971,14 +971,14 @@ fn send_nx_probes(
                 let buff = buff_hm[t].clone();
                 if state.retries < max_retries && !state.recved {
                     let rrq = RRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         id: state.id,
                         filters: vec![filter.clone()],
                         created: Instant::now(),
                         elapsed: timeout,
                     };
                     let srq = SRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         dst_mac,
                         src_mac,
                         eth_payload: buff,
@@ -1073,7 +1073,7 @@ fn send_u1_probe(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -1107,14 +1107,14 @@ fn send_u1_probe(
 
     for _ in 0..max_retries {
         let rrq = RRequest {
-            interface_name: interface_name.clone(),
+            if_name: if_name.clone(),
             id: rrq_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
         let srq = SRequest {
-            interface_name: interface_name.clone(),
+            if_name: if_name.clone(),
             dst_mac,
             src_mac,
             eth_payload: buff.clone(),
@@ -1172,7 +1172,7 @@ fn send_tecn_probe(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -1206,14 +1206,14 @@ fn send_tecn_probe(
 
     for _ in 0..max_retries {
         let rrq = RRequest {
-            interface_name: interface_name.clone(),
+            if_name: if_name.clone(),
             id: rrq_id,
             filters: vec![filter.clone()],
             created: Instant::now(),
             elapsed: timeout,
         };
         let srq = SRequest {
-            interface_name: interface_name.clone(),
+            if_name: if_name.clone(),
             dst_mac,
             src_mac,
             eth_payload: buff.clone(),
@@ -1271,7 +1271,7 @@ fn send_tx_probes(
     dst_closed_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -1386,14 +1386,14 @@ fn send_tx_probes(
                     let filter = filter_hm[t].clone();
                     let start = Instant::now();
                     let rrq = RRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         id: state.id,
                         filters: vec![filter],
                         created: start,
                         elapsed: timeout,
                     };
                     let srq = SRequest {
-                        interface_name: interface_name.clone(),
+                        if_name: if_name.clone(),
                         dst_mac,
                         src_mac,
                         eth_payload: buff,
@@ -1523,7 +1523,7 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     timeout: Duration,
     max_retries: usize,
     push_rd: Sender<RRequest>,
@@ -1538,7 +1538,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         scan_start,
@@ -1552,7 +1552,7 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         scan_start,
@@ -1566,7 +1566,7 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         scan_start,
@@ -1581,7 +1581,7 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         scan_start,
@@ -1596,7 +1596,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         scan_start,
@@ -1612,7 +1612,7 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         scan_start,
@@ -1708,7 +1708,7 @@ pub(crate) fn os_probe_thread6(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    interface_name: String,
+    if_name: String,
     top_k: usize,
     linear: Linear,
     timeout: Duration,
@@ -1726,7 +1726,7 @@ pub(crate) fn os_probe_thread6(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         max_retries,
         push_rd.clone(),
@@ -1746,7 +1746,7 @@ pub(crate) fn os_probe_thread6(
         dst_closed_udp_port,
         src_mac,
         src_ipv6.into(),
-        interface_name.clone(),
+        if_name.clone(),
         timeout,
         push_rd,
         push_sd,

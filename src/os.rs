@@ -46,7 +46,6 @@ pub mod rr;
 
 #[derive(Debug, Clone)]
 struct OsProbeState {
-    id: u64,
     retries: usize,
     recved: bool,
 }
@@ -422,7 +421,7 @@ pub fn os_detect(
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 let get_response = get_response.clone();
-                let interface_name = ni.if_name.clone();
+                let if_name = ni.if_name.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -437,7 +436,7 @@ pub fn os_detect(
                             dst_closed_udp_port,
                             src_mac,
                             src_ipv4,
-                            interface_name,
+                            if_name,
                             nmap_os_db,
                             top_k,
                             timeout,
@@ -487,7 +486,7 @@ pub fn os_detect(
                 let push_rd = push_rd.clone();
                 let push_sd = push_sd.clone();
                 let get_response = get_response.clone();
-                let interface_name = ni.if_name.clone();
+                let if_name = ni.if_name.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
                     let detect_rets = if dst_ports.len() >= 3 {
@@ -503,7 +502,7 @@ pub fn os_detect(
                             dst_closed_udp_port,
                             src_mac,
                             src_ipv6,
-                            interface_name,
+                            if_name,
                             top_k,
                             linear,
                             timeout,
@@ -598,7 +597,7 @@ pub fn os_detect_raw(
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
-    let interface_name = net_info.if_name.clone();
+    let if_name = net_info.if_name.clone();
 
     let dst_open_tcp_port = net_info.dst_ports[0];
     let dst_closed_tcp_port = net_info.dst_ports[1];
@@ -621,7 +620,7 @@ pub fn os_detect_raw(
                 dst_closed_udp_port,
                 src_mac,
                 src_ipv4,
-                interface_name,
+                if_name,
                 nmap_os_db,
                 top_k,
                 timeout,
@@ -673,7 +672,7 @@ pub fn os_detect_raw(
                 dst_closed_udp_port,
                 src_mac,
                 src_ipv6,
-                interface_name,
+                if_name,
                 top_k,
                 linear,
                 timeout,

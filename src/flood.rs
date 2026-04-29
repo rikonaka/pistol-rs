@@ -157,7 +157,7 @@ fn ipv4_flood_thread(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    interface_name: String,
+    if_name: String,
     method: FloodMethods,
     retransmit: usize,
     push_sd: Sender<SRequest>,
@@ -173,7 +173,7 @@ fn ipv4_flood_thread(
     };
 
     let srq = SRequest {
-        interface_name: interface_name.clone(),
+        if_name: if_name.clone(),
         dst_mac,
         src_mac,
         eth_payload: buff.clone(),
@@ -195,7 +195,7 @@ fn ipv6_flood_thread(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    interface_name: String,
+    if_name: String,
     method: FloodMethods,
     retransmit: usize,
     push_sd: Sender<SRequest>,
@@ -211,7 +211,7 @@ fn ipv6_flood_thread(
     };
 
     let srq = SRequest {
-        interface_name: interface_name.clone(),
+        if_name: if_name.clone(),
         dst_mac,
         src_mac,
         eth_payload: buff.clone(),
@@ -263,7 +263,7 @@ fn flood(
 
                         let tx = tx.clone();
                         let push_sd = push_sd.clone();
-                        let interface_name = ni.if_name.clone();
+                        let if_name = ni.if_name.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv4_flood_thread(
@@ -273,7 +273,7 @@ fn flood(
                                 src_mac,
                                 src_ipv4,
                                 src_port,
-                                interface_name,
+                                if_name,
                                 method,
                                 retransmit,
                                 push_sd,
@@ -309,7 +309,7 @@ fn flood(
 
                         let tx = tx.clone();
                         let push_sd = push_sd.clone();
-                        let interface_name = ni.if_name.clone();
+                        let if_name = ni.if_name.clone();
                         thread::spawn(move || {
                             let start_time = Instant::now();
                             let ret = ipv6_flood_thread(
@@ -319,7 +319,7 @@ fn flood(
                                 src_mac,
                                 src_ipv6,
                                 src_port,
-                                interface_name,
+                                if_name,
                                 method,
                                 retransmit,
                                 push_sd,
@@ -406,9 +406,9 @@ pub(crate) fn flood_raw(
                             udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
                         }
                     };
-                    let interface_name = net_info.if_name.clone();
+                    let if_name = net_info.if_name.clone();
                     let srq = SRequest {
-                        interface_name,
+                        if_name,
                         dst_mac,
                         src_mac,
                         eth_payload: buff.clone(),
@@ -467,9 +467,9 @@ pub(crate) fn flood_raw(
                         }
                     };
 
-                    let interface_name = net_info.if_name.clone();
+                    let if_name = net_info.if_name.clone();
                     let srq = SRequest {
-                        interface_name,
+                        if_name,
                         dst_mac,
                         src_mac,
                         eth_payload: buff.clone(),

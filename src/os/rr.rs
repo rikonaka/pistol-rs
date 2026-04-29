@@ -8,7 +8,6 @@ pub struct RequestResponse {
     pub request3: Arc<[u8]>,
     /// layer2 response packet, if no response: response.len() == 0
     pub response2: Arc<[u8]>,
-    pub rtt: Duration,
 }
 
 impl Default for RequestResponse {
@@ -16,7 +15,6 @@ impl Default for RequestResponse {
         Self {
             request3: Arc::new([]),
             response2: Arc::new([]),
-            rtt: Duration::ZERO,
         }
     }
 }

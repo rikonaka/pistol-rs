@@ -192,7 +192,7 @@ pub(crate) fn arp_scan_raw(
         return Ok((None, Duration::ZERO));
     }
 
-    let interface_name = interface.name;
+    let if_name = interface.name;
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
@@ -203,7 +203,7 @@ pub(crate) fn arp_scan_raw(
 
     debug!(
         "use interface {} and src ipv4 {}",
-        &interface_name, src_ipv4
+        &if_name, src_ipv4
     );
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
     let send_packet_input = SendPacketInput {
@@ -211,7 +211,7 @@ pub(crate) fn arp_scan_raw(
         src_mac,
         l3_payload: arp_buff.clone(),
         eth_type: EtherTypes::Arp,
-        if_name: interface_name.clone(),
+        if_name: if_name.clone(),
         retransmit: 1,
     };
 
@@ -246,7 +246,7 @@ fn get_arp_scan_buff(
 ) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
     let interface = find_interface(dst_ipv4.into())?;
 
-    let interface_name = interface.name.clone();
+    let if_name = interface.name.clone();
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
@@ -255,7 +255,7 @@ fn get_arp_scan_buff(
         _ => return Err(PistolError::CanNotFoundSrcAddress),
     };
 
-    debug!("use interface {} and src ipv4 {}", interface_name, src_ipv4);
+    debug!("use interface {} and src ipv4 {}", if_name, src_ipv4);
     // only send here
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
@@ -264,7 +264,7 @@ fn get_arp_scan_buff(
         src_mac,
         l3_payload: arp_buff.clone(),
         eth_type: EtherTypes::Arp,
-        if_name: interface_name.clone(),
+        if_name: if_name.clone(),
         retransmit: 1,
     };
 
@@ -285,7 +285,7 @@ pub(crate) fn ndp_ns_scan_raw(
         return Ok((None, Duration::ZERO));
     }
 
-    let interface_name = interface.name;
+    let if_name = interface.name;
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
 
     let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
@@ -298,7 +298,7 @@ pub(crate) fn ndp_ns_scan_raw(
 
     debug!(
         "use interface {} and src ipv6 {}",
-        &interface_name, src_ipv6
+        &if_name, src_ipv6
     );
     let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
     let send_packet_input = SendPacketInput {
@@ -306,7 +306,7 @@ pub(crate) fn ndp_ns_scan_raw(
         src_mac,
         l3_payload: ndp_ns_buff.clone(),
         eth_type: EtherTypes::Ipv6,
-        if_name: interface_name.clone(),
+        if_name: if_name.clone(),
         retransmit: 1,
     };
 
@@ -342,7 +342,7 @@ pub(crate) fn get_ndp_ns_scan_buff(
 ) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
     let interface = find_interface(dst_ipv6.into())?;
 
-    let interface_name = interface.name.clone();
+    let if_name = interface.name.clone();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
 
     let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
@@ -368,7 +368,7 @@ pub(crate) fn get_ndp_ns_scan_buff(
         src_mac,
         l3_payload: ndp_ns_buff.clone(),
         eth_type: EtherTypes::Ipv6,
-        if_name: interface_name.clone(),
+        if_name: if_name.clone(),
         retransmit: 1,
     };
 
@@ -968,7 +968,7 @@ fn scan(
                 let src_mac = ni.inferred_src_mac;
                 let src_addr = ni.inferred_src_addr;
                 let src_port = ni.src_port;
-                let interface_name = ni.if_name.clone();
+                let if_name = ni.if_name.clone();
                 let cached = ni.cached;
 
                 let state = PortScanState {
@@ -981,7 +981,7 @@ fn scan(
                     src_mac,
                     src_addr,
                     src_port,
-                    if_name: interface_name,
+                    if_name: if_name,
                     cached,
                 };
                 loop_states.insert_ip_port(ni.dst_addr, p, state);

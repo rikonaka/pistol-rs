@@ -632,7 +632,7 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 
 #[derive(Debug, Clone)]
 struct SRequest {
-    interface_name: String, // the interface to send the packet, e.g., eth0
+    if_name: String, // the interface to send the packet, e.g., eth0
     dst_mac: MacAddr,       // destination mac address
     src_mac: MacAddr,       // source mac address
     eth_payload: Arc<[u8]>, // the layer3 packet to send
@@ -642,7 +642,7 @@ struct SRequest {
 
 #[derive(Debug, Clone)]
 struct RRequest {
-    interface_name: String, // the interface to receive the packet, e.g., eth0
+    if_name: String, // the interface to receive the packet, e.g., eth0
     id: u64,                // unique id for this recv msg,
     filters: Vec<Arc<PacketFilter>>, // runner receive filters to match
     created: Instant,       // create time, used to drop if exceed timeout
@@ -844,7 +844,7 @@ impl NetInfo {
                     .mac
                     .ok_or(PistolError::CanNotFoundSrcMacAddress)?;
                 let src_port = info.src_port;
-                let interface_name = src_interface.name.clone();
+                let if_name = src_interface.name.clone();
                 let dst_addr = info.dst_addr;
                 let src_addr = info.src_addr;
                 debug!(
@@ -860,7 +860,7 @@ impl NetInfo {
                     src_addr,
                     dst_ports,
                     src_port,
-                    if_name: interface_name,
+                    if_name: if_name,
                     cached,
                     cost: Duration::ZERO,
                     valid: true,
@@ -954,7 +954,7 @@ impl PistolStream {
     }
     fn init_receiver(&mut self, filter: Option<String>) -> Result<(), PistolError> {
         for interface in datalink::interfaces() {
-            debug!("start receiver for interface_name: {}", interface.name);
+            debug!("start receiver for if_name: {}", interface.name);
             let mut cap = Capture::new(&interface.name)?;
             // 10MB
             cap.set_buffer_size(10 * 1024 * 1024);
@@ -1118,7 +1118,7 @@ impl PistolStream {
 
 #[derive(Debug, Clone)]
 pub struct Pistol {
-    interface_name: Option<String>,
+    if_name: Option<String>,
     log_level: Option<Level>,
     timeout: Duration,
     max_retries: usize,
@@ -1144,7 +1144,7 @@ impl Default for Pistol {
         let (push_sd, get_sd) = unbounded::<SRequest>();
         let (push_rd, get_rd) = unbounded::<RRequest>();
         Pistol {
-            interface_name: None,
+            if_name: None,
             log_level: None,
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
             max_retries: 2, // default 2 max_retries
@@ -1189,11 +1189,11 @@ impl Pistol {
     /// Set the interface name for sending and receiving data.
     /// If not set, the program will try to automatically select an appropriate interface.
     pub fn set_interface(&mut self, if_name: &str) {
-        self.interface_name = Some(if_name.to_string());
+        self.if_name = Some(if_name.to_string());
     }
     /// Get the interface name for sending and receiving data.
     pub fn get_interface(&self) -> Option<String> {
-        self.interface_name.clone()
+        self.if_name.clone()
     }
     /// Set log level for tracing.
     pub fn set_log_level(&mut self, log_level: &str) {
