@@ -511,9 +511,6 @@ fn send_ie_probes(
     if_name: String,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<IERR, PistolError> {
     let mut stream = PistolStream::new();
     stream.init(Some(format!("host {} and icmp", dst_ipv4)))?;
@@ -595,13 +592,13 @@ fn send_ie_probes(
         // Normally, first repsonse was from ie_1 probe, and second response was from ie_2 probe.
         // But we cannot guarantee the order of responses, so we check the responses with filter and loop states.
         for r in &response {
-            todo!();
             if filter.check(r) {
                 recved_packet += 1;
-                for (key, state) in &mut loop_states {
-                    if let LoopKey::Port(t) = key {
-                        if *t == 1 {
-                            if !ie_response_1_recved {
+                if !ie_response_1_recved {
+                    // the first response set to 1
+                    for (key, state) in &mut loop_states {
+                        if let LoopKey::Port(t) = key {
+                            if *t == 1 {
                                 state.recved = true;
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
@@ -612,8 +609,13 @@ fn send_ie_probes(
                                 ie_response_1_recved = true;
                                 break;
                             }
-                        } else if *t == 2 {
-                            if ie_response_1_recved {
+                        }
+                    }
+                } else {
+                    // we recv the second response, set to 2
+                    for (key, state) in &mut loop_states {
+                        if let LoopKey::Port(t) = key {
+                            if *t == 2 {
                                 state.recved = true;
                                 let request = buff_hm[t].clone();
                                 let rr = RequestResponse {
@@ -655,10 +657,10 @@ fn send_ecn_probe(
     if_name: String,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<ECNRR, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init(Some(format!("host {} and tcp", dst_ipv4)))?;
+
     let src_port = random_port();
     let layer3 = Layer3Filter {
         name: String::from("os scan ecn layer3"),
@@ -676,58 +678,39 @@ fn send_ecn_probe(
     let filter = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4_tcp_udp));
 
     let buff = packet::ecn_packet_layer3(dst_ipv4, dst_open_tcp_port, src_ipv4, src_port)?;
-    let ether_type = EtherTypes::Ipv4;
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
 
-    let rrq_id = random_request_id();
+    let send_packet_input = SendPacketInput {
+        dst_mac,
+        src_mac,
+        eth_type: EtherTypes::Ipv4,
+        l3_payload: buff.clone(),
+        if_name: if_name.clone(),
+        retransmit: 1,
+    };
+
     for _ in 0..max_retries {
-        let rrq = RRequest {
-            if_name: if_name.clone(),
-            id: rrq_id,
-            filters: vec![filter.clone()],
-            created: Instant::now(),
-            elapsed: timeout,
-        };
-        let srq = SRequest {
-            if_name: if_name.clone(),
-            dst_mac,
-            src_mac,
-            eth_payload: buff.clone(),
-            eth_type: ether_type,
-            retransmit: 1,
-        };
+        stream.send_packet(send_packet_input.clone())?;
 
-        if let Err(e) = push_rd.send(rrq) {
-            error!("send os probe ecn recv msg failed: {}", e);
-        }
-        if let Err(e) = push_sd.send(srq) {
-            error!("send os probe ecn send msg failed: {}", e);
-        }
+        let response = stream.recv_packet(timeout)?;
 
-        match get_response.recv_timeout(timeout) {
-            Ok(recv_response) => {
-                if rrq_id == recv_response.id {
-                    let response = recv_response.data;
-                    let rtt = recv_response.rtt;
-                    let rr = RequestResponse {
-                        request3: buff.clone(),
-                        response2: response,
-                        rtt,
-                    };
-                    let ecn = ECNRR { ecn: rr };
-                    return Ok(ecn);
-                }
+        for r in &response {
+            if filter.check(r) {
+                let rr = RequestResponse {
+                    request3: buff.clone(),
+                    response2: r.clone(),
+                };
+                let ecn = ECNRR { ecn: rr };
+                return Ok(ecn);
             }
-            Err(_e) => (),
         }
     }
 
     let rr = RequestResponse {
         request3: buff,
         response2: Arc::new([]),
-        rtt: Duration::ZERO,
     };
 
     let ecn = ECNRR { ecn: rr };
@@ -744,10 +727,10 @@ fn send_tx_probes(
     if_name: String,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<TXRR, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init(Some(format!("host {} and tcp", dst_ipv4)))?;
+
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
     for i in 0..6 {
@@ -840,45 +823,30 @@ fn send_tx_probes(
     for t in 2..=7 {
         // 2 means buff_2, 3 means buff_3, and so on.
         let state = OsProbeState {
-            id: random_request_id(),
             retries: 0,
             recved: false,
         };
         loop_states.insert_port(t, state);
     }
 
-    let ether_type = EtherTypes::Ipv4;
     let mut tx_hm = HashMap::new();
     loop {
         let mut all_done = true;
         for (key, state) in &mut loop_states {
             if state.retries < max_retries && !state.recved {
                 if let LoopKey::Port(t) = key {
-                    let filter = filter_hm[t].clone();
                     let buff = buff_hm[t].clone();
 
-                    let start = Instant::now();
-                    let rrq = RRequest {
-                        if_name: if_name.clone(),
-                        id: state.id,
-                        filters: vec![filter],
-                        created: start,
-                        elapsed: timeout,
-                    };
-                    let srq = SRequest {
-                        if_name: if_name.clone(),
+                    let send_packet_input = SendPacketInput {
                         dst_mac,
                         src_mac,
-                        eth_payload: buff,
-                        eth_type: ether_type,
+                        eth_type: EtherTypes::Ipv4,
+                        l3_payload: buff.clone(),
+                        if_name: if_name.clone(),
                         retransmit: 1,
                     };
-                    if let Err(e) = push_rd.send(rrq) {
-                        error!("send os probe tx recv msg failed: {}", e);
-                    }
-                    if let Err(e) = push_sd.send(srq) {
-                        error!("send os probe tx send msg failed: {}", e);
-                    }
+
+                    stream.send_packet(send_packet_input)?;
 
                     state.retries += 1;
                     all_done = false;
@@ -889,6 +857,8 @@ fn send_tx_probes(
         if all_done {
             break;
         }
+
+        let recv_response = stream.recv_packet(timeout)?;
 
         let recv_start = Instant::now();
         let recv_timeout_10ms = Duration::from_millis(10);
