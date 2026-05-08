@@ -213,6 +213,10 @@ impl<V> IntoIterator for LoopStates<V> {
 }
 
 impl<V> LoopStates<V> {
+    fn get_port_mut(&mut self, port: u16) -> Option<&mut V> {
+        let key = LoopKey::Port(port);
+        self.data.get_mut(&key)
+    }
     fn insert_ip_port(&mut self, ip: IpAddr, port: u16, value: V) {
         let key = LoopKey::IpPort(ip, port);
         self.data.insert(key, value);
@@ -631,44 +635,6 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 ];
 
 #[derive(Debug, Clone)]
-struct SRequest {
-    if_name: String, // the interface to send the packet, e.g., eth0
-    dst_mac: MacAddr,       // destination mac address
-    src_mac: MacAddr,       // source mac address
-    eth_payload: Arc<[u8]>, // the layer3 packet to send
-    eth_type: EtherType,    // the layer3 protocol type, e.g., IPv4, IPv6, ARP
-    retransmit: usize,      // how many times to retransmit the packet, 0 means no retransmission
-}
-
-#[derive(Debug, Clone)]
-struct RRequest {
-    if_name: String, // the interface to receive the packet, e.g., eth0
-    id: u64,                // unique id for this recv msg,
-    filters: Vec<Arc<PacketFilter>>, // runner receive filters to match
-    created: Instant,       // create time, used to drop if exceed timeout
-    elapsed: Duration,      // elapsed time, used to drop if exceed timeout
-}
-
-impl RRequest {
-    fn check_packet(&self, received_packet: &[u8]) -> (bool, String) {
-        for filter in &self.filters {
-            if filter.check(received_packet) {
-                return (true, filter.name());
-            }
-        }
-        (false, String::new())
-    }
-}
-
-/// The response from receiver to runner, which contains the matched packet and the round-trip time (RTT).
-#[derive(Debug, Clone)]
-struct RResponse {
-    id: u64,
-    data: Arc<[u8]>,
-    rtt: Duration,
-}
-
-#[derive(Debug, Clone)]
 struct NetInfoInput {
     dst_addr: IpAddr,
     dst_ports: Vec<u16>,
@@ -889,7 +855,7 @@ struct PistolStream {
 }
 
 #[derive(Debug, Clone)]
-struct SendPacketInput {
+struct SendPacketParam {
     dst_mac: MacAddr,
     src_mac: MacAddr,
     eth_type: EtherType,
@@ -978,7 +944,14 @@ impl PistolStream {
 
         Ok(())
     }
-    fn send_packet(&mut self, input: SendPacketInput) -> Result<(), PistolError> {
+    /// For some scenarios (flood attack), user may only want to send packets without receiving packets,
+    fn init_without_receiver(&mut self) -> Result<(), PistolError> {
+        self.init_sender_layer2()?;
+        self.init_sender_layer3()?;
+
+        Ok(())
+    }
+    fn send_packet(&mut self, input: SendPacketParam) -> Result<(), PistolError> {
         let l3_payload = input.l3_payload;
         let dst_mac = input.dst_mac;
         let src_mac = input.src_mac;
@@ -1078,17 +1051,16 @@ impl PistolStream {
             );
 
             for (ifn, l2_sender) in &mut self.l2_senders {
-                if *ifn != if_name {
-                    continue;
-                }
-                // If retransmit is 1, it means no retransmission, just send once,
-                // and if retransmit is greater than 1, it means retransmission,
-                // send multiple times (used in flood attack).
-                for _ in 0..retransmit {
-                    if let Some(r) = l2_sender.sender.send_to(&buff, None) {
-                        match r {
-                            Ok(_) => debug!("send packet success, {}", m),
-                            Err(e) => error!("send packet error, {}, {}", m, e),
+                if *ifn == if_name {
+                    // If retransmit is 1, it means no retransmission, just send once,
+                    // and if retransmit is greater than 1, it means retransmission,
+                    // send multiple times (used in flood attack).
+                    for _ in 0..retransmit {
+                        if let Some(r) = l2_sender.sender.send_to(&buff, None) {
+                            match r {
+                                Ok(_) => debug!("send packet success, {}", m),
+                                Err(e) => error!("send packet error, {}, {}", m, e),
+                            }
                         }
                     }
                 }

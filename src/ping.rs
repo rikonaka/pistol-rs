@@ -26,7 +26,7 @@ pub mod icmpv6;
 use crate::LoopStates;
 use crate::NetInfo;
 use crate::PistolStream;
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::layer::PacketFilter;
 use crate::scan::PortStatus;
@@ -251,7 +251,7 @@ fn build_ping_buff(
     src_port: u16,
     if_name: String,
     method: PingMethods,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     let build_now = || -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
         match method {
             PingMethods::Syn => {
@@ -304,7 +304,7 @@ fn build_ping_buff(
 
     let (buff, filters) = build_now()?;
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: buff,
@@ -313,7 +313,7 @@ fn build_ping_buff(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, filters))
+    Ok((spp, filters))
 }
 
 fn build_ping_buff6(
@@ -325,7 +325,7 @@ fn build_ping_buff6(
     src_port: u16,
     if_name: String,
     method: PingMethods,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     let build_now = || -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
         match method {
             PingMethods::Syn => {
@@ -373,7 +373,7 @@ fn build_ping_buff6(
 
     let (buff, filters) = build_now()?;
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: buff,
@@ -382,7 +382,7 @@ fn build_ping_buff6(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, filters))
+    Ok((spp, filters))
 }
 
 fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus, PistolError> {
@@ -575,12 +575,12 @@ fn ping(
                     };
 
                     if state.retries < max_retries && !state.data_recved {
-                        let (spi, filters) = build_ping_buff(
+                        let (spp, filters) = build_ping_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
                             method,
                         )?;
                         all_filters.extend(filters);
-                        stream.send_packet(spi)?;
+                        stream.send_packet(spp)?;
 
                         state.retries += 1;
                         all_done = false;
@@ -612,12 +612,12 @@ fn ping(
                         };
 
                     if state.retries < max_retries && !state.data_recved {
-                        let (spi, filters) = build_ping_buff6(
+                        let (spp, filters) = build_ping_buff6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
                             method,
                         )?;
                         all_filters.extend(filters);
-                        stream.send_packet(spi)?;
+                        stream.send_packet(spp)?;
 
                         state.retries += 1;
                         all_done = false;
@@ -712,7 +712,7 @@ pub fn ping_raw(
     };
     let if_name = net_info.if_name.clone();
 
-    let (spi, filters) = match net_info.inferred_dst_addr {
+    let (spp, filters) = match net_info.inferred_dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match net_info.inferred_src_addr {
                 IpAddr::V4(src) => src,
@@ -722,7 +722,7 @@ pub fn ping_raw(
                     });
                 }
             };
-            let (spi, filters) = build_ping_buff(
+            let (spp, filters) = build_ping_buff(
                 dst_mac,
                 dst_ipv4,
                 Some(dst_port),
@@ -732,7 +732,7 @@ pub fn ping_raw(
                 if_name,
                 method,
             )?;
-            (spi, filters)
+            (spp, filters)
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match net_info.inferred_src_addr {
@@ -743,7 +743,7 @@ pub fn ping_raw(
                     });
                 }
             };
-            let (spi, filters) = build_ping_buff6(
+            let (spp, filters) = build_ping_buff6(
                 dst_mac,
                 dst_ipv6,
                 Some(dst_port),
@@ -753,14 +753,14 @@ pub fn ping_raw(
                 if_name,
                 method,
             )?;
-            (spi, filters)
+            (spp, filters)
         }
     };
 
     let dst_addr = net_info.inferred_dst_addr;
 
     for i in 0..max_retries {
-        stream.send_packet(spi.clone())?;
+        stream.send_packet(spp.clone())?;
         let response = stream.recv_packet(timeout)?;
 
         for r in &response {

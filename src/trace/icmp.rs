@@ -17,7 +17,7 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::sync::Arc;
 
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::layer::ICMP_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
@@ -41,7 +41,7 @@ pub(crate) fn send_icmp_trace_packet(
     ttl: u8,
     icmp_id: u16,
     seq: u16,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
@@ -135,7 +135,7 @@ pub(crate) fn send_icmp_trace_packet(
 
     let ip_buff = Arc::new(ip_buff);
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         eth_type: EtherTypes::Ipv4,
@@ -144,7 +144,7 @@ pub(crate) fn send_icmp_trace_packet(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, vec![filter_1, filter_2]))
+    Ok((spp, vec![filter_1, filter_2]))
 }
 
 pub(crate) fn parse_icmp_trace_response(eth_response: &[u8]) -> Result<HopStatus, PistolError> {

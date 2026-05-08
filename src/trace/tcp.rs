@@ -18,7 +18,7 @@ use std::net::Ipv4Addr;
 use std::panic::Location;
 use std::sync::Arc;
 
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -50,7 +50,7 @@ pub(crate) fn build_syn_trace_packet(
     if_name: String,
     ip_id: u16,
     ttl: u8,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     let mut rng = rand::rng();
     // ip header
     let mut ip_buff = [0u8; IPV4_HEADER_SIZE + TCP_HEADER_SIZE + TCP_OPTIONS_SIZE + TCP_DATA_SIZE];
@@ -147,7 +147,7 @@ pub(crate) fn build_syn_trace_packet(
 
     let ip_buff = Arc::new(ip_buff);
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         eth_type: EtherTypes::Ipv4,
@@ -156,7 +156,7 @@ pub(crate) fn build_syn_trace_packet(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, vec![filter_1, filter_2]))
+    Ok((spp, vec![filter_1, filter_2]))
 }
 
 pub(crate) fn parse_syn_trace_response(eth_response: &[u8]) -> Result<HopStatus, PistolError> {

@@ -46,7 +46,7 @@ use crate::LoopStates;
 use crate::NetInfo;
 use crate::PacketFilter;
 use crate::PistolStream;
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::Target;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
@@ -206,7 +206,7 @@ pub(crate) fn arp_scan_raw(
         &if_name, src_ipv4
     );
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: arp_buff.clone(),
@@ -216,7 +216,7 @@ pub(crate) fn arp_scan_raw(
     };
 
     for _ in 0..max_retries {
-        stream.send_packet(send_packet_input.clone())?;
+        stream.send_packet(spp.clone())?;
 
         let response = stream.recv_packet(timeout)?;
 
@@ -243,7 +243,7 @@ pub(crate) fn arp_scan_raw(
 
 fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     let interface = find_interface(dst_ipv4.into())?;
 
     let if_name = interface.name.clone();
@@ -259,7 +259,7 @@ fn get_arp_scan_buff(
     // only send here
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: arp_buff.clone(),
@@ -268,7 +268,7 @@ fn get_arp_scan_buff(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, filters))
+    Ok((spp, filters))
 }
 
 pub(crate) fn ndp_ns_scan_raw(
@@ -301,7 +301,7 @@ pub(crate) fn ndp_ns_scan_raw(
         &if_name, src_ipv6
     );
     let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: ndp_ns_buff.clone(),
@@ -311,7 +311,7 @@ pub(crate) fn ndp_ns_scan_raw(
     };
 
     for _ in 0..max_retries {
-        stream.send_packet(send_packet_input.clone())?;
+        stream.send_packet(spp.clone())?;
 
         let response = stream.recv_packet(timeout)?;
 
@@ -339,7 +339,7 @@ pub(crate) fn ndp_ns_scan_raw(
 
 pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     let interface = find_interface(dst_ipv6.into())?;
 
     let if_name = interface.name.clone();
@@ -363,7 +363,7 @@ pub(crate) fn get_ndp_ns_scan_buff(
     debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
     let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: ndp_ns_buff.clone(),
@@ -372,7 +372,7 @@ pub(crate) fn get_ndp_ns_scan_buff(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, filters))
+    Ok((spp, filters))
 }
 
 pub(crate) fn parse_mac_scan_response(eth_response: &[u8]) -> Option<(IpAddr, MacAddr)> {
@@ -506,9 +506,9 @@ pub(crate) fn mac_scan(
                             state.retries + 1,
                             max_retries
                         );
-                        let (spi, filters) = get_arp_scan_buff(dst_ipv4)?;
+                        let (spp, filters) = get_arp_scan_buff(dst_ipv4)?;
                         all_filters.extend(filters);
-                        stream.send_packet(spi)?;
+                        stream.send_packet(spp)?;
 
                         state.data_recved = false;
                         state.retries += 1;
@@ -522,9 +522,9 @@ pub(crate) fn mac_scan(
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
-                        let (spi, filters) = get_ndp_ns_scan_buff(dst_ipv6)?;
+                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6)?;
                         all_filters.extend(filters);
-                        stream.send_packet(spi)?;
+                        stream.send_packet(spp)?;
 
                         state.data_recved = false;
                         state.retries += 1;
@@ -824,7 +824,7 @@ fn build_scan_buff(
     src_port: u16,
     if_name: String,
     method: ScanMethod,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     // The connect scan and idle scan need to send more than one packets,
     // so we put them other functions instead of here.
     let ret = match method {
@@ -839,7 +839,7 @@ fn build_scan_buff(
     };
 
     let (buff, filters) = ret?;
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: buff.clone(),
@@ -848,7 +848,7 @@ fn build_scan_buff(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, filters))
+    Ok((spp, filters))
 }
 
 fn build_scan_buff6(
@@ -860,7 +860,7 @@ fn build_scan_buff6(
     src_port: u16,
     if_name: String,
     method: ScanMethod,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     let ret = match method {
         ScanMethod::Syn => tcp6::build_syn_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
         ScanMethod::Fin => tcp6::build_fin_scan_packet(dst_ipv6, dst_port, src_ipv6, src_port),
@@ -875,7 +875,7 @@ fn build_scan_buff6(
     };
 
     let (buff, filters) = ret?;
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         l3_payload: buff.clone(),
@@ -884,7 +884,7 @@ fn build_scan_buff6(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, filters))
+    Ok((spp, filters))
 }
 
 fn parse_response(eth_response: &[u8], method: ScanMethod) -> Result<PortStatus, PistolError> {
@@ -1020,12 +1020,12 @@ fn scan(
                     };
                     if state.retries < max_retries && !state.recved {
                         let if_name = state.if_name.clone();
-                        let (spi, filters) = build_scan_buff(
+                        let (spp, filters) = build_scan_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
                             method,
                         )?;
                         all_filters.extend(filters);
-                        stream.send_packet(spi)?;
+                        stream.send_packet(spp)?;
 
                         state.retries += 1;
                         all_done = false;
@@ -1047,12 +1047,12 @@ fn scan(
                     };
                     if state.retries < max_retries && !state.recved {
                         let if_name = state.if_name.clone();
-                        let (spi, filters) = build_scan_buff6(
+                        let (spp, filters) = build_scan_buff6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
                             method,
                         )?;
                         all_filters.extend(filters);
-                        stream.send_packet(spi)?;
+                        stream.send_packet(spp)?;
 
                         state.retries += 1;
                         all_done = false;
@@ -1186,7 +1186,7 @@ fn scan_raw(
     // The real dst_addr is inferred from infer_addr.
     let cached = net_info.cached;
     let if_name = net_info.if_name.clone();
-    let (spi, filters) = match dst_addr {
+    let (spp, filters) = match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match net_info.inferred_src_addr {
                 IpAddr::V4(s) => s,
@@ -1196,10 +1196,10 @@ fn scan_raw(
                     });
                 }
             };
-            let (spi, filters) = build_scan_buff(
+            let (spp, filters) = build_scan_buff(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, method,
             )?;
-            (spi, filters)
+            (spp, filters)
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match net_info.inferred_src_addr {
@@ -1210,15 +1210,15 @@ fn scan_raw(
                     });
                 }
             };
-            let (spi, filters) = build_scan_buff6(
+            let (spp, filters) = build_scan_buff6(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name, method,
             )?;
-            (spi, filters)
+            (spp, filters)
         }
     };
 
     for i in 0..max_retries {
-        stream.send_packet(spi.clone())?;
+        stream.send_packet(spp.clone())?;
         let response = stream.recv_packet(timeout)?;
 
         for r in &response {

@@ -1,8 +1,6 @@
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
-use crossbeam::channel::Receiver;
-use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
 use pnet::packet::ethernet::EtherTypes;
 use rand::RngExt;
@@ -13,19 +11,14 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
-use std::time::Instant;
 use tracing::debug;
-use tracing::error;
 use tracing::warn;
 
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::NetInfo;
 use crate::PistolStream;
-use crate::RRequest;
-use crate::RResponse;
-use crate::SRequest;
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -198,9 +191,6 @@ pub(crate) fn get_scan_line(
     src_addr: IpAddr,
     if_name: String,
     timeout: Duration,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
     good_results: bool,
 ) -> Result<String, PistolError> {
     // Nmap version number (V), we will our own version number like pistol_4.0.16 here.
@@ -264,7 +254,7 @@ pub(crate) fn get_scan_line(
             cost: Duration::ZERO,
             valid: true,
         };
-        let trace = icmp_trace(icmp_trace_net_info, timeout, push_rd, push_sd, get_response)?;
+        let trace = icmp_trace(icmp_trace_net_info, timeout)?;
         trace.hops
     };
 
@@ -345,9 +335,6 @@ fn send_seq_probes(
     if_name: String,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<SEQRR, PistolError> {
     let mut stream = PistolStream::new();
     stream.init(Some(format!("host {} and tcp", dst_ipv4)))?;
@@ -411,7 +398,7 @@ fn send_seq_probes(
                 if let LoopKey::Port(t) = key {
                     let buff = buff_hm[t].clone();
 
-                    let send_packet_input = SendPacketInput {
+                    let spp = SendPacketParam {
                         dst_mac,
                         src_mac,
                         eth_type: EtherTypes::Ipv4,
@@ -420,7 +407,7 @@ fn send_seq_probes(
                         retransmit: 1,
                     };
 
-                    stream.send_packet(send_packet_input)?;
+                    stream.send_packet(spp)?;
 
                     state.retries += 1;
                     all_done = false;
@@ -445,22 +432,19 @@ fn send_seq_probes(
         }
 
         for r in &response {
-            for (i, f) in &filter_hm {
+            for (&i, f) in &filter_hm {
                 if f.check(r) {
                     recved_packet += 1;
-                    for (key, state) in &mut loop_states {
-                        if let LoopKey::Port(t) = key {
-                            if *t == *i {
-                                state.recved = true;
-                                let request = buff_hm[t].clone();
-                                let rr = RequestResponse {
-                                    request3: request,
-                                    response2: r.clone(),
-                                };
-                                seq_hm.insert(*t, rr);
-                                break;
-                            }
-                        }
+
+                    if let Some(state) = loop_states.get_port_mut(i) {
+                        state.recved = true;
+                        let request = buff_hm[&i].clone();
+                        let rr = RequestResponse {
+                            request3: request,
+                            response2: r.clone(),
+                        };
+                        seq_hm.insert(i, rr);
+                        break;
                     }
                 }
             }
@@ -550,7 +534,6 @@ fn send_ie_probes(
         loop_states.insert_port(t, state);
     }
 
-    let mut ie_response_1_recved = false;
     let mut ie_hm = HashMap::new();
     loop {
         let mut all_done = true;
@@ -559,7 +542,7 @@ fn send_ie_probes(
                 if let LoopKey::Port(t) = key {
                     let buff = buff_hm[t].clone();
 
-                    let send_packet_input = SendPacketInput {
+                    let spp = SendPacketParam {
                         dst_mac,
                         src_mac,
                         eth_type: EtherTypes::Ipv4,
@@ -568,7 +551,7 @@ fn send_ie_probes(
                         retransmit: 1,
                     };
 
-                    stream.send_packet(send_packet_input)?;
+                    stream.send_packet(spp)?;
 
                     state.retries += 1;
                     all_done = false;
@@ -594,37 +577,17 @@ fn send_ie_probes(
         for r in &response {
             if filter.check(r) {
                 recved_packet += 1;
-                if !ie_response_1_recved {
-                    // the first response set to 1
-                    for (key, state) in &mut loop_states {
+                for (key, state) in &mut loop_states {
+                    if !state.recved {
+                        state.recved = true;
                         if let LoopKey::Port(t) = key {
-                            if *t == 1 {
-                                state.recved = true;
-                                let request = buff_hm[t].clone();
-                                let rr = RequestResponse {
-                                    request3: request,
-                                    response2: r.clone(),
-                                };
-                                ie_hm.insert(1, rr);
-                                ie_response_1_recved = true;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // we recv the second response, set to 2
-                    for (key, state) in &mut loop_states {
-                        if let LoopKey::Port(t) = key {
-                            if *t == 2 {
-                                state.recved = true;
-                                let request = buff_hm[t].clone();
-                                let rr = RequestResponse {
-                                    request3: request,
-                                    response2: r.clone(),
-                                };
-                                ie_hm.insert(2, rr);
-                                break;
-                            }
+                            let request = buff_hm[t].clone();
+                            let rr = RequestResponse {
+                                request3: request,
+                                response2: r.clone(),
+                            };
+                            ie_hm.insert(*t, rr);
+                            break;
                         }
                     }
                 }
@@ -682,7 +645,7 @@ fn send_ecn_probe(
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         eth_type: EtherTypes::Ipv4,
@@ -692,7 +655,7 @@ fn send_ecn_probe(
     };
 
     for _ in 0..max_retries {
-        stream.send_packet(send_packet_input.clone())?;
+        stream.send_packet(spp.clone())?;
 
         let response = stream.recv_packet(timeout)?;
 
@@ -837,7 +800,7 @@ fn send_tx_probes(
                 if let LoopKey::Port(t) = key {
                     let buff = buff_hm[t].clone();
 
-                    let send_packet_input = SendPacketInput {
+                    let spp = SendPacketParam {
                         dst_mac,
                         src_mac,
                         eth_type: EtherTypes::Ipv4,
@@ -846,10 +809,12 @@ fn send_tx_probes(
                         retransmit: 1,
                     };
 
-                    stream.send_packet(send_packet_input)?;
+                    stream.send_packet(spp)?;
 
                     state.retries += 1;
                     all_done = false;
+
+                    sleep(Duration::from_millis(100));
                 }
             }
         }
@@ -858,10 +823,8 @@ fn send_tx_probes(
             break;
         }
 
-        let recv_response = stream.recv_packet(timeout)?;
+        let response = stream.recv_packet(timeout)?;
 
-        let recv_start = Instant::now();
-        let recv_timeout_10ms = Duration::from_millis(10);
         let mut recved_packet = 0;
         for (_key, state) in &loop_states {
             if state.recved {
@@ -869,34 +832,27 @@ fn send_tx_probes(
             }
         }
 
-        loop {
-            if recv_start.elapsed() >= timeout || recved_packet >= 6 {
-                break;
-            }
-            match get_response.recv_timeout(recv_timeout_10ms) {
-                Ok(recv_response) => {
-                    for (key, state) in &mut loop_states {
-                        if state.id == recv_response.id {
-                            recved_packet += 1;
-                            if let LoopKey::Port(t) = key {
-                                let rtt = recv_response.rtt;
-                                let response = recv_response.data.clone();
-                                state.recved = true;
+        for r in &response {
+            for (&i, f) in &filter_hm {
+                if f.check(r) {
+                    recved_packet += 1;
 
-                                let request = buff_hm[t].clone();
-                                let rr = RequestResponse {
-                                    request3: request,
-                                    response2: response,
-                                    rtt,
-                                };
-                                tx_hm.insert(*t, rr);
-                            }
-                            break;
-                        }
+                    if let Some(state) = loop_states.get_port_mut(i) {
+                        state.recved = true;
+                        let request = buff_hm[&i].clone();
+                        let rr = RequestResponse {
+                            request3: request,
+                            response2: r.clone(),
+                        };
+                        tx_hm.insert(i, rr);
+                        break;
                     }
                 }
-                Err(_e) => (),
             }
+        }
+
+        if recved_packet >= 6 {
+            break;
         }
     }
 
@@ -940,10 +896,10 @@ fn send_u1_probe(
     if_name: String,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<U1RR, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init(Some(format!("host {} and (icmp or udp)", dst_ipv4)))?;
+
     let src_port = random_port();
     let layer3 = Layer3Filter {
         name: String::from("os scan u1 layer3"),
@@ -964,55 +920,35 @@ fn send_u1_probe(
     // For those that do not require time, process them in order.
     // Prevent the previous request from receiving response from the later request.
     // ICMPV6 is a stateless protocol, we cannot accurately know the response for each request.
-    let rrq_id = random_request_id();
-    let ether_type = EtherTypes::Ipv4;
     for _ in 0..max_retries {
-        let start = Instant::now();
-        let rrq = RRequest {
-            if_name: if_name.clone(),
-            id: rrq_id,
-            filters: vec![filter.clone()],
-            created: start,
-            elapsed: timeout,
-        };
-        let srq = SRequest {
-            if_name: if_name.clone(),
+        let spp = SendPacketParam {
             dst_mac,
             src_mac,
-            eth_payload: buff.clone(),
-            eth_type: ether_type,
+            eth_type: EtherTypes::Ipv4,
+            l3_payload: buff.clone(),
+            if_name: if_name.clone(),
             retransmit: 1,
         };
-        if let Err(e) = push_rd.send(rrq) {
-            error!("send os probe u1 recv msg failed: {}", e);
-        }
-        if let Err(e) = push_sd.send(srq) {
-            error!("send os probe u1 send msg failed: {}", e);
-        }
 
-        match get_response.recv_timeout(timeout) {
-            Ok(recv_response) => {
-                let id = recv_response.id;
-                let response = recv_response.data;
-                if rrq_id == id {
-                    let rtt = recv_response.rtt;
-                    let rr = RequestResponse {
-                        request3: buff.clone(),
-                        response2: response,
-                        rtt,
-                    };
-                    let u1 = U1RR { u1: rr };
-                    return Ok(u1);
-                }
+        stream.send_packet(spp)?;
+
+        let response = stream.recv_packet(timeout)?;
+
+        for r in &response {
+            if filter.check(r) {
+                let rr = RequestResponse {
+                    request3: buff.clone(),
+                    response2: r.clone(),
+                };
+                let u1 = U1RR { u1: rr };
+                return Ok(u1);
             }
-            Err(_e) => (),
         }
     }
 
     let rr = RequestResponse {
         request3: buff,
         response2: Arc::new([]),
-        rtt: Duration::ZERO,
     };
     let u1 = U1RR { u1: rr };
     Ok(u1)
@@ -1029,9 +965,6 @@ fn send_all_probes(
     if_name: String,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<AllPacketRR, PistolError> {
     debug!("sending SEQ probe");
     let seq = send_seq_probes(
@@ -1043,9 +976,6 @@ fn send_all_probes(
         if_name.clone(),
         timeout,
         max_retries,
-        push_rd.clone(),
-        push_sd.clone(),
-        get_response.clone(),
     )?;
     debug!("sending IE probe");
     let ie = send_ie_probes(
@@ -1056,9 +986,6 @@ fn send_all_probes(
         if_name.clone(),
         timeout,
         max_retries,
-        push_rd.clone(),
-        push_sd.clone(),
-        get_response.clone(),
     )?;
     debug!("sending ECN probe");
     let ecn = send_ecn_probe(
@@ -1070,9 +997,6 @@ fn send_all_probes(
         if_name.clone(),
         timeout,
         max_retries,
-        push_rd.clone(),
-        push_sd.clone(),
-        get_response.clone(),
     )?;
     debug!("sending TX probe");
     let tx = send_tx_probes(
@@ -1085,9 +1009,6 @@ fn send_all_probes(
         if_name.clone(),
         timeout,
         max_retries,
-        push_rd.clone(),
-        push_sd.clone(),
-        get_response.clone(),
     )?;
     debug!("sending U1 probe");
     let u1 = send_u1_probe(
@@ -1099,9 +1020,6 @@ fn send_all_probes(
         if_name.clone(),
         timeout,
         max_retries,
-        push_rd.clone(),
-        push_sd.clone(),
-        get_response.clone(),
     )?;
 
     let ap = AllPacketRR {
@@ -2017,9 +1935,6 @@ pub(crate) fn os_probe_thread(
     top_k: usize,
     timeout: Duration,
     max_retries: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<Option<(Fingerprint, Vec<OsInfo>)>, PistolError> {
     fn sort_rets(arr: &[OsInfo], top_k: usize) -> Vec<OsInfo> {
         /* Insertion Sort (O(n^2) ==! anyway) */
@@ -2068,9 +1983,6 @@ pub(crate) fn os_probe_thread(
         if_name.clone(),
         timeout,
         max_retries,
-        push_rd.clone(),
-        push_sd.clone(),
-        get_response.clone(),
     )?;
     debug!("send all probes done");
 
@@ -2086,9 +1998,6 @@ pub(crate) fn os_probe_thread(
         src_ipv4.into(),
         if_name.clone(),
         timeout,
-        push_rd,
-        push_sd,
-        get_response,
         good_results,
     )?;
 

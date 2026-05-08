@@ -23,7 +23,7 @@ use crate::GLOBAL_NET_CACHES;
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::PistolStream;
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::fake_interface;
 use crate::layer::PacketFilter;
@@ -602,16 +602,16 @@ fn build_neighbor_detect_packet(
     dst_addr: IpAddr,
     src_addr: IpAddr,
     interface: NetworkInterface,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     fn build_neighbor_detect_packet4(
         dst_ipv4: Ipv4Addr,
         src_ipv4: Ipv4Addr,
         interface: NetworkInterface,
-    ) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+    ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
         let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
         let dst_mac = MacAddr::broadcast();
         let (buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
-        let send_packet_input = SendPacketInput {
+        let spp = SendPacketParam {
             dst_mac,
             src_mac,
             eth_type: EtherTypes::Arp,
@@ -619,14 +619,14 @@ fn build_neighbor_detect_packet(
             if_name: interface.name.clone(),
             retransmit: 1,
         };
-        Ok((send_packet_input, filters))
+        Ok((spp, filters))
     }
     fn build_neighbor_detect_packet6(
         dst_ipv6: Ipv6Addr,
         src_ipv6: Ipv6Addr,
         interface: NetworkInterface,
         is_route: bool,
-    ) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+    ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
         let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
 
         if is_route {
@@ -635,7 +635,7 @@ fn build_neighbor_detect_packet(
                 dst_ipv6
             );
             let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-            let send_packet_input = SendPacketInput {
+            let spp = SendPacketParam {
                 dst_mac,
                 src_mac,
                 eth_type: EtherTypes::Ipv6,
@@ -643,7 +643,7 @@ fn build_neighbor_detect_packet(
                 if_name: interface.name.clone(),
                 retransmit: 1,
             };
-            Ok((send_packet_input, filters))
+            Ok((spp, filters))
         } else {
             debug!(
                 "dst {} is in local net, send NDP NS to detect the dst mac",
@@ -651,7 +651,7 @@ fn build_neighbor_detect_packet(
             );
             let dst_mac = ipv6_multicast_mac(dst_ipv6);
             let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-            let send_packet_input = SendPacketInput {
+            let spp = SendPacketParam {
                 dst_mac,
                 src_mac,
                 eth_type: EtherTypes::Ipv6,
@@ -659,7 +659,7 @@ fn build_neighbor_detect_packet(
                 if_name: interface.name.clone(),
                 retransmit: 1,
             };
-            Ok((send_packet_input, filters))
+            Ok((spp, filters))
         }
     }
 
@@ -820,13 +820,13 @@ pub(crate) fn infer_mac(
                                     };
 
                                     let src_addr = state.src_addr;
-                                    let (spi, filters) = build_neighbor_detect_packet(
+                                    let (spp, filters) = build_neighbor_detect_packet(
                                         dst_addr,
                                         src_addr,
                                         src_interface,
                                     )?;
                                     all_filters.extend(filters);
-                                    stream.send_packet(spi)?;
+                                    stream.send_packet(spp)?;
 
                                     state.cached = false;
                                     state.is_route = false;
@@ -855,13 +855,13 @@ pub(crate) fn infer_mac(
                                 None => {
                                     let src_addr = state.src_addr;
                                     let src_interface = state.interface.clone();
-                                    let (spi, filters) = build_neighbor_detect_packet(
+                                    let (spp, filters) = build_neighbor_detect_packet(
                                         via_addr,
                                         src_addr,
                                         src_interface,
                                     )?;
                                     all_filters.extend(filters);
-                                    stream.send_packet(spi)?;
+                                    stream.send_packet(spp)?;
 
                                     state.cached = false;
                                     state.is_route = true;
@@ -892,13 +892,13 @@ pub(crate) fn infer_mac(
                                 );
                                 let src_addr = state.src_addr;
                                 let src_interface = state.interface.clone();
-                                let (spi, filters) = build_neighbor_detect_packet(
+                                let (spp, filters) = build_neighbor_detect_packet(
                                     dst_addr,
                                     src_addr,
                                     src_interface,
                                 )?;
                                 all_filters.extend(filters);
-                                stream.send_packet(spi)?;
+                                stream.send_packet(spp)?;
 
                                 state.cached = false;
                                 state.is_route = false;
@@ -932,10 +932,10 @@ pub(crate) fn infer_mac(
                                     );
 
                                     let src_addr = state.src_addr;
-                                    let (spi, filters) =
+                                    let (spp, filters) =
                                         build_neighbor_detect_packet(dr.via, src_addr, dr.dev)?;
                                     all_filters.extend(filters);
-                                    stream.send_packet(spi)?;
+                                    stream.send_packet(spp)?;
 
                                     state.cached = false;
                                     state.is_route = false;

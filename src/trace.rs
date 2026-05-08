@@ -21,6 +21,7 @@ use tracing::debug;
 use tracing::error;
 
 use crate::NetInfo;
+use crate::PistolStream;
 use crate::RRequest;
 use crate::RResponse;
 use crate::SRequest;
@@ -367,10 +368,10 @@ fn icmp_trace_ipv4(
     src_ipv4: Ipv4Addr,
     if_name: String,
     timeout: Duration,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<Trace, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init(Some(format!("host {} and icmp", dst_ipv4)))?;
+
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
     let mut ip_id = rng.random();
@@ -382,67 +383,40 @@ fn icmp_trace_ipv4(
     let trace_start = Instant::now();
 
     for ttl in 1..=TRACE_MAX_HOPS {
-        let (buff, filters) =
-            icmp::send_icmp_trace_packet(dst_ipv4, src_ipv4, ip_id, ttl, icmp_id, ttl as u16)?;
+        let (spp, filters) = icmp::send_icmp_trace_packet(
+            dst_mac, dst_ipv4, src_mac, src_ipv4, if_name, ip_id, ttl, icmp_id, ttl as u16,
+        )?;
 
-        let rrq_id = random_request_id();
         for _ in 0..TRACE_MAX_RETRY {
-            let rrq = RRequest {
-                if_name: if_name.clone(),
-                id: rrq_id,
-                filters: filters.clone(),
-                created: Instant::now(),
-                elapsed: timeout,
-            };
-            let srq = SRequest {
-                if_name: if_name.clone(),
-                dst_mac,
-                src_mac,
-                eth_payload: buff.clone(),
-                eth_type: EtherTypes::Ipv4,
-                retransmit: 1,
-            };
-            if let Err(e) = push_rd.send(rrq) {
-                error!("send trace recv msg error: {}", e);
-            }
-            if let Err(e) = push_sd.send(srq) {
-                error!("send trace packet error: {}", e);
-            }
+            stream.send_packet(spp.clone())?;
 
-            let recv_response = match get_response.recv_timeout(timeout) {
-                Ok(r) => {
-                    if r.id == rrq_id {
-                        r
-                    } else {
-                        sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
-                        continue;
+            let response = stream.recv_packet(timeout)?;
+
+            let mut response_we_want = None;
+            for r in &response {
+                for f in &filters {
+                    if f.check(r) {
+                        response_we_want = Some(r.clone());
+                        break;
                     }
                 }
-                Err(_e) => {
-                    debug!("icmp trace recv timeout for ttl: {}", ttl);
-                    sleep(Duration::from_secs_f32(TRACE_RETRY_INTERVAL));
-                    continue;
-                }
-            };
+            }
 
-            let hop_status = icmp::parse_icmp_trace_response(recv_response.data)?;
-            match hop_status {
-                HopStatus::TimeExceeded(_addr) => {
-                    last_response_ttl = ttl;
-                    break;
+            if let Some(r) = response_we_want {
+                let hop_status = icmp::parse_icmp_trace_response(&r)?;
+                match hop_status {
+                    HopStatus::TimeExceeded(_addr) => {
+                        last_response_ttl = ttl;
+                        break;
+                    }
+                    HopStatus::RecvReply(_addr) => {
+                        // recv echo reply, means packet arrive the target machine
+                        debug!("ttl: {}, {:?}", ttl, hop_status);
+                        trace.finish(ttl, trace_start.elapsed());
+                        return Ok(trace);
+                    }
+                    _ => break,
                 }
-                HopStatus::RecvReply(_addr) => {
-                    // recv echo reply, means packet arrive the target machine
-                    debug!(
-                        "ttl: {}, {:?} - {:.2}s",
-                        ttl,
-                        hop_status,
-                        recv_response.rtt.as_secs_f64()
-                    );
-                    trace.finish(ttl, trace_start.elapsed());
-                    return Ok(trace);
-                }
-                _ => break,
             }
         }
         ip_id += 1;
@@ -548,17 +522,12 @@ fn icmp_trace_ipv6(
     Ok(trace)
 }
 
-pub fn icmp_trace(
-    net_info: NetInfo,
-    timeout: Duration,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
-) -> Result<Trace, PistolError> {
+pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
+
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
             let src_ipv4 = match src_addr {
@@ -568,17 +537,7 @@ pub fn icmp_trace(
                 }
             };
             let if_name = net_info.if_name.clone();
-            icmp_trace_ipv4(
-                dst_mac,
-                dst_ipv4,
-                src_mac,
-                src_ipv4,
-                if_name,
-                timeout,
-                push_rd,
-                push_sd,
-                get_response,
-            )
+            icmp_trace_ipv4(dst_mac, dst_ipv4, src_mac, src_ipv4, if_name, timeout)
         }
         IpAddr::V6(dst_ipv6) => {
             let src_ipv6 = match src_addr {

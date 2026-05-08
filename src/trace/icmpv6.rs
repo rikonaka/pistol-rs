@@ -15,7 +15,7 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
 
-use crate::SendPacketInput;
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::layer::ICMPV6_ER_HEADER_SIZE;
 use crate::layer::IPV6_HEADER_SIZE;
@@ -38,7 +38,7 @@ pub(crate) fn build_icmpv6_trace_packet(
     hop_limit: u8,
     icmpv6_id: u16,
     seq: u16,
-) -> Result<(SendPacketInput, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + ICMPV6_ER_HEADER_SIZE + ICMPV6_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -132,7 +132,7 @@ pub(crate) fn build_icmpv6_trace_packet(
 
     let ipv6_buff = Arc::new(ipv6_buff);
 
-    let send_packet_input = SendPacketInput {
+    let spp = SendPacketParam {
         dst_mac,
         src_mac,
         eth_type: EtherTypes::Ipv6,
@@ -141,7 +141,7 @@ pub(crate) fn build_icmpv6_trace_packet(
         retransmit: 1,
     };
 
-    Ok((send_packet_input, vec![filter_1, filter_2]))
+    Ok((spp, vec![filter_1, filter_2]))
 }
 
 pub(crate) fn parse_icmpv6_trace_response(eth_response: &[u8]) -> Result<HopStatus, PistolError> {
