@@ -218,6 +218,7 @@ pub(crate) fn arp_scan_raw(
         stream.send_packet(spp.clone())?;
 
         let response = stream.recv_packet(timeout)?;
+        println!("recv {} packets in arp scan", response.len());
 
         for r in &response {
             for f in &filters {
@@ -400,46 +401,43 @@ pub(crate) fn parse_mac_scan_response(eth_response: &[u8]) -> Option<(IpAddr, Ma
                 None => return None,
             };
             let addr = ipv6_packet.get_source();
-            match ipv6_packet.get_next_header() {
-                IpNextHeaderProtocols::Icmpv6 => {
-                    let icmpv6_packet = match Icmpv6Packet::new(ipv6_packet.payload()) {
-                        Some(p) => p,
-                        None => return None,
-                    };
-                    match icmpv6_packet.get_icmpv6_type() {
-                        Icmpv6Types::NeighborAdvert => {
-                            let na_packet = match NeighborAdvertPacket::new(ipv6_packet.payload()) {
-                                Some(p) => p,
-                                None => return None,
-                            };
-                            for o in na_packet.get_options() {
-                                if o.data.len() >= 6 {
-                                    let mac = MacAddr::new(
-                                        o.data[0], o.data[1], o.data[2], o.data[3], o.data[4],
-                                        o.data[5],
-                                    );
-                                    return Some((addr.into(), mac));
-                                }
+            if ipv6_packet.get_next_header() == IpNextHeaderProtocols::Icmpv6 {
+                let icmpv6_packet = match Icmpv6Packet::new(ipv6_packet.payload()) {
+                    Some(p) => p,
+                    None => return None,
+                };
+                match icmpv6_packet.get_icmpv6_type() {
+                    Icmpv6Types::NeighborAdvert => {
+                        let na_packet = match NeighborAdvertPacket::new(ipv6_packet.payload()) {
+                            Some(p) => p,
+                            None => return None,
+                        };
+                        for o in na_packet.get_options() {
+                            if o.data.len() >= 6 {
+                                let mac = MacAddr::new(
+                                    o.data[0], o.data[1], o.data[2], o.data[3], o.data[4],
+                                    o.data[5],
+                                );
+                                return Some((addr.into(), mac));
                             }
                         }
-                        Icmpv6Types::RouterAdvert => {
-                            let mac = eth_packet.get_source();
-                            return Some((addr.into(), mac));
-                        }
-                        _ => {
-                            debug!(
-                                "skip non-NA/RA icmpv6 packet with type {:?}",
-                                icmpv6_packet.get_icmpv6_type()
-                            );
-                        }
+                    }
+                    Icmpv6Types::RouterAdvert => {
+                        let mac = eth_packet.get_source();
+                        return Some((addr.into(), mac));
+                    }
+                    _ => {
+                        debug!(
+                            "skip non-NA/RA icmpv6 packet with type {:?}",
+                            icmpv6_packet.get_icmpv6_type()
+                        );
                     }
                 }
-                _ => {
-                    debug!(
-                        "skip non-icmpv6 packet with next header {:?}",
-                        ipv6_packet.get_next_header()
-                    );
-                }
+            } else {
+                debug!(
+                    "skip non-icmpv6 packet with next header {:?}",
+                    ipv6_packet.get_next_header()
+                );
             }
         }
         _ => {
@@ -540,6 +538,7 @@ pub(crate) fn mac_scan(
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
+                            println!("recv mac scan response from {}, mac: {}", addr, mac);
                             for (_key, state) in &mut loop_states {
                                 if state.addr == addr {
                                     state.data_recved = true;

@@ -26,6 +26,7 @@ subnetwork = "0.6.6"
 threadpool = "1.8.1"
 escape-bytes = "0.1.1"
 prettytable-rs = "0.10.0"
+crossbeam-channel = "0.5.15"
 tracing-subscriber = "0.3.22"
 pnet = { version = "0.35.0", features = ["serde"] }
 chrono = { version = "0.4.43", features = ["serde"] }

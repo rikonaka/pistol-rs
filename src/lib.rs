@@ -2,6 +2,9 @@
 #![doc = include_str!("lib.md")]
 use chrono::DateTime;
 use chrono::Local;
+use crossbeam_channel::Receiver;
+use crossbeam_channel::Sender;
+use crossbeam_channel::unbounded;
 use dns_lookup::lookup_host;
 use pcapture::Capture;
 use pnet::datalink;
@@ -48,6 +51,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv4Pool;
@@ -95,7 +99,7 @@ pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
 /// Whether to cache the network information of the program runtime process to avoid repeated calculations.
 #[cfg(feature = "debug")]
-pub static CACHE_NET: bool = true;
+pub static CACHE_NET: bool = false;
 #[cfg(not(feature = "debug"))]
 pub static CACHE_NET: bool = false;
 
@@ -843,12 +847,6 @@ struct L3Sender {
     sender_ipv6: TransportSender,
 }
 
-struct PistolStream {
-    l2_senders: HashMap<String, L2Sender>,
-    l3_senders: HashMap<String, L3Sender>,
-    l2_cap: HashMap<String, Capture>,
-}
-
 #[derive(Debug, Clone)]
 struct SendPacketParam {
     dst_mac: MacAddr,
@@ -859,12 +857,20 @@ struct SendPacketParam {
     retransmit: usize,
 }
 
+struct PistolStream {
+    l2_senders: HashMap<String, L2Sender>,
+    l3_senders: HashMap<String, L3Sender>,
+    l2_receiver: Option<Receiver<Arc<[u8]>>>,
+    l2_receiver_ready: bool,
+}
+
 impl PistolStream {
     fn new() -> Self {
         Self {
             l2_senders: HashMap::new(),
             l3_senders: HashMap::new(),
-            l2_cap: HashMap::new(),
+            l2_receiver: None,
+            l2_receiver_ready: false,
         }
     }
     fn init_sender_layer2(&mut self) -> Result<(), PistolError> {
@@ -913,20 +919,73 @@ impl PistolStream {
         }
         Ok(())
     }
-    fn init_receiver(&mut self, filter: Option<String>) -> Result<(), PistolError> {
+    fn run_receiver(
+        sender: Sender<Arc<[u8]>>,
+        ready_signal: Sender<()>,
+        filter: Option<String>,
+    ) -> Result<(), PistolError> {
+        let (s, r) = unbounded::<()>();
+        let mut interface_count = 0;
         for interface in datalink::interfaces() {
-            debug!("start receiver for if_name: {}", interface.name);
-            let mut cap = Capture::new(&interface.name)?;
-            // 10MB
-            cap.set_buffer_size(10 * 1024 * 1024);
-            cap.set_timeout(10);
-            cap.set_promiscuous_mode(true);
-            // cap.set_immediate_mode(true);
-            if let Some(filter) = &filter {
-                cap.set_filter(filter);
-            }
-            self.l2_cap.insert(interface.name.clone(), cap);
+            interface_count += 1;
+            let sender = sender.clone();
+            let filter = filter.clone();
+            let s = s.clone();
+            thread::spawn(move || {
+                debug!("start receiver for if_name: {}", interface.name);
+                match Capture::new(&interface.name) {
+                    Ok(mut cap) => {
+                        // 10MB
+                        cap.set_buffer_size(10 * 1024 * 1024);
+                        cap.set_timeout(10);
+                        cap.set_promiscuous_mode(true);
+                        cap.set_immediate_mode(true);
+                        if let Some(filter) = &filter {
+                            cap.set_filter(filter);
+                        }
+
+                        let mut send_ready = false;
+
+                        loop {
+                            if !send_ready {
+                                // Send a signal to indicate the receiver is ready to receive packets,
+                                // so that the sender can start sending packets without worrying about packet loss.
+                                if let Err(e) = s.send(()) {
+                                    error!("send ready signal error: {}", e);
+                                } else {
+                                    send_ready = true;
+                                }
+                            }
+
+                            if let Ok(packets) = cap.fetch_as_vec() {
+                                for packet in packets {
+                                    let pa = Arc::from(packet);
+                                    if let Err(e) = sender.send(pa) {
+                                        error!("send packet to {} error: {}", interface.name, e);
+                                    }
+
+                                    println!(">>> msg come: {}", packet.len());
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("create capture for {} error: {}", interface.name, e);
+                    }
+                }
+            });
         }
+
+        for _ in 0..interface_count {
+            if let Err(e) = r.recv() {
+                error!("receive ready signal error: {}", e);
+            }
+        }
+
+        if let Err(e) = ready_signal.send(()) {
+            error!("send ready signal error: {}", e);
+        }
+
         Ok(())
     }
     /// Initialize the PistolStream,
@@ -935,7 +994,25 @@ impl PistolStream {
     fn init(&mut self, filter: Option<String>) -> Result<(), PistolError> {
         self.init_sender_layer2()?;
         self.init_sender_layer3()?;
-        self.init_receiver(filter)?;
+
+        let (sender, receiver) = unbounded::<Arc<[u8]>>();
+        let (ready_sender, ready_receiver) = unbounded::<()>();
+        self.l2_receiver = Some(receiver);
+
+        thread::spawn(
+            move || match Self::run_receiver(sender, ready_sender, filter) {
+                Ok(_) => (),
+                Err(e) => error!("init receiver error: {}", e),
+            },
+        );
+
+        match ready_receiver.recv() {
+            Ok(_) => {
+                debug!("receiver is ready");
+                self.l2_receiver_ready = true;
+            }
+            Err(e) => error!("receive ready signal error: {}", e),
+        }
 
         Ok(())
     }
@@ -947,6 +1024,14 @@ impl PistolStream {
         Ok(())
     }
     fn send_packet(&mut self, input: SendPacketParam) -> Result<(), PistolError> {
+        loop {
+            // Avoid sending packets before the receiver is ready,
+            // otherwise the sent packets may be lost and can not be received by the receiver.
+            if self.l2_receiver_ready {
+                break;
+            }
+        }
+
         let l3_payload = input.l3_payload;
         let dst_mac = input.dst_mac;
         let src_mac = input.src_mac;
@@ -977,7 +1062,7 @@ impl PistolStream {
             eth_type.to_string().to_lowercase(),
             l3_payload.len()
         );
-        debug!(m);
+        debug!("{}", m);
 
         if dst_mac == src_mac {
             for (ifn, l3s) in &mut self.l3_senders {
@@ -1064,18 +1149,21 @@ impl PistolStream {
         Ok(())
     }
     fn recv_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
-        let mut matched_packets: Vec<Arc<[u8]>> = Vec::new();
-        let start = Instant::now();
-        loop {
-            if start.elapsed() > timeout {
-                break;
-            }
-
-            // Fetch packets first, then check if there are new filters to match,
-            // this can avoid missing packets that arrive before filters.
-            for (_ifname, cap) in &mut self.l2_cap {
-                for packet in cap.fetch_as_vec()? {
-                    matched_packets.push(Arc::from(packet));
+        let mut matched_packets = Vec::new();
+        if let Some(receiver) = &self.l2_receiver {
+            let recv_timeout = Duration::from_millis(10); // 10ms
+            let start = Instant::now();
+            loop {
+                if start.elapsed() >= timeout {
+                    break;
+                }
+                loop {
+                    match receiver.recv_timeout(recv_timeout) {
+                        Ok(packet) => {
+                            matched_packets.push(packet);
+                        }
+                        Err(_e) => break,
+                    }
                 }
             }
         }
@@ -1150,6 +1238,17 @@ impl Pistol {
             }
         };
         self.log_level = log_level;
+
+        if let Some(log_level) = self.log_level {
+            let subscriber = FmtSubscriber::builder()
+                .with_ansi(false)
+                .compact()
+                .with_max_level(log_level)
+                .finish();
+            if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+                error!("failed to set global default subscriber: {}", e);
+            }
+        }
     }
     /// Get log level for tracing.      
     pub fn get_log_level(&self) -> Option<Level> {
@@ -1176,18 +1275,6 @@ impl Pistol {
     pub fn get_max_retries(&self) -> usize {
         self.max_retries
     }
-    /// Initialize the Pistol instance with the given parameters.
-    fn init_logger(&mut self) -> Result<(), PistolError> {
-        if let Some(log_level) = self.log_level {
-            let subscriber = FmtSubscriber::builder()
-                .with_ansi(false)
-                .compact()
-                .with_max_level(log_level)
-                .finish();
-            let _ = tracing::subscriber::set_global_default(subscriber)?;
-        }
-        Ok(())
-    }
     /// Initialize domain and multiple runners for multiple targets.
     fn get_netinfo(
         &mut self,
@@ -1195,7 +1282,6 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<(Vec<NetInfo>, Duration), PistolError> {
-        self.init_logger()?;
         let now = Instant::now();
         let mut net_info_inputs = Vec::new();
         for t in targets {
@@ -1221,7 +1307,6 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<(NetInfo, Duration), PistolError> {
-        self.init_logger()?;
         let now = Instant::now();
         let input = NetInfoInput {
             dst_addr,
@@ -1274,7 +1359,7 @@ impl Pistol {
     /// +--------+---------------+-------------------+--------+-------------+
     /// |   4    | 192.168.5.254 | 00:50:56:e1:a8:e6 | VMware | 73.03ms(r1) |
     /// +--------+---------------+-------------------+--------+-------------+
-    /// | total cost: 1.25s, alive hosts: 4                                 |
+    /// | total cost: 1.74s, alive hosts: 4                                 |
     /// +--------+---------------+-------------------+--------+-------------+
     /// ```
     /// arp-scan:
@@ -2595,10 +2680,14 @@ mod tests {
     fn test_arp_scan_raw() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(0.5);
+        pistol.set_timeout(1.5);
         // pistol.set_log_level("debug");
 
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 2);
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 1);
+        let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
+        println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
+
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
         let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
     }
