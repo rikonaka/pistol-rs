@@ -61,10 +61,14 @@ impl fmt::Display for PingStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PingReport {
+    /// The target address of this ping report.
     pub addr: IpAddr,
+    /// The status of this ping report. If the status is `Up`, it means the target host is considered alive.
     pub status: PingStatus,
+    /// The retries times of this ping report. If the status is `Up`, it means at least one of the retries is successful.
     pub retries: usize,
-    cached: bool,
+    /// Whether this ping report is from cache. If `true`, it means this target's mac address is from cache.
+    pub cached: bool,
 }
 
 impl PingReport {
@@ -387,10 +391,9 @@ fn build_ping_buff6(
 
 fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus, PistolError> {
     let parse_ipv4 = |src_ipv4: Ipv4Addr| -> Result<PingStatus, PistolError> {
-        let eth_response_clone = eth_response.clone();
         match method {
             PingMethods::Syn => {
-                let port_status = tcp::parse_syn_scan_response(eth_response_clone)?;
+                let port_status = tcp::parse_syn_scan_response(eth_response)?;
                 let ping_status = match port_status {
                     PortStatus::Open => PingStatus::Up,
                     _ => PingStatus::Down,
@@ -398,7 +401,7 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
                 Ok(ping_status)
             }
             PingMethods::Ack => {
-                let port_status = tcp::parse_ack_scan_response(eth_response_clone)?;
+                let port_status = tcp::parse_ack_scan_response(eth_response)?;
                 let ping_status = match port_status {
                     PortStatus::Unfiltered => PingStatus::Up,
                     _ => PingStatus::Down,
@@ -406,7 +409,7 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
                 Ok(ping_status)
             }
             PingMethods::Udp => {
-                let port_status = udp::parse_udp_scan_response(eth_response_clone)?;
+                let port_status = udp::parse_udp_scan_response(eth_response)?;
                 let ping_status = match port_status {
                     PortStatus::Open => PingStatus::Up,
                     // PortStatus::OpenOrFiltered => PingStatus::Up,
@@ -415,15 +418,15 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
                 Ok(ping_status)
             }
             PingMethods::IcmpEcho => {
-                let ping_status = icmp::parse_icmp_echo_response(eth_response_clone)?;
+                let ping_status = icmp::parse_icmp_echo_response(eth_response)?;
                 Ok(ping_status)
             }
             PingMethods::IcmpTimeStamp => {
-                let ping_status = icmp::parse_icmp_timestamp_response(eth_response_clone)?;
+                let ping_status = icmp::parse_icmp_timestamp_response(eth_response)?;
                 Ok(ping_status)
             }
             PingMethods::IcmpAddressMask => {
-                let ping_status = icmp::parse_icmp_address_mask_response(eth_response_clone)?;
+                let ping_status = icmp::parse_icmp_address_mask_response(eth_response)?;
                 Ok(ping_status)
             }
             PingMethods::Icmpv6Echo => Err(PistolError::PingDetectionMethodError {
@@ -433,10 +436,9 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
         }
     };
     let parse_ipv6 = |src_ipv6: Ipv6Addr| -> Result<PingStatus, PistolError> {
-        let eth_response_clone = eth_response.clone();
         match method {
             PingMethods::Syn => {
-                let port_status = tcp6::parse_syn_scan_response(eth_response_clone)?;
+                let port_status = tcp6::parse_syn_scan_response(eth_response)?;
                 let ping_status = match port_status {
                     PortStatus::Open => PingStatus::Up,
                     _ => PingStatus::Down,
@@ -444,7 +446,7 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
                 Ok(ping_status)
             }
             PingMethods::Ack => {
-                let port_status = tcp6::parse_ack_scan_response(eth_response_clone)?;
+                let port_status = tcp6::parse_ack_scan_response(eth_response)?;
                 let ping_status = match port_status {
                     PortStatus::Unfiltered => PingStatus::Up,
                     _ => PingStatus::Down,
@@ -452,7 +454,7 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
                 Ok(ping_status)
             }
             PingMethods::Udp => {
-                let port_status = udp6::parse_udp_scan_response(eth_response_clone)?;
+                let port_status = udp6::parse_udp_scan_response(eth_response)?;
                 let ping_status = match port_status {
                     PortStatus::Open => PingStatus::Up,
                     PortStatus::OpenOrFiltered => PingStatus::Up,
@@ -470,7 +472,7 @@ fn parse_response(eth_response: &[u8], method: PingMethods) -> Result<PingStatus
                 });
             }
             PingMethods::Icmpv6Echo => {
-                let ping_status = icmpv6::parse_icmpv6_ping_response(eth_response_clone)?;
+                let ping_status = icmpv6::parse_icmpv6_ping_response(eth_response)?;
                 Ok(ping_status)
             }
         }

@@ -136,7 +136,7 @@ pub(crate) fn build_icmpv6_trace_packet(
         dst_mac,
         src_mac,
         eth_type: EtherTypes::Ipv6,
-        l3_payload: ipv6_buff.clone(),
+        l3_payload: ipv6_buff,
         if_name,
         retransmit: 1,
     };

@@ -1,8 +1,6 @@
 /* Remote OS Detection */
 use chrono::DateTime;
 use chrono::Local;
-use crossbeam::channel::Receiver;
-use crossbeam::channel::Sender;
 use prettytable::Cell;
 use prettytable::Row;
 use prettytable::Table;
@@ -24,9 +22,6 @@ use tracing::warn;
 use zip::ZipArchive;
 
 use crate::NetInfo;
-use crate::RRequest;
-use crate::RResponse;
-use crate::SRequest;
 use crate::error::PistolError;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::Fingerprint;
@@ -381,9 +376,6 @@ pub fn os_detect(
     timeout: Duration,
     max_retries: usize,
     top_k: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<OsDetects, PistolError> {
     let (tx, rx) = channel();
     let pool = ThreadPool::new(threads);
@@ -418,9 +410,6 @@ pub fn os_detect(
 
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");
-                let push_rd = push_rd.clone();
-                let push_sd = push_sd.clone();
-                let get_response = get_response.clone();
                 let if_name = ni.if_name.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
@@ -441,9 +430,6 @@ pub fn os_detect(
                             top_k,
                             timeout,
                             max_retries,
-                            push_rd,
-                            push_sd,
-                            get_response,
                         );
                         os_detect_ret
                     } else {
@@ -483,9 +469,6 @@ pub fn os_detect(
 
                 let linear = gen_linear()?;
                 debug!("ipv6 gen linear parse finish");
-                let push_rd = push_rd.clone();
-                let push_sd = push_sd.clone();
-                let get_response = get_response.clone();
                 let if_name = ni.if_name.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
@@ -507,9 +490,6 @@ pub fn os_detect(
                             linear,
                             timeout,
                             max_retries,
-                            push_rd,
-                            push_sd,
-                            get_response,
                         );
                         os_detect_ret
                     } else {
@@ -581,9 +561,6 @@ pub fn os_detect_raw(
     timeout: Duration,
     max_retries: usize,
     top_k: usize,
-    push_rd: Sender<RRequest>,
-    push_sd: Sender<SRequest>,
-    get_response: Receiver<RResponse>,
 ) -> Result<OsDetect, PistolError> {
     let mut os_detect = OsDetect::new();
     if !net_info.valid {
@@ -625,9 +602,6 @@ pub fn os_detect_raw(
                 top_k,
                 timeout,
                 max_retries,
-                push_rd,
-                push_sd,
-                get_response,
             ) {
                 Ok(Some((fingerprint, detects))) => {
                     let o = Detect {
@@ -677,9 +651,6 @@ pub fn os_detect_raw(
                 linear,
                 timeout,
                 max_retries,
-                push_rd,
-                push_sd,
-                get_response,
             ) {
                 Ok((fingerprint, detects)) => {
                     let o = Detect6 {

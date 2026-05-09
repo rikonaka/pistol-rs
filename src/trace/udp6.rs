@@ -1,3 +1,4 @@
+use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -13,6 +14,7 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::sync::Arc;
 
+use crate::SendPacketParam;
 use crate::error::PistolError;
 use crate::layer::IPV6_HEADER_SIZE;
 use crate::layer::Layer3Filter;
@@ -28,12 +30,15 @@ use crate::trace::HopStatus;
 const UDP_DATA_SIZE: usize = 32;
 
 pub(crate) fn build_udp_trace_packet(
+    dst_mac: MacAddr,
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
+    src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
+    if_name: String,
     hop_limit: u8,
-) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     // ipv6 header
     let mut ipv6_buff = [0u8; IPV6_HEADER_SIZE + UDP_HEADER_SIZE + UDP_DATA_SIZE];
     let mut ipv6_header = match MutableIpv6Packet::new(&mut ipv6_buff) {
@@ -132,7 +137,17 @@ pub(crate) fn build_udp_trace_packet(
     let filter_3 = Arc::new(PacketFilter::Layer4FilterTcpUdp(layer4));
 
     let ipv6_buff = Arc::new(ipv6_buff);
-    Ok((ipv6_buff, vec![filter_1, filter_2, filter_3]))
+
+    let spp = SendPacketParam {
+        dst_mac,
+        src_mac,
+        eth_type: EtherTypes::Ipv6,
+        l3_payload: ipv6_buff,
+        if_name,
+        retransmit: 1,
+    };
+
+    Ok((spp, vec![filter_1, filter_2, filter_3]))
 }
 
 pub(crate) fn recv_udp_trace_packet(eth_response: &[u8]) -> Result<HopStatus, PistolError> {

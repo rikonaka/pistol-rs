@@ -151,7 +151,7 @@ pub(crate) fn build_syn_trace_packet(
         dst_mac,
         src_mac,
         eth_type: EtherTypes::Ipv4,
-        l3_payload: ip_buff.clone(),
+        l3_payload: ip_buff,
         if_name,
         retransmit: 1,
     };

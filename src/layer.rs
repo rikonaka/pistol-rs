@@ -112,7 +112,6 @@ pub(crate) fn find_interface_by_dst_ip(dst_addr: IpAddr) -> Option<NetworkInterf
     }
     None
 }
-*/
 
 pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     for interface in interfaces() {
@@ -122,6 +121,7 @@ pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
     }
     None
 }
+*/
 
 #[derive(Debug, Clone)]
 pub(crate) struct Layer2Filter {

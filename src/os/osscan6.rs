@@ -1056,7 +1056,6 @@ fn send_u1_probe(
     };
 
     for _ in 0..max_retries {
-        let send_start = Instant::now();
         stream.send_packet(spp.clone())?;
         st = detect_begin.elapsed();
 
@@ -1325,24 +1324,23 @@ fn send_tx_probes(
                 if f.check(&r) {
                     recved_packet += 1;
 
-                    for (key, states) in &mut loop_states {
-                        if !states.recved {
-                            states.recved = true;
-                            if let LoopKey::Port(t) = key {
-                                let request = buff_hm[&t].clone();
-                                let rr = RequestResponse {
-                                    request3: request,
-                                    response2: r.clone(),
-                                };
-                                tx_hm.insert(*t, rr);
-                                rt_hm.insert(*t, detect_begin.elapsed());
-                                break;
-                            }
-                        }
+                    if let Some(state) = loop_states.get_port_mut(i) {
+                        state.recved = true;
+                        let request = buff_hm[&i].clone();
+                        let rr = RequestResponse {
+                            request3: request,
+                            response2: r.clone(),
+                        };
+                        tx_hm.insert(i, rr);
+                        rt_hm.insert(i, detect_begin.elapsed());
                     }
                     break;
                 }
             }
+        }
+
+        if recved_packet >= 6 {
+            break;
         }
     }
 

@@ -1,6 +1,5 @@
 use chrono::DateTime;
 use chrono::Local;
-use crossbeam::channel::Sender;
 use pnet::datalink::MacAddr;
 use pnet::packet::ethernet::EtherTypes;
 use prettytable::Cell;
@@ -347,6 +346,9 @@ pub(crate) fn flood_raw(
     repeat: usize,
     fake_src: bool,
 ) -> Result<Flood, PistolError> {
+    let mut stream = PistolStream::new();
+    stream.init_without_receiver()?;
+
     let mut flood = Flood::new();
     let start = Instant::now();
     let dst_mac = net_info.inferred_dst_mac;
@@ -390,17 +392,17 @@ pub(crate) fn flood_raw(
                         }
                     };
                     let if_name = net_info.if_name.clone();
-                    let srq = SRequest {
-                        if_name,
+
+                    let spp = SendPacketParam {
                         dst_mac,
                         src_mac,
-                        eth_payload: buff.clone(),
                         eth_type: EtherTypes::Ipv4,
+                        l3_payload: buff.clone(),
+                        if_name: if_name.clone(),
                         retransmit,
                     };
-                    if let Err(e) = push_sd.send(srq) {
-                        error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
-                    }
+
+                    stream.send_packet(spp)?;
 
                     let send_buff_size = buff.len() * retransmit;
                     total_send_buff_size += send_buff_size;
@@ -451,17 +453,18 @@ pub(crate) fn flood_raw(
                     };
 
                     let if_name = net_info.if_name.clone();
-                    let srq = SRequest {
-                        if_name,
+
+                    let spp = SendPacketParam {
                         dst_mac,
                         src_mac,
-                        eth_payload: buff.clone(),
-                        eth_type: EtherTypes::Ipv4,
+                        eth_type: EtherTypes::Ipv6,
+                        l3_payload: buff.clone(),
+                        if_name: if_name.clone(),
                         retransmit,
                     };
-                    if let Err(e) = push_sd.send(srq) {
-                        error!("failed to send to push_sd on func ipv4_flood_thread: {}", e);
-                    }
+
+                    stream.send_packet(spp)?;
+
                     let send_buff_size = buff.len() * retransmit;
                     total_send_buff_size += send_buff_size;
                 }
@@ -483,16 +486,8 @@ pub(crate) fn icmp_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
-    flood(
-        net_infos,
-        FloodMethods::Icmp,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood(net_infos, FloodMethods::Icmp, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn icmp_flood_raw(
@@ -500,16 +495,8 @@ pub(crate) fn icmp_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(
-        net_info,
-        FloodMethods::Icmp,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood_raw(net_info, FloodMethods::Icmp, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn tcp_syn_flood(
@@ -517,16 +504,8 @@ pub(crate) fn tcp_syn_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
-    flood(
-        net_infos,
-        FloodMethods::Syn,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood(net_infos, FloodMethods::Syn, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn tcp_syn_flood_raw(
@@ -534,16 +513,8 @@ pub(crate) fn tcp_syn_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(
-        net_info,
-        FloodMethods::Syn,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood_raw(net_info, FloodMethods::Syn, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn tcp_ack_flood(
@@ -551,16 +522,8 @@ pub(crate) fn tcp_ack_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
-    flood(
-        net_infos,
-        FloodMethods::Ack,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood(net_infos, FloodMethods::Ack, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn tcp_ack_flood_raw(
@@ -568,16 +531,8 @@ pub(crate) fn tcp_ack_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(
-        net_info,
-        FloodMethods::Ack,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood_raw(net_info, FloodMethods::Ack, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn tcp_ack_psh_flood(
@@ -585,7 +540,6 @@ pub(crate) fn tcp_ack_psh_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
     flood(
         net_infos,
@@ -593,7 +547,6 @@ pub(crate) fn tcp_ack_psh_flood(
         retransmit,
         repeat,
         fake_src,
-        push_sd,
     )
 }
 
@@ -602,16 +555,8 @@ pub(crate) fn tcp_ack_psh_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(
-        net_info,
-        FloodMethods::AckPsh,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood_raw(net_info, FloodMethods::AckPsh, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn udp_flood(
@@ -619,16 +564,8 @@ pub(crate) fn udp_flood(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Floods, PistolError> {
-    flood(
-        net_infos,
-        FloodMethods::Udp,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood(net_infos, FloodMethods::Udp, retransmit, repeat, fake_src)
 }
 
 pub(crate) fn udp_flood_raw(
@@ -636,16 +573,8 @@ pub(crate) fn udp_flood_raw(
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
-    push_sd: Sender<SRequest>,
 ) -> Result<Flood, PistolError> {
-    flood_raw(
-        net_info,
-        FloodMethods::Udp,
-        retransmit,
-        repeat,
-        fake_src,
-        push_sd,
-    )
+    flood_raw(net_info, FloodMethods::Udp, retransmit, repeat, fake_src)
 }
 
 #[cfg(test)]
@@ -664,8 +593,7 @@ mod tests {
 
         let mut pistol = Pistol::new();
         let (net_infos, dur) = pistol.get_netinfo(&targets, None, None).unwrap();
-        let push_sd = pistol.push_senders["ens33"].clone();
-        let ret = tcp_syn_flood(net_infos, retransmit, repeat, true, push_sd).unwrap();
+        let ret = tcp_syn_flood(net_infos, retransmit, repeat, true).unwrap();
         println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
     }
 }

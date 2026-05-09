@@ -48,6 +48,8 @@ use crate::PacketFilter;
 use crate::PistolStream;
 use crate::SendPacketParam;
 use crate::Target;
+#[cfg(feature = "debug")]
+use crate::debug_show_packet;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
 use crate::scan::arp::build_arp_scan_buff;
@@ -201,10 +203,7 @@ pub(crate) fn arp_scan_raw(
         _ => return Err(PistolError::CanNotFoundSrcAddress),
     };
 
-    debug!(
-        "use interface {} and src ipv4 {}",
-        &if_name, src_ipv4
-    );
+    debug!("use interface {} and src ipv4 {}", &if_name, src_ipv4);
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
     let spp = SendPacketParam {
         dst_mac,
@@ -296,10 +295,7 @@ pub(crate) fn ndp_ns_scan_raw(
         _ => return Err(PistolError::CanNotFoundSrcAddress),
     };
 
-    debug!(
-        "use interface {} and src ipv6 {}",
-        &if_name, src_ipv6
-    );
+    debug!("use interface {} and src ipv6 {}", &if_name, src_ipv6);
     let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
     let spp = SendPacketParam {
         dst_mac,
@@ -889,7 +885,6 @@ fn build_scan_buff6(
 
 fn parse_response(eth_response: &[u8], method: ScanMethod) -> Result<PortStatus, PistolError> {
     let parse_ipv4 = || -> Result<PortStatus, PistolError> {
-        let eth_response = eth_response.clone();
         match method {
             ScanMethod::Syn => tcp::parse_syn_scan_response(eth_response),
             ScanMethod::Fin => tcp::parse_fin_scan_response(eth_response),
@@ -902,7 +897,6 @@ fn parse_response(eth_response: &[u8], method: ScanMethod) -> Result<PortStatus,
         }
     };
     let parse_ipv6 = || -> Result<PortStatus, PistolError> {
-        let eth_response = eth_response.clone();
         match method {
             ScanMethod::Syn => tcp6::parse_syn_scan_response(eth_response),
             ScanMethod::Fin => tcp6::parse_fin_scan_response(eth_response),
@@ -1092,8 +1086,15 @@ fn scan(
         }
 
         for r in &response {
+            // only show the ipv4 packet for debug
+            #[cfg(feature = "debug")]
+            debug_show_packet(r, Some(EtherTypes::Ipv4));
+
             for f in &all_filters {
                 if f.check(r) {
+                    #[cfg(feature = "debug")]
+                    debug!("recv response from filter {}", f.name());
+
                     // if the f was TcpUdp filter
                     if let Some((addr, port)) = f.tcp_udp_ip_port() {
                         for (_key, state) in &mut loop_states {
