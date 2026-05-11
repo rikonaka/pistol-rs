@@ -52,6 +52,7 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv4Pool;
@@ -282,6 +283,12 @@ impl NetCache {
     }
 }
 
+fn get_ts() -> String {
+    let now = Local::now();
+    let ts = now.format("%H:%M:%S%.6f");
+    ts.to_string()
+}
+
 /// debug code
 #[cfg(feature = "debug")]
 fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>) {
@@ -300,6 +307,9 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
         }
         None => true,
     };
+
+    let ts = get_ts();
+
     if show_flag {
         match ether_type {
             EtherTypes::Ipv4 => {
@@ -315,7 +325,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
                             None => return,
                         };
                         println!(
-                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
+                            "{} [PACKET] {}, {}:{} -> {}:{}, len {}",
+                            ts,
                             ether_type.to_string().to_lowercase(),
                             ipv4_packet.get_source(),
                             tcp_packet.get_source(),
@@ -330,7 +341,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
                             None => return,
                         };
                         println!(
-                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
+                            "{} [PACKET] {}, {}:{} -> {}:{}, len {}",
+                            ts,
                             ether_type.to_string().to_lowercase(),
                             ipv4_packet.get_source(),
                             udp_packet.get_source(),
@@ -355,7 +367,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
                             None => return,
                         };
                         println!(
-                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
+                            "{} [PACKET] {}, {}:{} -> {}:{}, len {}",
+                            ts,
                             ether_type.to_string().to_lowercase(),
                             ipv6_packet.get_source(),
                             tcp_packet.get_source(),
@@ -370,7 +383,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
                             None => return,
                         };
                         println!(
-                            "[PACKET] {}, {}:{} -> {}:{}, len {}",
+                            "{} [PACKET] {}, {}:{} -> {}:{}, len {}",
+                            ts,
                             ether_type.to_string().to_lowercase(),
                             ipv6_packet.get_source(),
                             udp_packet.get_source(),
@@ -386,7 +400,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
                 // only show arp packet with non-broadcast destination mac address
                 if ethernet_packet.get_destination() != MacAddr::broadcast() {
                     println!(
-                        "[PACKET] {}, {} -> {}, len {}",
+                        "{} [PACKET] {}, {} -> {}, len {}",
+                        ts,
                         ether_type.to_string().to_lowercase(),
                         ethernet_packet.get_source(),
                         ethernet_packet.get_destination(),
@@ -395,7 +410,8 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
                 }
             }
             _ => println!(
-                "[PACKET] {}, len {}",
+                "{} [PACKET] {}, len {}",
+                ts,
                 ether_type,
                 ethernet_packet.packet().len(),
             ),
@@ -860,8 +876,9 @@ struct SendPacketParam {
 struct PistolStream {
     l2_senders: HashMap<String, L2Sender>,
     l3_senders: HashMap<String, L3Sender>,
-    l2_receiver: Option<Receiver<Arc<[u8]>>>,
+    l2_receiver: Option<Receiver<Vec<Arc<[u8]>>>>,
     l2_receiver_ready: bool,
+    l2_receiver_ready_sleep: bool,
 }
 
 impl PistolStream {
@@ -871,6 +888,7 @@ impl PistolStream {
             l3_senders: HashMap::new(),
             l2_receiver: None,
             l2_receiver_ready: false,
+            l2_receiver_ready_sleep: false,
         }
     }
     fn init_sender_layer2(&mut self) -> Result<(), PistolError> {
@@ -920,7 +938,7 @@ impl PistolStream {
         Ok(())
     }
     fn run_receiver(
-        sender: Sender<Arc<[u8]>>,
+        sender: Sender<Vec<Arc<[u8]>>>,
         ready_signal: Sender<()>,
         filter: Option<String>,
     ) -> Result<(), PistolError> {
@@ -935,8 +953,8 @@ impl PistolStream {
                 debug!("start receiver for if_name: {}", interface.name);
                 match Capture::new(&interface.name) {
                     Ok(mut cap) => {
-                        // 10MB
-                        cap.set_buffer_size(10 * 1024 * 1024);
+                        // 16MB
+                        cap.set_buffer_size(16 * 1024 * 1024);
                         cap.set_timeout(10);
                         cap.set_promiscuous_mode(true);
                         cap.set_immediate_mode(true);
@@ -958,13 +976,14 @@ impl PistolStream {
                             }
 
                             if let Ok(packets) = cap.fetch_as_vec() {
-                                for packet in packets {
-                                    let pa = Arc::from(packet);
-                                    if let Err(e) = sender.send(pa) {
-                                        error!("send packet to {} error: {}", interface.name, e);
-                                    }
-
-                                    println!(">>> msg come: {}", packet.len());
+                                let mut pa = Vec::new();
+                                for p in packets {
+                                    #[cfg(feature = "debug")]
+                                    debug_show_packet(p, Some(EtherTypes::Arp));
+                                    pa.push(Arc::from(p));
+                                }
+                                if let Err(e) = sender.send(pa) {
+                                    error!("send packet to {} error: {}", interface.name, e);
                                 }
                             }
                         }
@@ -995,7 +1014,7 @@ impl PistolStream {
         self.init_sender_layer2()?;
         self.init_sender_layer3()?;
 
-        let (sender, receiver) = unbounded::<Arc<[u8]>>();
+        let (sender, receiver) = unbounded::<Vec<Arc<[u8]>>>();
         let (ready_sender, ready_receiver) = unbounded::<()>();
         self.l2_receiver = Some(receiver);
 
@@ -1008,8 +1027,8 @@ impl PistolStream {
 
         match ready_receiver.recv() {
             Ok(_) => {
-                debug!("receiver is ready");
                 self.l2_receiver_ready = true;
+                debug!("receiver is ready");
             }
             Err(e) => error!("receive ready signal error: {}", e),
         }
@@ -1023,11 +1042,42 @@ impl PistolStream {
 
         Ok(())
     }
+    fn recv_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
+        let mut matched_packets = Vec::new();
+        if let Some(receiver) = &self.l2_receiver {
+            let recv_timeout = Duration::from_millis(10); // 10ms
+            let start = Instant::now();
+            loop {
+                if start.elapsed() >= timeout {
+                    break;
+                }
+                loop {
+                    match receiver.recv_timeout(recv_timeout) {
+                        Ok(packet) => {
+                            matched_packets.extend_from_slice(&packet);
+                        }
+                        Err(_e) => break,
+                    }
+                }
+            }
+        }
+        Ok(matched_packets)
+    }
     fn send_packet(&mut self, input: SendPacketParam) -> Result<(), PistolError> {
         loop {
             // Avoid sending packets before the receiver is ready,
             // otherwise the sent packets may be lost and can not be received by the receiver.
             if self.l2_receiver_ready {
+                // Sleep a while in first time to make sure the receiver is ready to receive packets,
+                // since there may be some delay between the receiver is ready and the sender can start sending packets.
+                if !self.l2_receiver_ready_sleep {
+                    let ts = get_ts();
+                    debug!("{} receiver is not ready, sleep a while", ts);
+                    println!("{} receiver is not ready, sleep a while", ts);
+
+                    sleep(Duration::from_millis(50));
+                    self.l2_receiver_ready_sleep = true;
+                }
                 break;
             }
         }
@@ -1147,27 +1197,6 @@ impl PistolStream {
             }
         }
         Ok(())
-    }
-    fn recv_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
-        let mut matched_packets = Vec::new();
-        if let Some(receiver) = &self.l2_receiver {
-            let recv_timeout = Duration::from_millis(10); // 10ms
-            let start = Instant::now();
-            loop {
-                if start.elapsed() >= timeout {
-                    break;
-                }
-                loop {
-                    match receiver.recv_timeout(recv_timeout) {
-                        Ok(packet) => {
-                            matched_packets.push(packet);
-                        }
-                        Err(_e) => break,
-                    }
-                }
-            }
-        }
-        Ok(matched_packets)
     }
 }
 
@@ -1346,34 +1375,43 @@ impl Pistol {
     /// Note: r1 means receive response in the first retry, r2 means receive response in the second retry, and so on.
     /// pistol:
     /// ```
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// |                     Mac Scans (max_retries:2)                     |
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// |  seq   |     addr      |        mac        |  oui   |     rtt     |
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// |   1    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware | 70.01ms(r1) |
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// |   2    |  192.168.5.2  | 00:50:56:ea:b6:ec | VMware | 89.05ms(r2) |
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// |   3    | 192.168.5.78  | 00:0c:29:cf:62:2f | VMware | 81.25ms(r2) |
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// |   4    | 192.168.5.254 | 00:50:56:e1:a8:e6 | VMware | 73.03ms(r1) |
-    /// +--------+---------------+-------------------+--------+-------------+
-    /// | total cost: 1.74s, alive hosts: 4                                 |
-    /// +--------+---------------+-------------------+--------+-------------+
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |                   Mac Scans (max_retries: 2)                    |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |  seq   |     addr      |        mac        |  oui   |  retries  |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   1    |  192.168.5.1  | 00:50:56:c0:00:08 | VMware |     1     |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   2    |  192.168.5.2  | 00:50:56:ea:b6:ec | VMware |     1     |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   3    | 192.168.5.78  | 00:0c:29:cf:62:2f | VMware |     1     |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   4    | 192.168.5.78  | 00:0c:29:cf:62:39 | VMware | 1 (DUP-2) |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   5    | 192.168.5.131 | 00:0c:29:cf:62:2f | VMware |     1     |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   6    | 192.168.5.131 | 00:0c:29:cf:62:39 | VMware | 1 (DUP-2) |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// |   7    | 192.168.5.254 | 00:50:56:f9:e5:ea | VMware |     1     |
+    /// +--------+---------------+-------------------+--------+-----------+
+    /// | total cost: 1.49s, alive hosts: 7                               |
+    /// +--------+---------------+-------------------+--------+-----------+
     /// ```
     /// arp-scan:
     /// ```
-    /// ➜  pistol-rs git:(main) ✗ sudo arp-scan 192.168.5.0/24
+    /// ➜  pistol-rs git:(dev) ✗ sudo arp-scan 192.168.5.0/24
     /// Interface: ens33, type: EN10MB, MAC: 00:0c:29:ec:d0:37, IPv4: 192.168.5.3
     /// Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
     /// 192.168.5.1     00:50:56:c0:00:08       VMware, Inc.
-    /// 192.168.5.2     00:50:56:e6:2f:9d       VMware, Inc.
+    /// 192.168.5.2     00:50:56:ea:b6:ec       VMware, Inc.
     /// 192.168.5.78    00:0c:29:cf:62:2f       VMware, Inc.
-    /// 192.168.5.254   00:50:56:e0:d3:bb       VMware, Inc.
-    ///
-    /// 8 packets received by filter, 0 packets dropped by kernel
-    /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.071 seconds (123.61 hosts/sec). 4 responded
+    /// 192.168.5.78    00:0c:29:cf:62:39       VMware, Inc. (DUP: 2)
+    /// 192.168.5.131   00:0c:29:cf:62:2f       VMware, Inc.
+    /// 192.168.5.131   00:0c:29:cf:62:39       VMware, Inc. (DUP: 2)
+    /// 192.168.5.254   00:50:56:f9:e5:ea       VMware, Inc.
+    /// 
+    /// 7 packets received by filter, 0 packets dropped by kernel
+    /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.043 seconds (125.31 hosts/sec). 5 responded
     /// ```
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
         scan::mac_scan(targets, self.timeout, self.max_retries)

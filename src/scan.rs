@@ -80,7 +80,7 @@ impl fmt::Display for MacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Mac Scans (max_retries:{})", self.max_retries))
+            Cell::new(&format!("Mac Scans (max_retries: {})", self.max_retries))
                 .style_spec("c")
                 .with_hspan(5),
         ]));
@@ -88,25 +88,37 @@ impl fmt::Display for MacScans {
         table.add_row(row![c -> "seq", c -> "addr", c -> "mac", c -> "oui", c-> "retries"]);
 
         // sorted the results
-        let mut btm_addr: BTreeMap<IpAddr, MacReport> = BTreeMap::new();
+        let mut btm_addr: BTreeMap<IpAddr, Vec<MacReport>> = BTreeMap::new();
         for report in &self.mac_reports {
-            btm_addr.insert(report.addr, report.clone());
+            if btm_addr.contains_key(&report.addr) {
+                if let Some(v) = btm_addr.get_mut(&report.addr) {
+                    v.push(report.clone());
+                }
+            } else {
+                btm_addr.insert(report.addr, vec![report.clone()]);
+            }
         }
 
         let mut alive_hosts = 0;
         let mut i = 1;
-        for (_addr, report) in btm_addr {
-            let rtt_str = format!("{}", report.retries);
+        for (addr, reports) in btm_addr {
+            for (ind, report) in reports.iter().enumerate() {
+                let rtt_str = if ind == 0 {
+                    format!("{}", report.retries)
+                } else {
+                    format!("{} (DUP-{})", report.retries, ind + 1)
+                };
 
-            match report.mac {
-                Some(mac) => {
-                    table.add_row(
-                        row![c -> i, c -> report.addr, c -> mac, c -> report.oui, c -> rtt_str],
-                    );
-                    i += 1;
-                    alive_hosts += 1;
+                match report.mac {
+                    Some(mac) => {
+                        table.add_row(
+                            row![c -> i, c -> addr, c -> mac, c -> report.oui, c -> rtt_str],
+                        );
+                        i += 1;
+                        alive_hosts += 1;
+                    }
+                    None => (),
                 }
-                None => (),
             }
         }
 
@@ -187,7 +199,7 @@ pub(crate) fn arp_scan_raw(
 ) -> Result<(Option<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("arp")))?;
+    stream.init(Some(format!("arp and arp src host {}", dst_ipv4)))?;
 
     let interface = find_interface(dst_ipv4.into())?;
     if interface.is_loopback() {
@@ -216,10 +228,7 @@ pub(crate) fn arp_scan_raw(
 
     for _ in 0..max_retries {
         stream.send_packet(spp.clone())?;
-
         let response = stream.recv_packet(timeout)?;
-        println!("recv {} packets in arp scan", response.len());
-
         for r in &response {
             for f in &filters {
                 if f.check(r) {
@@ -309,9 +318,7 @@ pub(crate) fn ndp_ns_scan_raw(
 
     for _ in 0..max_retries {
         stream.send_packet(spp.clone())?;
-
         let response = stream.recv_packet(timeout)?;
-
         for r in &response {
             for f in &filters {
                 if f.check(r) {
@@ -470,7 +477,9 @@ pub(crate) fn mac_scan(
     max_retries: usize,
 ) -> Result<MacScans, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("arp or icmp6")))?;
+    stream.init(Some(String::from(
+        "(arp and arp[6:2] = 2) or (icmp6 and ip6[40] = 136)",
+    )))?;
 
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
@@ -485,10 +494,13 @@ pub(crate) fn mac_scan(
         loop_states.insert_ip_port(dst_addr, dst_port, state);
     }
 
-    let mut mac_scan_rets = HashMap::new();
+    // Sometimes the same target may receive multiple mac responses,
+    // so we use a Vec here to store the results of each target.
+    let mut mac_scan_rets: HashMap<IpAddr, Vec<(MacAddr, usize)>> = HashMap::new();
     let mut all_filters = Vec::new();
     loop {
         let mut all_done = true;
+        let send_start = Instant::now();
         for (_key, state) in &mut loop_states {
             if state.retries < max_retries && !state.data_recved {
                 let dst_addr = state.addr;
@@ -502,6 +514,7 @@ pub(crate) fn mac_scan(
                         );
                         let (spp, filters) = get_arp_scan_buff(dst_ipv4)?;
                         all_filters.extend(filters);
+
                         stream.send_packet(spp)?;
 
                         state.data_recved = false;
@@ -528,11 +541,24 @@ pub(crate) fn mac_scan(
             }
         }
 
+        println!(
+            "send packets to {} targets, cost: {:.2}s",
+            targets.len(),
+            send_start.elapsed().as_secs_f32()
+        );
+
         if all_done {
             break;
         }
 
+        let recv_start = Instant::now();
         let response = stream.recv_packet(timeout)?;
+        println!(
+            "recv {} packets in mac scan, cost: {:.2}s",
+            response.len(),
+            recv_start.elapsed().as_secs_f32()
+        );
+
         for r in &response {
             for f in &all_filters {
                 if f.check(r) {
@@ -543,7 +569,15 @@ pub(crate) fn mac_scan(
                                 if state.addr == addr {
                                     state.data_recved = true;
                                     let retries = state.retries;
-                                    mac_scan_rets.insert(addr, (mac, retries));
+                                    match mac_scan_rets.get_mut(&addr) {
+                                        Some(v) => {
+                                            v.push((mac, retries));
+                                        }
+                                        None => {
+                                            mac_scan_rets.insert(addr, vec![(mac, retries)]);
+                                        }
+                                    }
+
                                     update_neighbor_cache(addr, mac)?;
                                     break;
                                 }
@@ -558,24 +592,26 @@ pub(crate) fn mac_scan(
 
     let nmap_mac_prefixes = get_nmap_mac_prefixes()?;
     let mut mac_scan_reports = Vec::new();
-    for (target_addr, (target_mac, retries)) in mac_scan_rets {
-        let mac_prefix = format!(
-            "{:02X}{:02X}{:02X}",
-            target_mac.0, target_mac.1, target_mac.2
-        );
-        // println!("{}", mac_prefix);
-        let target_oui = match nmap_mac_prefixes.get(&mac_prefix) {
-            Some(oui) => oui.to_owned(),
-            None => String::from("unknown"),
-        };
+    for (target_addr, v) in mac_scan_rets {
+        for (target_mac, retries) in v {
+            let mac_prefix = format!(
+                "{:02X}{:02X}{:02X}",
+                target_mac.0, target_mac.1, target_mac.2
+            );
+            // println!("{}", mac_prefix);
+            let target_oui = match nmap_mac_prefixes.get(&mac_prefix) {
+                Some(oui) => oui.to_owned(),
+                None => String::from("unknown"),
+            };
 
-        let mr = MacReport {
-            addr: target_addr,
-            mac: Some(target_mac),
-            oui: target_oui,
-            retries,
-        };
-        mac_scan_reports.push(mr);
+            let mr = MacReport {
+                addr: target_addr,
+                mac: Some(target_mac),
+                oui: target_oui,
+                retries,
+            };
+            mac_scan_reports.push(mr);
+        }
     }
     rets.finish(mac_scan_reports);
     Ok(rets)
