@@ -2710,7 +2710,8 @@ mod tests {
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
-        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        // let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = Target::from_subnet("172.16.86.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
