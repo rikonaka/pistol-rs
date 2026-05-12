@@ -1409,7 +1409,7 @@ impl Pistol {
     /// 192.168.5.131   00:0c:29:cf:62:2f       VMware, Inc.
     /// 192.168.5.131   00:0c:29:cf:62:39       VMware, Inc. (DUP: 2)
     /// 192.168.5.254   00:50:56:f9:e5:ea       VMware, Inc.
-    /// 
+    ///
     /// 7 packets received by filter, 0 packets dropped by kernel
     /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.043 seconds (125.31 hosts/sec). 5 responded
     /// ```
@@ -2710,8 +2710,7 @@ mod tests {
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
-        // let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
-        let targets = Target::from_subnet("172.16.86.0/24", None).unwrap();
+        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }

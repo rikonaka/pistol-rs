@@ -496,7 +496,7 @@ pub(crate) fn mac_scan(
 
     // Sometimes the same target may receive multiple mac responses,
     // so we use a Vec here to store the results of each target.
-    let mut mac_scan_rets: HashMap<IpAddr, Vec<(MacAddr, usize)>> = HashMap::new();
+    let mut mac_scan_rets: HashMap<IpAddr, HashMap<MacAddr, usize>> = HashMap::new();
     let mut all_filters = Vec::new();
     loop {
         let mut all_done = true;
@@ -571,10 +571,16 @@ pub(crate) fn mac_scan(
                                     let retries = state.retries;
                                     match mac_scan_rets.get_mut(&addr) {
                                         Some(v) => {
-                                            v.push((mac, retries));
+                                            if let Some(r) = v.get_mut(&mac) {
+                                                *r = retries;
+                                            } else {
+                                                v.insert(mac, retries);
+                                            }
                                         }
                                         None => {
-                                            mac_scan_rets.insert(addr, vec![(mac, retries)]);
+                                            let mut map = HashMap::new();
+                                            map.insert(mac, retries);
+                                            mac_scan_rets.insert(addr, map);
                                         }
                                     }
 
