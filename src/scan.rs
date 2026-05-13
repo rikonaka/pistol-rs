@@ -289,10 +289,16 @@ pub(crate) fn arp_scan_raw(
 
     let mut all_done = false;
     let mut macs = Vec::new();
-    for _ in 0..max_retries {
+    for i in 0..max_retries {
         if all_done {
             break;
         }
+        debug!(
+            "send arp scan packet to {}, retry: #{}/{}",
+            dst_ipv4,
+            i + 1,
+            max_retries
+        );
         stream.send_packet(spp.clone())?;
         let response = stream.recv_packet(timeout)?;
         for r in &response {
@@ -382,10 +388,16 @@ pub(crate) fn ndp_ns_scan_raw(
 
     let mut all_done = false;
     let mut macs = Vec::new();
-    for _ in 0..max_retries {
+    for i in 0..max_retries {
         if all_done {
             break;
         }
+        debug!(
+            "send ndp ns scan packet to {}, retry: #{}/{}",
+            dst_ipv6,
+            i + 1,
+            max_retries
+        );
         stream.send_packet(spp.clone())?;
         let response = stream.recv_packet(timeout)?;
         for r in &response {
