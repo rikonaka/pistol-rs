@@ -20,6 +20,7 @@ use std::time::Instant;
 use subnetwork::Ipv4AddrExt;
 use subnetwork::Ipv6AddrExt;
 use tracing::error;
+use tracing::info;
 
 use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
@@ -49,8 +50,6 @@ use crate::PacketFilter;
 use crate::PistolStream;
 use crate::SendPacketParam;
 use crate::Target;
-#[cfg(feature = "debug")]
-use crate::debug_show_packet;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
 use crate::route::search_route_table;
@@ -82,9 +81,7 @@ impl fmt::Display for MacScans {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut table = Table::new();
         table.add_row(Row::new(vec![
-            Cell::new(&format!("Mac Scans (max_retries: {})", self.max_retries))
-                .style_spec("c")
-                .with_hspan(5),
+            Cell::new("Mac Scans").style_spec("c").with_hspan(5),
         ]));
 
         table.add_row(row![c -> "seq", c -> "addr", c -> "mac", c -> "oui", c-> "retries"]);
@@ -127,8 +124,8 @@ impl fmt::Display for MacScans {
         let total_cost = self.finish_time - self.start_time;
         let total_cost_str = time_to_string(Duration::from_secs_f32(total_cost.as_seconds_f32()));
         let summary = format!(
-            "total cost: {}, alive hosts: {}",
-            total_cost_str, alive_hosts
+            "total cost: {}, alive hosts: {}, max retries: {}",
+            total_cost_str, alive_hosts, self.max_retries
         );
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
 
@@ -217,6 +214,11 @@ fn find_src_addr(
             match ip {
                 IpAddr::V4(i4) => {
                     if let IpAddr::V4(d4) = dst_addr {
+                        if d4 == i4 {
+                            // If the destination address is the same as the source address,
+                            // we can directly return it.
+                            return Ok(ip);
+                        }
                         let s = Ipv4AddrExt::from(i4);
                         let lip = s.largest_identical_prefix(d4);
                         if lip > lip_compare.lip {
@@ -227,6 +229,9 @@ fn find_src_addr(
                 }
                 IpAddr::V6(i6) => {
                     if let IpAddr::V6(d6) = dst_addr {
+                        if d6 == i6 {
+                            return Ok(ip);
+                        }
                         if d6.is_unicast_link_local() || d6.is_multicast() {
                             // For link-local or multicast ipv6 address,
                             // the source address must be a link-local address.
@@ -331,6 +336,7 @@ fn get_arp_scan_buff(
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+
     let src_ipv4 = match find_src_addr(&interface, dst_ipv4.into())? {
         IpAddr::V4(s) => s,
         _ => return Err(PistolError::CanNotFoundSrcAddress),
@@ -570,8 +576,10 @@ pub(crate) fn mac_scan(
     let mut mac_scan_rets: HashMap<IpAddr, HashMap<MacAddr, usize>> = HashMap::new();
     let mut all_filters = Vec::new();
     loop {
-        let mut all_done = true;
+        #[cfg(feature = "debug")]
         let send_start = Instant::now();
+
+        let mut all_done = true;
         for (_key, state) in &mut loop_states {
             if state.retries < max_retries && !state.data_recved {
                 let dst_addr = state.addr;
@@ -882,7 +890,7 @@ impl PortScans {
         }
 
         let summary1 = format!(
-            "start at: {}, finish at: {}, max_retries: {}",
+            "start at {} then finish at {}, max_retries: {}",
             self.start_time.format("%Y-%m-%d %H:%M:%S"),
             self.finish_time.format("%Y-%m-%d %H:%M:%S"),
             self.max_retries,
@@ -894,9 +902,7 @@ impl PortScans {
             "layer2 cost: {}, total cost: {}, open ports: {}",
             layer2_cost_str, total_cost_str, open_ports_num
         );
-        let summary3 =
-            format!("l2c means layer2 mac address from cache, r1 means retry 1 time, and so on.");
-        let summary = format!("{}\n{}\n{}", summary1, summary2, summary3);
+        let summary = format!("{}\n{}", summary1, summary2);
         table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(5)]));
 
         table.to_string()
@@ -1061,12 +1067,10 @@ fn scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    let mut stream = PistolStream::new();
-    stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
-
     let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
 
+    let mut all_src_addr = Vec::new();
     let mut loop_states = LoopStates::default();
     for ni in net_infos {
         if ni.valid {
@@ -1079,6 +1083,10 @@ fn scan(
                 let src_port = ni.src_port;
                 let if_name = ni.if_name.clone();
                 let cached = ni.cached;
+
+                if !all_src_addr.contains(&src_addr) {
+                    all_src_addr.push(src_addr);
+                }
 
                 let state = PortScanState {
                     retries: 0,
@@ -1098,16 +1106,30 @@ fn scan(
         }
     }
 
+    let mut stream = PistolStream::new();
+
+    if all_src_addr.len() > 10 {
+        debug!("scan with too many src addrs, use simple filter");
+        stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
+    } else {
+        let host_filter = all_src_addr
+            .iter()
+            .map(|a| format!("dst host {}", a))
+            .collect::<Vec<String>>()
+            .join(" or ");
+        stream.init(Some(format!(
+            "({}) and (tcp or udp or icmp or icmp6)",
+            host_filter
+        )))?;
+    }
+
     loop {
-        #[cfg(feature = "debug")]
-        let all_probes = loop_states.data.len();
-        #[cfg(feature = "debug")]
-        let mut send_probes = 0;
         #[cfg(feature = "debug")]
         let send_start = Instant::now();
 
         let mut all_done = true;
         let mut all_filters = Vec::new();
+        let mut send_count = 0;
         for (_key, state) in &mut loop_states {
             let dst_mac = state.dst_mac;
             let dst_addr = state.dst_addr;
@@ -1117,6 +1139,7 @@ fn scan(
                 Some(s) => s,
                 None => random_port(),
             };
+
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
                     let src_ipv4 = match state.src_addr {
@@ -1135,14 +1158,10 @@ fn scan(
                         )?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
+                        send_count += 1;
 
                         state.retries += 1;
                         all_done = false;
-
-                        #[cfg(feature = "debug")]
-                        {
-                            send_probes += 1;
-                        }
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
@@ -1162,14 +1181,10 @@ fn scan(
                         )?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
+                        send_count += 1;
 
                         state.retries += 1;
                         all_done = false;
-
-                        #[cfg(feature = "debug")]
-                        {
-                            send_probes += 1;
-                        }
                     }
                 }
             }
@@ -1177,9 +1192,7 @@ fn scan(
 
         #[cfg(feature = "debug")]
         println!(
-            "send {}/{} scan packets cost {:.2}s",
-            send_probes,
-            all_probes,
+            "send packets cost: {:.2}s",
             send_start.elapsed().as_secs_f32()
         );
 
@@ -1191,26 +1204,28 @@ fn scan(
         let recv_start = Instant::now();
         let response = stream.recv_packet(timeout)?;
 
-        #[cfg(feature = "debug")]
-        {
-            println!(
-                "recv {} responses cost {:.2}s",
-                response.len(),
-                recv_start.elapsed().as_secs_f32()
+        println!("send_count: {}, recv_count: {}", send_count, response.len());
+        if send_count != response.len() {
+            info!(
+                "only {:.2}% packets received",
+                response.len() as f32 / send_count as f32 * 100.0
             );
         }
 
-        for r in &response {
-            // only show the ipv4 packet for debug
-            #[cfg(feature = "debug")]
-            debug_show_packet(r, Some(EtherTypes::Ipv4));
+        #[cfg(feature = "debug")]
+        println!(
+            "recv {} packets cost: {:.2}s",
+            response.len(),
+            recv_start.elapsed().as_secs_f32()
+        );
 
+        #[cfg(feature = "debug")]
+        let parse_start = Instant::now();
+
+        for r in &response {
             for f in &all_filters {
                 if f.check(r) {
-                    #[cfg(feature = "debug")]
-                    debug!("recv response from filter {}", f.name());
-
-                    // if the f was TcpUdp filter
+                    debug!("filter {} matched", f.name());
                     if let Some((addr, port)) = f.tcp_udp_ip_port() {
                         for (_key, state) in &mut loop_states {
                             if state.dst_addr == addr && state.dst_port == port {
@@ -1259,9 +1274,16 @@ fn scan(
                             }
                         }
                     }
+                    break;
                 }
             }
         }
+
+        #[cfg(feature = "debug")]
+        println!(
+            "parse packets cost: {:.2}s",
+            parse_start.elapsed().as_secs_f32()
+        );
     }
     port_scans.finish(reports);
     Ok(port_scans)

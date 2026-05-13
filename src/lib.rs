@@ -290,6 +290,7 @@ fn get_ts() -> String {
 }
 
 /// debug code
+#[allow(dead_code)]
 #[cfg(feature = "debug")]
 fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>) {
     let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
@@ -749,7 +750,6 @@ impl NetInfo {
         for it in inputs {
             let dst_addr = it.dst_addr;
             let src_addr = it.src_addr;
-            debug!("infer dst_addr({})...", dst_addr);
 
             let (inferred_dst_addr, inferred_src_addr) = match infer_addr(dst_addr, src_addr)? {
                 Some(ret) => ret,
@@ -861,6 +861,7 @@ struct L2Sender {
 struct L3Sender {
     sender_ipv4: TransportSender,
     sender_ipv6: TransportSender,
+    is_loopback: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -931,9 +932,17 @@ impl PistolStream {
             let (loopback_sender_ipv6, _receiver) =
                 transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv6))?;
 
+            let loopback = if interface.ips.iter().any(|ip| ip.ip().is_loopback()) {
+                debug!("interface {} is loopback", interface.name);
+                true
+            } else {
+                false
+            };
+
             let l3_sender = L3Sender {
                 sender_ipv4: loopback_sender_ipv4,
                 sender_ipv6: loopback_sender_ipv6,
+                is_loopback: loopback,
             };
             self.l3_senders.insert(interface.name.clone(), l3_sender);
         }
@@ -955,11 +964,10 @@ impl PistolStream {
                 debug!("start receiver for if_name: {}", interface.name);
                 match Capture::new(&interface.name) {
                     Ok(mut cap) => {
-                        // 16MB
-                        cap.set_buffer_size(16 * 1024 * 1024);
+                        cap.set_buffer_size(8192);
                         cap.set_timeout(10);
-                        cap.set_promiscuous_mode(true);
-                        cap.set_immediate_mode(true);
+                        // cap.set_promiscuous_mode(true);
+                        // cap.set_immediate_mode(true);
                         if let Some(filter) = &filter {
                             cap.set_filter(filter);
                         }
@@ -980,12 +988,13 @@ impl PistolStream {
                             if let Ok(packets) = cap.fetch_as_vec() {
                                 let mut pa = Vec::new();
                                 for p in packets {
-                                    #[cfg(feature = "debug")]
-                                    debug_show_packet(p, Some(EtherTypes::Arp));
+                                    // #[cfg(feature = "debug")]
+                                    // debug_show_packet(p, Some(EtherTypes::Arp));
                                     pa.push(Arc::from(p));
                                 }
                                 if let Err(e) = sender.send(pa) {
-                                    error!("send packet to {} error: {}", interface.name, e);
+                                    // timeout will drop sender
+                                    debug!("send packet to {} error: {}", interface.name, e);
                                 }
                             }
                         }
@@ -1118,20 +1127,19 @@ impl PistolStream {
         ethernet_packet.set_ethertype(eth_type);
         ethernet_packet.set_payload(&l3_payload);
 
-        let m = format!(
-            "dm: {}, sm: {}, et: {}, l: {}",
-            dst_mac,
-            src_mac,
-            eth_type.to_string().to_lowercase(),
-            l3_payload.len()
-        );
-        debug!("{}", m);
-
         if dst_mac == src_mac {
             for (ifn, l3s) in &mut self.l3_senders {
-                if *ifn != if_name {
+                if !l3s.is_loopback {
                     continue;
                 }
+                let m = format!(
+                    "dm: {}, sm: {}, et: {}, l: {}",
+                    dst_mac,
+                    src_mac,
+                    eth_type.to_string().to_lowercase(),
+                    l3_payload.len()
+                );
+                debug!("send loopback packet through {}: {}", ifn, m);
                 let mut l3_payload = l3_payload.to_vec();
                 match eth_type {
                     EtherTypes::Ipv4 => {
@@ -1225,7 +1233,7 @@ impl Default for Pistol {
     fn default() -> Self {
         Pistol {
             if_name: None,
-            log_level: None,
+            log_level: Some(Level::INFO), // default log level is info
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
             max_retries: 2, // default 2 max_retries
         }
@@ -1275,22 +1283,11 @@ impl Pistol {
             "info" => Some(Level::INFO),
             "none" => None,
             _ => {
-                warn!("unknown log_level: {}, set it to None now", log_level);
-                None
+                warn!("unknown log_level: {}, set it to [info] now", log_level);
+                Some(Level::INFO)
             }
         };
         self.log_level = log_level;
-
-        if let Some(log_level) = self.log_level {
-            let subscriber = FmtSubscriber::builder()
-                .with_ansi(false)
-                .compact()
-                .with_max_level(log_level)
-                .finish();
-            if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
-                error!("failed to set global default subscriber: {}", e);
-            }
-        }
     }
     /// Get log level for tracing.      
     pub fn get_log_level(&self) -> Option<Level> {
@@ -1342,7 +1339,7 @@ impl Pistol {
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
-    fn init_domain_raw(
+    fn get_netinfo_raw(
         &mut self,
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
@@ -1362,6 +1359,18 @@ impl Pistol {
             Ok((net_infos[0].clone(), now.elapsed()))
         } else {
             Err(PistolError::CanNotFoundNetInfo)
+        }
+    }
+    fn init_tracing(&self) {
+        if let Some(log_level) = self.log_level {
+            let subscriber = FmtSubscriber::builder()
+                .with_ansi(false)
+                .compact()
+                .with_max_level(log_level)
+                .finish();
+            if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+                error!("failed to set global default subscriber: {}", e);
+            }
         }
     }
     /* Scan */
@@ -1427,6 +1436,7 @@ impl Pistol {
     /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.043 seconds (125.31 hosts/sec). 5 responded
     /// ```
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
+        self.init_tracing();
         scan::mac_scan(targets, self.timeout, self.max_retries)
     }
     /// The raw version of arp_scan function.
@@ -1436,6 +1446,7 @@ impl Pistol {
         &mut self,
         dst_ipv4: Ipv4Addr,
     ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
+        self.init_tracing();
         scan::arp_scan_raw(dst_ipv4, self.timeout, self.max_retries)
     }
     /// The raw version of ndp_ns_scan function.
@@ -1446,6 +1457,7 @@ impl Pistol {
         &mut self,
         dst_ipv6: Ipv6Addr,
     ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
+        self.init_tracing();
         scan::ndp_ns_scan_raw(dst_ipv6, self.timeout, self.max_retries)
     }
     /// TCP ACK Scan.
@@ -1463,6 +1475,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_ack_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1480,7 +1493,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_ack_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1509,6 +1523,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         // we do not need to get mac info for tcp connect scan,
         // since we will use the operating system's TCP stack to send packets.
         let mut net_infos = Vec::new();
@@ -1545,6 +1560,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
+        self.init_tracing();
         // we do not need to get mac info for tcp connect scan,
         // since we will use the operating system's TCP stack to send packets.
         let net_info = NetInfo {
@@ -1587,6 +1603,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1603,7 +1620,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1621,6 +1639,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1637,7 +1656,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1656,6 +1676,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1672,7 +1693,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1697,6 +1719,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1713,7 +1736,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1733,6 +1757,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1749,7 +1774,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1767,6 +1793,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1783,7 +1810,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1806,6 +1834,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = scan::udp_scan(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1823,7 +1852,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = scan::udp_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1850,6 +1880,7 @@ impl Pistol {
         src_ipv4: Option<Ipv4Addr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let src_addr = match src_ipv4 {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
@@ -1868,12 +1899,13 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
         src_ipv4: Option<Ipv4Addr>,
     ) -> Result<HostPing, PistolError> {
+        self.init_tracing();
         let dst_addr = IpAddr::V4(dst_ipv4);
         let src_addr = match src_ipv4 {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = ping::icmp_address_mask_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1894,6 +1926,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::icmp_echo_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -1908,7 +1941,8 @@ impl Pistol {
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
     ) -> Result<HostPing, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = ping::icmp_echo_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1932,6 +1966,7 @@ impl Pistol {
         src_ipv4: Option<Ipv4Addr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let src_addr = match src_ipv4 {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
@@ -1950,12 +1985,13 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
         src_ipv4: Option<Ipv4Addr>,
     ) -> Result<HostPing, PistolError> {
+        self.init_tracing();
         let dst_addr = IpAddr::V4(dst_ipv4);
         let src_addr = match src_ipv4 {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = ping::icmp_timestamp_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1970,7 +2006,8 @@ impl Pistol {
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
     ) -> Result<HostPing, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = ping::icmp_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1992,6 +2029,7 @@ impl Pistol {
         src_ipv6: Option<Ipv6Addr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let src_addr = match src_ipv6 {
             Some(ipv6) => Some(IpAddr::V6(ipv6)),
             None => None,
@@ -2011,6 +2049,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::tcp_ack_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -2028,7 +2067,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = ping::tcp_ack_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2043,6 +2083,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::tcp_syn_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -2060,7 +2101,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = ping::tcp_syn_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2075,6 +2117,7 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = ping::udp_ping(net_infos, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
@@ -2092,7 +2135,8 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<HostPing, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = ping::udp_ping_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2108,7 +2152,8 @@ impl Pistol {
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
     ) -> Result<Trace, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = trace::icmp_trace(net_info, self.timeout)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2125,8 +2170,9 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<Trace, PistolError> {
+        self.init_tracing();
         let dst_port = dst_port.unwrap_or(80);
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = trace::syn_trace(net_info, self.timeout)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2141,7 +2187,8 @@ impl Pistol {
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
     ) -> Result<Trace, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = trace::udp_trace(net_info, self.timeout)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2168,6 +2215,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::icmp_flood(net_infos, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
@@ -2183,7 +2231,8 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![], src_addr, None)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![], src_addr, None)?;
         let mut ret = flood::icmp_flood_raw(net_info, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2209,6 +2258,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::tcp_ack_flood(net_infos, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
@@ -2226,7 +2276,8 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = flood::tcp_ack_flood_raw(net_info, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2253,6 +2304,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::tcp_ack_psh_flood(net_infos, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
@@ -2271,7 +2323,8 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = flood::tcp_ack_psh_flood_raw(net_info, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2290,6 +2343,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::tcp_syn_flood(net_infos, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
@@ -2307,7 +2361,8 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = flood::tcp_syn_flood_raw(net_info, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2327,6 +2382,7 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Floods, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
         let mut ret = flood::udp_flood(net_infos, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
@@ -2344,7 +2400,8 @@ impl Pistol {
         repeat: usize,
         fake_src: bool,
     ) -> Result<Flood, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = flood::udp_flood_raw(net_info, retransmit, repeat, fake_src)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -2369,6 +2426,7 @@ impl Pistol {
         threads: usize,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
+        self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, None, None)?;
         let mut ret = os::os_detect(net_infos, threads, self.timeout, self.max_retries, top_k)?;
         ret.layer2_cost = dur;
@@ -2387,7 +2445,8 @@ impl Pistol {
         dst_closed_udp_port: u16,
         top_k: usize,
     ) -> Result<OsDetect, PistolError> {
-        let (net_info, dur) = self.init_domain_raw(
+        self.init_tracing();
+        let (net_info, dur) = self.get_netinfo_raw(
             dst_addr,
             vec![dst_open_tcp_port, dst_closed_tcp_port, dst_closed_udp_port],
             None,
@@ -2412,6 +2471,7 @@ impl Pistol {
         only_udp_recommended: bool,
         intensity: usize,
     ) -> Result<PistolVsScans, PistolError> {
+        self.init_tracing();
         vs::vs_scan(
             targets,
             threads,
@@ -2436,6 +2496,7 @@ impl Pistol {
         only_udp_recommended: bool,
         intensity: usize,
     ) -> Result<PortService, PistolError> {
+        self.init_tracing();
         vs::vs_scan_raw(
             dst_addr,
             dst_port,
@@ -2771,11 +2832,27 @@ mod tests {
         println!("{}", ret);
     }
     #[test]
-    fn test_tcp_syn_scan_many_ports() {
+    fn test_tcp_syn_scan_loopback() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(3.0);
+        pistol.set_timeout(1.5);
         // pistol.set_log_level("debug");
+
+        let src_ipv4 = None;
+        let src_port = None;
+        let targets = vec![Target::new(
+            Ipv4Addr::new(192, 168, 5, 3).into(),
+            Some(vec![22, 80, 443]),
+        )];
+        let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        println!("{}", ret);
+    }
+    #[test]
+    fn test_tcp_syn_scan_many_ports() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(1);
+        pistol.set_timeout(3.0);
+        // pistol.set_log_level("info");
 
         let src_ipv4 = None;
         let src_port = None;
@@ -2787,22 +2864,6 @@ mod tests {
         )];
         let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
         println!("{}", ret.as_str(true));
-    }
-    #[test]
-    fn test_tcp_syn_scan_loopback() {
-        let mut pistol = Pistol::new();
-        pistol.set_max_retries(2);
-        pistol.set_timeout(0.5);
-        pistol.set_log_level("debug");
-
-        let src_ipv4 = None;
-        let src_port = None;
-        let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 3).into(),
-            Some(vec![22, 80, 443]),
-        )];
-        let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
-        println!("{}", ret);
     }
     #[test]
     fn test_tcp_connect_scan() {
