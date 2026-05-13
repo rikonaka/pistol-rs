@@ -1080,10 +1080,6 @@ impl PistolStream {
                 // Sleep a while in first time to make sure the receiver is ready to receive packets,
                 // since there may be some delay between the receiver is ready and the sender can start sending packets.
                 if !self.l2_receiver_ready_sleep {
-                    let ts = get_ts();
-                    #[cfg(feature = "debug")]
-                    println!("{} receiver is not ready, sleep a while", ts);
-
                     // Sleep 50 millis for every receivers.
                     let mut sleep_millis = self.l2_receiver_count * 50;
                     if sleep_millis > 500 {
@@ -1439,7 +1435,7 @@ impl Pistol {
     pub fn arp_scan_raw(
         &mut self,
         dst_ipv4: Ipv4Addr,
-    ) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
         scan::arp_scan_raw(dst_ipv4, self.timeout, self.max_retries)
     }
     /// The raw version of ndp_ns_scan function.
@@ -1449,7 +1445,7 @@ impl Pistol {
     pub fn ndp_ns_scan_raw(
         &mut self,
         dst_ipv6: Ipv6Addr,
-    ) -> Result<(Option<MacAddr>, Duration), PistolError> {
+    ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
         scan::ndp_ns_scan_raw(dst_ipv6, self.timeout, self.max_retries)
     }
     /// TCP ACK Scan.
@@ -2744,6 +2740,18 @@ mod tests {
 
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
         let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
+        println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
+    }
+    #[test]
+    fn test_ndp_ns_scan_raw() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(1.5);
+        // pistol.set_log_level("debug");
+
+        // fe80::20c:29ff:fecf:622f
+        let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfecf, 0x622f);
+        let (mac, rtt) = pistol.ndp_ns_scan_raw(dst_ipv6).unwrap();
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
     }
     #[test]

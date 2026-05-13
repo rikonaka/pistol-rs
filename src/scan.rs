@@ -17,6 +17,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+use subnetwork::Ipv4AddrExt;
 use subnetwork::Ipv6AddrExt;
 use tracing::error;
 
@@ -52,6 +53,7 @@ use crate::Target;
 use crate::debug_show_packet;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
+use crate::route::search_route_table;
 use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::update_neighbor_cache;
@@ -159,11 +161,20 @@ fn loopback_interface() -> Result<NetworkInterface, PistolError> {
 }
 
 /// Find the network interface that can reach the destination address.
-fn find_interface(dst_addr: IpAddr) -> Result<NetworkInterface, PistolError> {
+fn find_interface_through_route_table(dst_addr: IpAddr) -> Result<NetworkInterface, PistolError> {
     if dst_addr.is_loopback() {
         return loopback_interface();
     }
 
+    let rt = search_route_table(dst_addr)?;
+    match rt {
+        Some(rt) => {
+            return Ok(rt.dev);
+        }
+        None => (),
+    }
+
+    // if can not find the route
     for n in interfaces() {
         for ipn in &n.ips {
             if ipn.ip() == dst_addr {
@@ -181,39 +192,89 @@ fn find_interface(dst_addr: IpAddr) -> Result<NetworkInterface, PistolError> {
 
 /// Find the source address that can reach the destination address,
 /// and it must be an address of the local machine.
-fn find_src_addr(dst_addr: IpAddr) -> Result<IpAddr, PistolError> {
-    for n in interfaces() {
-        for ipn in &n.ips {
-            if ipn.contains(dst_addr) {
-                return Ok(ipn.ip());
+fn find_src_addr(
+    src_interface: &NetworkInterface,
+    dst_addr: IpAddr,
+) -> Result<IpAddr, PistolError> {
+    struct IpAddrWithLip {
+        ip: IpAddr,
+        lip: u8,
+    }
+
+    let init_ip = match dst_addr {
+        IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+    };
+
+    let mut lip_compare = IpAddrWithLip {
+        ip: init_ip,
+        lip: 0,
+    };
+
+    for ipn in &src_interface.ips {
+        if (ipn.is_ipv4() && dst_addr.is_ipv4()) || (ipn.is_ipv6() && dst_addr.is_ipv6()) {
+            let ip = ipn.ip();
+            match ip {
+                IpAddr::V4(i4) => {
+                    if let IpAddr::V4(d4) = dst_addr {
+                        let s = Ipv4AddrExt::from(i4);
+                        let lip = s.largest_identical_prefix(d4);
+                        if lip > lip_compare.lip {
+                            lip_compare.ip = ip;
+                            lip_compare.lip = lip;
+                        }
+                    }
+                }
+                IpAddr::V6(i6) => {
+                    if let IpAddr::V6(d6) = dst_addr {
+                        if d6.is_unicast_link_local() || d6.is_multicast() {
+                            // For link-local or multicast ipv6 address,
+                            // the source address must be a link-local address.
+                            if !i6.is_unicast_link_local() {
+                                continue;
+                            }
+                        }
+                        let s = Ipv6AddrExt::from(i6);
+                        let lip = s.largest_identical_prefix(d6);
+                        if lip > lip_compare.lip {
+                            lip_compare.ip = ip;
+                            lip_compare.lip = lip;
+                        }
+                    }
+                }
             }
         }
     }
-    Err(PistolError::CanNotFoundSrcAddress)
+
+    if lip_compare.ip.is_unspecified() {
+        Err(PistolError::CanNotFoundSrcAddress)
+    } else {
+        Ok(lip_compare.ip)
+    }
 }
 
 pub(crate) fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
     max_retries: usize,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<(Vec<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("arp and arp src host {}", dst_ipv4)))?;
+    stream.init(Some(String::from("arp and arp[6:2] = 2")))?;
 
-    let interface = find_interface(dst_ipv4.into())?;
+    let interface = find_interface_through_route_table(dst_ipv4.into())?;
     if interface.is_loopback() {
-        return Ok((None, Duration::ZERO));
+        return Ok((Vec::new(), Duration::ZERO));
     }
 
-    let if_name = interface.name;
-    // broadcast mac address
-    let dst_mac = MacAddr::broadcast();
-    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-    let src_ipv4 = match find_src_addr(dst_ipv4.into())? {
+    let if_name = interface.name.clone();
+    let src_ipv4 = match find_src_addr(&interface, dst_ipv4.into())? {
         IpAddr::V4(s) => s,
         _ => return Err(PistolError::CanNotFoundSrcAddress),
     };
+    // broadcast mac address
+    let dst_mac = MacAddr::broadcast();
+    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
 
     debug!("use interface {} and src ipv4 {}", &if_name, src_ipv4);
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
@@ -226,7 +287,12 @@ pub(crate) fn arp_scan_raw(
         retransmit: 1,
     };
 
+    let mut all_done = false;
+    let mut macs = Vec::new();
     for _ in 0..max_retries {
+        if all_done {
+            break;
+        }
         stream.send_packet(spp.clone())?;
         let response = stream.recv_packet(timeout)?;
         for r in &response {
@@ -235,31 +301,31 @@ pub(crate) fn arp_scan_raw(
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
                             update_neighbor_cache(addr, mac)?;
-                            let cost = start.elapsed();
-                            return Ok((Some(mac), cost));
+                            if !macs.contains(&mac) {
+                                macs.push(mac);
+                                all_done = true;
+                            }
                         }
-                        None => {
-                            let cost = start.elapsed();
-                            return Ok((None, cost));
-                        }
+                        None => (),
                     }
+                    break;
                 }
             }
         }
     }
-    Ok((None, start.elapsed()))
+    Ok((macs, start.elapsed()))
 }
 
 fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let interface = find_interface(dst_ipv4.into())?;
+    let interface = find_interface_through_route_table(dst_ipv4.into())?;
 
     let if_name = interface.name.clone();
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-    let src_ipv4 = match find_src_addr(dst_ipv4.into())? {
+    let src_ipv4 = match find_src_addr(&interface, dst_ipv4.into())? {
         IpAddr::V4(s) => s,
         _ => return Err(PistolError::CanNotFoundSrcAddress),
     };
@@ -284,26 +350,24 @@ pub(crate) fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
     timeout: Duration,
     max_retries: usize,
-) -> Result<(Option<MacAddr>, Duration), PistolError> {
+) -> Result<(Vec<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("icmp6")))?;
+    stream.init(Some(String::from("icmp6 and ip6[40] = 136")))?;
 
-    let interface = find_interface(dst_ipv6.into())?;
+    let interface = find_interface_through_route_table(dst_ipv6.into())?;
     if interface.is_loopback() {
-        return Ok((None, Duration::ZERO));
+        return Ok((Vec::new(), Duration::ZERO));
     }
 
-    let if_name = interface.name;
+    let if_name = interface.name.clone();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-
-    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
-    let dst_ipv6 = dst_ipv6_ext.link_multicast();
-    let dst_mac = ipv6_multicast_mac(dst_ipv6);
-    let src_ipv6 = match find_src_addr(dst_ipv6.into())? {
+    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
         IpAddr::V6(s) => s,
         _ => return Err(PistolError::CanNotFoundSrcAddress),
     };
+
+    let dst_mac = ipv6_multicast_mac(dst_ipv6);
 
     debug!("use interface {} and src ipv6 {}", &if_name, src_ipv6);
     let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
@@ -316,7 +380,12 @@ pub(crate) fn ndp_ns_scan_raw(
         retransmit: 1,
     };
 
+    let mut all_done = false;
+    let mut macs = Vec::new();
     for _ in 0..max_retries {
+        if all_done {
+            break;
+        }
         stream.send_packet(spp.clone())?;
         let response = stream.recv_packet(timeout)?;
         for r in &response {
@@ -325,44 +394,34 @@ pub(crate) fn ndp_ns_scan_raw(
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
                             update_neighbor_cache(addr, mac)?;
-                            let cost = start.elapsed();
-                            return Ok((Some(mac), cost));
+                            if !macs.contains(&mac) {
+                                all_done = true;
+                                macs.push(mac);
+                            }
                         }
-                        None => {
-                            let cost = start.elapsed();
-                            return Ok((None, cost));
-                        }
+                        None => (),
                     }
+                    break;
                 }
             }
         }
     }
 
-    Ok((None, start.elapsed()))
+    Ok((macs, start.elapsed()))
 }
 
 pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let interface = find_interface(dst_ipv6.into())?;
+    let interface = find_interface_through_route_table(dst_ipv6.into())?;
 
     let if_name = interface.name.clone();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-
-    let dst_ipv6_ext: Ipv6AddrExt = dst_ipv6.into();
-    let dst_ipv6 = dst_ipv6_ext.link_multicast();
+    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
+        IpAddr::V6(s) => s,
+        _ => return Err(PistolError::CanNotFoundSrcAddress),
+    };
     let dst_mac = ipv6_multicast_mac(dst_ipv6);
-
-    let mut src_ipv6 = None;
-    for ipn in &interface.ips {
-        if ipn.contains(dst_ipv6.into()) {
-            if let IpAddr::V6(src) = ipn.ip() {
-                src_ipv6 = Some(src);
-            }
-            break;
-        }
-    }
-    let src_ipv6 = src_ipv6.ok_or(PistolError::CanNotFoundSrcAddress)?;
 
     debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
     let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
