@@ -1496,12 +1496,7 @@ impl Neighbors {
         }
         Ok(neigh)
     }
-    #[cfg(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "macos"
-    ))]
+    #[cfg(any(target_os = "freebsd", target_os = "macos"))]
     pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // Examples:
         // # arp -a

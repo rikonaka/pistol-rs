@@ -6,3 +6,6 @@ runner = 'sudo -E'
 
 [target.aarch64-unknown-linux-gnu]
 runner = 'sudo -E'
+
+[target.aarch64-apple-darwin]
+runner = 'sudo -E'
