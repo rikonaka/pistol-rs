@@ -1,0 +1,8 @@
+[package]
+name = "recv_check"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ctrlc = "3.5.2"
+pcapture = { version="0.3.27", features=["pcapng", "libpcap"] }
