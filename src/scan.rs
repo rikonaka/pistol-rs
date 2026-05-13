@@ -541,6 +541,7 @@ pub(crate) fn mac_scan(
             }
         }
 
+        #[cfg(feature = "debug")]
         println!(
             "send packets to {} targets, cost: {:.2}s",
             targets.len(),
@@ -553,6 +554,7 @@ pub(crate) fn mac_scan(
 
         let recv_start = Instant::now();
         let response = stream.recv_packet(timeout)?;
+        #[cfg(feature = "debug")]
         println!(
             "recv {} packets in mac scan, cost: {:.2}s",
             response.len(),
@@ -564,6 +566,7 @@ pub(crate) fn mac_scan(
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
+                            #[cfg(feature = "debug")]
                             println!("recv mac scan response from {}, mac: {}", addr, mac);
                             for (_key, state) in &mut loop_states {
                                 if state.addr == addr {

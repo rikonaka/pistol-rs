@@ -879,6 +879,7 @@ struct PistolStream {
     l2_receiver: Option<Receiver<Vec<Arc<[u8]>>>>,
     l2_receiver_ready: bool,
     l2_receiver_ready_sleep: bool,
+    l2_receiver_count: u64,
 }
 
 impl PistolStream {
@@ -889,6 +890,7 @@ impl PistolStream {
             l2_receiver: None,
             l2_receiver_ready: false,
             l2_receiver_ready_sleep: false,
+            l2_receiver_count: 0,
         }
     }
     fn init_sender_layer2(&mut self) -> Result<(), PistolError> {
@@ -939,7 +941,7 @@ impl PistolStream {
     }
     fn run_receiver(
         sender: Sender<Vec<Arc<[u8]>>>,
-        ready_signal: Sender<()>,
+        ready_signal: Sender<u64>,
         filter: Option<String>,
     ) -> Result<(), PistolError> {
         let (s, r) = unbounded::<()>();
@@ -995,14 +997,20 @@ impl PistolStream {
             });
         }
 
+        let mut all_ready = true;
         for _ in 0..interface_count {
             if let Err(e) = r.recv() {
+                all_ready = false;
                 error!("receive ready signal error: {}", e);
             }
         }
 
-        if let Err(e) = ready_signal.send(()) {
-            error!("send ready signal error: {}", e);
+        if all_ready {
+            if let Err(e) = ready_signal.send(interface_count) {
+                error!("send ready signal error: {}", e);
+            }
+        } else {
+            panic!("receiver is not all ready...");
         }
 
         Ok(())
@@ -1015,7 +1023,7 @@ impl PistolStream {
         self.init_sender_layer3()?;
 
         let (sender, receiver) = unbounded::<Vec<Arc<[u8]>>>();
-        let (ready_sender, ready_receiver) = unbounded::<()>();
+        let (ready_sender, ready_receiver) = unbounded::<u64>();
         self.l2_receiver = Some(receiver);
 
         thread::spawn(
@@ -1026,7 +1034,8 @@ impl PistolStream {
         );
 
         match ready_receiver.recv() {
-            Ok(_) => {
+            Ok(count) => {
+                self.l2_receiver_count = count;
                 self.l2_receiver_ready = true;
                 debug!("receiver is ready");
             }
@@ -1072,10 +1081,18 @@ impl PistolStream {
                 // since there may be some delay between the receiver is ready and the sender can start sending packets.
                 if !self.l2_receiver_ready_sleep {
                     let ts = get_ts();
-                    debug!("{} receiver is not ready, sleep a while", ts);
+                    #[cfg(feature = "debug")]
                     println!("{} receiver is not ready, sleep a while", ts);
 
-                    sleep(Duration::from_millis(50));
+                    // Sleep 50 millis for every receivers.
+                    let mut sleep_millis = self.l2_receiver_count * 50;
+                    if sleep_millis > 500 {
+                        // If there are too many receivers,
+                        // we just sleep 500 millis to avoid sleeping too long.
+                        sleep_millis = 500;
+                    }
+
+                    sleep(Duration::from_millis(sleep_millis));
                     self.l2_receiver_ready_sleep = true;
                 }
                 break;
