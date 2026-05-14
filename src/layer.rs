@@ -28,7 +28,7 @@ pub(crate) const TCP_HEADER_SIZE: usize = 20;
 pub(crate) const UDP_HEADER_SIZE: usize = 8;
 pub(crate) const ICMP_HEADER_SIZE: usize = 8;
 // big enough to store all data
-pub(crate) const ETHERNET_BUFF_SIZE: usize = 4096;
+pub(crate) const PNET_BUFF_SIZE: usize = 16 * 1024;
 
 pub(crate) const ICMPV6_NS_HEADER_SIZE: usize = 32;
 pub(crate) const ICMPV6_RA_HEADER_SIZE: usize = 16;
@@ -1136,8 +1136,8 @@ mod tests {
     #[test]
     fn test_layer2_send() {
         let config = datalink::Config {
-            write_buffer_size: ETHERNET_BUFF_SIZE,
-            read_buffer_size: ETHERNET_BUFF_SIZE,
+            write_buffer_size: PNET_BUFF_SIZE,
+            read_buffer_size: PNET_BUFF_SIZE,
             read_timeout: Some(Duration::new(1, 0)),
             write_timeout: Some(Duration::new(1, 0)),
             channel_type: datalink::ChannelType::Layer2,

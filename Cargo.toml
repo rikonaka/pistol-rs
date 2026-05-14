@@ -36,9 +36,12 @@ pcapture = { version = "0.3.18", features = ["pcapng", "libpcap"] }
 
 [features]
 default = []
-dev = ["debug"]
 debug = []
 
 [[example]]
 name = "mac_scan"
-required-features = ["scan"]
+
+[workspace]
+members = [
+    "tools/recv_check",
+]

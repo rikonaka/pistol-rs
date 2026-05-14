@@ -20,7 +20,6 @@ use std::time::Instant;
 use subnetwork::Ipv4AddrExt;
 use subnetwork::Ipv6AddrExt;
 use tracing::error;
-use tracing::info;
 
 use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
@@ -1045,7 +1044,6 @@ fn parse_response(eth_response: &[u8], method: ScanMethod) -> Result<PortStatus,
     }
 }
 
-#[derive(Debug, Clone)]
 struct PortScanState {
     retries: usize,
     recved: bool,
@@ -1058,6 +1056,7 @@ struct PortScanState {
     src_port: Option<u16>,
     if_name: String,
     cached: bool,
+    stream: PistolStream,
 }
 
 /// General scan function.
@@ -1070,7 +1069,6 @@ fn scan(
     let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
 
-    let mut all_src_addr = Vec::new();
     let mut loop_states = LoopStates::default();
     for ni in net_infos {
         if ni.valid {
@@ -1084,9 +1082,11 @@ fn scan(
                 let if_name = ni.if_name.clone();
                 let cached = ni.cached;
 
-                if !all_src_addr.contains(&src_addr) {
-                    all_src_addr.push(src_addr);
-                }
+                let mut stream = PistolStream::new();
+                stream.init(Some(format!(
+                    "src host {} and tcp and src port {}",
+                    dst_addr, p
+                )))?;
 
                 let state = PortScanState {
                     retries: 0,
@@ -1100,27 +1100,11 @@ fn scan(
                     src_port,
                     if_name: if_name,
                     cached,
+                    stream,
                 };
                 loop_states.insert_ip_port(ni.dst_addr, p, state);
             }
         }
-    }
-
-    let mut stream = PistolStream::new();
-
-    if all_src_addr.len() > 10 {
-        debug!("scan with too many src addrs, use simple filter");
-        stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
-    } else {
-        let host_filter = all_src_addr
-            .iter()
-            .map(|a| format!("dst host {}", a))
-            .collect::<Vec<String>>()
-            .join(" or ");
-        stream.init(Some(format!(
-            "({}) and (tcp or udp or icmp or icmp6)",
-            host_filter
-        )))?;
     }
 
     loop {
@@ -1157,6 +1141,7 @@ fn scan(
                             method,
                         )?;
                         all_filters.extend(filters);
+                        let stream = &mut state.stream;
                         stream.send_packet(spp)?;
                         send_count += 1;
 
@@ -1180,6 +1165,7 @@ fn scan(
                             method,
                         )?;
                         all_filters.extend(filters);
+                        let stream = &mut state.stream;
                         stream.send_packet(spp)?;
                         send_count += 1;
 
@@ -1202,29 +1188,35 @@ fn scan(
 
         #[cfg(feature = "debug")]
         let recv_start = Instant::now();
-        let response = stream.recv_packet(timeout)?;
 
-        println!("send_count: {}, recv_count: {}", send_count, response.len());
-        if send_count != response.len() {
-            info!(
-                "only {:.2}% packets received",
-                response.len() as f32 / send_count as f32 * 100.0
-            );
+        let mut all_stream_response = Vec::new();
+        for (_key, state) in &mut loop_states {
+            let stream = &mut state.stream;
+            let response = stream.recv_packet(timeout)?;
+            all_stream_response.extend(response);
         }
 
         #[cfg(feature = "debug")]
         println!(
+            "send_count: {}, recv_count: {}",
+            send_count,
+            all_stream_response.len()
+        );
+        #[cfg(feature = "debug")]
+        println!(
             "recv {} packets cost: {:.2}s",
-            response.len(),
+            all_stream_response.len(),
             recv_start.elapsed().as_secs_f32()
         );
 
         #[cfg(feature = "debug")]
         let parse_start = Instant::now();
 
-        for r in &response {
+        let mut matched_response = 0;
+        for r in &all_stream_response {
             for f in &all_filters {
                 if f.check(r) {
+                    matched_response += 1;
                     debug!("filter {} matched", f.name());
                     if let Some((addr, port)) = f.tcp_udp_ip_port() {
                         for (_key, state) in &mut loop_states {
@@ -1281,8 +1273,9 @@ fn scan(
 
         #[cfg(feature = "debug")]
         println!(
-            "parse packets cost: {:.2}s",
-            parse_start.elapsed().as_secs_f32()
+            "parse packets cost: {:.2}s, matched: {}",
+            parse_start.elapsed().as_secs_f32(),
+            matched_response,
         );
     }
     port_scans.finish(reports);

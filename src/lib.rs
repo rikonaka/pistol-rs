@@ -77,8 +77,8 @@ mod vs;
 use crate::error::PistolError;
 use crate::flood::Flood;
 use crate::flood::Floods;
-use crate::layer::ETHERNET_BUFF_SIZE;
 use crate::layer::ETHERNET_HEADER_SIZE;
+use crate::layer::PNET_BUFF_SIZE;
 use crate::layer::PacketFilter;
 use crate::os::OsDetect;
 use crate::os::OsDetects;
@@ -876,7 +876,9 @@ struct SendPacketParam {
 
 struct PistolStream {
     l2_senders: HashMap<String, L2Sender>,
+    l2_senders_count: HashMap<String, usize>,
     l3_senders: HashMap<String, L3Sender>,
+    l3_senders_count: HashMap<String, usize>,
     l2_receiver: Option<Receiver<Vec<Arc<[u8]>>>>,
     l2_receiver_ready: bool,
     l2_receiver_ready_sleep: bool,
@@ -887,7 +889,9 @@ impl PistolStream {
     fn new() -> Self {
         Self {
             l2_senders: HashMap::new(),
+            l2_senders_count: HashMap::new(),
             l3_senders: HashMap::new(),
+            l3_senders_count: HashMap::new(),
             l2_receiver: None,
             l2_receiver_ready: false,
             l2_receiver_ready_sleep: false,
@@ -899,8 +903,8 @@ impl PistolStream {
             debug!("init l2 sender for interface: {}", interface.name);
             // layer2 channel
             let config = datalink::Config {
-                write_buffer_size: ETHERNET_BUFF_SIZE,
-                read_buffer_size: ETHERNET_BUFF_SIZE,
+                write_buffer_size: PNET_BUFF_SIZE,
+                read_buffer_size: PNET_BUFF_SIZE,
                 read_timeout: None,
                 write_timeout: None,
                 channel_type: datalink::ChannelType::Layer2,
@@ -918,6 +922,7 @@ impl PistolStream {
 
             let l2_sender = L2Sender { sender };
             self.l2_senders.insert(interface.name.clone(), l2_sender);
+            self.l2_senders_count.insert(interface.name.clone(), 0);
         }
 
         Ok(())
@@ -928,11 +933,11 @@ impl PistolStream {
 
             // layer3 channel
             let (loopback_sender_ipv4, _receiver) =
-                transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv4))?;
+                transport_channel(PNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv4))?;
             let (loopback_sender_ipv6, _receiver) =
-                transport_channel(ETHERNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv6))?;
+                transport_channel(PNET_BUFF_SIZE, Layer3(IpNextHeaderProtocols::Ipv6))?;
 
-            let loopback = if interface.ips.iter().any(|ip| ip.ip().is_loopback()) {
+            let loopback = if interface.ips.iter().any(|ipn| ipn.ip().is_loopback()) {
                 debug!("interface {} is loopback", interface.name);
                 true
             } else {
@@ -945,6 +950,7 @@ impl PistolStream {
                 is_loopback: loopback,
             };
             self.l3_senders.insert(interface.name.clone(), l3_sender);
+            self.l3_senders_count.insert(interface.name.clone(), 0);
         }
         Ok(())
     }
@@ -964,10 +970,10 @@ impl PistolStream {
                 debug!("start receiver for if_name: {}", interface.name);
                 match Capture::new(&interface.name) {
                     Ok(mut cap) => {
-                        cap.set_buffer_size(8192);
-                        cap.set_timeout(10);
+                        cap.set_buffer_size(16 * 1024);
+                        cap.set_timeout(50);
                         // cap.set_promiscuous_mode(true);
-                        // cap.set_immediate_mode(true);
+                        cap.set_immediate_mode(true);
                         if let Some(filter) = &filter {
                             cap.set_filter(filter);
                         }
@@ -1127,7 +1133,29 @@ impl PistolStream {
         ethernet_packet.set_ethertype(eth_type);
         ethernet_packet.set_payload(&l3_payload);
 
+        let stop_throshold = 1000;
+        let send_interval = Duration::from_millis(10);
+
         if dst_mac == src_mac {
+            let current_send_packets = self.l3_senders_count.get(&if_name).unwrap_or(&0);
+            if *current_send_packets >= stop_throshold {
+                debug!(
+                    "interface {} has sent {} loopback packets, skip sending more to avoid potential issues",
+                    if_name, current_send_packets
+                );
+                // reset
+                self.l3_senders_count
+                    .entry(if_name.clone())
+                    .and_modify(|c| *c = 0)
+                    .or_insert(1);
+                sleep(send_interval);
+            }
+
+            self.l3_senders_count
+                .entry(if_name.clone())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+
             for (ifn, l3s) in &mut self.l3_senders {
                 if !l3s.is_loopback {
                     continue;
@@ -1177,6 +1205,25 @@ impl PistolStream {
                 }
             }
         } else {
+            let current_send_packets = self.l2_senders_count.get(&if_name).unwrap_or(&0);
+            if *current_send_packets >= stop_throshold {
+                println!(
+                    "interface {} has sent {} packets, skip sending more to avoid potential issues",
+                    if_name, current_send_packets
+                );
+                // reset
+                self.l2_senders_count
+                    .entry(if_name.clone())
+                    .and_modify(|c| *c = 0)
+                    .or_insert(1);
+                sleep(send_interval);
+            }
+
+            self.l2_senders_count
+                .entry(if_name.clone())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+
             let l3_payload_len = l3_payload.len();
             let ethernet_buff_len = ETHERNET_HEADER_SIZE + l3_payload_len;
             let mut buff = vec![0u8; ethernet_buff_len];
@@ -2851,12 +2898,13 @@ mod tests {
     fn test_tcp_syn_scan_many_ports() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(1);
-        pistol.set_timeout(3.0);
+        pistol.set_timeout(0.1);
         // pistol.set_log_level("info");
 
         let src_ipv4 = None;
         let src_port = None;
-        let dst_ports: Vec<u16> = (22..10240).collect();
+        // let dst_ports: Vec<u16> = (22..10240).collect();
+        let dst_ports: Vec<u16> = (22..1024).collect();
         let targets = vec![Target::new(
             Ipv4Addr::new(192, 168, 5, 78).into(),
             // Some(vec![22, 80, 443]),

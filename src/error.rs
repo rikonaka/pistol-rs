@@ -29,6 +29,8 @@ pub enum PistolError {
     PingParseResponseError,
 
     /* SCAN ERROR */
+    #[error("can not found the stream for the destination address {addr}")]
+    CanNotFoundStream { addr: IpAddr },
     #[error("parse int error")]
     BitcodeError(#[from] bitcode::Error),
     #[error("can not found the loopback interface, please check your network connection")]
