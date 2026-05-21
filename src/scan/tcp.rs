@@ -1,9 +1,9 @@
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
+use pnet::packet::icmp::IcmpCode;
 use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmp::IcmpTypes;
-use pnet::packet::icmp::destination_unreachable;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4;
 use pnet::packet::ipv4::Ipv4Flags;
@@ -48,6 +48,15 @@ const TTL: u8 = 64;
 const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 // const TCP_FLAGS_SYN_MASK: u8 = 0b00000010;
 // const TCP_FLAGS_FIN_MASK: u8 = 0b00000001;
+
+const ICMP_RESPONSE_CODES: [IcmpCode; 6] = [
+    IcmpCode(1),  // destination host unreachable
+    IcmpCode(2),  // destination protocol unreachable
+    IcmpCode(3),  // destination port unreachable
+    IcmpCode(9),  // network administratively prohibited
+    IcmpCode(10), // host administratively prohibited
+    IcmpCode(13), // communication administratively prohibited
+];
 
 pub(crate) fn build_syn_scan_packet(
     dst_ipv4: Ipv4Addr,
@@ -139,15 +148,6 @@ pub(crate) fn build_syn_scan_packet(
 }
 
 pub(crate) fn parse_syn_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -169,7 +169,7 @@ pub(crate) fn parse_syn_scan_response(eth_response: &[u8]) -> Result<PortStatus,
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }
@@ -275,15 +275,6 @@ pub(crate) fn build_fin_scan_packet(
 }
 
 pub(crate) fn parse_fin_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -305,7 +296,7 @@ pub(crate) fn parse_fin_scan_response(eth_response: &[u8]) -> Result<PortStatus,
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }
@@ -412,15 +403,6 @@ pub(crate) fn build_ack_scan_packet(
 }
 
 pub(crate) fn parse_ack_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -439,7 +421,7 @@ pub(crate) fn parse_ack_scan_response(eth_response: &[u8]) -> Result<PortStatus,
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }
@@ -545,15 +527,6 @@ pub(crate) fn build_null_scan_packet(
 }
 
 pub(crate) fn parse_null_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -572,7 +545,7 @@ pub(crate) fn parse_null_scan_response(eth_response: &[u8]) -> Result<PortStatus
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }
@@ -679,15 +652,6 @@ pub(crate) fn build_xmas_scan_packet(
 }
 
 pub(crate) fn parse_xmas_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -706,7 +670,7 @@ pub(crate) fn parse_xmas_scan_response(eth_response: &[u8]) -> Result<PortStatus
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }
@@ -812,15 +776,6 @@ pub(crate) fn build_window_scan_packet(
 }
 
 pub(crate) fn parse_window_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -844,7 +799,7 @@ pub(crate) fn parse_window_scan_response(eth_response: &[u8]) -> Result<PortStat
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }
@@ -950,15 +905,6 @@ pub(crate) fn build_maimon_scan_packet(
 }
 
 pub(crate) fn parse_maimon_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        destination_unreachable::IcmpCodes::DestinationHostUnreachable, // 1
-        destination_unreachable::IcmpCodes::DestinationProtocolUnreachable, // 2
-        destination_unreachable::IcmpCodes::DestinationPortUnreachable, // 3
-        destination_unreachable::IcmpCodes::NetworkAdministrativelyProhibited, // 9
-        destination_unreachable::IcmpCodes::HostAdministrativelyProhibited, // 10
-        destination_unreachable::IcmpCodes::CommunicationAdministrativelyProhibited, // 13
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv4 {
             if let Some(ip_packet) = Ipv4Packet::new(eth_packet.payload()) {
@@ -977,7 +923,7 @@ pub(crate) fn parse_maimon_scan_response(eth_response: &[u8]) -> Result<PortStat
                             let icmp_type = icmp_packet.get_icmp_type();
                             let icmp_code = icmp_packet.get_icmp_code();
                             if icmp_type == IcmpTypes::DestinationUnreachable {
-                                if codes.contains(&icmp_code) {
+                                if ICMP_RESPONSE_CODES.contains(&icmp_code) {
                                     // icmp unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)
                                     return Ok(PortStatus::Filtered);
                                 }

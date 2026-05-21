@@ -45,6 +45,7 @@ pub(crate) mod udp6;
 
 use crate::LoopStates;
 use crate::NetInfo;
+use crate::INITIAL_SEND_WINDOW_SIZE;
 use crate::PacketFilter;
 use crate::PistolStream;
 use crate::SendPacketParam;
@@ -1056,7 +1057,6 @@ struct PortScanState {
     src_port: Option<u16>,
     if_name: String,
     cached: bool,
-    stream: PistolStream,
 }
 
 /// General scan function.
@@ -1065,7 +1065,12 @@ fn scan(
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
+    filter: Option<String>,
 ) -> Result<PortScans, PistolError> {
+    println!("xxx");
+    let mut stream = PistolStream::new();
+    stream.init(filter)?;
+
     let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
 
@@ -1082,12 +1087,6 @@ fn scan(
                 let if_name = ni.if_name.clone();
                 let cached = ni.cached;
 
-                let mut stream = PistolStream::new();
-                stream.init(Some(format!(
-                    "src host {} and tcp and src port {}",
-                    dst_addr, p
-                )))?;
-
                 let state = PortScanState {
                     retries: 0,
                     recved: false,
@@ -1100,21 +1099,26 @@ fn scan(
                     src_port,
                     if_name: if_name,
                     cached,
-                    stream,
                 };
                 loop_states.insert_ip_port(ni.dst_addr, p, state);
             }
         }
     }
 
+    let mut update_window = true;
+    let mut window = INITIAL_SEND_WINDOW_SIZE;
+    let mut all_filters = Vec::new();
     loop {
         #[cfg(feature = "debug")]
         let send_start = Instant::now();
 
         let mut all_done = true;
-        let mut all_filters = Vec::new();
         let mut send_count = 0;
         for (_key, state) in &mut loop_states {
+            if send_count >= window {
+                break;
+            }
+
             let dst_mac = state.dst_mac;
             let dst_addr = state.dst_addr;
             let dst_port = state.dst_port;
@@ -1134,6 +1138,7 @@ fn scan(
                             });
                         }
                     };
+
                     if state.retries < max_retries && !state.recved {
                         let if_name = state.if_name.clone();
                         let (spp, filters) = build_scan_buff(
@@ -1141,7 +1146,6 @@ fn scan(
                             method,
                         )?;
                         all_filters.extend(filters);
-                        let stream = &mut state.stream;
                         stream.send_packet(spp)?;
                         send_count += 1;
 
@@ -1165,7 +1169,6 @@ fn scan(
                             method,
                         )?;
                         all_filters.extend(filters);
-                        let stream = &mut state.stream;
                         stream.send_packet(spp)?;
                         send_count += 1;
 
@@ -1189,31 +1192,21 @@ fn scan(
         #[cfg(feature = "debug")]
         let recv_start = Instant::now();
 
-        let mut all_stream_response = Vec::new();
-        for (_key, state) in &mut loop_states {
-            let stream = &mut state.stream;
-            let response = stream.recv_packet(timeout)?;
-            all_stream_response.extend(response);
-        }
-
-        #[cfg(feature = "debug")]
-        println!(
-            "send_count: {}, recv_count: {}",
-            send_count,
-            all_stream_response.len()
-        );
+        let response = stream.recv_packet(timeout)?;
         #[cfg(feature = "debug")]
         println!(
             "recv {} packets cost: {:.2}s",
-            all_stream_response.len(),
+            response.len(),
             recv_start.elapsed().as_secs_f32()
         );
+
+        
 
         #[cfg(feature = "debug")]
         let parse_start = Instant::now();
 
         let mut matched_response = 0;
-        for r in &all_stream_response {
+        for r in &response {
             for f in &all_filters {
                 if f.check(r) {
                     matched_response += 1;
@@ -1287,9 +1280,10 @@ fn scan_raw(
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
+    filter: Option<String>,
 ) -> Result<PortScan, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
+    stream.init(filter)?;
 
     let mut port_scan = PortScan::new(max_retries);
     if !net_info.valid {
@@ -1399,7 +1393,10 @@ pub(crate) fn tcp_syn_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Syn, timeout, max_retries)
+    let filter = Some(String::from(
+        "(tcp and (((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)) or ((tcp[tcpflags] & tcp-rst) != 0))) or (icmp and icmp[0] == 3 and (icmp[1] == 1 or icmp[1] == 2 or icmp[1] == 3 or icmp[1] == 9 or icmp[1] == 10 or icmp[1] == 13)) or (icmp6 and icmp6[0] == 1 and (icmp6[1] == 0 or icmp6[1] == 1 or icmp6[1] == 3 or icmp6[1] == 4))",
+    ));
+    scan(net_infos, ScanMethod::Syn, timeout, max_retries, filter)
 }
 
 /// TCP SYN Scan, raw version.
@@ -1408,7 +1405,10 @@ pub(crate) fn tcp_syn_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Syn, timeout, max_retries)
+    let filter = Some(String::from(
+        "(tcp and (((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)) or ((tcp[tcpflags] & tcp-rst) != 0))) or (icmp and icmp[0] == 3 and (icmp[1] == 1 or icmp[1] == 2 or icmp[1] == 3 or icmp[1] == 9 or icmp[1] == 10 or icmp[1] == 13)) or (icmp6 and icmp6[0] == 1 and (icmp6[1] == 0 or icmp6[1] == 1 or icmp6[1] == 3 or icmp6[1] == 4))",
+    ));
+    scan_raw(net_info, ScanMethod::Syn, timeout, max_retries, filter)
 }
 
 pub(crate) fn tcp_fin_scan(
@@ -1416,7 +1416,10 @@ pub(crate) fn tcp_fin_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Fin, timeout, max_retries)
+    let filter = Some(String::from(
+        "tcp and (tcp[13] & 0x11 != 0) or (icmp and ip[icmplen] == 3 and ip[icmplen+1] == 3)",
+    ));
+    scan(net_infos, ScanMethod::Fin, timeout, max_retries, filter)
 }
 
 /// TCP FIN Scan, raw version.
@@ -1425,7 +1428,10 @@ pub(crate) fn tcp_fin_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Fin, timeout, max_retries)
+    let filter = Some(String::from(
+        "tcp and (tcp[13] & 0x11 != 0) or (icmp and ip[icmplen] == 3 and ip[icmplen+1] == 3)",
+    ));
+    scan_raw(net_info, ScanMethod::Fin, timeout, max_retries, filter)
 }
 
 pub(crate) fn tcp_ack_scan(
@@ -1433,7 +1439,8 @@ pub(crate) fn tcp_ack_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Ack, timeout, max_retries)
+    let filter = Some(String::from("tcp and tcp[13] & 0x10 != 0"));
+    scan(net_infos, ScanMethod::Ack, timeout, max_retries, filter)
 }
 
 /// TCP ACK Scan, raw version.
@@ -1442,7 +1449,8 @@ pub(crate) fn tcp_ack_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Ack, timeout, max_retries)
+    let filter = Some(String::from("tcp and tcp[13] & 0x10 != 0"));
+    scan_raw(net_info, ScanMethod::Ack, timeout, max_retries, filter)
 }
 
 pub(crate) fn tcp_null_scan(
@@ -1450,7 +1458,7 @@ pub(crate) fn tcp_null_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Null, timeout, max_retries)
+    scan(net_infos, ScanMethod::Null, timeout, max_retries, None)
 }
 
 /// TCP Null Scan, raw version.
@@ -1459,7 +1467,7 @@ pub(crate) fn tcp_null_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Null, timeout, max_retries)
+    scan_raw(net_info, ScanMethod::Null, timeout, max_retries, None)
 }
 
 pub(crate) fn tcp_xmas_scan(
@@ -1467,7 +1475,7 @@ pub(crate) fn tcp_xmas_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Xmas, timeout, max_retries)
+    scan(net_infos, ScanMethod::Xmas, timeout, max_retries, None)
 }
 
 /// TCP Xmas Scan, raw version.
@@ -1476,7 +1484,7 @@ pub(crate) fn tcp_xmas_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Xmas, timeout, max_retries)
+    scan_raw(net_info, ScanMethod::Xmas, timeout, max_retries, None)
 }
 
 pub(crate) fn tcp_window_scan(
@@ -1484,7 +1492,7 @@ pub(crate) fn tcp_window_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Window, timeout, max_retries)
+    scan(net_infos, ScanMethod::Window, timeout, max_retries, None)
 }
 
 /// TCP Window Scan, raw version.
@@ -1493,7 +1501,7 @@ pub(crate) fn tcp_window_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Window, timeout, max_retries)
+    scan_raw(net_info, ScanMethod::Window, timeout, max_retries, None)
 }
 
 pub(crate) fn tcp_maimon_scan(
@@ -1501,7 +1509,7 @@ pub(crate) fn tcp_maimon_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Maimon, timeout, max_retries)
+    scan(net_infos, ScanMethod::Maimon, timeout, max_retries, None)
 }
 
 /// TCP Maimon Scan, raw version.
@@ -1510,7 +1518,7 @@ pub(crate) fn tcp_maimon_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Maimon, timeout, max_retries)
+    scan_raw(net_info, ScanMethod::Maimon, timeout, max_retries, None)
 }
 
 pub(crate) fn tcp_connect_scan(
@@ -1654,7 +1662,8 @@ pub(crate) fn udp_scan(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Udp, timeout, max_retries)
+    let filter = None;
+    scan(net_infos, ScanMethod::Udp, timeout, max_retries, filter)
 }
 
 /// UDP Scan, raw version.
@@ -1663,7 +1672,8 @@ pub(crate) fn udp_scan_raw(
     timeout: Duration,
     max_retries: usize,
 ) -> Result<PortScan, PistolError> {
-    scan_raw(net_info, ScanMethod::Udp, timeout, max_retries)
+    let filter = None;
+    scan_raw(net_info, ScanMethod::Udp, timeout, max_retries, filter)
 }
 
 #[cfg(test)]

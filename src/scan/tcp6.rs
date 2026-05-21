@@ -40,6 +40,13 @@ const TCP_FLAGS_RST_MASK: u8 = 0b00000100;
 const TCP_DATA_SIZE: usize = 0;
 const HOP_LIMIT: u8 = 255;
 
+const ICMPV6_RESPONSE_CODES: [Icmpv6Code; 4] = [
+    Icmpv6Code(0), // no route to destination
+    Icmpv6Code(1), // communication with destination administratively prohibited
+    Icmpv6Code(3), // address unreachable
+    Icmpv6Code(4), // port unreachable
+];
+
 pub(crate) fn build_syn_scan_packet(
     dst_ipv6: Ipv6Addr,
     dst_port: u16,
@@ -128,12 +135,6 @@ pub(crate) fn build_syn_scan_packet(
 }
 
 pub(crate) fn parse_syn_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
@@ -155,8 +156,7 @@ pub(crate) fn parse_syn_scan_response(eth_response: &[u8]) -> Result<PortStatus,
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes.contains(&icmpv6_code) {
-                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                     return Ok(PortStatus::Filtered);
                                 }
                             }
@@ -259,12 +259,6 @@ pub(crate) fn build_fin_scan_packet(
 }
 
 pub(crate) fn parse_fin_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
@@ -286,8 +280,7 @@ pub(crate) fn parse_fin_scan_response(eth_response: &[u8]) -> Result<PortStatus,
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes.contains(&icmpv6_code) {
-                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                     return Ok(PortStatus::Filtered);
                                 }
                             }
@@ -390,12 +383,6 @@ pub(crate) fn build_ack_scan_packet(
 }
 
 pub(crate) fn parse_ack_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
@@ -414,8 +401,7 @@ pub(crate) fn parse_ack_scan_response(eth_response: &[u8]) -> Result<PortStatus,
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes.contains(&icmpv6_code) {
-                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                     return Ok(PortStatus::Filtered);
                                 }
                             }
@@ -518,12 +504,6 @@ pub(crate) fn build_null_scan_packet(
 }
 
 pub(crate) fn parse_null_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
@@ -542,8 +522,7 @@ pub(crate) fn parse_null_scan_response(eth_response: &[u8]) -> Result<PortStatus
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes.contains(&icmpv6_code) {
-                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                     return Ok(PortStatus::Filtered);
                                 }
                             }
@@ -646,12 +625,6 @@ pub(crate) fn build_xmas_scan_packet(
 }
 
 pub(crate) fn parse_xmas_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
@@ -670,8 +643,7 @@ pub(crate) fn parse_xmas_scan_response(eth_response: &[u8]) -> Result<PortStatus
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes.contains(&icmpv6_code) {
-                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                     return Ok(PortStatus::Filtered);
                                 }
                             }
@@ -773,15 +745,7 @@ pub(crate) fn send_window_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_window_scan_response(
-    eth_response: &[u8],
-) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
+pub(crate) fn parse_window_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if eth_packet.get_ethertype() == EtherTypes::Ipv6 {
             if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
@@ -805,8 +769,7 @@ pub(crate) fn parse_window_scan_response(
                             let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                             let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                             if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                                if codes.contains(&icmpv6_code) {
-                                    // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                                if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                     return Ok(PortStatus::Filtered);
                                 }
                             }
@@ -908,15 +871,7 @@ pub(crate) fn build_maimon_scan_packet(
     Ok((ipv6_buff, vec![filter_1, filter_2]))
 }
 
-pub(crate) fn parse_maimon_scan_response(
-    eth_response: &[u8],
-) -> Result<PortStatus, PistolError> {
-    let codes = vec![
-        Icmpv6Code(1), // communication with destination administratively prohibited
-        Icmpv6Code(3), // address unreachable
-        Icmpv6Code(4), // port unreachable
-    ];
-
+pub(crate) fn parse_maimon_scan_response(eth_response: &[u8]) -> Result<PortStatus, PistolError> {
     if let Some(eth_packet) = EthernetPacket::new(&eth_response) {
         if let Some(ipv6_packet) = Ipv6Packet::new(eth_packet.payload()) {
             match ipv6_packet.get_next_header() {
@@ -934,8 +889,7 @@ pub(crate) fn parse_maimon_scan_response(
                         let icmpv6_type = icmpv6_packet.get_icmpv6_type();
                         let icmpv6_code = icmpv6_packet.get_icmpv6_code();
                         if icmpv6_type == Icmpv6Types::DestinationUnreachable {
-                            if codes.contains(&icmpv6_code) {
-                                // icmpv6 unreachable error (type 1, code 1, 3, or 4)
+                            if ICMPV6_RESPONSE_CODES.contains(&icmpv6_code) {
                                 return Ok(PortStatus::Filtered);
                             }
                         }
