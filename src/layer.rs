@@ -132,6 +132,31 @@ pub(crate) struct Layer2Filter {
 }
 
 impl Layer2Filter {
+    pub(crate) fn check_fast(&self, ethernet_packet: &[u8]) -> bool {
+        if ethernet_packet.len() == 0 {
+            return false;
+        }
+        if let Some(src_mac) = self.src_mac {
+            if &ethernet_packet[6..12] != src_mac.octets() {
+                return false; // early stop
+            }
+        }
+        if let Some(dst_mac) = self.dst_mac {
+            if &ethernet_packet[0..6] != dst_mac.octets() {
+                return false;
+            }
+        }
+        if let Some(ether_type) = self.ether_type {
+            let packet_ether_type = EtherType::new(u16::from_be_bytes([
+                ethernet_packet[12],
+                ethernet_packet[13],
+            ]));
+            if ether_type != packet_ether_type {
+                return false;
+            }
+        }
+        true
+    }
     pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         let ethernet_packet = match EthernetPacket::new(&ethernet_packet) {
             Some(ethernet_packet) => ethernet_packet,
@@ -175,6 +200,106 @@ pub(crate) struct Layer3Filter {
 }
 
 impl Layer3Filter {
+    pub(crate) fn check_fast(&self, ethernet_packet: &[u8]) -> bool {
+        let m1 = match &self.layer2 {
+            Some(layers) => layers.check_fast(ethernet_packet),
+            None => true,
+        };
+        if !m1 {
+            // early stop
+            return false;
+        }
+
+        let ethertype = EtherType::new(u16::from_be_bytes([
+            ethernet_packet[12],
+            ethernet_packet[13],
+        ]));
+        let ip_packet = &ethernet_packet[ETHERNET_HEADER_SIZE..];
+
+        match ethertype {
+            EtherTypes::Ipv4 => {
+                match self.src_addr {
+                    Some(src_addr) => match src_addr {
+                        IpAddr::V4(src_ipv4) => {
+                            if ip_packet[12..16] != src_ipv4.octets() {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    None => (),
+                }
+                match self.dst_addr {
+                    Some(dst_addr) => match dst_addr {
+                        IpAddr::V4(dst_ipv4) => {
+                            if ip_packet[16..20] != dst_ipv4.octets() {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    None => (),
+                }
+                true
+            }
+            EtherTypes::Ipv6 => {
+                match self.src_addr {
+                    Some(src_addr) => match src_addr {
+                        IpAddr::V6(src_ipv6) => {
+                            if ip_packet[8..24] != src_ipv6.octets() {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    None => (),
+                }
+                match self.dst_addr {
+                    Some(dst_addr) => match dst_addr {
+                        IpAddr::V6(dst_ipv6) => {
+                            if ip_packet[24..40] != dst_ipv6.octets() {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    None => (),
+                }
+                true
+            }
+            EtherTypes::Arp => {
+                // ARP is on layer 2.5, but here we consider it as layer 3.
+                let arp_packet = match ArpPacket::new(ethernet_packet.payload()) {
+                    Some(a) => a,
+                    None => return false,
+                };
+                match self.src_addr {
+                    Some(src_addr) => match src_addr {
+                        IpAddr::V4(src_ipv4) => {
+                            if arp_packet.get_sender_proto_addr() != src_ipv4 {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    None => (),
+                }
+                match self.dst_addr {
+                    Some(dst_addr) => match dst_addr {
+                        IpAddr::V4(dst_ipv4) => {
+                            if arp_packet.get_target_proto_addr() != dst_ipv4 {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    },
+                    None => (),
+                };
+                true
+            }
+            _ => false,
+        }
+    }
     pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         let m1 = match &self.layer2 {
             Some(layers) => layers.check(ethernet_packet),

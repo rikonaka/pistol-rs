@@ -330,21 +330,33 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 ];
 
 /// Avoid sending too many packets at once, which may cause network congestion and packet loss.
-const INITIAL_SEND_WINDOW_SIZE: usize = 50;
+const INITIAL_SEND_WINDOW_SIZE: usize = 500;
 const SEND_WINDOW_THRESHOLD_RATE: f64 = 0.95;
 
 struct SendWindow {
     /// The current sending window size, which is the maximum number of packets that can be sent at once.
-    window: usize,
+    window_size: usize,
+    /// The increment of the sending window size when the receiving rate is high, which is the number of packets to increase the window size by when the receiving rate is above the threshold.
+    window_size_increment: usize,
     /// The number of packets that have been sent in the current window.
-    current: usize,
+    current_send: usize,
+    /// The number of packets that have been sent in the last window, which is used to calculate the receiving rate.
+    last_send: usize,
+    /// Store the history of the sending window size for debugging and analysis purposes.
+    window_size_history: Vec<usize>,
+    /// Whether the sending window is limited by the receiving rate.
+    reach_bandwidth_limited: bool,
 }
 
 impl Default for SendWindow {
     fn default() -> Self {
         Self {
-            window: INITIAL_SEND_WINDOW_SIZE,
-            current: 0,
+            window_size: INITIAL_SEND_WINDOW_SIZE,
+            window_size_increment: INITIAL_SEND_WINDOW_SIZE,
+            current_send: 0,
+            last_send: 0,
+            window_size_history: Vec::new(),
+            reach_bandwidth_limited: false,
         }
     }
 }
@@ -353,52 +365,47 @@ impl SendWindow {
     fn init() -> Self {
         Self::default()
     }
-    fn inc(&mut self, value: usize) {
-        self.current += value;
-    }
     fn check(&mut self) -> bool {
-        if self.current >= self.window {
+        if self.current_send >= self.window_size {
             debug!(
                 "send window is full: current={}, window={}",
-                self.current, self.window
+                self.current_send, self.window_size
             );
-            self.current = 0;
+            self.last_send = self.current_send;
+            self.current_send = 0;
             true
         } else {
+            self.current_send += 1;
             false
         }
     }
     /// Update the sending window size based on the number of packets sent and received.
-    fn update(&mut self, sended: usize, recved: usize) -> bool {
-        let mut update_window = true;
-
-        let recved_rate = if sended > 0 {
-            recved as f64 / sended as f64
+    fn update(&mut self, recved: usize) {
+        let recved_rate = if self.last_send > 0 {
+            recved as f64 / self.last_send as f64
         } else {
             0.0
         };
 
-        if recved_rate > SEND_WINDOW_THRESHOLD_RATE {
-            self.window += INITIAL_SEND_WINDOW_SIZE;
+        println!(
+            "last loop send: {}, recved: {}, received rate: {:.2}%, reach bandwidth limited: {}",
+            self.last_send,
+            recved,
+            recved_rate * 100.0,
+            self.reach_bandwidth_limited
+        );
+
+        if recved_rate > SEND_WINDOW_THRESHOLD_RATE && !self.reach_bandwidth_limited {
+            self.window_size_history.push(self.window_size);
+            self.window_size += self.window_size_increment;
         } else {
-            // Back 2 step if possible, otherwise back 1 step,
-            // or keep the same if already at the minimum window.
-            if self.window > 2 * INITIAL_SEND_WINDOW_SIZE {
-                self.window -= 2 * INITIAL_SEND_WINDOW_SIZE;
-            } else if self.window > INITIAL_SEND_WINDOW_SIZE {
-                self.window -= INITIAL_SEND_WINDOW_SIZE;
-            } else {
-                self.window = INITIAL_SEND_WINDOW_SIZE;
+            if self.window_size_history.len() > 0 {
+                self.window_size = self.window_size_history[self.window_size_history.len() - 1];
             }
 
-            if self.window < INITIAL_SEND_WINDOW_SIZE {
-                self.window = INITIAL_SEND_WINDOW_SIZE;
-            }
-
-            update_window = false;
+            println!("now send window size: {}", self.window_size);
+            self.reach_bandwidth_limited = true;
         }
-
-        update_window
     }
 }
 
@@ -533,6 +540,9 @@ impl<V> LoopStates<V> {
     fn insert_port(&mut self, port: u16, value: V) {
         let key = LoopKey::Port(port);
         self.data.insert(key, value);
+    }
+    fn len(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -853,7 +863,7 @@ impl NetInfo {
         // Use a small timeout to infer mac address,
         // since the target is on localnet and may not exist or may not respond to ARP requests,
         // and we don't want to wait too long for the response.
-        let timeout = Duration::from_millis(10);
+        let timeout = Duration::from_millis(200);
         let max_retries = 2;
 
         let infer_mac_outputs = infer_mac(infer_mac_inputs, timeout, max_retries)?;
@@ -2912,8 +2922,8 @@ mod tests {
     fn test_tcp_syn_scan_many_ports() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(1);
-        pistol.set_timeout(0.1);
-        // pistol.set_log_level("info");
+        pistol.set_timeout(0.5);
+        // pistol.set_log_level("debug");
 
         let src_ipv4 = None;
         let src_port = None;

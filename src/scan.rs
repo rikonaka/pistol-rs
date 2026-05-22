@@ -45,10 +45,10 @@ pub(crate) mod udp6;
 
 use crate::LoopStates;
 use crate::NetInfo;
-use crate::INITIAL_SEND_WINDOW_SIZE;
 use crate::PacketFilter;
 use crate::PistolStream;
 use crate::SendPacketParam;
+use crate::SendWindow;
 use crate::Target;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
@@ -1105,20 +1105,16 @@ fn scan(
         }
     }
 
-    let mut update_window = true;
-    let mut window = INITIAL_SEND_WINDOW_SIZE;
+    debug!("start scan loop with {} targets", loop_states.len());
+
+    let mut window = SendWindow::init();
     let mut all_filters = Vec::new();
     loop {
         #[cfg(feature = "debug")]
         let send_start = Instant::now();
 
         let mut all_done = true;
-        let mut send_count = 0;
         for (_key, state) in &mut loop_states {
-            if send_count >= window {
-                break;
-            }
-
             let dst_mac = state.dst_mac;
             let dst_addr = state.dst_addr;
             let dst_port = state.dst_port;
@@ -1140,6 +1136,11 @@ fn scan(
                     };
 
                     if state.retries < max_retries && !state.recved {
+                        all_done = false;
+                        if window.check() {
+                            break;
+                        }
+
                         let if_name = state.if_name.clone();
                         let (spp, filters) = build_scan_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
@@ -1147,10 +1148,8 @@ fn scan(
                         )?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
-                        send_count += 1;
 
                         state.retries += 1;
-                        all_done = false;
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
@@ -1163,6 +1162,10 @@ fn scan(
                         }
                     };
                     if state.retries < max_retries && !state.recved {
+                        all_done = false;
+                        if window.check() {
+                            break;
+                        }
                         let if_name = state.if_name.clone();
                         let (spp, filters) = build_scan_buff6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
@@ -1170,10 +1173,8 @@ fn scan(
                         )?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
-                        send_count += 1;
 
                         state.retries += 1;
-                        all_done = false;
                     }
                 }
             }
@@ -1186,6 +1187,7 @@ fn scan(
         );
 
         if all_done {
+            println!("all done, break the loop");
             break;
         }
 
@@ -1197,10 +1199,8 @@ fn scan(
         println!(
             "recv {} packets cost: {:.2}s",
             response.len(),
-            recv_start.elapsed().as_secs_f32()
+            recv_start.elapsed().as_secs_f32(),
         );
-
-        
 
         #[cfg(feature = "debug")]
         let parse_start = Instant::now();
@@ -1266,10 +1266,12 @@ fn scan(
 
         #[cfg(feature = "debug")]
         println!(
-            "parse packets cost: {:.2}s, matched: {}",
+            "parse packets cost: {:.2}s, matched: {}, speed: {:.2} packets/s",
             parse_start.elapsed().as_secs_f32(),
             matched_response,
+            matched_response as f64 / send_start.elapsed().as_secs_f64()
         );
+        window.update(matched_response);
     }
     port_scans.finish(reports);
     Ok(port_scans)

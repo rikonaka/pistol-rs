@@ -747,7 +747,9 @@ pub(crate) fn infer_mac(
     max_retries: usize,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
     let mut stream = PistolStream::new();
-    let filter = Some(String::from("arp"));
+    let filter = Some(String::from(
+        "(arp and arp[6:2] = 2) or (icmp6 and (ip6[40] = 136 or ip6[40] = 134))",
+    ));
     stream.init(filter)?;
 
     let mut loop_states = LoopStates::default();
@@ -957,6 +959,7 @@ pub(crate) fn infer_mac(
         }
 
         let response = stream.recv_packet(timeout)?;
+        debug!("infer mac response len: {}", response.len());
 
         for r in &response {
             for f in &all_filters {
@@ -995,6 +998,7 @@ pub(crate) fn infer_mac(
         };
         rets.insert(dst_addr, output);
     }
+
     Ok(rets)
 }
 
