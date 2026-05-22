@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use crate::SendPacketParam;
 use crate::error::PistolError;
-use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::ICMP_ECHO_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -43,7 +43,7 @@ pub(crate) fn send_icmp_trace_packet(
     seq: u16,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
         Some(p) => p,
         None => {
@@ -56,7 +56,7 @@ pub(crate) fn send_icmp_trace_packet(
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     ip_header.set_identification(ip_id);
     ip_header.set_flags(Ipv4Flags::DontFragment);
     ip_header.set_ttl(ttl);

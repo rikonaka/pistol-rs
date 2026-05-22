@@ -24,6 +24,8 @@ use crate::LoopKey;
 use crate::LoopStates;
 use crate::PistolStream;
 use crate::SendPacketParam;
+use crate::SendSpeed;
+use crate::SendWindow;
 use crate::error::PistolError;
 use crate::fake_interface;
 use crate::layer::PacketFilter;
@@ -745,6 +747,7 @@ pub(crate) fn infer_mac(
     inputs: Vec<InferMacInput>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
     let mut stream = PistolStream::new();
     let filter = Some(String::from(
@@ -788,6 +791,7 @@ pub(crate) fn infer_mac(
         }
     }
 
+    let mut window = SendWindow::init(speed);
     // Get mac of via address if its on cache or send packet to get it if not cached,
     // and store the receiver for waiting response in the next step.
     loop {
@@ -811,6 +815,10 @@ pub(crate) fn infer_mac(
                                     state.cached = true;
                                 }
                                 None => {
+                                    if window.check() {
+                                        break;
+                                    }
+
                                     // replace with new src_interfaces
                                     let src_interface = match find_interface_by_index(if_index) {
                                         Some(i) => i,
@@ -855,6 +863,10 @@ pub(crate) fn infer_mac(
                                     state.cached = true;
                                 }
                                 None => {
+                                    if window.check() {
+                                        break;
+                                    }
+
                                     let src_addr = state.src_addr;
                                     let src_interface = state.interface.clone();
                                     let (spp, filters) = build_neighbor_detect_packet(
@@ -888,6 +900,10 @@ pub(crate) fn infer_mac(
                                 state.cached = true;
                             }
                             None => {
+                                if window.check() {
+                                    break;
+                                }
+
                                 debug!(
                                     "dst addr {} not found in cache, send packet to detect",
                                     dst_addr
@@ -928,6 +944,10 @@ pub(crate) fn infer_mac(
                                     state.cached = true;
                                 }
                                 None => {
+                                    if window.check() {
+                                        break;
+                                    }
+
                                     debug!(
                                         "default route via addr {} not found in cache, send packet to detect",
                                         dr.via
@@ -961,10 +981,12 @@ pub(crate) fn infer_mac(
         let response = stream.recv_packet(timeout)?;
         debug!("infer mac response len: {}", response.len());
 
+        let mut matched_packets = 0;
         for r in &response {
             for f in &all_filters {
                 // make sure the response is we want
                 if f.check(r) {
+                    matched_packets += 1;
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
                             for (key, state) in &mut loop_states {
@@ -983,6 +1005,8 @@ pub(crate) fn infer_mac(
                 }
             }
         }
+
+        window.update(matched_packets);
     }
 
     let mut rets = HashMap::new();

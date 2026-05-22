@@ -48,6 +48,7 @@ use crate::NetInfo;
 use crate::PacketFilter;
 use crate::PistolStream;
 use crate::SendPacketParam;
+use crate::SendSpeed;
 use crate::SendWindow;
 use crate::Target;
 use crate::error::PistolError;
@@ -552,6 +553,7 @@ pub(crate) fn mac_scan(
     targets: &[Target],
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<MacScans, PistolError> {
     let mut stream = PistolStream::new();
     stream.init(Some(String::from(
@@ -571,6 +573,7 @@ pub(crate) fn mac_scan(
         loop_states.insert_ip_port(dst_addr, dst_port, state);
     }
 
+    let mut window = SendWindow::init(speed);
     // Sometimes the same target may receive multiple mac responses,
     // so we use a Vec here to store the results of each target.
     let mut mac_scan_rets: HashMap<IpAddr, HashMap<MacAddr, usize>> = HashMap::new();
@@ -585,6 +588,10 @@ pub(crate) fn mac_scan(
                 let dst_addr = state.addr;
                 match dst_addr {
                     IpAddr::V4(dst_ipv4) => {
+                        if window.check() {
+                            break;
+                        }
+
                         debug!(
                             "arp scan packets to {}: #{}/{}",
                             dst_ipv4,
@@ -601,6 +608,9 @@ pub(crate) fn mac_scan(
                         all_done = false;
                     }
                     IpAddr::V6(dst_ipv6) => {
+                        if window.check() {
+                            break;
+                        }
                         debug!(
                             "ndp_ns scan packets to {}: #{}/{}",
                             dst_ipv6,
@@ -640,9 +650,11 @@ pub(crate) fn mac_scan(
             recv_start.elapsed().as_secs_f32()
         );
 
+        let mut matched_packets = 0;
         for r in &response {
             for f in &all_filters {
-                if f.check(r) {
+                if f.check_fast(r) {
+                    matched_packets += 1;
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
                             #[cfg(feature = "debug")]
@@ -676,6 +688,8 @@ pub(crate) fn mac_scan(
                 }
             }
         }
+
+        window.update(matched_packets);
     }
 
     let nmap_mac_prefixes = get_nmap_mac_prefixes()?;
@@ -1066,8 +1080,8 @@ fn scan(
     timeout: Duration,
     max_retries: usize,
     filter: Option<String>,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    println!("xxx");
     let mut stream = PistolStream::new();
     stream.init(filter)?;
 
@@ -1107,7 +1121,7 @@ fn scan(
 
     debug!("start scan loop with {} targets", loop_states.len());
 
-    let mut window = SendWindow::init();
+    let mut window = SendWindow::init(speed);
     let mut all_filters = Vec::new();
     loop {
         #[cfg(feature = "debug")]
@@ -1136,7 +1150,6 @@ fn scan(
                     };
 
                     if state.retries < max_retries && !state.recved {
-                        all_done = false;
                         if window.check() {
                             break;
                         }
@@ -1150,6 +1163,7 @@ fn scan(
                         stream.send_packet(spp)?;
 
                         state.retries += 1;
+                        all_done = false;
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
@@ -1162,7 +1176,6 @@ fn scan(
                         }
                     };
                     if state.retries < max_retries && !state.recved {
-                        all_done = false;
                         if window.check() {
                             break;
                         }
@@ -1175,88 +1188,67 @@ fn scan(
                         stream.send_packet(spp)?;
 
                         state.retries += 1;
+                        all_done = false;
                     }
                 }
             }
         }
 
-        #[cfg(feature = "debug")]
-        println!(
-            "send packets cost: {:.2}s",
-            send_start.elapsed().as_secs_f32()
-        );
-
         if all_done {
-            println!("all done, break the loop");
             break;
         }
 
-        #[cfg(feature = "debug")]
-        let recv_start = Instant::now();
-
         let response = stream.recv_packet(timeout)?;
-        #[cfg(feature = "debug")]
-        println!(
-            "recv {} packets cost: {:.2}s",
-            response.len(),
-            recv_start.elapsed().as_secs_f32(),
-        );
-
-        #[cfg(feature = "debug")]
         let parse_start = Instant::now();
 
-        let mut matched_response = 0;
+        let mut matched_packets = 0;
         for r in &response {
             for f in &all_filters {
-                if f.check(r) {
-                    matched_response += 1;
+                if f.check_fast(r) {
+                    matched_packets += 1;
                     debug!("filter {} matched", f.name());
                     if let Some((addr, port)) = f.tcp_udp_ip_port() {
-                        for (_key, state) in &mut loop_states {
-                            if state.dst_addr == addr && state.dst_port == port {
-                                state.recved = true;
+                        if let Some(state) = loop_states.get_ip_port_mut(addr, port) {
+                            state.recved = true;
 
-                                let retries = state.retries;
-                                let addr = state.dst_addr;
-                                let origin_addr = state.o_dst_addr;
-                                let port = state.dst_port;
-                                let cached = state.cached;
+                            let retries = state.retries;
+                            let addr = state.dst_addr;
+                            let origin_addr = state.o_dst_addr;
+                            let port = state.dst_port;
+                            let cached = state.cached;
 
-                                let port_status = parse_response(r, method)?;
-                                let report = PortReport {
-                                    addr,
-                                    origin_addr,
-                                    port,
-                                    status: port_status,
-                                    cached,
-                                    retries,
-                                };
-                                reports.push(report);
-                                break;
-                            }
+                            let port_status = parse_response(r, method)?;
+                            let report = PortReport {
+                                addr,
+                                origin_addr,
+                                port,
+                                status: port_status,
+                                cached,
+                                retries,
+                            };
+                            reports.push(report);
+                            break;
                         }
                     } else if let Some(addr) = f.icmp_ip() {
-                        for (_key, state) in &mut loop_states {
-                            if state.dst_addr == addr {
-                                state.recved = true;
+                        if let Some(state) = loop_states.get_ip_mut(addr) {
+                            state.recved = true;
 
-                                let retries = state.retries;
-                                let addr = state.dst_addr;
-                                let origin_addr = state.o_dst_addr;
-                                let port = state.dst_port;
-                                let cached = state.cached;
+                            let retries = state.retries;
+                            let addr = state.dst_addr;
+                            let origin_addr = state.o_dst_addr;
+                            let port = state.dst_port;
+                            let cached = state.cached;
 
-                                let port_status = PortStatus::Unreachable;
-                                let report = PortReport {
-                                    addr,
-                                    origin_addr,
-                                    port,
-                                    status: port_status,
-                                    cached,
-                                    retries,
-                                };
-                                reports.push(report);
-                            }
+                            let port_status = PortStatus::Unreachable;
+                            let report = PortReport {
+                                addr,
+                                origin_addr,
+                                port,
+                                status: port_status,
+                                cached,
+                                retries,
+                            };
+                            reports.push(report);
                         }
                     }
                     break;
@@ -1264,14 +1256,14 @@ fn scan(
             }
         }
 
-        #[cfg(feature = "debug")]
-        println!(
+        let speed = matched_packets as f64 / send_start.elapsed().as_secs_f64();
+        debug!(
             "parse packets cost: {:.2}s, matched: {}, speed: {:.2} packets/s",
             parse_start.elapsed().as_secs_f32(),
-            matched_response,
-            matched_response as f64 / send_start.elapsed().as_secs_f64()
+            matched_packets,
+            speed,
         );
-        window.update(matched_response);
+        window.update(matched_packets);
     }
     port_scans.finish(reports);
     Ok(port_scans)
@@ -1394,11 +1386,19 @@ pub(crate) fn tcp_syn_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
     let filter = Some(String::from(
         "(tcp and (((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)) or ((tcp[tcpflags] & tcp-rst) != 0))) or (icmp and icmp[0] == 3 and (icmp[1] == 1 or icmp[1] == 2 or icmp[1] == 3 or icmp[1] == 9 or icmp[1] == 10 or icmp[1] == 13)) or (icmp6 and icmp6[0] == 1 and (icmp6[1] == 0 or icmp6[1] == 1 or icmp6[1] == 3 or icmp6[1] == 4))",
     ));
-    scan(net_infos, ScanMethod::Syn, timeout, max_retries, filter)
+    scan(
+        net_infos,
+        ScanMethod::Syn,
+        timeout,
+        max_retries,
+        filter,
+        speed,
+    )
 }
 
 /// TCP SYN Scan, raw version.
@@ -1417,11 +1417,19 @@ pub(crate) fn tcp_fin_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
     let filter = Some(String::from(
         "tcp and (tcp[13] & 0x11 != 0) or (icmp and ip[icmplen] == 3 and ip[icmplen+1] == 3)",
     ));
-    scan(net_infos, ScanMethod::Fin, timeout, max_retries, filter)
+    scan(
+        net_infos,
+        ScanMethod::Fin,
+        timeout,
+        max_retries,
+        filter,
+        speed,
+    )
 }
 
 /// TCP FIN Scan, raw version.
@@ -1440,9 +1448,17 @@ pub(crate) fn tcp_ack_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
     let filter = Some(String::from("tcp and tcp[13] & 0x10 != 0"));
-    scan(net_infos, ScanMethod::Ack, timeout, max_retries, filter)
+    scan(
+        net_infos,
+        ScanMethod::Ack,
+        timeout,
+        max_retries,
+        filter,
+        speed,
+    )
 }
 
 /// TCP ACK Scan, raw version.
@@ -1459,8 +1475,16 @@ pub(crate) fn tcp_null_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Null, timeout, max_retries, None)
+    scan(
+        net_infos,
+        ScanMethod::Null,
+        timeout,
+        max_retries,
+        None,
+        speed,
+    )
 }
 
 /// TCP Null Scan, raw version.
@@ -1476,8 +1500,16 @@ pub(crate) fn tcp_xmas_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Xmas, timeout, max_retries, None)
+    scan(
+        net_infos,
+        ScanMethod::Xmas,
+        timeout,
+        max_retries,
+        None,
+        speed,
+    )
 }
 
 /// TCP Xmas Scan, raw version.
@@ -1493,8 +1525,16 @@ pub(crate) fn tcp_window_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Window, timeout, max_retries, None)
+    scan(
+        net_infos,
+        ScanMethod::Window,
+        timeout,
+        max_retries,
+        None,
+        speed,
+    )
 }
 
 /// TCP Window Scan, raw version.
@@ -1510,8 +1550,16 @@ pub(crate) fn tcp_maimon_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    scan(net_infos, ScanMethod::Maimon, timeout, max_retries, None)
+    scan(
+        net_infos,
+        ScanMethod::Maimon,
+        timeout,
+        max_retries,
+        None,
+        speed,
+    )
 }
 
 /// TCP Maimon Scan, raw version.
@@ -1527,6 +1575,7 @@ pub(crate) fn tcp_connect_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    _speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
     let mut port_scans = PortScans::new(max_retries);
     let reports = Arc::new(Mutex::new(Vec::new()));
@@ -1663,9 +1712,17 @@ pub(crate) fn udp_scan(
     net_infos: Vec<NetInfo>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
     let filter = None;
-    scan(net_infos, ScanMethod::Udp, timeout, max_retries, filter)
+    scan(
+        net_infos,
+        ScanMethod::Udp,
+        timeout,
+        max_retries,
+        filter,
+        speed,
+    )
 }
 
 /// UDP Scan, raw version.

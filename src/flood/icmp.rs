@@ -14,7 +14,7 @@ use std::panic::Location;
 use std::sync::Arc;
 
 use crate::error::PistolError;
-use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::ICMP_ECHO_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
 
 const ICMP_DATA_SIZE: usize = 16;
@@ -26,7 +26,7 @@ pub fn build_icmp_flood_packet(
 ) -> Result<Arc<[u8]>, PistolError> {
     let mut rng = rand::rng();
     // ip header
-    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut ip_buff = [0u8; IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE];
     let mut ip_header = match MutableIpv4Packet::new(&mut ip_buff) {
         Some(p) => p,
         None => {
@@ -39,7 +39,7 @@ pub fn build_icmp_flood_packet(
     ip_header.set_header_length(5);
     ip_header.set_source(src_ipv4);
     ip_header.set_destination(dst_ipv4);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     let id = rng.random();
     ip_header.set_identification(id);
     ip_header.set_flags(Ipv4Flags::DontFragment);

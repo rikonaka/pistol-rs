@@ -19,7 +19,7 @@ use std::panic::Location;
 use std::sync::Arc;
 
 use crate::error::PistolError;
-use crate::layer::ICMP_HEADER_SIZE;
+use crate::layer::ICMP_ECHO_HEADER_SIZE;
 use crate::layer::IPV4_HEADER_SIZE;
 use crate::layer::TCP_HEADER_SIZE;
 use crate::layer::UDP_HEADER_SIZE;
@@ -540,7 +540,7 @@ pub(crate) fn ie_packet_1_layer3(
     let mut rng = rand::rng();
     const ICMP_DATA_SIZE: usize = 120; // and 120 bytes of 0x00 for the data payload
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -552,7 +552,7 @@ pub(crate) fn ie_packet_1_layer3(
     };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     // a random IP ID and ICMP request identifier
     let id = rng.random();
     ip_header.set_identification(id);
@@ -609,7 +609,7 @@ pub(crate) fn ie_packet_2_layer3(
     let mut rng = rand::rng();
     const ICMP_DATA_SIZE: usize = 150; // 150 bytes of data is sent
 
-    let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE];
+    let mut buff = [0u8; IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE];
     // ip header
     let mut ip_header = match MutableIpv4Packet::new(&mut buff) {
         Some(p) => p,
@@ -621,7 +621,7 @@ pub(crate) fn ie_packet_2_layer3(
     };
     ip_header.set_version(4);
     ip_header.set_header_length(5);
-    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
+    ip_header.set_total_length((IPV4_HEADER_SIZE + ICMP_ECHO_HEADER_SIZE + ICMP_DATA_SIZE) as u16);
     let id = rng.random();
     ip_header.set_identification(id);
     // the first one has the IP DF bit set

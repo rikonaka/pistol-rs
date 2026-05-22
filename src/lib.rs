@@ -329,9 +329,44 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
     64680, 65000, 65129, 65389,
 ];
 
+/// The faster the sending speed,
+/// the larger possiblity of network congestion and packet loss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SendSpeed {
+    /// Not very stable, but the fastest sending speed, which may cause network congestion and packet loss.
+    VeryFast,
+    /// The blance between sending speed and network congestion, which is the default sending speed.
+    Fast,
+    /// Very stable sending speed,
+    /// which may cause less network congestion and packet loss,
+    /// but may take more time to send the packets.
+    Medium,
+    /// Very slow sending speed,
+    /// which is the most stable and causes the least network congestion and packet loss,
+    /// but takes the longest time to send the packets.
+    Slow,
+    /// Custom sending speed,
+    /// the first value is the sending window size,
+    /// which is the maximum number of packets that can be sent at once,
+    /// and the second value is the increment of the sending window size when the receiving rate is high,
+    /// which is the number of packets to increase the window size by when the receiving rate is above the threshold.
+    Custom(usize, usize),
+}
+
+impl SendSpeed {
+    pub fn value(&self) -> (usize, usize) {
+        match self {
+            SendSpeed::VeryFast => (20000, 500),
+            SendSpeed::Fast => (10000, 500),
+            SendSpeed::Medium => (5000, 250),
+            SendSpeed::Slow => (1000, 250),
+            SendSpeed::Custom(ws, wsi) => (*ws, *wsi),
+        }
+    }
+}
+
 /// Avoid sending too many packets at once, which may cause network congestion and packet loss.
-const INITIAL_SEND_WINDOW_SIZE: usize = 500;
-const SEND_WINDOW_THRESHOLD_RATE: f64 = 0.95;
+const SEND_WINDOW_THRESHOLD_RATE: f64 = 0.98;
 
 struct SendWindow {
     /// The current sending window size, which is the maximum number of packets that can be sent at once.
@@ -348,22 +383,17 @@ struct SendWindow {
     reach_bandwidth_limited: bool,
 }
 
-impl Default for SendWindow {
-    fn default() -> Self {
+impl SendWindow {
+    fn init(speed: SendSpeed) -> Self {
+        let (window_size, window_size_increment) = speed.value();
         Self {
-            window_size: INITIAL_SEND_WINDOW_SIZE,
-            window_size_increment: INITIAL_SEND_WINDOW_SIZE,
+            window_size,
+            window_size_increment,
             current_send: 0,
             last_send: 0,
             window_size_history: Vec::new(),
             reach_bandwidth_limited: false,
         }
-    }
-}
-
-impl SendWindow {
-    fn init() -> Self {
-        Self::default()
     }
     fn check(&mut self) -> bool {
         if self.current_send >= self.window_size {
@@ -387,14 +417,6 @@ impl SendWindow {
             0.0
         };
 
-        println!(
-            "last loop send: {}, recved: {}, received rate: {:.2}%, reach bandwidth limited: {}",
-            self.last_send,
-            recved,
-            recved_rate * 100.0,
-            self.reach_bandwidth_limited
-        );
-
         if recved_rate > SEND_WINDOW_THRESHOLD_RATE && !self.reach_bandwidth_limited {
             self.window_size_history.push(self.window_size);
             self.window_size += self.window_size_increment;
@@ -406,6 +428,15 @@ impl SendWindow {
             println!("now send window size: {}", self.window_size);
             self.reach_bandwidth_limited = true;
         }
+
+        debug!(
+            "now window: {}, current send: {}, recved: {}, received rate: {:.2}%, reach bandwidth limited: {}",
+            self.window_size,
+            self.current_send,
+            recved,
+            recved_rate * 100.0,
+            self.reach_bandwidth_limited
+        );
     }
 }
 
@@ -525,6 +556,14 @@ impl<V> IntoIterator for LoopStates<V> {
 }
 
 impl<V> LoopStates<V> {
+    fn get_ip_port_mut(&mut self, ip: IpAddr, port: u16) -> Option<&mut V> {
+        let key = LoopKey::IpPort(ip, port);
+        self.data.get_mut(&key)
+    }
+    fn get_ip_mut(&mut self, ip: IpAddr) -> Option<&mut V> {
+        let key = LoopKey::Ip(ip);
+        self.data.get_mut(&key)
+    }
     fn get_port_mut(&mut self, port: u16) -> Option<&mut V> {
         let key = LoopKey::Port(port);
         self.data.get_mut(&key)
@@ -826,7 +865,7 @@ impl NetInfo {
             valid: false,
         }
     }
-    fn detects(inputs: Vec<NetInfoInput>) -> Result<Vec<Self>, PistolError> {
+    fn detects(inputs: Vec<NetInfoInput>, speed: SendSpeed) -> Result<Vec<Self>, PistolError> {
         let mut infos = HashMap::new();
         let mut infer_mac_inputs = Vec::new();
 
@@ -866,7 +905,7 @@ impl NetInfo {
         let timeout = Duration::from_millis(200);
         let max_retries = 2;
 
-        let infer_mac_outputs = infer_mac(infer_mac_inputs, timeout, max_retries)?;
+        let infer_mac_outputs = infer_mac(infer_mac_inputs, timeout, max_retries, speed)?;
 
         let mut rets = Vec::new();
         for (inferred_dst_addr, imo) in infer_mac_outputs {
@@ -1051,7 +1090,7 @@ impl PistolStream {
                         return;
                     }
                 };
-                cap.set_buffer_size(16 * 1024);
+                cap.set_buffer_size(8 * 1024 * 1024);
                 cap.set_timeout(50);
                 // cap.set_promiscuous_mode(true);
                 // cap.set_immediate_mode(true);
@@ -1298,6 +1337,7 @@ pub struct Pistol {
     log_level: Option<Level>,
     timeout: Duration,
     max_retries: usize,
+    speed: SendSpeed,
 }
 
 impl Default for Pistol {
@@ -1306,7 +1346,8 @@ impl Default for Pistol {
             if_name: None,
             log_level: Some(Level::INFO), // default log level is info
             timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
-            max_retries: 2, // default 2 max_retries
+            max_retries: 2,           // default 2 max_retries
+            speed: SendSpeed::Medium, // default send speed is medium
         }
     }
 }
@@ -1385,6 +1426,14 @@ impl Pistol {
     pub fn get_max_retries(&self) -> usize {
         self.max_retries
     }
+    /// Set the sending speed for sending packets, which may affect the success rate of receiving packets.
+    pub fn set_send_speed(&mut self, speed: SendSpeed) {
+        self.speed = speed;
+    }
+    /// Get the sending speed.
+    pub fn get_send_speed(&self) -> SendSpeed {
+        self.speed
+    }
     /// Initialize domain and multiple runners for multiple targets.
     fn get_netinfo(
         &mut self,
@@ -1406,7 +1455,7 @@ impl Pistol {
             net_info_inputs.push(input);
         }
 
-        let net_infos = NetInfo::detects(net_info_inputs)?;
+        let net_infos = NetInfo::detects(net_info_inputs, self.speed)?;
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
@@ -1425,7 +1474,7 @@ impl Pistol {
             src_port,
         };
 
-        let net_infos = NetInfo::detects(vec![input])?;
+        let net_infos = NetInfo::detects(vec![input], self.speed)?;
         if net_infos.len() > 0 {
             Ok((net_infos[0].clone(), now.elapsed()))
         } else {
@@ -1465,7 +1514,6 @@ impl Pistol {
     /// }
     /// ```
     /// Compare the speed with arp-scan.
-    /// Note: r1 means receive response in the first retry, r2 means receive response in the second retry, and so on.
     /// pistol:
     /// ```
     /// +--------+---------------+-------------------+--------+-----------+
@@ -1508,7 +1556,7 @@ impl Pistol {
     /// ```
     pub fn mac_scan(&mut self, targets: &[Target]) -> Result<MacScans, PistolError> {
         self.init_tracing();
-        scan::mac_scan(targets, self.timeout, self.max_retries)
+        scan::mac_scan(targets, self.timeout, self.max_retries, self.speed)
     }
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
@@ -1548,7 +1596,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_ack_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1615,7 +1663,8 @@ impl Pistol {
             };
             net_infos.push(net_info);
         }
-        let mut ret = scan::tcp_connect_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret =
+            scan::tcp_connect_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = Duration::ZERO;
         Ok(ret)
     }
@@ -1676,7 +1725,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1712,7 +1761,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_maimon_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_maimon_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1749,7 +1798,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_null_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_null_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1784,6 +1833,63 @@ impl Pistol {
     /// It can be performed quickly,
     /// scanning thousands of ports per second on a fast network not hampered by intrusive firewalls.
     /// SYN scan is relatively unobtrusive and stealthy, since it never completes TCP connections.
+    /// ```rust
+    /// use pistol::Pistol;
+    /// use pistol::Target;
+    /// 
+    /// fn main() {
+    /// let mut pistol = Pistol::new();
+    ///     pistol.set_max_retries(1);
+    ///     pistol.set_timeout(0.5);
+    ///     // pistol.set_log_level("debug");
+
+    ///     let src_ipv4 = None;
+    ///     let src_port = None;
+    ///     let dst_ports: Vec<u16> = (22..10240).collect();
+    ///     // let dst_ports: Vec<u16> = (22..1024).collect();
+    ///     let targets = vec![Target::new(
+    ///         Ipv4Addr::new(192, 168, 5, 78).into(),
+    ///         // Some(vec![22, 80, 443]),
+    ///         Some(dst_ports),
+    ///     )];
+    ///     let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+    ///     println!("{}", ret.as_str(true));
+    /// }
+    /// ```
+    /// The output of pistol tcp syn scan.
+    /// ```
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// |                                          Port Scans                                          |
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// |        id        |       addr       |       port       |      status      |     retries      |
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// |        1         |   192.168.5.78   |        22        |       open       |        1         |
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// |        2         |   192.168.5.78   |        80        |       open       |        1         |
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// |        3         |   192.168.5.78   |       8080       |       open       |        1         |
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// | start at 2026-05-22 17:55:34 then finish at 2026-05-22 17:55:49, max_retries: 1              |
+    /// | layer2 cost: 116.97ms, total cost: 15.21s, open ports: 3                                     |
+    /// +------------------+------------------+------------------+------------------+------------------+
+    /// ```
+    ///
+    /// Compare the speed with nmap.
+    /// ```
+    /// ➜  pistol-rs git:(dev) ✗ time sudo nmap -p 22-10240 -sS 192.168.5.78
+    /// Starting Nmap 7.95 ( https://nmap.org ) at 2026-05-22 17:55 CST
+    /// Nmap scan report for 192.168.5.78
+    /// Host is up (0.00087s latency).
+    /// Not shown: 10216 closed tcp ports (reset)
+    /// PORT     STATE SERVICE
+    /// 22/tcp   open  ssh
+    /// 80/tcp   open  http
+    /// 8080/tcp open  http-proxy
+    /// MAC Address: 00:0C:29:CF:62:2F (VMware)
+    ///
+    /// Nmap done: 1 IP address (1 host up) scanned in 14.65 seconds
+    /// sudo nmap -p 22-10240 -sS 192.168.5.78  0.04s user 0.00s system 0% cpu 14.784 total
+    /// ```
     pub fn tcp_syn_scan(
         &mut self,
         targets: &[Target],
@@ -1792,7 +1898,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_syn_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_syn_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1830,7 +1936,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_window_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_window_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1866,7 +1972,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::tcp_xmas_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::tcp_xmas_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1907,7 +2013,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = scan::udp_scan(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = scan::udp_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1957,7 +2063,8 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::icmp_address_mask_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret =
+            ping::icmp_address_mask_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1999,7 +2106,7 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::icmp_echo_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmp_echo_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2043,7 +2150,8 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::icmp_timestamp_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret =
+            ping::icmp_timestamp_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2106,7 +2214,7 @@ impl Pistol {
             None => None,
         };
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::icmpv6_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::icmpv6_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2122,7 +2230,7 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_ack_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2156,7 +2264,7 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::tcp_syn_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2190,7 +2298,7 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         self.init_tracing();
         let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::udp_ping(net_infos, self.timeout, self.max_retries)?;
+        let mut ret = ping::udp_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
