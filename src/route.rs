@@ -59,7 +59,7 @@ fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
     // fe80::%lo0/10 => fe80::/10
     // fe80::20c:29ff:fe1f:6f71%lo0 => fe80::20c:29ff:fe1f:6f71
     if dst_str.contains("%") {
-        let bsd_fix_re = Regex::new(r"(?P<subnet>[^\s^%^/]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
+        let bsd_fix_re = Regex::new(r"(?P<subnet>[^%]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
         match bsd_fix_re.captures(dst_str) {
             Some(caps) => {
                 let addr = caps.name("subnet").map_or("", |m| m.as_str());
@@ -134,20 +134,52 @@ impl RouteAddr {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+enum Dev {
+    Name(String),
+    IfIndex(u32),
+}
+
+impl fmt::Display for Dev {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dev_string = match self {
+            Dev::Name(name) => format!("name({})", name),
+            Dev::IfIndex(if_index) => format!("link({})", if_index),
+        };
+        write!(f, "{}", dev_string)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct InnerDefaultRoute {
     via: IpAddr,
-    // only the name is stored here, not converted into a formal NetworkInterface struct
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "macos"
-    ))]
-    dev: String,
-    #[cfg(target_os = "windows")]
-    if_index: u32,
+    dev: Dev,
+}
+
+impl InnerDefaultRoute {
+    fn to_default_route(&self) -> Result<DefaultRoute, PistolError> {
+        match &self.dev {
+            Dev::Name(name) => {
+                let interface = find_interface_by_name(name)
+                    .ok_or(PistolError::CanNotFoundInterface { i: name.clone() })?;
+                Ok(DefaultRoute {
+                    via: self.via,
+                    dev: interface,
+                })
+            }
+            Dev::IfIndex(if_index) => {
+                let interface = find_interface_by_index(*if_index).ok_or(
+                    PistolError::CanNotFoundInterface {
+                        i: format!("if_name({})", if_index),
+                    },
+                )?;
+                Ok(DefaultRoute {
+                    via: self.via,
+                    dev: interface,
+                })
+            }
+        }
+    }
 }
 
 impl fmt::Display for InnerDefaultRoute {
@@ -192,8 +224,8 @@ struct InnerRouteInfo {
 struct InnerRouteTable {
     default_route: Option<InnerDefaultRoute>,
     default_route6: Option<InnerDefaultRoute>,
-    /// (192.168.1.0/24, (dev_name, via_ip)) linux and unix
-    /// (192.168.1.0/24, (if_index, via_ip)) windows
+    /// (192.168.1.0/24, (dev_name, via_ip)) on linux and unix,
+    /// (192.168.1.0/24, (if_index, via_ip)) on windows
     routes: HashMap<RouteAddr, InnerRouteInfo>,
 }
 
@@ -345,26 +377,43 @@ impl InnerRouteTable {
         let mut default_route6 = None;
         let mut routes = HashMap::new();
 
+        let default_pattern =
+            Regex::new(r"^default\s+(?P<via>\S+)\s+(?P<flag>\S+)\s+(?P<dev>\S+)(\s+)?!?")?;
+        let link_pattern = Regex::new(r"^link#(?P<if_index>\d+)")?;
+        let route_pattern =
+            Regex::new(r"^(?P<dst>\S+)\s+(?P<via>\S+)?\s+(?P<flag>\S+)\s+(?P<dev>\S+)")?;
+        let ip_pattern = Regex::new(r"\d{1,3}(\.\d{1,3}){3}")?;
+
         for line in system_route_lines {
-            if line.len() == 0
-                || line.starts_with("R")
-                || line.starts_with("I")
-                || line.starts_with("D")
-            {
-                continue;
-            }
-            let default_route_judge = |line: &str| -> bool { line.starts_with("default") };
-            if default_route_judge(&line) {
-                let line = line.trim();
+            if let Some(default_caps) = default_pattern.captures(line) {
                 // default 192.168.72.2 UGS em0
                 // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-                let line_split: Vec<&str> = line
-                    .split(" ")
-                    .map(|x| x.trim())
-                    .filter(|x| x.len() > 0)
-                    .collect();
-                if line_split.len() >= 2 {
-                    let via_str = line_split[1];
+                // default link#20 UCSIg bridge100 !
+                let via_str = default_caps.name("via").map_or("", |m| m.as_str());
+                let dev_str = default_caps.name("dev").map_or("", |m| m.as_str());
+
+                if let Some(via_caps) = link_pattern.captures(via_str) {
+                    // link#20
+                    let if_index_str = via_caps.name("if_index").map_or("", |m| m.as_str());
+                    let if_index: u32 = match if_index_str.parse() {
+                        Ok(i) => i,
+                        Err(e) => {
+                            warn!(
+                                "parse route table 'via' [{}] into if_index error: {}",
+                                via_str, e
+                            );
+                            continue;
+                        }
+                    };
+                    let dev = Dev::IfIndex(if_index);
+
+                    let inner_default_route = InnerDefaultRoute {
+                        via: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                        dev,
+                    };
+
+                    default_route = Some(inner_default_route);
+                } else {
                     let via_str = ipv6_addr_bsd_fix(via_str)?;
                     let via: IpAddr = match via_str.parse() {
                         Ok(v) => v,
@@ -376,7 +425,7 @@ impl InnerRouteTable {
                             continue;
                         }
                     };
-                    let dev = line_split[line_split.len() - 1].to_string();
+                    let dev = Dev::Name(dev_str.to_string());
 
                     let mut is_ipv4 = true;
                     if via_str.contains(":") {
@@ -390,47 +439,49 @@ impl InnerRouteTable {
                     } else {
                         default_route6 = Some(inner_default_route);
                     }
-                } else {
-                    warn!("line: [{}] default route split no match", line);
                 }
-            } else {
-                // 127.0.0.1          link#2             UH          lo0
-                let line_split: Vec<&str> = line
-                    .split(" ")
-                    .map(|x| x.trim())
-                    .filter(|x| x.len() > 0)
-                    .collect();
-                if line_split.len() >= 3 {
-                    let dst_str = line_split[0];
-                    let dst_str = ipv6_addr_bsd_fix(dst_str)?;
-                    let dst = if dst_str.contains("/") {
-                        let dst = match IpNetwork::from_str(&dst_str) {
-                            Ok(d) => d,
-                            Err(e) => {
-                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
-                                continue;
-                            }
-                        };
-                        let dst = RouteAddr::IpNetwork(dst);
-                        dst
-                    } else {
-                        let dst: IpAddr = match dst_str.parse() {
-                            Ok(d) => d,
-                            Err(e) => {
-                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
-                                continue;
-                            }
-                        };
-                        let dst = RouteAddr::IpAddr(dst);
-                        dst
+            } else if let Some(route_caps) = route_pattern.captures(line) {
+                // 127.0.0.1 link#2 UH lo0
+                let dst_str = route_caps.name("dst").map_or("", |m| m.as_str());
+                let dev_str = route_caps.name("dev").map_or("", |m| m.as_str());
+                let via_str = route_caps.name("via").map_or("", |m| m.as_str());
+
+
+                if !ip_pattern.is_match(&dst_str) {
+                    // not ip address
+                    continue;
+                }
+
+                let dst_str_fix = ipv6_addr_bsd_fix(dst_str)?;
+                let dst = if dst_str_fix.contains("/") {
+                    let dst = match IpNetwork::from_str(&dst_str_fix) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            warn!("parse route table 'dst' [{}] error: {}", line, e);
+                            continue;
+                        }
                     };
-                    let dev = line_split[line_split.len() - 1].to_string();
-                    let via = Some(line_split[1].to_string());
-                    let inner_route_info = InnerRouteInfo { dev, via };
-                    routes.insert(dst, inner_route_info);
+                    let dst = RouteAddr::IpNetwork(dst);
+                    dst
                 } else {
-                    warn!("line: [{}] route split no match", line);
-                }
+                    let dst: IpAddr = match dst_str_fix.parse() {
+                        Ok(d) => d,
+                        Err(e) => {
+                            warn!("parse route table 'dst' [{}] error: {}", line, e);
+                            continue;
+                        }
+                    };
+                    let dst = RouteAddr::IpAddr(dst);
+                    dst
+                };
+                let dev = dev_str.to_string();
+                let via = if via_str.len() == 0 {
+                    None
+                } else {
+                    Some(via_str.to_string())
+                };
+                let inner_route_info = InnerRouteInfo { dev, via };
+                routes.insert(dst, inner_route_info);
             }
         }
         Ok(InnerRouteTable {
@@ -535,17 +586,6 @@ impl InnerRouteTable {
         })
     }
 }
-
-/*
-fn find_loopback_interface() -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        if interface.is_loopback() {
-            return Some(interface);
-        }
-    }
-    None
-}
-*/
 
 /// Check if the target IP address is in the local.
 pub(crate) fn dst_in_local_net(ip: IpAddr) -> bool {
@@ -1261,136 +1301,65 @@ impl fmt::Display for RouteTable {
     }
 }
 
+fn get_route_from_system() -> Result<Vec<String>, PistolError> {
+    #[cfg(target_os = "linux")]
+    let c = Command::new("sh")
+        .args(["-c", "ip", "-4", "route"])
+        .output()?;
+    #[cfg(target_os = "linux")]
+    let ipv4_output = String::from_utf8_lossy(&c.stdout);
+    #[cfg(target_os = "linux")]
+    let c = Command::new("sh")
+        .args(["-c", "ip", "-6", "route"])
+        .output()?;
+    #[cfg(target_os = "linux")]
+    let ipv6_output = String::from_utf8_lossy(&c.stdout);
+    #[cfg(target_os = "linux")]
+    let output = ipv4_output.to_string() + &ipv6_output;
+
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "macos"
+    ))]
+    let c = Command::new("sh").args(["-c", "netstat", "-rn"]).output()?;
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "macos"
+    ))]
+    let output = String::from_utf8_lossy(&c.stdout);
+
+    // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
+    // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
+    #[cfg(target_os = "windows")]
+    let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
+    #[cfg(target_os = "windows")]
+    let output = String::from_utf8_lossy(&c.stdout);
+
+    let system_route_lines: Vec<String> = output
+        .lines()
+        .map(|x| x.trim().to_string())
+        .filter(|v| v.len() > 0)
+        .collect();
+    Ok(system_route_lines)
+}
+
 impl RouteTable {
-    fn exec_system_command() -> Result<Vec<String>, PistolError> {
-        #[cfg(target_os = "linux")]
-        let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
-        #[cfg(target_os = "linux")]
-        let ipv4_output = String::from_utf8_lossy(&c.stdout);
-        #[cfg(target_os = "linux")]
-        let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
-        #[cfg(target_os = "linux")]
-        let ipv6_output = String::from_utf8_lossy(&c.stdout);
-        #[cfg(target_os = "linux")]
-        let output = ipv4_output.to_string() + &ipv6_output;
-
-        #[cfg(any(
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "macos"
-        ))]
-        let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
-        #[cfg(any(
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "macos"
-        ))]
-        let output = String::from_utf8_lossy(&c.stdout);
-
-        // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
-        // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
-        #[cfg(target_os = "windows")]
-        let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
-        #[cfg(target_os = "windows")]
-        let output = String::from_utf8_lossy(&c.stdout);
-
-        let system_route_lines: Vec<String> = output
-            .lines()
-            .map(|x| x.trim().to_string())
-            .filter(|v| v.len() > 0)
-            .collect();
-        Ok(system_route_lines)
-    }
     pub(crate) fn init() -> Result<RouteTable, PistolError> {
-        let system_route_lines = Self::exec_system_command()?;
+        let system_route_lines = get_route_from_system()?;
         let inner_route_table = InnerRouteTable::parser(&system_route_lines)?;
         debug!("inner route table: {}", inner_route_table);
+
         let default_route = match inner_route_table.default_route {
-            Some(inner_default_route) => {
-                #[cfg(any(
-                    target_os = "linux",
-                    target_os = "freebsd",
-                    target_os = "openbsd",
-                    target_os = "netbsd",
-                    target_os = "macos"
-                ))]
-                let dev_name = inner_default_route.dev;
-                #[cfg(any(
-                    target_os = "linux",
-                    target_os = "freebsd",
-                    target_os = "openbsd",
-                    target_os = "netbsd",
-                    target_os = "macos"
-                ))]
-                match find_interface_by_name(&dev_name) {
-                    Some(dev) => Some(DefaultRoute {
-                        via: inner_default_route.via,
-                        dev,
-                    }),
-                    None => {
-                        warn!("can not found interface by name [{}]", dev_name);
-                        None
-                    }
-                }
-                #[cfg(target_os = "windows")]
-                let if_index = inner_default_route.if_index;
-                #[cfg(target_os = "windows")]
-                match find_interface_by_index(if_index) {
-                    Some(dev) => Some(DefaultRoute {
-                        via: inner_default_route.via,
-                        dev,
-                    }),
-                    None => {
-                        warn!("can not found interface by if_index [{}]", if_index);
-                        None
-                    }
-                }
-            }
+            Some(irt) => Some(irt.to_default_route()?),
             None => None,
         };
+
         let default_route6 = match inner_route_table.default_route6 {
-            Some(inner_default_route6) => {
-                #[cfg(any(
-                    target_os = "linux",
-                    target_os = "freebsd",
-                    target_os = "openbsd",
-                    target_os = "netbsd",
-                    target_os = "macos"
-                ))]
-                let dev_name = inner_default_route6.dev;
-                #[cfg(any(
-                    target_os = "linux",
-                    target_os = "freebsd",
-                    target_os = "openbsd",
-                    target_os = "netbsd",
-                    target_os = "macos"
-                ))]
-                match find_interface_by_name(&dev_name) {
-                    Some(dev) => Some(DefaultRoute {
-                        via: inner_default_route6.via,
-                        dev,
-                    }),
-                    None => {
-                        warn!("can not found interface by name [{}]", dev_name);
-                        None
-                    }
-                }
-                #[cfg(target_os = "windows")]
-                let if_index = inner_default_route6.if_index;
-                #[cfg(target_os = "windows")]
-                match find_interface_by_index(if_index) {
-                    Some(dev) => Some(DefaultRoute {
-                        via: inner_default_route6.via,
-                        dev,
-                    }),
-                    None => {
-                        warn!("can not found interface by if_index [{}]", if_index);
-                        None
-                    }
-                }
-            }
+            Some(irt) => Some(irt.to_default_route()?),
             None => None,
         };
 
@@ -1524,7 +1493,12 @@ impl Neighbors {
         }
         Ok(neigh)
     }
-    #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "macos"
+    ))]
     pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
         // Examples:
         // # arp -a
@@ -1549,8 +1523,8 @@ impl Neighbors {
             .collect();
 
         // regex
-        let neighbor_re = Regex::new(r"\?\s+\((?P<addr>[^\s]+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
-        let neighbor_re6 = Regex::new(r"(?P<addr>[^\s]+)\s+(?P<mac>[^\s]+).+")?;
+        let neighbor_re = Regex::new(r"\?\s+\((?P<addr>\S+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
+        let neighbor_re6 = Regex::new(r"(?P<addr>\S+)\s+(?P<mac>\S+).+")?;
 
         let mut ret = Self::get_local_mac();
         for line in lines {
@@ -1561,15 +1535,15 @@ impl Neighbors {
                     let addr: IpAddr = match addr_str.parse() {
                         Ok(a) => a,
                         Err(e) => {
-                            warn!("parse neighbor 'addr' error:  {e}");
+                            warn!("parse neighbor addr [{}] error: {}", addr_str, e);
                             continue;
                         }
                     };
-                    let mac = caps.name("mac").map_or("", |m| m.as_str());
-                    let mac: MacAddr = match mac.parse() {
+                    let mac_str = caps.name("mac").map_or("", |m| m.as_str());
+                    let mac: MacAddr = match mac_str.parse() {
                         Ok(m) => m,
                         Err(e) => {
-                            warn!("parse neighbor 'mac' error:  {e}");
+                            warn!("parse neighbor mac [{}] error: {}", mac_str, e);
                             continue;
                         }
                     };
@@ -1583,7 +1557,7 @@ impl Neighbors {
                         let addr: IpAddr = match addr_str.parse() {
                             Ok(a) => a,
                             Err(e) => {
-                                warn!("parse neighbor 'addr' error:  {e}");
+                                warn!("parse neighbor addr [{}] error: {}", addr_str, e);
                                 continue;
                             }
                         };
@@ -1591,7 +1565,7 @@ impl Neighbors {
                         let mac: MacAddr = match mac.parse() {
                             Ok(m) => m,
                             Err(e) => {
-                                warn!("parse neighbor 'mac' error:  {e}");
+                                warn!("parse neighbor mac [{}] error: {}", mac, e);
                                 continue;
                             }
                         };
@@ -1636,7 +1610,7 @@ impl Neighbors {
                     let addr: IpAddr = match addr.parse() {
                         Ok(a) => a,
                         Err(e) => {
-                            warn!("parse neighbor 'addr' error:  {e}");
+                            warn!("parse neighbor addr [{}] error: {}", addr, e);
                             continue;
                         }
                     };
@@ -1649,7 +1623,7 @@ impl Neighbors {
                             let mac: MacAddr = match mac.parse() {
                                 Ok(m) => m,
                                 Err(e) => {
-                                    warn!("parse neighbor 'mac' error:  {e}");
+                                    warn!("parse neighbor mac [{}] error: {}", mac, e);
                                     continue;
                                 }
                             };
