@@ -446,7 +446,6 @@ impl InnerRouteTable {
                 let dev_str = route_caps.name("dev").map_or("", |m| m.as_str());
                 let via_str = route_caps.name("via").map_or("", |m| m.as_str());
 
-
                 if !ip_pattern.is_match(&dst_str) {
                     // not ip address
                     continue;
@@ -1303,15 +1302,11 @@ impl fmt::Display for RouteTable {
 
 fn get_route_from_system() -> Result<Vec<String>, PistolError> {
     #[cfg(target_os = "linux")]
-    let c = Command::new("sh")
-        .args(["-c", "ip", "-4", "route"])
-        .output()?;
+    let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
     #[cfg(target_os = "linux")]
     let ipv4_output = String::from_utf8_lossy(&c.stdout);
     #[cfg(target_os = "linux")]
-    let c = Command::new("sh")
-        .args(["-c", "ip", "-6", "route"])
-        .output()?;
+    let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
     #[cfg(target_os = "linux")]
     let ipv6_output = String::from_utf8_lossy(&c.stdout);
     #[cfg(target_os = "linux")]
@@ -1323,7 +1318,7 @@ fn get_route_from_system() -> Result<Vec<String>, PistolError> {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    let c = Command::new("sh").args(["-c", "netstat", "-rn"]).output()?;
+    let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
     #[cfg(any(
         target_os = "freebsd",
         target_os = "openbsd",
@@ -1337,7 +1332,7 @@ fn get_route_from_system() -> Result<Vec<String>, PistolError> {
     #[cfg(target_os = "windows")]
     let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
     #[cfg(target_os = "windows")]
-    let output = String::from_utf8_lossy(&c.stdout);
+    let output = String::from_utf8·_lossy(&c.stdout);
 
     let system_route_lines: Vec<String> = output
         .lines()
@@ -1506,7 +1501,18 @@ impl Neighbors {
         // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
         // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 1168 seconds [ethernet]
         // MacOS
-        // ? (192.168.50.2) at (incomplete) on en0 ifscope [ethernet]
+        // ? (169.254.169.254) at (incomplete) on en0 [ethernet]
+        // 172.16.86.1 (172.16.86.1) at c2:c7:db:1d:39:66 on bridge102 ifscope permanent [bridge]
+        // 172.16.86.255 (172.16.86.255) at ff:ff:ff:ff:ff:ff on bridge102 ifscope [bridge]
+        // 192.168.0.1 (192.168.0.1) at f8:ce:21:39:5b:f4 on en0 ifscope [ethernet]
+        // 192.168.0.104 (192.168.0.104) at de:cb:f1:62:24:68 on en0 ifscope permanent [ethernet]
+        // 192.168.0.106 (192.168.0.106) at cc:4d:75:8d:a1:a5 on en0 ifscope [ethernet]
+        // 192.168.0.255 (192.168.0.255) at ff:ff:ff:ff:ff:ff on en0 ifscope [ethernet]
+        // 192.168.5.1 (192.168.5.1) at c2:c7:db:1d:39:65 on bridge101 ifscope permanent [bridge]
+        // 192.168.5.255 (192.168.5.255) at ff:ff:ff:ff:ff:ff on bridge101 ifscope [bridge]
+        // 192.168.62.1 (192.168.62.1) at c2:c7:db:1d:39:64 on bridge100 ifscope permanent [bridge]
+        // 192.168.62.255 (192.168.62.255) at ff:ff:ff:ff:ff:ff on bridge100 ifscope [bridge]
+        // mdns.mcast.net (224.0.0.251) at 1:0:5e:0:0:fb on en0 ifscope permanent [ethernet]
         // # ndp -a
         // Neighbor                             Linklayer Address  Netif Expire    1s 5s
         // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
@@ -1523,11 +1529,14 @@ impl Neighbors {
             .collect();
 
         // regex
-        let neighbor_re = Regex::new(r"\?\s+\((?P<addr>\S+)\)\s+at\s+(?P<mac>[\w\d:]+).+")?;
+        let neighbor_re = Regex::new(r"[\?|\S]+\s+\((?P<addr>\S+)\)\s+at\s+(?P<mac>\S+).+")?;
         let neighbor_re6 = Regex::new(r"(?P<addr>\S+)\s+(?P<mac>\S+).+")?;
 
         let mut ret = Self::get_local_mac();
         for line in lines {
+            if line.starts_with("?") {
+                continue;
+            }
             match neighbor_re.captures(line) {
                 Some(caps) => {
                     let addr_str = caps.name("addr").map_or("", |m| m.as_str());
@@ -1535,7 +1544,7 @@ impl Neighbors {
                     let addr: IpAddr = match addr_str.parse() {
                         Ok(a) => a,
                         Err(e) => {
-                            warn!("parse neighbor addr [{}] error: {}", addr_str, e);
+                            warn!("parse neighbor addr [{}] error: {}", line, e);
                             continue;
                         }
                     };
@@ -1557,7 +1566,7 @@ impl Neighbors {
                         let addr: IpAddr = match addr_str.parse() {
                             Ok(a) => a,
                             Err(e) => {
-                                warn!("parse neighbor addr [{}] error: {}", addr_str, e);
+                                warn!("parse neighbor addr [{}] error: {}", line, e);
                                 continue;
                             }
                         };
@@ -1610,7 +1619,7 @@ impl Neighbors {
                     let addr: IpAddr = match addr.parse() {
                         Ok(a) => a,
                         Err(e) => {
-                            warn!("parse neighbor addr [{}] error: {}", addr, e);
+                            warn!("parse neighbor addr [{}] error: {}", line, e);
                             continue;
                         }
                     };
@@ -1623,7 +1632,7 @@ impl Neighbors {
                             let mac: MacAddr = match mac.parse() {
                                 Ok(m) => m,
                                 Err(e) => {
-                                    warn!("parse neighbor mac [{}] error: {}", mac, e);
+                                    warn!("parse neighbor mac [{}] error: {}", line, e);
                                     continue;
                                 }
                             };
@@ -1740,6 +1749,9 @@ mod tests {
                 "route_addr: {:?}, route_info.dev: {}, route_info.via: {:?}",
                 route_addr, route_info.dev.name, route_info.via
             );
+        }
+        for (ip, mac) in snc.neighbors {
+            println!("neighbor cache ip: {}, mac: {}", ip, mac);
         }
     }
     #[test]
