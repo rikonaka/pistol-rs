@@ -96,6 +96,10 @@ pub enum PistolError {
     RegexError(#[from] regex::Error),
     #[error("invalid route via address: {addr}")]
     InvalidRouteViaAddress { addr: IpAddr },
+    #[error("address parse error")]
+    AddrParseError(#[from] std::net::AddrParseError),
+    #[error("mac address parse error: {mac}")]
+    ParseMacAddrErr { mac: String },
 
     /* OTHER ERROR */
     #[error("std error")]

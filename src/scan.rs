@@ -53,10 +53,8 @@ use crate::SendWindow;
 use crate::Target;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
-use crate::route::search_route_table;
 use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
-use crate::update_neighbor_cache;
 use crate::utils::random_port;
 use crate::utils::time_to_string;
 

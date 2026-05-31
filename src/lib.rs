@@ -85,10 +85,6 @@ use crate::os::OsDetects;
 use crate::os::dbparser::NmapOsDb;
 use crate::ping::HostPing;
 use crate::ping::HostPings;
-use crate::route::InferMacInput;
-use crate::route::SystemNetCache;
-use crate::route::infer_addr;
-use crate::route::infer_mac;
 use crate::scan::MacScans;
 use crate::scan::PortScan;
 use crate::scan::PortScans;
@@ -440,55 +436,10 @@ impl SendWindow {
     }
 }
 
-/// Whether to cache the network information of the program runtime process to avoid repeated calculations.
-#[cfg(feature = "debug")]
-static CACHE_NET: bool = false;
-#[cfg(not(feature = "debug"))]
-static CACHE_NET: bool = false;
-
-/// Cache the network information of the program runtime process to avoid repeated calculations.
-static GLOBAL_NET_CACHES: LazyLock<Arc<Mutex<NetCache>>> = LazyLock::new(|| {
-    debug!("create global network cache");
-    let nc = if CACHE_NET {
-        match NetCache::load() {
-            Some(nc) => {
-                debug!("load network cache from file:\n{}", nc);
-                nc
-            }
-            None => {
-                debug!("create network cache from system network information");
-                NetCache {
-                    system_network_cache: SystemNetCache::init()
-                        .expect("can not init the system net cache"),
-                    created_at: Local::now(),
-                }
-            }
-        }
-    } else {
-        debug!("do not cache net to file");
-        NetCache {
-            system_network_cache: SystemNetCache::init()
-                .expect("can not init the system net cache"),
-            created_at: Local::now(),
-        }
-    };
-    Arc::new(Mutex::new(nc))
-});
-
 const NETWORK_CACHE_PATH: &str = ".plnetcache";
 // When the cache is created more than 1 hour ago,
 // it will be considered expired and will be deleted.
 const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
-
-fn update_neighbor_cache(addr: IpAddr, mac: MacAddr) -> Result<(), PistolError> {
-    // release the lock when leaving the function
-    let mut gncs = GLOBAL_NET_CACHES
-        .lock()
-        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-    gncs.system_network_cache.update_neighbor_cache(addr, mac);
-    debug!("update neighbor cache finish: {:?}", (*gncs));
-    Ok(())
-}
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub enum LoopKey {
@@ -582,57 +533,6 @@ impl<V> LoopStates<V> {
     }
     fn len(&self) -> usize {
         self.data.len()
-    }
-}
-
-/// Cache the network information of the program runtime process to avoid repeated calculations.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct NetCache {
-    system_network_cache: SystemNetCache,
-    created_at: DateTime<Local>,
-}
-
-impl fmt::Display for NetCache {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let output = format!(
-            "NetCache:\nsystem_network_cache: {}\ncreated_at: {}",
-            self.system_network_cache, self.created_at
-        );
-        write!(f, "{}", output)
-    }
-}
-
-impl NetCache {
-    pub(crate) fn load() -> Option<Self> {
-        let nc_bytes = match fs::read(NETWORK_CACHE_PATH) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                warn!(
-                    "failed to read network cache from file, create a new one: {}",
-                    e
-                );
-                return None;
-            }
-        };
-
-        let nc: NetCache = match bitcode::deserialize(&nc_bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("failed to parse network cache from file: {}, delete it", e);
-                fs::remove_file(NETWORK_CACHE_PATH).expect("delete invalid network cache failed");
-                return None;
-            }
-        };
-
-        let now = Local::now();
-        let duration = now - nc.created_at;
-        if duration.num_hours() < NETWORK_CACHE_EXPIRE_HOURS {
-            Some(nc)
-        } else {
-            debug!("network cache is expired, delete it");
-            fs::remove_file(NETWORK_CACHE_PATH).expect("delete expired network cache failed");
-            None
-        }
     }
 }
 
@@ -774,206 +674,12 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
 }
 
 #[derive(Debug, Clone)]
-struct NetInfoInput {
-    dst_addr: IpAddr,
-    dst_ports: Vec<u16>,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
-}
-
-fn fake_interface() -> NetworkInterface {
-    NetworkInterface {
-        name: String::from("fake"),
-        index: 0,
-        mac: Some(MacAddr::zero()),
-        ips: Vec::new(),
-        flags: 0,
-        description: String::new(),
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct NetInfo {
-    inferred_dst_mac: MacAddr,
-    inferred_src_mac: MacAddr,
-    /// Inferred destination IP address.
-    inferred_dst_addr: IpAddr,
-    /// If user did not specify source IP address, we will use the IP address of the selected interface.
-    inferred_src_addr: IpAddr,
-    /// Original user input destination IP address,
-    /// which may be the same as infer_dst_addr if user input a valid IP address,
-    /// or may be different if user input a hostname or an invalid IP address.
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-    /// User input destination ports.
-    dst_ports: Vec<u16>,
-    /// User input source port.
-    src_port: Option<u16>,
-    if_name: String,
-    /// Whether the network information is cached or inferred.
-    cached: bool,
-    cost: Duration,
-    valid: bool,
-}
-
-impl fmt::Display for NetInfo {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.valid {
-            let output = format!(
-                "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
-                self.inferred_dst_mac,
-                self.inferred_src_mac,
-                self.inferred_dst_addr,
-                self.inferred_src_addr,
-                self.dst_ports,
-                self.if_name
-            );
-            write!(f, "{}", output)
-        } else {
-            let output = format!(
-                "dst_addr: {}, dst_ports: {:?} is down or unreachable",
-                self.inferred_dst_addr, self.dst_ports
-            );
-            write!(f, "{}", output)
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 struct DetectInfo {
     inferred_src_addr: IpAddr,
     dst_ports: Vec<u16>,
     src_port: Option<u16>,
     dst_addr: IpAddr,
     src_addr: Option<IpAddr>,
-}
-
-impl NetInfo {
-    fn invalid() -> Self {
-        NetInfo {
-            inferred_dst_mac: MacAddr::zero(),
-            inferred_src_mac: MacAddr::zero(),
-            inferred_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            inferred_src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            src_addr: None,
-            dst_ports: Vec::new(),
-            src_port: None,
-            if_name: String::new(),
-            cached: true,
-            cost: Duration::ZERO,
-            valid: false,
-        }
-    }
-    fn detects(inputs: Vec<NetInfoInput>, speed: SendSpeed) -> Result<Vec<Self>, PistolError> {
-        let mut infos = HashMap::new();
-        let mut infer_mac_inputs = Vec::new();
-
-        for it in inputs {
-            let dst_addr = it.dst_addr;
-            let src_addr = it.src_addr;
-
-            let (inferred_dst_addr, inferred_src_addr) = match infer_addr(dst_addr, src_addr)? {
-                Some(ret) => ret,
-                None => return Err(PistolError::CanNotFoundSrcAddress),
-            };
-            debug!(
-                "inferred dst_addr({}) and src_addr({})",
-                inferred_dst_addr, inferred_src_addr
-            );
-
-            let infer_mac_input = InferMacInput {
-                inferred_dst_addr,
-                inferred_src_addr,
-            };
-
-            let state = DetectInfo {
-                inferred_src_addr,
-                dst_ports: it.dst_ports.clone(),
-                src_port: it.src_port,
-                dst_addr,
-                src_addr,
-            };
-
-            infer_mac_inputs.push(infer_mac_input);
-            infos.insert(inferred_dst_addr, state);
-        }
-
-        // Use a small timeout to infer mac address,
-        // since the target is on localnet and may not exist or may not respond to ARP requests,
-        // and we don't want to wait too long for the response.
-        let timeout = Duration::from_millis(200);
-        let max_retries = 2;
-
-        let infer_mac_outputs = infer_mac(infer_mac_inputs, timeout, max_retries, speed)?;
-
-        let mut rets = Vec::new();
-        for (inferred_dst_addr, imo) in infer_mac_outputs {
-            let inferred_dst_mac = imo.inferred_dst_mac;
-            let src_interface = imo.inferred_interface;
-
-            let info = match infos.get(&inferred_dst_addr) {
-                Some(i) => i,
-                None => continue,
-            };
-
-            let dst_ports = info.dst_ports.clone();
-            let inferred_src_addr = info.inferred_src_addr;
-
-            if inferred_dst_mac == MacAddr::zero()
-                && !inferred_dst_addr.is_loopback()
-                && !inferred_src_addr.is_loopback()
-            {
-                // Create a new NetInfo instance with invalid data,
-                // indicated this target is down or unreachable.
-                let mut fake_net_info = NetInfo::invalid();
-                fake_net_info.inferred_dst_addr = inferred_dst_addr;
-                fake_net_info.dst_ports = dst_ports;
-                rets.push(fake_net_info);
-            } else {
-                if imo.cached {
-                    debug!(
-                        "cached dst_addr({}) dst_mac({}) rtt(cached)",
-                        inferred_dst_addr, inferred_dst_mac
-                    );
-                } else {
-                    debug!(
-                        "inferred dst_addr({}) dst_mac({})",
-                        inferred_dst_addr, inferred_dst_mac
-                    );
-                }
-                let cached = imo.cached;
-                let inferred_src_mac = src_interface
-                    .mac
-                    .ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-                let src_port = info.src_port;
-                let if_name = src_interface.name.clone();
-                let dst_addr = info.dst_addr;
-                let src_addr = info.src_addr;
-                debug!(
-                    "inferred_dst_addr({}) of dst_addr({})",
-                    inferred_dst_addr, dst_addr,
-                );
-                let ni = Self {
-                    inferred_dst_mac,
-                    inferred_src_mac,
-                    inferred_dst_addr,
-                    inferred_src_addr,
-                    dst_addr,
-                    src_addr,
-                    dst_ports,
-                    src_port,
-                    if_name: if_name,
-                    cached,
-                    cost: Duration::ZERO,
-                    valid: true,
-                };
-                rets.push(ni);
-            }
-        }
-
-        Ok(rets)
-    }
 }
 
 struct L2Sender {
@@ -1836,7 +1542,7 @@ impl Pistol {
     /// ```rust
     /// use pistol::Pistol;
     /// use pistol::Target;
-    /// 
+    ///
     /// fn main() {
     /// let mut pistol = Pistol::new();
     ///     pistol.set_max_retries(1);
@@ -2999,7 +2705,7 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
         pistol.set_timeout(1.5);
-        // pistol.set_log_level("debug");
+        pistol.set_log_level("debug");
 
         let src_ipv4 = None;
         let src_port = None;

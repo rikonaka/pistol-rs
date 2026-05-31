@@ -19,7 +19,6 @@ use tracing::debug;
 use tracing::error;
 use tracing::warn;
 
-use crate::GLOBAL_NET_CACHES;
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::PistolStream;
@@ -27,7 +26,6 @@ use crate::SendPacketParam;
 use crate::SendSpeed;
 use crate::SendWindow;
 use crate::error::PistolError;
-use crate::fake_interface;
 use crate::layer::PacketFilter;
 use crate::layer::find_interface_by_index;
 use crate::layer::find_interface_by_src_ip;
@@ -36,335 +34,211 @@ use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::scan::ndp_rs::build_ndp_ra_scan_packet;
 use crate::scan::parse_mac_scan_response;
-use crate::update_neighbor_cache;
+
+pub(crate) fn fake_interface() -> NetworkInterface {
+    NetworkInterface {
+        name: String::from("fake"),
+        index: 0,
+        mac: Some(MacAddr::zero()),
+        ips: Vec::new(),
+        flags: 0,
+        description: String::new(),
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct NetInfo {
+    inferred_dst_mac: MacAddr,
+    inferred_src_mac: MacAddr,
+    /// Inferred destination IP address.
+    inferred_dst_addr: IpAddr,
+    /// If user did not specify source IP address, we will use the IP address of the selected interface.
+    inferred_src_addr: IpAddr,
+    /// Original user input destination IP address,
+    /// which may be the same as infer_dst_addr if user input a valid IP address,
+    /// or may be different if user input a hostname or an invalid IP address.
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    /// User input destination ports.
+    dst_ports: Vec<u16>,
+    /// User input source port.
+    src_port: Option<u16>,
+    if_name: String,
+    /// Whether the network information is cached or inferred.
+    cached: bool,
+    cost: Duration,
+    valid: bool,
+}
+
+impl NetInfo {
+    pub(crate) fn invalid() -> Self {
+        NetInfo {
+            inferred_dst_mac: MacAddr::zero(),
+            inferred_src_mac: MacAddr::zero(),
+            inferred_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            inferred_src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            src_addr: None,
+            dst_ports: Vec::new(),
+            src_port: None,
+            if_name: String::new(),
+            cached: true,
+            cost: Duration::ZERO,
+            valid: false,
+        }
+    }
+}
+
+impl fmt::Display for NetInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.valid {
+            let output = format!(
+                "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, dst_ports: {:?}, interface: {}",
+                self.inferred_dst_mac,
+                self.inferred_src_mac,
+                self.inferred_dst_addr,
+                self.inferred_src_addr,
+                self.dst_ports,
+                self.if_name
+            );
+            write!(f, "{}", output)
+        } else {
+            let output = format!(
+                "dst_addr: {}, dst_ports: {:?} is down or unreachable",
+                self.inferred_dst_addr, self.dst_ports
+            );
+            write!(f, "{}", output)
+        }
+    }
+}
 
 #[cfg(any(
-    target_os = "linux",
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
     target_os = "macos"
 ))]
-fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        if interface.name == name {
-            return Some(interface);
-        }
-    }
-    None
-}
+fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+    let mut neighbor_cache = HashMap::new();
+    let ipv4_output = Command::new("arp").arg("-an").output()?;
+    let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
+    let arp_re = Regex::new(r"\? \((?P<ip>\d+\.\d+.\d+.\d+)\) at (?P<mac>[0-9a-fA-F:]+).+")?;
 
-fn ipv6_addr_bsd_fix(dst_str: &str) -> Result<String, PistolError> {
-    // Remove the %em0 .etc
-    // fe80::%lo0/10 => fe80::/10
-    // fe80::20c:29ff:fe1f:6f71%lo0 => fe80::20c:29ff:fe1f:6f71
-    if dst_str.contains("%") {
-        let bsd_fix_re = Regex::new(r"(?P<subnet>[^%]+)(%(?P<dev>\w+))?(/(?P<mask>\d+))?")?;
-        match bsd_fix_re.captures(dst_str) {
-            Some(caps) => {
-                let addr = caps.name("subnet").map_or("", |m| m.as_str());
-                let mask = caps.name("mask").map_or("", |m| m.as_str());
-                if dst_str.contains("/") {
-                    let output = addr.to_string() + "/" + mask;
-                    return Ok(output);
-                } else {
-                    return Ok(addr.to_string());
-                }
-            }
-            None => {
-                warn!("line: [{}] bsd_fix_re no match", dst_str);
-                Ok(String::new())
-            }
-        }
-    } else {
-        Ok(dst_str.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct DefaultRoute {
-    pub(crate) via: IpAddr,           // Next hop gateway address
-    pub(crate) dev: NetworkInterface, // Device interface name
-}
-
-impl fmt::Display for DefaultRoute {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let default_routes_string = format!(
-            "default dst: {}, default interface: {}",
-            self.via, self.dev.name
-        );
-        write!(f, "{}", default_routes_string)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub(crate) enum RouteAddr {
-    IpNetwork(IpNetwork),
-    IpAddr(IpAddr),
-}
-
-impl fmt::Display for RouteAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output_str = match self {
-            RouteAddr::IpNetwork(ipn) => format!("{}", ipn),
-            RouteAddr::IpAddr(ip) => format!("{}", ip),
-        };
-        write!(f, "{}", output_str)
-    }
-}
-
-impl RouteAddr {
-    pub(crate) fn contains(&self, ip: IpAddr) -> bool {
-        match self {
-            RouteAddr::IpNetwork(ip_network) => ip_network.contains(ip),
-            RouteAddr::IpAddr(ip_addr) => {
-                if *ip_addr == ip {
-                    true
-                } else {
-                    false
+    // ? (169.254.169.254) at (incomplete) on en0 [ethernet]
+    // ? (172.16.86.1) at c2:c7:db:1d:39:66 on bridge102 ifscope permanent [bridge]
+    // ? (172.16.86.255) at ff:ff:ff:ff:ff:ff on bridge102 ifscope [bridge]
+    // ? (192.168.0.1) at f8:ce:21:39:5b:f4 on en0 ifscope [ethernet]
+    // ? (192.168.0.102) at cc:4d:75:8d:a1:a5 on en0 ifscope [ethernet]
+    // ? (192.168.0.105) at de:cb:f1:62:24:68 on en0 ifscope permanent [ethernet]
+    // ? (192.168.0.108) at 6:69:3c:a5:6a:3e on en0 ifscope [ethernet]
+    // ? (192.168.0.109) at f4:28:9d:1b:f2:95 on en0 ifscope [ethernet]
+    // ? (192.168.0.110) at 42:6c:f:e9:a8:65 on en0 ifscope [ethernet]
+    // ? (192.168.0.255) at ff:ff:ff:ff:ff:ff on en0 ifscope [ethernet]
+    // ? (192.168.5.1) at c2:c7:db:1d:39:65 on bridge101 ifscope permanent [bridge]
+    // ? (192.168.5.78) at 0:c:29:65:2d:9b on bridge101 ifscope [bridge]
+    // ? (192.168.5.255) at ff:ff:ff:ff:ff:ff on bridge101 ifscope [bridge]
+    // ? (192.168.62.1) at c2:c7:db:1d:39:64 on bridge100 ifscope permanent [bridge]
+    // ? (192.168.62.255) at ff:ff:ff:ff:ff:ff on bridge100 ifscope [bridge]
+    // ? (224.0.0.251) at 1:0:5e:0:0:fb on en0 ifscope permanent [ethernet]
+    // ? (232.215.218.197) at 1:0:5e:57:da:c5 on en0 ifscope permanent [ethernet]
+    for line in ipv4_output_str.lines() {
+        if let Some(caps) = arp_re.captures(line) {
+            if let Some(ip_str) = caps.name("ip") {
+                let ip_str = ip_str.as_str();
+                let ip = IpAddr::from_str(ip_str)?;
+                if let Some(mac_str) = caps.name("mac") {
+                    let mac_str = mac_str.as_str();
+                    match MacAddr::from_str(mac_str) {
+                        Ok(m) => {
+                            neighbor_cache.insert(ip, m);
+                        }
+                        Err(_e) => {
+                            return Err(PistolError::ParseMacAddrErr {
+                                mac: mac_str.to_string(),
+                            });
+                        }
+                    }
                 }
             }
         }
     }
-    pub(crate) fn is_unspecified(&self) -> bool {
-        match self {
-            RouteAddr::IpNetwork(ip_network) => ip_network.ip().is_unspecified(),
-            RouteAddr::IpAddr(ip_addr) => ip_addr.is_unspecified(),
-        }
-    }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-enum Dev {
-    Name(String),
-    IfIndex(u32),
-}
+    let ipv6_output = Command::new("ndp").arg("-an").output()?;
+    let ipv6_output_str = String::from_utf8_lossy(&ipv6_output.stdout);
+    let ndp_re = Regex::new(r"(?P<ip>[\w\d:%]+)\s+(?P<mac>[\w\d:]+).+")?;
 
-impl fmt::Display for Dev {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dev_string = match self {
-            Dev::Name(name) => format!("name({})", name),
-            Dev::IfIndex(if_index) => format!("link({})", if_index),
-        };
-        write!(f, "{}", dev_string)
-    }
-}
-
-#[derive(Debug, Clone)]
-struct InnerDefaultRoute {
-    via: IpAddr,
-    dev: Dev,
-}
-
-impl InnerDefaultRoute {
-    fn to_default_route(&self) -> Result<DefaultRoute, PistolError> {
-        match &self.dev {
-            Dev::Name(name) => {
-                let interface = find_interface_by_name(name)
-                    .ok_or(PistolError::CanNotFoundInterface { i: name.clone() })?;
-                Ok(DefaultRoute {
-                    via: self.via,
-                    dev: interface,
-                })
+    // Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
+    // 2409:8a6c:1763:4351::1000               de:cb:f1:62:24:68    en0 permanent R
+    // 2409:8a6c:1763:4351:da:8c8b:e171:9e55   de:cb:f1:62:24:68    en0 permanent R
+    // 2409:8a6c:1763:4351:8001:1205:abef:f5f8 de:cb:f1:62:24:68    en0 permanent R
+    // fe80::1%lo0                             (incomplete)         lo0 permanent R
+    // fe80::1234:5678:abcd:ef01%en0           (incomplete)         en0 expired   N
+    // fe80::1807:d761:578a:6885%en0           42:6c:f:e9:a8:65     en0 21h58m44s S
+    // fe80::1c53:4e36:7c1a:e431%en0           de:cb:f1:62:24:68    en0 permanent R
+    // fe80::6e16:29ff:fe00:fd5b%en0           6c:16:29:0:fd:5b     en0 21h46m41s S
+    // fe80::ae49:4251:a476:1253%en0           (incomplete)         en0 expired   N
+    // fe80::ce81:b1c:bd2c:69e%en0             (incomplete)         en0 expired   N
+    // fe80::face:21ff:fe39:5bf4%en0           f8:ce:21:39:5b:f4    en0 5s        R  R
+    // fe80::849f:6fff:fecf:28ff%awdl0         86:9f:6f:cf:28:ff  awdl0 permanent R
+    // fe80::849f:6fff:fecf:28ff%llw0          86:9f:6f:cf:28:ff   llw0 permanent R
+    // fe80::f693:9983:bc6c:485b%utun0         (incomplete)       utun0 permanent R
+    // fe80::799c:5339:de85:ff18%utun1         (incomplete)       utun1 permanent R
+    // fe80::6c04:b35b:22df:351e%utun2         (incomplete)       utun2 permanent R
+    // fe80::ce81:b1c:bd2c:69e%utun3           (incomplete)       utun3 permanent R
+    // fe80::c0c7:dbff:fe1d:3964%bridge100     c2:c7:db:1d:39:64 bridge100 permanent R
+    // fe80::c0c7:dbff:fe1d:3965%bridge101     c2:c7:db:1d:39:65 bridge101 permanent R
+    // fe80::c0c7:dbff:fe1d:3966%bridge102     c2:c7:db:1d:39:66 bridge102 permanent R
+    for line in ipv6_output_str.lines() {
+        if let Some(caps) = ndp_re.captures(line) {
+            if let Some(ip_str) = caps.name("ip") {
+                let ip_str = ip_str.as_str();
+                let ip_str = if ip_str.contains("%") {
+                    let ip_str_split: Vec<&str> = ip_str.split("%").collect();
+                    ip_str_split[0]
+                } else {
+                    ip_str
+                };
+                let ip = IpAddr::from_str(ip_str)?;
+                if let Some(mac_str) = caps.name("mac") {
+                    let mac_str = mac_str.as_str();
+                    match MacAddr::from_str(mac_str) {
+                        Ok(m) => {
+                            neighbor_cache.insert(ip, m);
+                        }
+                        Err(_e) => {
+                            return Err(PistolError::ParseMacAddrErr {
+                                mac: mac_str.to_string(),
+                            });
+                        }
+                    }
+                }
             }
-            Dev::IfIndex(if_index) => {
-                let interface = find_interface_by_index(*if_index).ok_or(
-                    PistolError::CanNotFoundInterface {
-                        i: format!("if_name({})", if_index),
-                    },
-                )?;
-                Ok(DefaultRoute {
-                    via: self.via,
-                    dev: interface,
-                })
-            }
         }
     }
+
+    Ok(neighbor_cache)
 }
 
-impl fmt::Display for InnerDefaultRoute {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "macos"
-        ))]
-        let default_routes_string =
-            format!("default via: {}, default interface: {}", self.via, self.dev);
-        #[cfg(target_os = "windows")]
-        let default_routes_string = format!(
-            "default via: {}, default interface index: {}",
-            self.via, self.if_index
-        );
-        write!(f, "{}", default_routes_string)
+pub(crate) struct NetInfos {
+    pub net_infos: Vec<NetInfo>,
+    pub neighbor_cache: HashMap<IpAddr, MacAddr>,
+}
+
+impl NetInfos {
+    pub(crate) fn new() -> Result<Self, PistolError> {
+        let neighbor_cache = get_neighbor_cache()?;
+        Ok(NetInfos {
+            net_infos: Vec::new(),
+            neighbor_cache,
+        })
     }
-}
-
-#[derive(Debug, Clone)]
-struct InnerRouteInfo {
-    /// linux and unix interface name
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "macos"
-    ))]
-    dev: String,
-    /// windows interface ids
-    #[cfg(target_os = "windows")]
-    dev: u32,
-    via: Option<String>,
-}
-
-// intermediate layer representation, used for testing
-#[derive(Debug, Clone)]
-struct InnerRouteTable {
-    default_route: Option<InnerDefaultRoute>,
-    default_route6: Option<InnerDefaultRoute>,
-    /// (192.168.1.0/24, (dev_name, via_ip)) on linux and unix,
-    /// (192.168.1.0/24, (if_index, via_ip)) on windows
-    routes: HashMap<RouteAddr, InnerRouteInfo>,
-}
-
-impl fmt::Display for InnerRouteTable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut new_routes = HashMap::new();
-        for (r, n) in &self.routes {
-            let addr = match r {
-                RouteAddr::IpAddr(i) => i.to_string(),
-                RouteAddr::IpNetwork(i) => i.to_string(),
-            };
-            new_routes.insert(addr, n);
-        }
-        let mut output = String::new();
-        match &self.default_route {
-            Some(r) => {
-                output += &format!("ipv4: {}, ", r);
-            }
-            None => (),
-        }
-        match &self.default_route6 {
-            Some(r) => {
-                output += &format!("ipv6: {}, ", r);
-            }
-            None => (),
-        }
-        let routes_string = format!("routes: {:?}", new_routes);
-        output += &routes_string;
-        match output.strip_suffix(", ") {
-            Some(o) => write!(f, "{}", o),
-            None => write!(f, "{}", output),
-        }
-    }
-}
-
-impl InnerRouteTable {
     #[cfg(target_os = "linux")]
-    fn parser(system_route_lines: &[String]) -> Result<InnerRouteTable, PistolError> {
-        let mut default_route = None;
-        let mut default_route6 = None;
-        let mut routes = HashMap::new();
-
-        for line in system_route_lines {
-            let line = line.trim();
-            if line.len() == 0 {
-                continue;
-            }
-            // default via 192.168.72.2 dev ens33
-            // default via 192.168.72.2 dev ens33 proto dhcp metric 100
-            let default_route_judge = |line: &str| -> bool { line.starts_with("default") };
-            if default_route_judge(&line) {
-                let default_route_re =
-                    Regex::new(r"^default\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
-                match default_route_re.captures(&line) {
-                    Some(caps) => {
-                        let via_str = caps.name("via").map_or("", |m| m.as_str());
-                        let via: IpAddr = match via_str.parse() {
-                            Ok(v) => v,
-                            Err(e) => {
-                                warn!(
-                                    "parse route table 'via' [{}] into IpAddr error: {}",
-                                    via_str, e
-                                );
-                                continue;
-                            }
-                        };
-                        let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
-                        let inner_default_route = InnerDefaultRoute { via, dev };
-
-                        let mut is_ipv4 = true;
-                        if via_str.contains(":") {
-                            is_ipv4 = false;
-                        }
-
-                        if is_ipv4 {
-                            default_route = Some(inner_default_route);
-                        } else {
-                            default_route6 = Some(inner_default_route);
-                        }
-                    }
-                    None => warn!("line: [{}] default_route_re no match", line),
-                }
-            } else {
-                // 192.168.1.0/24 dev ens36 proto kernel scope link src 192.168.1.132
-                // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.128
-                // fe80::/64 dev ens33 proto kernel metric 256 pref medium
-                // 192.168.72.0/24 dev ens33 proto kernel scope link src 192.168.72.138 metric 100
-                // 10.179.252.0/24 via 10.179.141.129 dev eth0 proto static metric 100
-                let route_re_1 = Regex::new(r"^(?P<subnet>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?")?;
-                let route_re_2 = Regex::new(
-                    r"^(?P<subnet>[^\s]+)\s+via\s+(?P<via>[^\s]+)\s+dev\s+(?P<dev>[^\s]+)(.+)?",
-                )?;
-                // there are many regex to match different output
-                let caps = if let Some(caps) = route_re_1.captures(&line) {
-                    Some(caps)
-                } else if let Some(caps) = route_re_2.captures(&line) {
-                    Some(caps)
-                } else {
-                    None
-                };
-
-                if let Some(caps) = caps {
-                    let dst_str = caps.name("subnet").map_or("", |m| m.as_str());
-                    let dst = if dst_str.contains("/") {
-                        let dst = match IpNetwork::from_str(dst_str) {
-                            Ok(d) => d,
-                            Err(e) => {
-                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
-                                continue;
-                            }
-                        };
-                        let dst = RouteAddr::IpNetwork(dst);
-                        dst
-                    } else {
-                        let dst: IpAddr = match dst_str.parse() {
-                            Ok(d) => d,
-                            Err(e) => {
-                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
-                                continue;
-                            }
-                        };
-                        let dst = RouteAddr::IpAddr(dst);
-                        dst
-                    };
-                    let dev = caps.name("dev").map_or("", |m| m.as_str()).to_string();
-                    let via = caps.name("via").map_or(None, |m| Some(m.as_str().into()));
-                    let inner_route_info = InnerRouteInfo { dev, via };
-                    routes.insert(dst, inner_route_info);
-                } else {
-                    warn!("line: [{}] route_re_1 and route_re_2 both no match", line);
-                }
-            }
-        }
-
-        Ok(InnerRouteTable {
-            default_route,
-            default_route6,
-            routes,
-        })
+    pub(crate) fn infer(
+        &mut self,
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Option<NetInfo>, PistolError> {
+        todo!()
     }
     #[cfg(any(
         target_os = "freebsd",
@@ -372,1467 +246,193 @@ impl InnerRouteTable {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    fn parser(system_route_lines: &[String]) -> Result<InnerRouteTable, PistolError> {
-        let mut default_route = None;
-        let mut default_route6 = None;
-        let mut routes = HashMap::new();
+    pub(crate) fn infer(
+        &mut self,
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Option<NetInfo>, PistolError> {
+        let output = Command::new("route")
+            .arg("-n")
+            .arg("get")
+            .arg(dst_addr.to_string())
+            .output()?;
 
-        let default_pattern =
-            Regex::new(r"^default\s+(?P<via>\S+)\s+(?P<flag>\S+)\s+(?P<dev>\S+)(\s+)?!?")?;
-        let link_pattern = Regex::new(r"^link#(?P<if_index>\d+)")?;
-        let route_pattern =
-            Regex::new(r"^(?P<dst>\S+)\s+(?P<via>\S+)?\s+(?P<flag>\S+)\s+(?P<dev>\S+)")?;
-        let ip_pattern = Regex::new(r"\d{1,3}(\.\d{1,3}){3}")?;
+        // ➜  pistol-rs git:(dev) ✗ route -n get 192.168.5.78
+        //    route to: 192.168.5.78
+        // destination: 192.168.5.0
+        //        mask: 255.255.255.0
+        //   interface: bridge101
+        //       flags: <UP,DONE,CLONING>
+        //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+        //        0         0         0         0         0         0      1500    -96267
+        // ➜  pistol-rs git:(dev) ✗ route -n get 114.114.114.114
+        //    route to: 114.114.114.114
+        // destination: default
+        //        mask: default
+        //     gateway: 192.168.0.1
+        //   interface: en0
+        //       flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
+        //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
 
-        for line in system_route_lines {
-            if let Some(default_caps) = default_pattern.captures(line) {
-                // default 192.168.72.2 UGS em0
-                // default fe80::4a5f:8ff:fee0:1394%em1 UG em1
-                // default link#20 UCSIg bridge100 !
-                let via_str = default_caps.name("via").map_or("", |m| m.as_str());
-                let dev_str = default_caps.name("dev").map_or("", |m| m.as_str());
-
-                if let Some(via_caps) = link_pattern.captures(via_str) {
-                    // link#20
-                    let if_index_str = via_caps.name("if_index").map_or("", |m| m.as_str());
-                    let if_index: u32 = match if_index_str.parse() {
-                        Ok(i) => i,
-                        Err(e) => {
-                            warn!(
-                                "parse route table 'via' [{}] into if_index error: {}",
-                                via_str, e
-                            );
-                            continue;
-                        }
-                    };
-                    let dev = Dev::IfIndex(if_index);
-
-                    let inner_default_route = InnerDefaultRoute {
-                        via: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                        dev,
-                    };
-
-                    default_route = Some(inner_default_route);
-                } else {
-                    let via_str = ipv6_addr_bsd_fix(via_str)?;
-                    let via: IpAddr = match via_str.parse() {
-                        Ok(v) => v,
-                        Err(e) => {
-                            warn!(
-                                "parse route table 'via' [{}] into IpAddr error: {}",
-                                via_str, e
-                            );
-                            continue;
-                        }
-                    };
-                    let dev = Dev::Name(dev_str.to_string());
-
-                    let mut is_ipv4 = true;
-                    if via_str.contains(":") {
-                        is_ipv4 = false;
-                    }
-
-                    let inner_default_route = InnerDefaultRoute { via, dev };
-
-                    if is_ipv4 {
-                        default_route = Some(inner_default_route);
-                    } else {
-                        default_route6 = Some(inner_default_route);
-                    }
-                }
-            } else if let Some(route_caps) = route_pattern.captures(line) {
-                // 127.0.0.1 link#2 UH lo0
-                let dst_str = route_caps.name("dst").map_or("", |m| m.as_str());
-                let dev_str = route_caps.name("dev").map_or("", |m| m.as_str());
-                let via_str = route_caps.name("via").map_or("", |m| m.as_str());
-
-                if !ip_pattern.is_match(&dst_str) {
-                    // not ip address
-                    continue;
-                }
-
-                let dst_str_fix = ipv6_addr_bsd_fix(dst_str)?;
-                let dst = if dst_str_fix.contains("/") {
-                    let dst = match IpNetwork::from_str(&dst_str_fix) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            warn!("parse route table 'dst' [{}] error: {}", line, e);
-                            continue;
-                        }
-                    };
-                    let dst = RouteAddr::IpNetwork(dst);
-                    dst
-                } else {
-                    let dst: IpAddr = match dst_str_fix.parse() {
-                        Ok(d) => d,
-                        Err(e) => {
-                            warn!("parse route table 'dst' [{}] error: {}", line, e);
-                            continue;
-                        }
-                    };
-                    let dst = RouteAddr::IpAddr(dst);
-                    dst
-                };
-                let dev = dev_str.to_string();
-                let via = if via_str.len() == 0 {
-                    None
-                } else {
-                    Some(via_str.to_string())
-                };
-                let inner_route_info = InnerRouteInfo { dev, via };
-                routes.insert(dst, inner_route_info);
-            }
-        }
-        Ok(InnerRouteTable {
-            default_route,
-            default_route6,
-            routes,
-        })
-    }
-    #[cfg(target_os = "windows")]
-    fn parser(system_route_lines: &[String]) -> Result<InnerRouteTable, PistolError> {
-        let mut default_route = None;
-        let mut default_route6 = None;
-        let mut routes = HashMap::new();
-
-        for line in system_route_lines {
-            let line = line.trim();
-            if line.len() == 0 || line.starts_with("-") || line.starts_with("i") {
-                continue;
-            }
-            let default_route_judge =
-                |line: &str| -> bool { line.contains("0.0.0.0/0") || line.contains("::/0") };
-            if default_route_judge(&line) {
-                // 19 0.0.0.0/0 192.168.1.4 256 35 ActiveStore
-                let default_route_re =
-                    Regex::new(r"^(?P<index>[^\s]+)\s+[^\s]+\s+(?P<via>[^\s]+)(.+)?")?;
-                match default_route_re.captures(&line) {
-                    Some(caps) => {
-                        let if_index = caps.name("index").map_or("", |m| m.as_str());
-                        let if_index: u32 = match if_index.parse() {
-                            Ok(i) => i,
-                            Err(e) => {
-                                warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
-                                continue;
-                            }
-                        };
-
-                        let via_str = caps.name("via").map_or("", |m| m.as_str());
-                        let via: IpAddr = match via_str.parse() {
-                            Ok(v) => v,
-                            Err(e) => {
-                                warn!(
-                                    "parse route table 'via' [{}] into IpAddr error: {}",
-                                    via_str, e
-                                );
-                                continue;
-                            }
-                        };
-
-                        let mut is_ipv4 = true;
-                        if via_str.contains(":") {
-                            is_ipv4 = false;
-                        }
-
-                        let inner_default_route = InnerDefaultRoute { via, if_index };
-
-                        if is_ipv4 {
-                            default_route = Some(inner_default_route);
-                        } else {
-                            default_route6 = Some(inner_default_route);
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut inferred_dst_addr = None;
+        let mut interface = None;
+        for line in output_str.lines() {
+            if line.contains("interface:") {
+                let line_split: Vec<&str> = line.split(":").map(|x| x.trim()).collect();
+                if line_split.len() >= 2 {
+                    let interface_name = line_split[1];
+                    let interfaces = interfaces();
+                    for i in interfaces {
+                        if i.name == interface_name {
+                            interface = Some(i.clone());
+                            break;
                         }
                     }
-                    None => warn!("line: [{}] default_route_re no match", line),
                 }
-            } else {
-                // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
-                // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
-                let route_re =
-                    Regex::new(r"^(?P<index>[^\s]+)\s+(?P<dst>[^\s]+)\s+(?P<via>[^\s]+)(.+)?")?;
-                match route_re.captures(&line) {
-                    Some(caps) => {
-                        let if_index = caps.name("index").map_or("", |m| m.as_str());
-                        let if_index: u32 = match if_index.parse() {
-                            Ok(i) => i,
-                            Err(e) => {
-                                warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
-                                continue;
-                            }
-                        };
-
-                        let dst_str = caps.name("dst").map_or("", |m| m.as_str());
-                        let dst = match IpNetwork::from_str(dst_str) {
-                            Ok(d) => d,
-                            Err(e) => {
-                                warn!("parse route table 'dst' [{}] error: {}", dst_str, e);
-                                continue;
-                            }
-                        };
-                        let dst = RouteAddr::IpNetwork(dst);
-                        let via = caps.name("via").map_or(None, |m| Some(m.as_str().into()));
-                        let inner_route_info = InnerRouteInfo { dev: if_index, via };
-                        routes.insert(dst, inner_route_info);
+            } else if line.contains("gateway") {
+                let line_split: Vec<&str> = line.split(":").map(|x| x.trim()).collect();
+                if line_split.len() >= 2 {
+                    let gateway_str = line_split[1];
+                    if let Ok(gateway_ip) = IpAddr::from_str(gateway_str) {
+                        inferred_dst_addr = Some(gateway_ip);
                     }
-                    None => warn!("line: [{}] default_route_re no match", line),
                 }
             }
         }
 
-        Ok(InnerRouteTable {
-            default_route,
-            default_route6,
-            routes,
-        })
-    }
-}
-
-/// Check if the target IP address is in the local.
-pub(crate) fn dst_in_local_net(ip: IpAddr) -> bool {
-    for interface in interfaces() {
-        for ipn in interface.ips {
-            if ipn.contains(ip) {
-                return true;
-            }
-        }
-    }
-
-    // all data for other addresses are sent to the default route
-    debug!("dst {} is not in local net", ip);
-    false
-}
-
-fn dst_is_local_machine_ip(dst_addr: IpAddr) -> bool {
-    for interface in interfaces() {
-        for ipn in interface.ips {
-            if ipn.ip() == dst_addr {
-                return true;
-            }
-        }
-    }
-    debug!("dst {} not my ip", dst_addr);
-    false
-}
-
-/// Get the default IPv4 and IPv6 route info from the system route table.
-pub(crate) fn get_default_route()
--> Result<(Option<DefaultRoute>, Option<DefaultRoute>), PistolError> {
-    let gncs = GLOBAL_NET_CACHES
-        .lock()
-        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-    let snc = gncs.system_network_cache.clone();
-    Ok((snc.default_route, snc.default_route6))
-}
-
-/// Get the send route info from the system route table.
-pub(crate) fn search_route_table(dst_addr: IpAddr) -> Result<Option<RouteInfo>, PistolError> {
-    let gncs = GLOBAL_NET_CACHES
-        .lock()
-        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-    Ok(gncs.system_network_cache.search_route_table(dst_addr))
-}
-
-/// Get the target mac address through arp table.
-pub(crate) fn search_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
-    let gncs = GLOBAL_NET_CACHES
-        .lock()
-        .map_err(|e| PistolError::LockVarFailed { e: e.to_string() })?;
-    Ok(gncs.system_network_cache.search_mac(dst_addr))
-}
-
-fn build_neighbor_detect_packet(
-    dst_addr: IpAddr,
-    src_addr: IpAddr,
-    interface: NetworkInterface,
-) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    fn build_neighbor_detect_packet4(
-        dst_ipv4: Ipv4Addr,
-        src_ipv4: Ipv4Addr,
-        interface: NetworkInterface,
-    ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-        let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-        let dst_mac = MacAddr::broadcast();
-        let (buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
-        let spp = SendPacketParam {
-            dst_mac,
-            src_mac,
-            eth_type: EtherTypes::Arp,
-            l3_payload: buff,
-            if_name: interface.name.clone(),
-            retransmit: 1,
-        };
-        Ok((spp, filters))
-    }
-    fn build_neighbor_detect_packet6(
-        dst_ipv6: Ipv6Addr,
-        src_ipv6: Ipv6Addr,
-        interface: NetworkInterface,
-        is_route: bool,
-    ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-        let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-
-        if is_route {
-            debug!(
-                "dst {} is not in local net, send NDP RA to default router to detect the dst mac",
-                dst_ipv6
-            );
-            let (dst_mac, buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-            let spp = SendPacketParam {
-                dst_mac,
-                src_mac,
-                eth_type: EtherTypes::Ipv6,
-                l3_payload: buff,
-                if_name: interface.name.clone(),
-                retransmit: 1,
-            };
-            Ok((spp, filters))
-        } else {
-            debug!(
-                "dst {} is in local net, send NDP NS to detect the dst mac",
-                dst_ipv6
-            );
-            let dst_mac = ipv6_multicast_mac(dst_ipv6);
-            let (buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
-            let spp = SendPacketParam {
-                dst_mac,
-                src_mac,
-                eth_type: EtherTypes::Ipv6,
-                l3_payload: buff,
-                if_name: interface.name.clone(),
-                retransmit: 1,
-            };
-            Ok((spp, filters))
-        }
-    }
-
-    match (dst_addr, src_addr) {
-        (IpAddr::V4(dst_ipv4), IpAddr::V4(src_ipv4)) => {
-            build_neighbor_detect_packet4(dst_ipv4, src_ipv4, interface)
-        }
-        (IpAddr::V6(dst_ipv6), IpAddr::V6(src_ipv6)) => {
-            let is_route = !dst_in_local_net(dst_addr);
-            build_neighbor_detect_packet6(dst_ipv6, src_ipv6, interface, is_route)
-        }
-        _ => Err(PistolError::IpVersionNotMatch),
-    }
-}
-
-fn get_route(
-    dst_addr: IpAddr,
-    src_addr: IpAddr,
-) -> Result<(NetworkInterface, Option<RouteVia>), PistolError> {
-    if src_addr == dst_addr {
-        // If the source address is the same as the destination address,
-        // it means that the target is your own machine.
-        let src_interface = match find_interface_by_src_ip(src_addr.into()) {
+        let interface = match interface {
             Some(i) => i,
             None => {
                 return Err(PistolError::CanNotFoundInterface {
-                    i: format!("src interface from {}", src_addr),
+                    i: format!("to dst {}", dst_addr),
                 });
             }
         };
-        let via = Some(RouteVia::IpAddr(src_addr));
-        Ok((src_interface, via))
-    } else {
-        match search_route_table(dst_addr)? {
-            Some(route_info) => Ok((route_info.dev, route_info.via)),
+
+        let inferred_dst_addr = match inferred_dst_addr {
+            Some(i) => i,
+            None => dst_addr,
+        };
+
+        let inferred_src_addr = match src_addr {
+            Some(s) => s,
             None => {
-                // send it to the default route address
-                let (dr, dr6) = get_default_route()?;
-                let default_route = if dst_addr.is_ipv4() {
-                    let dr_ipv4 = dr.ok_or(PistolError::CanNotFoundRouterAddress)?;
-                    dr_ipv4
+                let mut isa = None;
+                for ipn in &interface.ips {
+                    if ipn.contains(inferred_dst_addr) {
+                        isa = Some(ipn.ip());
+                    }
+                }
+
+                match isa {
+                    Some(s) => s,
+                    None => return Err(PistolError::CanNotFoundSrcAddress),
+                }
+            }
+        };
+
+        let inferred_src_mac = match interface.mac {
+            Some(m) => m,
+            None => return Err(PistolError::CanNotFoundSrcMacAddress),
+        };
+        let mut inferred_dst_mac = MacAddr::zero();
+
+        let mut arp_buffs = Vec::new();
+        let mut ndp_buffs = Vec::new();
+        match dst_addr {
+            IpAddr::V4(dst_ipv4) => {
+                let neighbor_cache = &self.neighbor_cache;
+                if let Some(mac) = neighbor_cache.get(&inferred_dst_addr) {
+                    inferred_dst_mac = *mac;
                 } else {
-                    let dr_ipv6 = dr6.ok_or(PistolError::CanNotFoundRouterAddress)?;
-                    dr_ipv6
-                };
-                match search_route_table(default_route.via)? {
-                    Some(route_info) => Ok((route_info.dev, route_info.via)),
-                    None => Err(PistolError::CanNotFoundInterface {
-                        i: default_route.dev.name,
-                    }),
+                    let mac = build_arp_scan_buff(dst_ipv4, inferred_src_mac, src_ipv4)?;
+                    arp_buffs.push(mac);
                 }
             }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct InferMacOutput {
-    pub(crate) inferred_dst_mac: MacAddr,
-    pub(crate) inferred_interface: NetworkInterface,
-    pub(crate) cached: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct InferMacInput {
-    pub(crate) inferred_dst_addr: IpAddr,
-    pub(crate) inferred_src_addr: IpAddr,
-}
-
-#[derive(Debug, Clone)]
-struct InferState {
-    dst_mac: MacAddr,
-    route_via: Option<RouteVia>,
-    interface: NetworkInterface,
-    src_addr: IpAddr,
-    cached: bool,
-    is_route: bool,
-    dst_addr: IpAddr,
-    retries: usize,
-}
-
-pub(crate) fn infer_mac(
-    inputs: Vec<InferMacInput>,
-    timeout: Duration,
-    max_retries: usize,
-    speed: SendSpeed,
-) -> Result<HashMap<IpAddr, InferMacOutput>, PistolError> {
-    let mut stream = PistolStream::new();
-    let filter = Some(String::from(
-        "(arp and arp[6:2] = 2) or (icmp6 and (ip6[40] = 136 or ip6[40] = 134))",
-    ));
-    stream.init(filter)?;
-
-    let mut loop_states = LoopStates::default();
-    for it in inputs {
-        let src_addr = it.inferred_src_addr;
-        let dst_addr = it.inferred_dst_addr;
-        if src_addr.is_loopback() || dst_addr.is_loopback() {
-            let state = InferState {
-                dst_mac: MacAddr::zero(),
-                route_via: None,
-                interface: fake_interface(),
-                src_addr,
-                cached: true,
-                is_route: false,
-                dst_addr,
-                retries: 0,
-            };
-            loop_states.insert_ip(dst_addr, state);
-        } else {
-            let (src_interface, route_via) = get_route(dst_addr.into(), src_addr.into())?;
-            debug!(
-                "src interface: {}, via addr: {:?}",
-                src_interface.name, route_via
-            );
-            let state = InferState {
-                dst_mac: MacAddr::zero(),
-                route_via,
-                interface: src_interface.clone(),
-                src_addr,
-                cached: false,
-                is_route: false,
-                dst_addr,
-                retries: 0,
-            };
-            loop_states.insert_ip(dst_addr, state);
-        }
-    }
-
-    let mut window = SendWindow::init(speed);
-    // Get mac of via address if its on cache or send packet to get it if not cached,
-    // and store the receiver for waiting response in the next step.
-    loop {
-        let mut all_filters = Vec::new();
-        let mut all_done = true;
-        for (_key, state) in &mut loop_states {
-            if state.retries >= max_retries {
-                continue;
-            }
-
-            match state.route_via {
-                Some(route_via) => {
-                    match route_via {
-                        RouteVia::IfIndex(if_index) => {
-                            // To send to the address, we need to use this interface,
-                            // and we should repalce the src_interface with the new src_interface.
-                            let dst_addr = state.dst_addr;
-                            match search_mac(dst_addr)? {
-                                Some(dst_mac) => {
-                                    state.dst_mac = dst_mac;
-                                    state.cached = true;
-                                }
-                                None => {
-                                    if window.check() {
-                                        break;
-                                    }
-
-                                    // replace with new src_interfaces
-                                    let src_interface = match find_interface_by_index(if_index) {
-                                        Some(i) => i,
-                                        None => {
-                                            return Err(PistolError::CanNotFoundInterface {
-                                                i: format!("if_name({})", if_index),
-                                            });
-                                        }
-                                    };
-
-                                    let src_addr = state.src_addr;
-                                    let (spp, filters) = build_neighbor_detect_packet(
-                                        dst_addr,
-                                        src_addr,
-                                        src_interface,
-                                    )?;
-                                    all_filters.extend(filters);
-                                    stream.send_packet(spp)?;
-
-                                    state.cached = false;
-                                    state.is_route = false;
-                                    state.retries += 1;
-                                    all_done = false;
-                                }
-                            };
-                        }
-                        RouteVia::MacAddr(dst_mac) => {
-                            state.dst_mac = dst_mac;
-                            state.cached = true;
-                        }
-                        RouteVia::IpAddr(via_addr) => {
-                            // In most cases, this is usually the routing address.
-                            let via_addr = if via_addr.is_unspecified() {
-                                // fix 0.0.0.0 address
-                                state.dst_addr
-                            } else {
-                                via_addr
-                            };
-                            match search_mac(via_addr.into())? {
-                                Some(dst_mac) => {
-                                    state.dst_mac = dst_mac;
-                                    state.cached = true;
-                                }
-                                None => {
-                                    if window.check() {
-                                        break;
-                                    }
-
-                                    let src_addr = state.src_addr;
-                                    let src_interface = state.interface.clone();
-                                    let (spp, filters) = build_neighbor_detect_packet(
-                                        via_addr,
-                                        src_addr,
-                                        src_interface,
-                                    )?;
-                                    all_filters.extend(filters);
-                                    stream.send_packet(spp)?;
-
-                                    state.cached = false;
-                                    state.is_route = true;
-                                    state.dst_addr = via_addr;
-                                    state.retries += 1;
-
-                                    all_done = false;
-                                }
-                            }
-                        }
-                    }
-                }
-                None => {
-                    debug!("route_via is none");
-                    let dst_addr = state.dst_addr;
-                    if dst_in_local_net(dst_addr.into()) {
-                        // target in local network
-                        match search_mac(dst_addr.into())? {
-                            Some(dst_mac) => {
-                                debug!("dst addr {} found in cache: {}", dst_addr, dst_mac);
-                                state.dst_mac = dst_mac;
-                                state.cached = true;
-                            }
-                            None => {
-                                if window.check() {
-                                    break;
-                                }
-
-                                debug!(
-                                    "dst addr {} not found in cache, send packet to detect",
-                                    dst_addr
-                                );
-                                let src_addr = state.src_addr;
-                                let src_interface = state.interface.clone();
-                                let (spp, filters) = build_neighbor_detect_packet(
-                                    dst_addr,
-                                    src_addr,
-                                    src_interface,
-                                )?;
-                                all_filters.extend(filters);
-                                stream.send_packet(spp)?;
-
-                                state.cached = false;
-                                state.is_route = false;
-                                state.retries += 1;
-
-                                all_done = false;
-                            }
-                        }
-                    } else {
-                        // target not in local network and send packet to default route
-                        debug!(
-                            "dst addr {} is not in local net, send packet to detect route",
-                            dst_addr
-                        );
-                        let (route, route6) = get_default_route()?;
-                        let default_route = if dst_addr.is_ipv4() { route } else { route6 };
-                        if let Some(dr) = default_route {
-                            match search_mac(dr.via)? {
-                                Some(dst_mac) => {
-                                    debug!(
-                                        "default route via addr {} found in cache: {}",
-                                        dr.via, dst_mac
-                                    );
-                                    state.dst_mac = dst_mac;
-                                    state.cached = true;
-                                }
-                                None => {
-                                    if window.check() {
-                                        break;
-                                    }
-
-                                    debug!(
-                                        "default route via addr {} not found in cache, send packet to detect",
-                                        dr.via
-                                    );
-
-                                    let src_addr = state.src_addr;
-                                    let (spp, filters) =
-                                        build_neighbor_detect_packet(dr.via, src_addr, dr.dev)?;
-                                    all_filters.extend(filters);
-                                    stream.send_packet(spp)?;
-
-                                    state.cached = false;
-                                    state.is_route = false;
-                                    state.retries += 1;
-
-                                    all_done = false;
-                                }
-                            }
-                        } else {
-                            error!("can not found ipv4 default route");
-                        }
-                    }
-                }
-            }
-        }
-
-        if all_done {
-            break;
-        }
-
-        let response = stream.recv_packet(timeout)?;
-        debug!("infer mac response len: {}", response.len());
-
-        let mut matched_packets = 0;
-        for r in &response {
-            for f in &all_filters {
-                // make sure the response is we want
-                if f.check(r) {
-                    matched_packets += 1;
-                    match parse_mac_scan_response(r) {
-                        Some((addr, mac)) => {
-                            for (key, state) in &mut loop_states {
-                                if let LoopKey::Ip(ip) = key {
-                                    if *ip == addr {
-                                        state.dst_mac = mac;
-                                        break;
-                                    }
-                                }
-                            }
-                            update_neighbor_cache(addr, mac)?;
-                        }
-                        None => continue,
-                    }
-                    break;
-                }
-            }
-        }
-
-        window.update(matched_packets);
-    }
-
-    let mut rets = HashMap::new();
-    for (_key, state) in loop_states {
-        let dst_addr = state.dst_addr;
-        let inferred_dst_mac = state.dst_mac;
-        let inferred_interface = state.interface;
-        let cached = state.cached;
-        let output = InferMacOutput {
-            inferred_dst_mac,
-            inferred_interface,
-            cached,
-        };
-        rets.insert(dst_addr, output);
-    }
-
-    Ok(rets)
-}
-
-/// Returns (inferred_dst_addr, inferred_src_addr).
-/// The source address is inferred from the target address.
-/// When the target address is a loopback address,
-/// it is mapped to an internal private address
-/// because the loopback address only works at the transport layer
-/// and cannot send data frames.
-pub(crate) fn infer_addr(
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-) -> Result<Option<(IpAddr, IpAddr)>, PistolError> {
-    if let Some(src_addr) = src_addr {
-        return Ok(Some((dst_addr, src_addr)));
-    }
-
-    if dst_addr.is_loopback() || dst_is_local_machine_ip(dst_addr) {
-        let loopback_addr = match dst_addr {
-            IpAddr::V4(_addr) => IpAddr::V4(Ipv4Addr::LOCALHOST),
-            IpAddr::V6(_addr) => IpAddr::V6(Ipv6Addr::LOCALHOST),
-        };
-        return Ok(Some((loopback_addr, loopback_addr)));
-    }
-
-    match search_route_table(dst_addr)? {
-        Some(route_info) => {
-            // Try to get the interface for sending through the system routing table,
-            // and then get the IP on it through the interface.
-            for ipn in route_info.dev.ips {
-                match ipn.ip() {
-                    IpAddr::V4(src_ipv4) => {
-                        if dst_addr.is_ipv4() && !src_ipv4.is_loopback() {
-                            return Ok(Some((dst_addr, src_ipv4.into())));
-                        }
-                    }
-                    IpAddr::V6(src_ipv6) => {
-                        if dst_addr.is_ipv6() && !src_ipv6.is_loopback() {
-                            return Ok(Some((dst_addr, src_ipv6.into())));
-                        }
-                    }
-                }
-            }
-        }
-        None => {
-            // When the above methods do not work,
-            // try to find an IP address in the same subnet as the target address
-            // in the local interface as the source address.
-            for interface in interfaces() {
-                for ipn in interface.ips {
-                    if ipn.contains(dst_addr) {
-                        let src_addr = ipn.ip();
-                        return Ok(Some((dst_addr, src_addr)));
-                    }
-                }
-            }
-            // Finally, if we really can't find the source address,
-            // transform it to the address in the same network segment as the default route.
-            let (default_route, default_route6) = get_default_route()?;
-            let dr = if dst_addr.is_ipv4() {
-                match default_route {
-                    Some(dr_ipv4) => dr_ipv4,
-                    None => return Err(PistolError::CanNotFoundRouterAddress),
-                }
-            } else {
-                match default_route6 {
-                    Some(dr_ipv6) => dr_ipv6,
-                    None => return Err(PistolError::CanNotFoundRouterAddress),
-                }
-            };
-            for interface in interfaces() {
-                for ipn in interface.ips {
-                    if ipn.contains(dr.via) {
-                        let src_addr = ipn.ip();
-                        return Ok(Some((dst_addr, src_addr)));
-                    }
-                }
-            }
-        }
-    }
-    Ok(None)
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub(crate) enum RouteVia {
-    // linux
-    IpAddr(IpAddr),
-    // windows and unix
-    IfIndex(u32),
-    // unix
-    MacAddr(MacAddr),
-}
-
-impl fmt::Display for RouteVia {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = match self {
-            RouteVia::IpAddr(ip_addr) => format!("via ip_addr {}", ip_addr),
-            RouteVia::IfIndex(if_index) => format!("via if_index {}", if_index),
-            RouteVia::MacAddr(mac_addr) => format!("via mac_addr {}", mac_addr),
-        };
-        write!(f, "{}", output)
-    }
-}
-
-impl RouteVia {
-    pub(crate) fn parser(via_str: &str) -> Result<Option<RouteVia>, PistolError> {
-        if !via_str.contains("link") {
-            let ipv6_re = Regex::new(r"^[\w\d:]+(\/\d+)?")?;
-            let ipv4_re = Regex::new(r"^[\d\.]+(\/\d+)?")?;
-            let mac_re = Regex::new(
-                r"^[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}:[\w\d]{1,2}",
-            )?;
-            let windows_index_re = Regex::new(r"^\d+")?;
-            if ipv6_re.is_match(via_str) {
-                // ipv6 address
-                let ipv6_addr = ipv6_addr_bsd_fix(via_str)?;
-                let via: IpAddr = match ipv6_addr.parse() {
-                    Ok(d) => d,
-                    Err(e) => {
-                        warn!("parse 'via' [{}] into IpAddr(V6) error: {}", via_str, e);
-                        return Ok(None);
-                    }
-                };
-                Ok(Some(RouteVia::IpAddr(via.into())))
-            } else if ipv4_re.is_match(via_str) {
-                // ipv4 address
-                let via: IpAddr = match via_str.parse() {
-                    Ok(d) => d,
-                    Err(e) => {
-                        warn!("parse 'via' [{}] into IpAddr(V4) error: {}", via_str, e);
-                        return Ok(None);
-                    }
-                };
-                if !via.is_unspecified() {
-                    Ok(Some(RouteVia::IpAddr(via.into())))
+            IpAddr::V6(dst_ipv6) => {
+                let neighbor_cache = &self.neighbor_cache;
+                if let Some(mac) = neighbor_cache.get(&inferred_dst_addr) {
+                    inferred_dst_mac = *mac;
                 } else {
-                    Ok(None)
+                    let mac = build_ndp_ns_scan_packet(dst_ipv6, inferred_src_mac, src_ipv6)?;
+                    ndp_buffs.push(mac);
                 }
-            } else if mac_re.is_match(via_str) {
-                // mac address
-                let mac: MacAddr = match via_str.parse() {
-                    Ok(m) => m,
-                    Err(e) => {
-                        warn!("parse 'via' [{}] into MacAddr error: {}", via_str, e);
-                        return Ok(None);
-                    }
+            }
+        }
+
+        if arp_buffs.len() > 0 || ndp_buffs.len() > 0 {
+            let mut stream = PistolStream::new();
+            stream.init(Some(String::from("arp[6:2] = 2")))?;
+            let mut all_filters = Vec::new();
+            for (buff, filters) in arp_buffs {
+                let ssp = SendPacketParam {
+                    dst_mac: MacAddr::broadcast(),
+                    src_mac: inferred_src_mac,
+                    eth_type: EtherTypes::Arp,
+                    l3_payload: buff,
+                    if_name: interface.name.clone(),
+                    retransmit: 1,
                 };
-                Ok(Some(RouteVia::MacAddr(mac)))
-            } else if windows_index_re.is_match(via_str) {
-                let if_index: u32 = match via_str.parse() {
-                    Ok(i) => i,
-                    Err(e) => {
-                        warn!("parse route table 'if_index' [{}] error: {}", via_str, e);
-                        return Ok(None);
-                    }
-                };
-                Ok(Some(RouteVia::IfIndex(if_index)))
-            } else {
-                debug!("via string [{}] no match any regex rules", via_str);
-                Ok(None)
+                stream.send_packet(ssp)?;
+                all_filters.extend(filters);
             }
-        } else {
-            // link#12
-            let unix_index_re = Regex::new(r"^link#\d+")?;
-            if unix_index_re.is_match(via_str) {
-                // if_index
-                let via_str_split: Vec<&str> = via_str
-                    .split("#")
-                    .map(|x| x.trim())
-                    .filter(|x| x.len() > 0)
-                    .collect();
-                if via_str_split.len() > 1 {
-                    let if_index = via_str_split[1];
-                    let if_index: u32 = match if_index.parse() {
-                        Ok(i) => i,
-                        Err(e) => {
-                            warn!("parse route table 'if_index' [{}] error: {}", if_index, e);
-                            return Ok(None);
-                        }
+            for (buff, filters) in ndp_buffs {
+                if let IpAddr::V6(dst_ipv6) = dst_addr {
+                    let ssp = SendPacketParam {
+                        dst_mac: ipv6_multicast_mac(dst_ipv6),
+                        src_mac: inferred_src_mac,
+                        eth_type: EtherTypes::Ipv6,
+                        l3_payload: buff,
+                        if_name: interface.name.clone(),
+                        retransmit: 1,
                     };
-                    Ok(Some(RouteVia::IfIndex(if_index)))
-                } else {
-                    Ok(None)
+                    stream.send_packet(ssp)?;
+                    all_filters.extend(filters);
                 }
-            } else {
-                debug!("via string [{}] not match unix_index_re", via_str);
-                Ok(None)
+            }
+
+            let response = stream.recv_packet(Duration::from_millis(500))?;
+
+            for r in &response {
+                for f in &all_filters {
+                    if f.check(r) {
+                        if let Some((ip, mac)) = parse_mac_scan_response(r) {
+                            inferred_dst_mac = mac;
+                            break;
+                        }
+                    }
+                }
             }
         }
-    }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RouteInfo {
-    pub(crate) dev: NetworkInterface,
-    pub(crate) via: Option<RouteVia>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct RouteTable {
-    pub(crate) default_route: Option<DefaultRoute>,
-    pub(crate) default_route6: Option<DefaultRoute>,
-    pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
-}
-
-impl fmt::Display for RouteTable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut new_routes = HashMap::new();
-        for (r, n) in &self.routes {
-            let addr = match r {
-                RouteAddr::IpAddr(i) => i.to_string(),
-                RouteAddr::IpNetwork(i) => i.to_string(),
-            };
-            let if_name = n.dev.name.clone();
-            new_routes.insert(addr, if_name);
-        }
-        let mut output = String::new();
-        match &self.default_route {
-            Some(r) => {
-                output += &format!("ipv4 {}, ", r);
-            }
-            None => (),
-        }
-        match &self.default_route6 {
-            Some(r) => {
-                output += &format!("ipv6 {}, ", r);
-            }
-            None => (),
-        }
-        let routes_string = format!("routes: {:?}", new_routes);
-        output += &routes_string;
-        match output.strip_suffix(", ") {
-            Some(o) => write!(f, "{}", o),
-            None => write!(f, "{}", output),
-        }
-    }
-}
-
-fn get_route_from_system() -> Result<Vec<String>, PistolError> {
-    #[cfg(target_os = "linux")]
-    let c = Command::new("sh").args(["-c", "ip -4 route"]).output()?;
-    #[cfg(target_os = "linux")]
-    let ipv4_output = String::from_utf8_lossy(&c.stdout);
-    #[cfg(target_os = "linux")]
-    let c = Command::new("sh").args(["-c", "ip -6 route"]).output()?;
-    #[cfg(target_os = "linux")]
-    let ipv6_output = String::from_utf8_lossy(&c.stdout);
-    #[cfg(target_os = "linux")]
-    let output = ipv4_output.to_string() + &ipv6_output;
-
-    #[cfg(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "macos"
-    ))]
-    let c = Command::new("sh").args(["-c", "netstat -rn"]).output()?;
-    #[cfg(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "macos"
-    ))]
-    let output = String::from_utf8_lossy(&c.stdout);
-
-    // 17 255.255.255.255/32 0.0.0.0 256 25 ActiveStore
-    // 17 fe80::d547:79a9:84eb:767d/128 :: 256 25 ActiveStore
-    #[cfg(target_os = "windows")]
-    let c = Command::new("powershell").args(["Get-NetRoute"]).output()?;
-    #[cfg(target_os = "windows")]
-    let output = String::from_utf8·_lossy(&c.stdout);
-
-    let system_route_lines: Vec<String> = output
-        .lines()
-        .map(|x| x.trim().to_string())
-        .filter(|v| v.len() > 0)
-        .collect();
-    Ok(system_route_lines)
-}
-
-impl RouteTable {
-    pub(crate) fn init() -> Result<RouteTable, PistolError> {
-        let system_route_lines = get_route_from_system()?;
-        let inner_route_table = InnerRouteTable::parser(&system_route_lines)?;
-        debug!("inner route table: {}", inner_route_table);
-
-        let default_route = match inner_route_table.default_route {
-            Some(irt) => Some(irt.to_default_route()?),
-            None => None,
+        let ni = NetInfo {
+            interface,
+            inferred_dst_addr,
+            inferred_src_addr,
         };
 
-        let default_route6 = match inner_route_table.default_route6 {
-            Some(irt) => Some(irt.to_default_route()?),
-            None => None,
-        };
-
-        let mut routes = HashMap::new();
-        for (r, inner_route_info) in inner_route_table.routes {
-            let dev_str = inner_route_info.dev;
-            let via_str = inner_route_info.via;
-
-            #[cfg(any(
-                target_os = "linux",
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd",
-                target_os = "macos"
-            ))]
-            let dev = match find_interface_by_name(&dev_str) {
-                Some(dev) => dev,
-                None => {
-                    warn!("can not found interface by name [{}]", dev_str);
-                    continue;
-                }
-            };
-
-            #[cfg(target_os = "windows")]
-            let dev = match find_interface_by_index(dev_str) {
-                Some(dev) => dev,
-                None => {
-                    warn!("can not found interface by if_index [{}]", dev_str);
-                    continue;
-                }
-            };
-
-            match via_str {
-                Some(via_str) => match RouteVia::parser(&via_str)? {
-                    Some(via) => {
-                        let route_info = RouteInfo {
-                            dev,
-                            via: Some(via),
-                        };
-                        routes.insert(r, route_info);
-                    }
-                    None => {
-                        warn!("parse route table 'via' [{}] into RouteVia failed", via_str);
-                        continue;
-                    }
-                },
-                None => {
-                    let route_info = RouteInfo { dev, via: None };
-                    routes.insert(r, route_info);
-                }
-            }
-        }
-
-        Ok(RouteTable {
-            default_route,
-            default_route6,
-            routes,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct Neighbors;
-
-impl Neighbors {
-    fn get_local_mac() -> HashMap<IpAddr, MacAddr> {
-        let mut neighbors = HashMap::new();
-        for interface in interfaces() {
-            if let Some(mac) = interface.mac {
-                for ipn in interface.ips {
-                    let addr = ipn.ip();
-                    if !addr.is_loopback() && !addr.is_unspecified() {
-                        neighbors.insert(addr, mac);
-                    }
-                }
-            }
-        }
-        debug!("get local machine neigh: {:?}", neighbors);
-        neighbors
-    }
-    #[cfg(target_os = "linux")]
-    pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
-        // Debian 12:
-        // 192.168.72.2 dev ens33 lladdr 00:50:56:fb:1d:74 STALE
-        // 192.168.1.107 dev ens36 lladdr 74:05:a5:53:69:bb STALE
-        // 192.168.1.1 dev ens36 lladdr 48:5f:08:e0:13:94 STALE
-        // 192.168.1.128 dev ens36 lladdr a8:9c:ed:d5:00:4c STALE
-        // 192.168.72.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
-        // fe80::4a5f:8ff:fee0:1394 dev ens36 lladdr 48:5f:08:e0:13:94 router STALE
-        // fe80::250:56ff:fec0:2222 dev ens33 router FAILED
-        // CentOS 7:
-        // 192.168.3.456 dev em2 lladdr fc:e3:3c:a6:a9:8c REACHABLE
-        let c = Command::new("sh").args(["-c", "ip neigh show"]).output()?;
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .lines()
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-
-        // regex
-        let neighbor_re =
-            Regex::new(r"(?P<addr>[\d\w\.:]+)\s+dev[\w\s]+lladdr\s+(?P<mac>[\d\w:]+).+")?;
-
-        let mut neigh = Self::get_local_mac();
-        for line in lines {
-            match neighbor_re.captures(line) {
-                Some(caps) => {
-                    let addr = caps.name("addr").map_or("", |m| m.as_str());
-                    let addr: IpAddr = match addr.parse() {
-                        Ok(a) => a,
-                        Err(e) => {
-                            warn!("parse neighbor 'addr' error:  {e}");
-                            continue;
-                        }
-                    };
-                    let mac = caps.name("mac").map_or("", |m| m.as_str());
-                    let mac: MacAddr = match mac.parse() {
-                        Ok(m) => m,
-                        Err(e) => {
-                            warn!("parse neighbor 'mac' error:  {e}");
-                            continue;
-                        }
-                    };
-                    if !mac.is_zero() {
-                        neigh.insert(addr, mac);
-                    }
-                }
-                None => warn!("line: [{}] neighbor_re no match", line),
-            }
-        }
-        Ok(neigh)
-    }
-    #[cfg(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "macos"
-    ))]
-    pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
-        // Examples:
-        // # arp -a
-        // ? (192.168.72.1) at 00:50:56:c0:00:08 on em0 expires in 1139 seconds [ethernet]
-        // ? (192.168.72.129) at 00:0c:29:88:20:d2 on em0 permanent [ethernet]
-        // ? (192.168.72.2) at 00:50:56:fb:1d:74 on em0 expires in 1168 seconds [ethernet]
-        // MacOS
-        // ? (169.254.169.254) at (incomplete) on en0 [ethernet]
-        // 172.16.86.1 (172.16.86.1) at c2:c7:db:1d:39:66 on bridge102 ifscope permanent [bridge]
-        // 172.16.86.255 (172.16.86.255) at ff:ff:ff:ff:ff:ff on bridge102 ifscope [bridge]
-        // 192.168.0.1 (192.168.0.1) at f8:ce:21:39:5b:f4 on en0 ifscope [ethernet]
-        // 192.168.0.104 (192.168.0.104) at de:cb:f1:62:24:68 on en0 ifscope permanent [ethernet]
-        // 192.168.0.106 (192.168.0.106) at cc:4d:75:8d:a1:a5 on en0 ifscope [ethernet]
-        // 192.168.0.255 (192.168.0.255) at ff:ff:ff:ff:ff:ff on en0 ifscope [ethernet]
-        // 192.168.5.1 (192.168.5.1) at c2:c7:db:1d:39:65 on bridge101 ifscope permanent [bridge]
-        // 192.168.5.255 (192.168.5.255) at ff:ff:ff:ff:ff:ff on bridge101 ifscope [bridge]
-        // 192.168.62.1 (192.168.62.1) at c2:c7:db:1d:39:64 on bridge100 ifscope permanent [bridge]
-        // 192.168.62.255 (192.168.62.255) at ff:ff:ff:ff:ff:ff on bridge100 ifscope [bridge]
-        // mdns.mcast.net (224.0.0.251) at 1:0:5e:0:0:fb on en0 ifscope permanent [ethernet]
-        // # ndp -a
-        // Neighbor                             Linklayer Address  Netif Expire    1s 5s
-        // fe80::20c:29ff:fe88:20d2%em0         00:0c:29:88:20:d2    em0 permanent R
-        // fe80::20c:29ff:feb8:a41%em0          00:0c:29:b8:0a:41    em0 permanent R
-        let c = Command::new("sh").args(["-c", "arp -a"]).output()?;
-        let arp_output = String::from_utf8_lossy(&c.stdout);
-        let c = Command::new("sh").args(["-c", "ndp -a"]).output()?;
-        let ndp_output = String::from_utf8_lossy(&c.stdout);
-        let output = arp_output.to_string() + &ndp_output;
-        let lines: Vec<&str> = output
-            .lines()
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0 && !v.contains("Neighbor"))
-            .collect();
-
-        // regex
-        let neighbor_re = Regex::new(r"[\?|\S]+\s+\((?P<addr>\S+)\)\s+at\s+(?P<mac>\S+).+")?;
-        let neighbor_re6 = Regex::new(r"(?P<addr>\S+)\s+(?P<mac>\S+).+")?;
-
-        let mut ret = Self::get_local_mac();
-        for line in lines {
-            if line.starts_with("?") {
-                continue;
-            }
-            match neighbor_re.captures(line) {
-                Some(caps) => {
-                    let addr_str = caps.name("addr").map_or("", |m| m.as_str());
-                    let addr_str = ipv6_addr_bsd_fix(addr_str)?;
-                    let addr: IpAddr = match addr_str.parse() {
-                        Ok(a) => a,
-                        Err(e) => {
-                            warn!("parse neighbor addr [{}] error: {}", line, e);
-                            continue;
-                        }
-                    };
-                    let mac_str = caps.name("mac").map_or("", |m| m.as_str());
-                    let mac: MacAddr = match mac_str.parse() {
-                        Ok(m) => m,
-                        Err(e) => {
-                            warn!("parse neighbor mac [{}] error: {}", mac_str, e);
-                            continue;
-                        }
-                    };
-                    ret.insert(addr, mac);
-                }
-                // it maybe the ipv6 addr
-                None => match neighbor_re6.captures(line) {
-                    Some(caps) => {
-                        let addr_str = caps.name("addr").map_or("", |m| m.as_str());
-                        let addr_str = ipv6_addr_bsd_fix(addr_str)?;
-                        let addr: IpAddr = match addr_str.parse() {
-                            Ok(a) => a,
-                            Err(e) => {
-                                warn!("parse neighbor addr [{}] error: {}", line, e);
-                                continue;
-                            }
-                        };
-                        let mac = caps.name("mac").map_or("", |m| m.as_str());
-                        let mac: MacAddr = match mac.parse() {
-                            Ok(m) => m,
-                            Err(e) => {
-                                warn!("parse neighbor mac [{}] error: {}", mac, e);
-                                continue;
-                            }
-                        };
-                        if !mac.is_zero() {
-                            ret.insert(addr, mac);
-                        }
-                    }
-                    None => warn!(
-                        "line: [{}] neighbor_re and neighbor_re6 both no match",
-                        line
-                    ),
-                },
-            }
-        }
-        Ok(ret)
-    }
-    #[cfg(target_os = "windows")]
-    pub(crate) fn init() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
-        // Examples:
-        // 58 ff02::1:ff73:3ff4 33-33-FF-73-3F-F4 Permanent ActiveStore
-        // 58 ff02::1:2  33-33-00-01-00-02 Permanent ActiveStore
-        // 12 ff05::c Permanent ActiveStore
-        let c = Command::new("powershell")
-            .args(["Get-NetNeighbor"])
-            .output()?;
-        let output = String::from_utf8_lossy(&c.stdout);
-        let lines: Vec<&str> = output
-            .lines()
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0 && !v.contains("ifIndex") && !v.contains("--"))
-            .collect();
-
-        // regex
-        let neighbor_re =
-            Regex::new(r"^\d+\s+(?P<addr>[\w\d\.:]+)\s+((?P<mac>[\w\d-]+)\s+)?\w+\s+\w+")?;
-
-        let mut ret = Self::get_local_mac();
-        for line in lines {
-            match neighbor_re.captures(line) {
-                Some(caps) => {
-                    let addr = caps.name("addr").map_or("", |m| m.as_str());
-                    let addr: IpAddr = match addr.parse() {
-                        Ok(a) => a,
-                        Err(e) => {
-                            warn!("parse neighbor addr [{}] error: {}", line, e);
-                            continue;
-                        }
-                    };
-                    let mac: Option<String> =
-                        caps.name("mac").map_or(None, |m| Some(m.as_str().into()));
-                    // 33-33-00-01-00-02 => 33:33:00:01:00:02
-                    match mac {
-                        Some(mac) => {
-                            let mac = mac.replace("-", ":");
-                            let mac: MacAddr = match mac.parse() {
-                                Ok(m) => m,
-                                Err(e) => {
-                                    warn!("parse neighbor mac [{}] error: {}", line, e);
-                                    continue;
-                                }
-                            };
-                            if !mac.is_zero() {
-                                // do not insert 00-00-00-00-00-00
-                                ret.insert(addr, mac);
-                            }
-                        }
-                        None => (),
-                    }
-                }
-                None => warn!("line: [{}] neighbor_re no match", line),
-            }
-        }
-        Ok(ret)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SystemNetCache {
-    pub(crate) default_route: Option<DefaultRoute>,
-    pub(crate) default_route6: Option<DefaultRoute>,
-    pub(crate) routes: HashMap<RouteAddr, RouteInfo>,
-    pub(crate) neighbors: HashMap<IpAddr, MacAddr>,
-}
-
-impl fmt::Display for SystemNetCache {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut output = Vec::new();
-        match &self.default_route {
-            Some(r) => {
-                output.push(r.to_string());
-            }
-            None => (),
-        }
-        match &self.default_route6 {
-            Some(r) => {
-                output.push(r.to_string());
-            }
-            None => (),
-        }
-        let mut routes = Vec::new();
-        for (k, v) in &self.routes {
-            routes.push(format!("{}({})", k, v.dev.name));
-        }
-        let routes_string = format!("routes: {}", routes.join(","));
-        output.push(routes_string);
-
-        let mut neighbor = Vec::new();
-        for (k, v) in &self.neighbors {
-            neighbor.push(format!("{}({})", k, v));
-        }
-        let neighbor_string = format!("neighbor cache: {}", neighbor.join(","));
-        output.push(neighbor_string);
-        write!(f, "{}", output.join("\n"))
-    }
-}
-
-impl SystemNetCache {
-    pub(crate) fn init() -> Result<SystemNetCache, PistolError> {
-        let route_table = RouteTable::init()?;
-        debug!("route table: {}", route_table);
-        let neighbors = Neighbors::init()?;
-        let mut fix_neighbors = HashMap::new();
-        for (&k, &v) in &neighbors {
-            fix_neighbors.insert(k, v);
-        }
-        debug!("neighbor cache: {:?}", neighbors);
-        let snc = SystemNetCache {
-            default_route: route_table.default_route,
-            default_route6: route_table.default_route6,
-            routes: route_table.routes,
-            neighbors: fix_neighbors,
-        };
-        Ok(snc)
-    }
-    pub(crate) fn search_mac(&self, ip: IpAddr) -> Option<MacAddr> {
-        match self.neighbors.get(&ip) {
-            Some(&mac) => {
-                debug!("search neighbor cache hit: ip {}, mac {}", ip, mac);
-                Some(mac)
-            }
-            None => None,
-        }
-    }
-    pub(crate) fn update_neighbor_cache(&mut self, ip: IpAddr, mac: MacAddr) {
-        self.neighbors.insert(ip, mac);
-        debug!("update the neigh cache done: {:?}", self.neighbors);
-    }
-    pub(crate) fn search_route_table(&self, dst_addr: IpAddr) -> Option<RouteInfo> {
-        for (route_addr, route_info) in &self.routes {
-            if !route_addr.is_unspecified() && route_addr.contains(dst_addr) {
-                debug!(
-                    "route table {} contains target ip, route info dev: {}, via: {:?}",
-                    route_addr, route_info.dev.name, route_info.via
-                );
-                return Some(route_info.clone());
-            }
-        }
-        None
+        Ok(Some(ni))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pnet::datalink::interfaces;
-    use std::fs::read_to_string;
+    use std::time::Instant;
     #[test]
-    fn test_network_cache() {
-        let snc = SystemNetCache::init().unwrap();
-        for (route_addr, route_info) in snc.routes {
+    fn test_infer_net_info() {
+        let start = Instant::now();
+        let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
+        let src = None;
+        if let Some(infer_result) = NetInfo::infer(dst, src).unwrap() {
             println!(
-                "route_addr: {:?}, route_info.dev: {}, route_info.via: {:?}",
-                route_addr, route_info.dev.name, route_info.via
+                "infer result: {}, elapsed: {:?}",
+                infer_result.interface.name,
+                start.elapsed()
             );
-        }
-        for (ip, mac) in snc.neighbors {
-            println!("neighbor cache ip: {}, mac: {}", ip, mac);
-        }
-    }
-    #[test]
-    fn test_details() {
-        let n = Neighbors::init().unwrap();
-        println!("{:?}", n);
-
-        let r = RouteTable::init().unwrap();
-        println!("{:?}", r);
-    }
-    #[test]
-    fn test_mac() {
-        let mac = MacAddr::new(0, 0, 0, 0, 0, 0);
-        println!("{}", mac);
-        assert_eq!(mac.is_zero(), true)
-    }
-    #[test]
-    fn test_windows_interface() {
-        println!("TEST!!!!");
-        for interface in interfaces() {
-            // can not found ipv6 address in windows
-            println!("{}", interface);
-            println!("{}", interface.index);
-        }
-    }
-    #[test]
-    fn test_unix() {
-        let input = "fe80::%em0/64";
-        let input_split: Vec<&str> = input
-            .split("%")
-            .map(|x| x.trim())
-            .filter(|v| v.len() > 0)
-            .collect();
-        let _ip: IpAddr = input_split[0].parse().unwrap();
-        let ipnetwork = IpNetwork::from_str("fe80::").unwrap();
-        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
-        println!("{}", ipnetwork.contains(test_ipv6));
-        let ipnetwork = IpNetwork::from_str("fe80::/64").unwrap();
-        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
-        println!("{}", ipnetwork.contains(test_ipv6));
-        let ipnetwork = IpNetwork::from_str("::/96").unwrap();
-        let test_ipv6: IpAddr = "fe80::20c:29ff:feb6:8d99".parse().unwrap();
-        println!("{}", ipnetwork.contains(test_ipv6));
-    }
-    #[test]
-    fn test_all() {
-        #[cfg(target_os = "linux")]
-        let routetable_str = read_to_string("./tests/linux_routetable.txt").unwrap();
-
-        #[cfg(any(
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "macos"
-        ))]
-        let routetable_str = read_to_string("./tests/unix_routetable.txt").unwrap();
-
-        #[cfg(target_os = "windows")]
-        let routetable_str = read_to_string("./tests/windows_routetable.txt").unwrap();
-
-        let routetable_fix: Vec<String> = routetable_str
-            .lines()
-            .map(|x| x.trim().to_string())
-            .collect();
-
-        let mut routetables = Vec::new();
-        let mut tmp = Vec::new();
-        for r in &routetable_fix {
-            if r != "+++" {
-                // split line
-                tmp.push(r.clone());
-            } else {
-                routetables.push(tmp.clone());
-                tmp.clear();
-            }
-        }
-
-        for t in routetables {
-            let ret = InnerRouteTable::parser(&t).unwrap();
-            println!("{}", ret);
-            println!("-------------------------------------------------------------------------");
+        } else {
+            println!("infer result: None, elapsed: {:?}", start.elapsed());
         }
     }
 }
