@@ -1058,27 +1058,6 @@ impl Default for Pistol {
     }
 }
 
-impl Drop for Pistol {
-    fn drop(&mut self) {
-        if CACHE_NET {
-            debug!("save network cache");
-            let gncs = match GLOBAL_NET_CACHES.lock() {
-                Ok(gncs) => gncs.clone(),
-                Err(e) => {
-                    error!("failed to lock program network cache: {}", e);
-                    return;
-                }
-            };
-            // serde cs and save to file
-            let nc_bytes =
-                bitcode::serialize(&gncs).expect("convert network cache to bytes failed");
-            fs::write(NETWORK_CACHE_PATH, nc_bytes).expect("write network cache to file failed");
-        } else {
-            debug!("network cache is disabled, skip saving");
-        }
-    }
-}
-
 impl Pistol {
     /// Create a new Pistol instance with default settings.
     pub fn new() -> Self {
