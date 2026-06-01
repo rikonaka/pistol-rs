@@ -34,7 +34,7 @@ pub(crate) fn fake_interface() -> NetworkInterface {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct NetInfo {
+pub(crate) struct NetInfo {
     inferred_dst_mac: MacAddr,
     inferred_src_mac: MacAddr,
     /// Inferred destination IP address.
@@ -134,8 +134,12 @@ fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
 
 #[cfg(target_os = "windows")]
 fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
-    let ipv4_output = Command::new("netsh").arg("interface").arg("ip").arg("show").arg("neighbors").output()?;
-
+    let ipv4_output = Command::new("netsh")
+        .arg("interface")
+        .arg("ip")
+        .arg("show")
+        .arg("neighbors")
+        .output()?;
 }
 
 #[cfg(any(
@@ -203,8 +207,6 @@ fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
     };
     Ok(sn)
 }
-
-
 
 fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
     let mut neighbor_cache = HashMap::new();

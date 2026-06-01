@@ -85,6 +85,8 @@ use crate::os::OsDetects;
 use crate::os::dbparser::NmapOsDb;
 use crate::ping::HostPing;
 use crate::ping::HostPings;
+use crate::route::NeighborInfo;
+use crate::route::NetInfo;
 use crate::scan::MacScans;
 use crate::scan::PortScan;
 use crate::scan::PortScans;
@@ -1124,44 +1126,30 @@ impl Pistol {
         &mut self,
         targets: &[Target],
         src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
     ) -> Result<(Vec<NetInfo>, Duration), PistolError> {
         let now = Instant::now();
-        let mut net_info_inputs = Vec::new();
+        let mut neighbor_info = NeighborInfo::new()?;
+        let mut net_infos = Vec::new();
         for t in targets {
-            let dst_addr = t.addr;
-            let dst_ports = t.ports.clone();
-            let input = NetInfoInput {
-                dst_addr,
-                dst_ports,
-                src_addr,
-                src_port,
-            };
-            net_info_inputs.push(input);
+            if let Some(net_info) = neighbor_info.infer(t.addr, src_addr)? {
+                net_infos.push(net_info);
+            }
         }
 
-        let net_infos = NetInfo::detects(net_info_inputs, self.speed)?;
         Ok((net_infos, now.elapsed()))
     }
     /// Initialize a single runner for a single target.
     fn get_netinfo_raw(
         &mut self,
         dst_addr: IpAddr,
-        dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
     ) -> Result<(NetInfo, Duration), PistolError> {
         let now = Instant::now();
-        let input = NetInfoInput {
-            dst_addr,
-            dst_ports,
-            src_addr,
-            src_port,
-        };
+        let mut neighbor_info = NeighborInfo::new()?;
+        let net_info = neighbor_info.infer(dst_addr, src_addr)?;
 
-        let net_infos = NetInfo::detects(vec![input], self.speed)?;
-        if net_infos.len() > 0 {
-            Ok((net_infos[0].clone(), now.elapsed()))
+        if let Some(net_info) = net_info {
+            Ok((net_info, now.elapsed()))
         } else {
             Err(PistolError::CanNotFoundNetInfo)
         }
@@ -1298,7 +1286,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScan, PistolError> {
         self.init_tracing();
-        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (net_info, dur) = self.get_netinfo_raw(dst_addr, src_addr)?;
         let mut ret = scan::tcp_ack_scan_raw(net_info, self.timeout, self.max_retries)?;
         ret.layer2_cost = dur;
         Ok(ret)
