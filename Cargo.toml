@@ -43,5 +43,5 @@ name = "mac_scan"
 
 [workspace]
 members = [
-    "tools/recv_check",
+    "tools/recv_check", "tools/send_check",
 ]
