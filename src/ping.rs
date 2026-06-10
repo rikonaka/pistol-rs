@@ -537,7 +537,7 @@ fn ping(
         }
     }
 
-    let mut window = SendWindow::init(speed);
+    let mut window = SendWindow::new(speed);
     loop {
         let mut all_done = true;
         let mut all_filters = Vec::new();

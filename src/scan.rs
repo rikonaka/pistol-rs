@@ -571,7 +571,7 @@ pub(crate) fn mac_scan(
         loop_states.insert_ip_port(dst_addr, dst_port, state);
     }
 
-    let mut window = SendWindow::init(speed);
+    let mut window = SendWindow::new(speed);
     // Sometimes the same target may receive multiple mac responses,
     // so we use a Vec here to store the results of each target.
     let mut mac_scan_rets: HashMap<IpAddr, HashMap<MacAddr, usize>> = HashMap::new();
@@ -1119,7 +1119,7 @@ fn scan(
 
     debug!("start scan loop with {} targets", loop_states.len());
 
-    let mut window = SendWindow::init(speed);
+    let mut window = SendWindow::new(speed);
     let mut all_filters = Vec::new();
     loop {
         #[cfg(feature = "debug")]

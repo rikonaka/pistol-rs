@@ -382,7 +382,7 @@ struct SendWindow {
 }
 
 impl SendWindow {
-    fn init(speed: SendSpeed) -> Self {
+    fn new(speed: SendSpeed) -> Self {
         let (window_size, window_size_increment) = speed.value();
         Self {
             window_size,

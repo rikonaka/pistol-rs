@@ -285,7 +285,254 @@ impl NeighborInfo {
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
     ) -> Result<Option<NetInfo>, PistolError> {
-        todo!()
+        let start = Instant::now();
+        let output = match dst_addr {
+            IpAddr::V4(ipv4) => Command::new("ip")
+                .arg("route")
+                .arg("get")
+                .arg(ipv4.to_string())
+                .output()?,
+            IpAddr::V6(ipv6) => Command::new("ip")
+                .arg("-6")
+                .arg("route")
+                .arg("get")
+                .arg(ipv6.to_string())
+                .output()?,
+        };
+
+        // ➜  pistol-rs git:(main) ip route get 192.168.5.78
+        // 192.168.5.78 dev ens33 src 192.168.5.3 uid 1000
+        //     cache
+        // ➜  pistol-rs git:(dev) ✗ ip route get 114.114.114.114
+        // 114.114.114.114 via 192.168.5.2 dev ens33 src 192.168.5.3 uid 1000
+        //     cache
+        // ➜  pistol-rs git:(dev) ✗ ip -6 route get fe80::20c:29ff:fecf:622f
+        // fe80::20c:29ff:fecf:622f from :: dev ens33 proto kernel src fe80::20c:29ff:feec:d037 metric 256 pref medium
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut inferred_dst_addr = None;
+        let mut interface = None;
+        let mut inferred_src_addr = None;
+        let mut is_route = false;
+        let mut cached = false;
+
+        let localnet_re = Regex::new(r"^(?P<ip>\S+) dev (?P<dev>\S+) src (?P<src>\S+) uid \d+")?;
+        let route_re =
+            Regex::new(r"^(?P<ip>\S+) via (?P<via>\S+) dev (?P<dev>\S+) src (?P<src>\S+) uid \d+")?;
+
+        for line in output_str.lines() {
+            if let Some(caps) = localnet_re.captures(line) {
+                if let Some(ip_str) = caps.name("ip") {
+                    let ip_str = ip_str.as_str();
+                    let ip = IpAddr::from_str(ip_str)?;
+                    inferred_dst_addr = Some(ip);
+                }
+                if let Some(dev_str) = caps.name("dev") {
+                    let dev_str = dev_str.as_str();
+                    let interfaces = interfaces();
+                    for i in interfaces {
+                        if i.name == dev_str {
+                            interface = Some(i.clone());
+                            break;
+                        }
+                    }
+                }
+                if let Some(src_str) = caps.name("src") {
+                    let src_str = src_str.as_str();
+                    let src_ip = IpAddr::from_str(src_str)?;
+                    inferred_src_addr = Some(src_ip);
+                }
+                is_route = false;
+            } else if let Some(caps) = route_re.captures(line) {
+                if let Some(ip_str) = caps.name("ip") {
+                    let ip_str = ip_str.as_str();
+                    let ip = IpAddr::from_str(ip_str)?;
+                    inferred_dst_addr = Some(ip);
+                }
+                if let Some(via_str) = caps.name("via") {
+                    let via_str = via_str.as_str();
+                    let via_ip = IpAddr::from_str(via_str)?;
+                    inferred_dst_addr = Some(via_ip);
+                }
+                if let Some(dev_str) = caps.name("dev") {
+                    let dev_str = dev_str.as_str();
+                    let interfaces = interfaces();
+                    for i in interfaces {
+                        if i.name == dev_str {
+                            interface = Some(i.clone());
+                            break;
+                        }
+                    }
+                }
+                if let Some(src_str) = caps.name("src") {
+                    let src_str = src_str.as_str();
+                    let src_ip = IpAddr::from_str(src_str)?;
+                    inferred_src_addr = Some(src_ip);
+                }
+
+                is_route = true;
+            }
+        }
+
+        let interface = match interface {
+            Some(i) => i,
+            None => {
+                return Err(PistolError::CanNotFoundInterface {
+                    i: format!("to dst {}", dst_addr),
+                });
+            }
+        };
+
+        let inferred_dst_addr = match inferred_dst_addr {
+            Some(i) => i,
+            None => dst_addr,
+        };
+
+        let inferred_src_addr = match inferred_src_addr {
+            Some(s) => s,
+            None => {
+                let mut isa = None;
+                for ipn in &interface.ips {
+                    if ipn.contains(inferred_dst_addr) {
+                        isa = Some(ipn.ip());
+                    }
+                }
+
+                match isa {
+                    Some(s) => s,
+                    None => return Err(PistolError::CanNotFoundSrcAddress),
+                }
+            }
+        };
+
+        let inferred_src_mac = match interface.mac {
+            Some(m) => m,
+            None => return Err(PistolError::CanNotFoundSrcMacAddress),
+        };
+        let mut inferred_dst_mac = MacAddr::zero();
+
+        let mut arp_buffs = Vec::new();
+        let mut ndp_buffs = Vec::new();
+        match dst_addr {
+            IpAddr::V4(dst_ipv4) => {
+                let neighbor_cache = &self.neighbor_cache;
+                if let Some(mac) = neighbor_cache.get(&inferred_dst_addr) {
+                    inferred_dst_mac = *mac;
+                } else {
+                    let src_ipv4 = match inferred_src_addr {
+                        IpAddr::V4(s) => s,
+                        _ => return Err(PistolError::IpVersionNotMatch),
+                    };
+                    let (buff, filters) =
+                        build_arp_scan_buff(dst_ipv4, inferred_src_mac, src_ipv4)?;
+                    let ssp = SendPacketParam {
+                        dst_mac: MacAddr::broadcast(),
+                        src_mac: inferred_src_mac,
+                        eth_type: EtherTypes::Arp,
+                        l3_payload: buff,
+                        if_name: interface.name.clone(),
+                        retransmit: 1,
+                    };
+                    arp_buffs.push((ssp, filters));
+                }
+            }
+            IpAddr::V6(dst_ipv6) => {
+                let neighbor_cache = &self.neighbor_cache;
+                if let Some(mac) = neighbor_cache.get(&inferred_dst_addr) {
+                    inferred_dst_mac = *mac;
+                } else {
+                    let src_ipv6 = match inferred_src_addr {
+                        IpAddr::V6(s) => s,
+                        _ => return Err(PistolError::IpVersionNotMatch),
+                    };
+                    let (spp, filters) = if is_route {
+                        let (dst_mac, buff, filters) =
+                            build_ndp_ra_scan_packet(inferred_src_mac, src_ipv6)?;
+                        let spp = SendPacketParam {
+                            dst_mac,
+                            src_mac: inferred_src_mac,
+                            eth_type: EtherTypes::Ipv6,
+                            l3_payload: buff,
+                            if_name: interface.name.clone(),
+                            retransmit: 1,
+                        };
+                        (spp, filters)
+                    } else {
+                        let (buff, filters) =
+                            build_ndp_ns_scan_packet(dst_ipv6, inferred_src_mac, src_ipv6)?;
+                        let dst_mac = ipv6_multicast_mac(dst_ipv6);
+                        let spp = SendPacketParam {
+                            dst_mac,
+                            src_mac: inferred_src_mac,
+                            eth_type: EtherTypes::Ipv6,
+                            l3_payload: buff,
+                            if_name: interface.name.clone(),
+                            retransmit: 1,
+                        };
+                        (spp, filters)
+                    };
+                    ndp_buffs.push((spp, filters));
+                }
+            }
+        }
+
+        if arp_buffs.len() > 0 || ndp_buffs.len() > 0 {
+            let mut stream = PistolStream::new();
+            // 133 = Router Solicitation
+            // 134 = Router Advertisement
+            // 135 = Neighbor Solicitation
+            // 136 = Neighbor Advertisement
+            let filter = String::from(
+                "(arp and arp[6:2] = 2) or (icmp6 and (icmp6[0] == 133 or icmp6[0] == 136))",
+            );
+            stream.init(Some(filter))?;
+            let mut all_filters = Vec::new();
+            for (ssp, filters) in arp_buffs {
+                stream.send_packet(ssp)?;
+                all_filters.extend(filters);
+            }
+            for (spp, filters) in ndp_buffs {
+                stream.send_packet(spp)?;
+                all_filters.extend(filters);
+            }
+
+            let response = stream.recv_packet(Duration::from_millis(500))?;
+            for r in &response {
+                for f in &all_filters {
+                    if f.check(r) {
+                        if let Some((_ip, mac)) = parse_mac_scan_response(r) {
+                            inferred_dst_mac = mac;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            cached = true;
+        }
+
+        let valid = if inferred_dst_mac == MacAddr::zero() {
+            false
+        } else {
+            true
+        };
+
+        let cost = start.elapsed();
+
+        let ni = NetInfo {
+            inferred_dst_mac,
+            inferred_src_mac,
+            inferred_dst_addr,
+            inferred_src_addr,
+            dst_addr,
+            src_addr,
+            interface,
+            cached,
+            cost,
+            valid,
+        };
+
+        Ok(Some(ni))
     }
     #[cfg(any(
         target_os = "freebsd",
