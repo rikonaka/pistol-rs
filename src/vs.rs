@@ -158,8 +158,8 @@ pub fn vs_scan(
 
     let mut recv_size = 0;
     for target in targets {
-        let dst_addr = target.addr;
-        for &dst_port in &target.ports {
+        let dst_addr = target.dst_addr;
+        for &dst_port in &target.dst_ports {
             let origin = target.origin.clone();
             let tx = tx.clone();
             let service_probes = service_probes.clone();

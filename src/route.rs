@@ -576,6 +576,15 @@ impl NeighborInfo {
         //   interface: en0
         //       flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
         //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+        // ➜  pistol-rs git:(dev) ✗ route -n get -inet6 fd15:4ba5:5a2b:1002:20c:29ff:fe65:2d9b
+        //    route to: fd15:4ba5:5a2b:1002:20c:29ff:fe65:2d9b
+        // destination: ::
+        //        mask: default
+        //     gateway: fe80::face:21ff:fe39:5bf4%en0
+        //   interface: en0
+        //       flags: <UP,GATEWAY,DONE,PRCLONING,GLOBAL>
+        //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+        //        0         0         0         0         0         0      1500         0
 
         let output_str = String::from_utf8_lossy(&output.stdout);
         let mut inferred_dst_addr = None;

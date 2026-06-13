@@ -561,7 +561,7 @@ pub(crate) fn mac_scan(
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
     for t in targets {
-        let dst_addr = t.addr;
+        let dst_addr = t.dst_addr;
         let dst_port = 0;
         let state = MacScanState {
             addr: dst_addr,

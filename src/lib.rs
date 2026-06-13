@@ -1131,7 +1131,7 @@ impl Pistol {
         let mut neighbor_info = NeighborInfo::new()?;
         let mut net_infos = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer(t.addr, src_addr)? {
+            if let Some(net_info) = neighbor_info.infer(t.dst_addr, src_addr)? {
                 net_infos.push(net_info);
             }
         }
@@ -1268,7 +1268,7 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_tracing();
-        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
+        let (net_infos, dur) = self.get_netinfo(targets, src_addr)?;
         let mut ret = scan::tcp_ack_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1323,11 +1323,11 @@ impl Pistol {
             let net_info = NetInfo {
                 inferred_dst_mac: MacAddr::zero(),
                 inferred_src_mac: MacAddr::zero(),
-                inferred_dst_addr: t.addr,
+                inferred_dst_addr: t.dst_addr,
                 inferred_src_addr: src_addr.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
-                dst_addr: t.addr,
+                dst_addr: t.dst_addr,
                 src_addr: src_addr,
-                dst_ports: t.ports.clone(),
+                dst_ports: t.dst_ports.clone(),
                 src_port,
                 if_name: String::new(),
                 cached: false,
@@ -2374,48 +2374,49 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
 
 #[derive(Debug, Clone)]
 pub struct Target {
-    addr: IpAddr,
-    ports: Vec<u16>,
+    dst_addr: IpAddr,
+    dst_ports: Vec<u16>,
     // stores user input for non-IP addresses, such as domain names or subnets
     pub origin: Option<String>,
+    src_addr: Option<IpAddr>,
+    src_port: Option<u16>,
 }
 
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut ports = Vec::new();
-        for p in &self.ports {
+        for p in &self.dst_ports {
             ports.push(p.to_string());
         }
-        let output_str = format!("addr: {}, ports: [{}]", self.addr, ports.join(","));
+        let output_str = format!("addr: {}, ports: [{}]", self.dst_addr, ports.join(","));
         write!(f, "{}", output_str)
     }
 }
 
 impl Target {
-    pub fn new(addr: IpAddr, ports: Option<Vec<u16>>) -> Target {
-        let h = match ports {
-            Some(p) => Target {
-                addr,
-                ports: p,
-                origin: None,
-            },
-            None => Target {
-                addr,
-                ports: vec![],
-                origin: None,
-            },
-        };
-        h
+    pub fn new(
+        dst_addr: IpAddr,
+        dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Self {
+        Self {
+            dst_addr,
+            dst_ports,
+            origin: None,
+            src_addr,
+            src_port,
+        }
     }
     /// Only supported the IPv4 target (by default, network address and broadcast address addresses are ignored).
-    pub fn from_subnet(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
-        let ip_pool = Ipv4Pool::from_str(subnet)?;
+    pub fn from_subnet(
+        dst_subnet: &str,
+        dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Result<Vec<Target>, PistolError> {
+        let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
-
-        let ports = match ports {
-            Some(p) => p,
-            None => Vec::new(),
-        };
 
         let last = ip_pool.len();
         for (i, ip) in ip_pool.into_iter().enumerate() {
@@ -2423,9 +2424,11 @@ impl Target {
                 continue;
             } else {
                 let target = Target {
-                    addr: ip.into(),
-                    ports: ports.clone(),
-                    origin: Some(subnet.to_string()),
+                    dst_addr: ip.into(),
+                    dst_ports: dst_ports.clone(),
+                    origin: Some(dst_subnet.to_string()),
+                    src_addr,
+                    src_port,
                 };
                 targets.push(target);
             }
@@ -2433,14 +2436,14 @@ impl Target {
         Ok(targets)
     }
     /// Only supported the IPv6 target (by default, network address and broadcast address addresses are ignored).
-    pub fn from_subnet6(subnet: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
-        let ip_pool = Ipv6Pool::from_str(subnet)?;
+    pub fn from_subnet6(
+        dst_subnet: &str,
+        dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Result<Vec<Target>, PistolError> {
+        let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
-
-        let ports = match ports {
-            Some(p) => p,
-            None => Vec::new(),
-        };
 
         let last = ip_pool.len();
         for (i, ip) in ip_pool.into_iter().enumerate() {
@@ -2448,9 +2451,11 @@ impl Target {
                 continue;
             } else {
                 let target = Target {
-                    addr: ip.into(),
-                    ports: ports.clone(),
-                    origin: Some(subnet.to_string()),
+                    dst_addr: ip.into(),
+                    dst_ports: dst_ports.clone(),
+                    origin: Some(dst_subnet.to_string()),
+                    src_addr,
+                    src_port,
                 };
                 targets.push(target);
             }
@@ -2458,21 +2463,23 @@ impl Target {
         Ok(targets)
     }
     /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
-    pub fn from_domain(domain: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
-        let ips = dns_query(domain)?;
+    pub fn from_domain(
+        dst_domain: &str,
+        dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Result<Vec<Target>, PistolError> {
+        let ips = dns_query(dst_domain)?;
         let mut ret = Vec::new();
-
-        let ports = match ports {
-            Some(p) => p,
-            None => Vec::new(),
-        };
 
         for ip in ips {
             if ip.is_ipv4() {
                 let target = Target {
-                    addr: ip,
-                    ports: ports.clone(),
-                    origin: Some(domain.to_string()),
+                    dst_addr: ip,
+                    dst_ports: dst_ports.clone(),
+                    origin: Some(dst_domain.to_string()),
+                    src_addr,
+                    src_port,
                 };
                 ret.push(target);
             }
@@ -2480,21 +2487,23 @@ impl Target {
         Ok(ret)
     }
     /// If possible, convert the domain name to an IPv6 address, otherwise return an error (returns all IPv6 addresses).
-    pub fn from_domain6(domain: &str, ports: Option<Vec<u16>>) -> Result<Vec<Target>, PistolError> {
-        let ips = dns_query(domain)?;
+    pub fn from_domain6(
+        dst_domain: &str,
+        dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Result<Vec<Target>, PistolError> {
+        let ips = dns_query(dst_domain)?;
         let mut ret = Vec::new();
-
-        let ports = match ports {
-            Some(p) => p,
-            None => Vec::new(),
-        };
 
         for ip in ips {
             if ip.is_ipv6() {
                 let target = Target {
-                    addr: ip,
-                    ports: ports.clone(),
-                    origin: Some(domain.to_string()),
+                    dst_addr: ip,
+                    dst_ports: dst_ports.clone(),
+                    origin: Some(dst_domain.to_string()),
+                    src_addr,
+                    src_port,
                 };
                 ret.push(target);
             }
