@@ -35,22 +35,22 @@ pub(crate) fn fake_interface() -> NetworkInterface {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct NetInfo {
-    inferred_dst_mac: MacAddr,
-    inferred_src_mac: MacAddr,
+    pub inferred_dst_mac: MacAddr,
+    pub inferred_src_mac: MacAddr,
     /// Inferred destination IP address.
-    inferred_dst_addr: IpAddr,
+    pub inferred_dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
-    inferred_src_addr: IpAddr,
+    pub inferred_src_addr: IpAddr,
     /// Original user input destination IP address,
     /// which may be the same as infer_dst_addr if user input a valid IP address,
     /// or may be different if user input a hostname or an invalid IP address.
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-    interface: NetworkInterface,
+    pub dst_addr: IpAddr,
+    pub src_addr: Option<IpAddr>,
+    pub interface: NetworkInterface,
     /// Whether the network information is cached or inferred.
-    cached: bool,
-    cost: Duration,
-    valid: bool,
+    pub cached: bool,
+    pub cost: Duration,
+    pub valid: bool,
 }
 
 impl NetInfo {

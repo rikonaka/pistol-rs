@@ -87,6 +87,7 @@ use crate::ping::HostPing;
 use crate::ping::HostPings;
 use crate::route::NeighborInfo;
 use crate::route::NetInfo;
+use crate::route::fake_interface;
 use crate::scan::MacScans;
 use crate::scan::PortScan;
 use crate::scan::PortScans;
@@ -1363,9 +1364,7 @@ impl Pistol {
             inferred_src_addr: src_addr.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
             dst_addr: dst_addr,
             src_addr: src_addr,
-            dst_ports: vec![dst_port],
-            src_port,
-            if_name: String::new(),
+            interface: fake_interface(),
             cached: false,
             cost: Duration::ZERO,
             valid: true,
@@ -2377,7 +2376,7 @@ pub struct Target {
     dst_addr: IpAddr,
     dst_ports: Vec<u16>,
     // stores user input for non-IP addresses, such as domain names or subnets
-    pub origin: Option<String>,
+    pub origin_dst: Option<String>,
     src_addr: Option<IpAddr>,
     src_port: Option<u16>,
 }
@@ -2403,7 +2402,7 @@ impl Target {
         Self {
             dst_addr,
             dst_ports,
-            origin: None,
+            origin_dst: None,
             src_addr,
             src_port,
         }
@@ -2426,7 +2425,7 @@ impl Target {
                 let target = Target {
                     dst_addr: ip.into(),
                     dst_ports: dst_ports.clone(),
-                    origin: Some(dst_subnet.to_string()),
+                    origin_dst: Some(dst_subnet.to_string()),
                     src_addr,
                     src_port,
                 };
@@ -2453,7 +2452,7 @@ impl Target {
                 let target = Target {
                     dst_addr: ip.into(),
                     dst_ports: dst_ports.clone(),
-                    origin: Some(dst_subnet.to_string()),
+                    origin_dst: Some(dst_subnet.to_string()),
                     src_addr,
                     src_port,
                 };
@@ -2477,7 +2476,7 @@ impl Target {
                 let target = Target {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
-                    origin: Some(dst_domain.to_string()),
+                    origin_dst: Some(dst_domain.to_string()),
                     src_addr,
                     src_port,
                 };
@@ -2501,7 +2500,7 @@ impl Target {
                 let target = Target {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
-                    origin: Some(dst_domain.to_string()),
+                    origin_dst: Some(dst_domain.to_string()),
                     src_addr,
                     src_port,
                 };

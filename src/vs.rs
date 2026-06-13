@@ -160,7 +160,7 @@ pub fn vs_scan(
     for target in targets {
         let dst_addr = target.dst_addr;
         for &dst_port in &target.dst_ports {
-            let origin = target.origin.clone();
+            let origin = target.origin_dst.clone();
             let tx = tx.clone();
             let service_probes = service_probes.clone();
             debug!("dst: {}, port: {}", dst_addr, dst_port);
