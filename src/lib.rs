@@ -1132,7 +1132,7 @@ impl Pistol {
         let mut neighbor_info = NeighborInfo::new()?;
         let mut net_infos = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer(t.dst_addr, src_addr)? {
+            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, src_addr)? {
                 net_infos.push(net_info);
             }
         }
@@ -1147,7 +1147,7 @@ impl Pistol {
     ) -> Result<(NetInfo, Duration), PistolError> {
         let now = Instant::now();
         let mut neighbor_info = NeighborInfo::new()?;
-        let net_info = neighbor_info.infer(dst_addr, src_addr)?;
+        let net_info = neighbor_info.infer_net_info(dst_addr, src_addr)?;
 
         if let Some(net_info) = net_info {
             Ok((net_info, now.elapsed()))
@@ -1326,8 +1326,8 @@ impl Pistol {
                 inferred_src_mac: MacAddr::zero(),
                 inferred_dst_addr: t.dst_addr,
                 inferred_src_addr: src_addr.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
-                dst_addr: t.dst_addr,
-                src_addr: src_addr,
+                ori_dst_addr: t.dst_addr,
+                ori_src_addr: src_addr,
                 dst_ports: t.dst_ports.clone(),
                 src_port,
                 if_name: String::new(),
@@ -1362,9 +1362,9 @@ impl Pistol {
             inferred_src_mac: MacAddr::zero(),
             inferred_dst_addr: dst_addr,
             inferred_src_addr: src_addr.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
-            dst_addr: dst_addr,
-            src_addr: src_addr,
-            interface: fake_interface(),
+            ori_dst_addr: dst_addr,
+            ori_src_addr: src_addr,
+            inferred_interface: fake_interface(),
             cached: false,
             cost: Duration::ZERO,
             valid: true,
@@ -2373,12 +2373,12 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
 
 #[derive(Debug, Clone)]
 pub struct Target {
-    dst_addr: IpAddr,
-    dst_ports: Vec<u16>,
+    pub dst_addr: IpAddr,
+    pub dst_ports: Vec<u16>,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
     // stores user input for non-IP addresses, such as domain names or subnets
     pub origin_dst: Option<String>,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
 }
 
 impl fmt::Display for Target {

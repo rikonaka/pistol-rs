@@ -527,7 +527,7 @@ fn ping(
     let mut loop_states = LoopStates::default();
     for ni in net_infos {
         if ni.valid {
-            let dst_addr = ni.dst_addr;
+            let dst_addr = ni.ori_dst_addr;
             let state = PingState {
                 retries: 0,
                 data_recved: false,

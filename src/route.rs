@@ -41,16 +41,16 @@ pub(crate) struct NetInfo {
     pub inferred_dst_addr: IpAddr,
     /// If user did not specify source IP address, we will use the IP address of the selected interface.
     pub inferred_src_addr: IpAddr,
-    /// Original user input destination IP address,
-    /// which may be the same as infer_dst_addr if user input a valid IP address,
-    /// or may be different if user input a hostname or an invalid IP address.
-    pub dst_addr: IpAddr,
-    pub src_addr: Option<IpAddr>,
-    pub interface: NetworkInterface,
+    pub inferred_interface: NetworkInterface,
     /// Whether the network information is cached or inferred.
     pub cached: bool,
     pub cost: Duration,
     pub valid: bool,
+    /// Original user input destination IP address,
+    /// which may be the same as infer_dst_addr if user input a valid IP address,
+    /// or may be different if user input a hostname or an invalid IP address.
+    pub ori_dst_addr: IpAddr,
+    pub ori_src_addr: Option<IpAddr>,
 }
 
 impl NetInfo {
@@ -60,12 +60,12 @@ impl NetInfo {
             inferred_src_mac: MacAddr::zero(),
             inferred_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             inferred_src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            src_addr: None,
-            interface: fake_interface(),
+            inferred_interface: fake_interface(),
             cached: true,
             cost: Duration::ZERO,
             valid: false,
+            ori_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            ori_src_addr: None,
         }
     }
 }
@@ -79,7 +79,7 @@ impl fmt::Display for NetInfo {
                 self.inferred_src_mac,
                 self.inferred_dst_addr,
                 self.inferred_src_addr,
-                self.interface
+                self.inferred_interface
             );
             write!(f, "{}", output)
         } else {
@@ -101,7 +101,7 @@ struct SystemNeighbor {
 }
 
 #[cfg(target_os = "linux")]
-fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
+fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
     let ipv4_output = Command::new("ip").arg("neighbor").arg("show").output()?;
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     let arp_re = Regex::new(
@@ -133,7 +133,7 @@ fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
 }
 
 #[cfg(target_os = "windows")]
-fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
+fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
     let ipv4_output = Command::new("netsh")
         .arg("interface")
         .arg("ip")
@@ -148,7 +148,7 @@ fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
     target_os = "netbsd",
     target_os = "macos"
 ))]
-fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
+fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
     let ipv4_output = Command::new("arp").arg("-an").output()?;
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     // ignore incomplete entries
@@ -210,7 +210,7 @@ fn system_neighbor() -> Result<SystemNeighbor, PistolError> {
 
 fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
     let mut neighbor_cache = HashMap::new();
-    let sn = system_neighbor()?;
+    let sn = system_neighbor_cache()?;
 
     for line in sn.ipv4.lines() {
         if let Some(caps) = sn.re4.captures(line) {
@@ -269,6 +269,7 @@ fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
     Ok(neighbor_cache)
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct NeighborInfo {
     pub neighbor_cache: HashMap<IpAddr, MacAddr>,
 }
@@ -280,7 +281,72 @@ impl NeighborInfo {
         Ok(NeighborInfo { neighbor_cache })
     }
     #[cfg(target_os = "linux")]
-    pub(crate) fn infer(
+    pub(crate) fn infer_interface(
+        &mut self,
+        dst_addr: IpAddr,
+    ) -> Result<NetworkInterface, PistolError> {
+        let output = match dst_addr {
+            IpAddr::V4(ipv4) => Command::new("ip")
+                .arg("route")
+                .arg("get")
+                .arg(ipv4.to_string())
+                .output()?,
+            IpAddr::V6(ipv6) => Command::new("ip")
+                .arg("-6")
+                .arg("route")
+                .arg("get")
+                .arg(ipv6.to_string())
+                .output()?,
+        };
+
+        // ➜  pistol-rs git:(main) ip route get 192.168.5.78
+        // 192.168.5.78 dev ens33 src 192.168.5.3 uid 1000
+        //     cache
+        // ➜  pistol-rs git:(dev) ✗ ip route get 114.114.114.114
+        // 114.114.114.114 via 192.168.5.2 dev ens33 src 192.168.5.3 uid 1000
+        //     cache
+        // ➜  pistol-rs git:(dev) ✗ ip -6 route get fe80::20c:29ff:fecf:622f
+        // fe80::20c:29ff:fecf:622f from :: dev ens33 proto kernel src fe80::20c:29ff:feec:d037 metric 256 pref medium
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut interface = None;
+
+        let localnet_re = Regex::new(r"^\S+ dev (?P<dev>\S+) src \S+ uid \d+")?;
+        let route_re = Regex::new(r"^\S+ via \S+ dev (?P<dev>\S+) src \S+ uid \d+")?;
+
+        for line in output_str.lines() {
+            if let Some(caps) = localnet_re.captures(line) {
+                if let Some(dev_str) = caps.name("dev") {
+                    let dev_str = dev_str.as_str();
+                    for i in interfaces() {
+                        if i.name == dev_str {
+                            interface = Some(i.clone());
+                            break;
+                        }
+                    }
+                }
+            } else if let Some(caps) = route_re.captures(line) {
+                if let Some(dev_str) = caps.name("dev") {
+                    let dev_str = dev_str.as_str();
+                    let interfaces = interfaces();
+                    for i in interfaces {
+                        if i.name == dev_str {
+                            interface = Some(i.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        match interface {
+            Some(i) => Ok(i),
+            None => Err(PistolError::CanNotFoundInterface {
+                i: format!("to dst {}", dst_addr),
+            }),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    pub(crate) fn infer_net_info(
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
@@ -329,8 +395,7 @@ impl NeighborInfo {
                 }
                 if let Some(dev_str) = caps.name("dev") {
                     let dev_str = dev_str.as_str();
-                    let interfaces = interfaces();
-                    for i in interfaces {
+                    for i in interfaces() {
                         if i.name == dev_str {
                             interface = Some(i.clone());
                             break;
@@ -524,9 +589,9 @@ impl NeighborInfo {
             inferred_src_mac,
             inferred_dst_addr,
             inferred_src_addr,
-            dst_addr,
-            src_addr,
-            interface,
+            ori_dst_addr: dst_addr,
+            ori_src_addr: src_addr,
+            inferred_interface: interface,
             cached,
             cost,
             valid,
@@ -540,7 +605,84 @@ impl NeighborInfo {
         target_os = "netbsd",
         target_os = "macos"
     ))]
-    pub(crate) fn infer(
+    pub(crate) fn infer_interface(
+        &mut self,
+        dst_addr: IpAddr,
+    ) -> Result<NetworkInterface, PistolError> {
+        let start = Instant::now();
+        let output = match dst_addr {
+            IpAddr::V4(ipv4) => Command::new("route")
+                .arg("-n")
+                .arg("get")
+                .arg(ipv4.to_string())
+                .output()?,
+            IpAddr::V6(ipv6) => Command::new("route")
+                .arg("-n")
+                .arg("get")
+                .arg("-inet6")
+                .arg(ipv6.to_string())
+                .output()?,
+        };
+
+        // ➜  pistol-rs git:(dev) ✗ route -n get 192.168.5.78
+        //    route to: 192.168.5.78
+        // destination: 192.168.5.0
+        //        mask: 255.255.255.0
+        //   interface: bridge101
+        //       flags: <UP,DONE,CLONING>
+        //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+        //        0         0         0         0         0         0      1500    -96267
+        // ➜  pistol-rs git:(dev) ✗ route -n get 114.114.114.114
+        //    route to: 114.114.114.114
+        // destination: default
+        //        mask: default
+        //     gateway: 192.168.0.1
+        //   interface: en0
+        //       flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
+        //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+        // ➜  pistol-rs git:(dev) ✗ route -n get -inet6 fd15:4ba5:5a2b:1002:20c:29ff:fe65:2d9b
+        //    route to: fd15:4ba5:5a2b:1002:20c:29ff:fe65:2d9b
+        // destination: ::
+        //        mask: default
+        //     gateway: fe80::face:21ff:fe39:5bf4%en0
+        //   interface: en0
+        //       flags: <UP,GATEWAY,DONE,PRCLONING,GLOBAL>
+        //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+        //        0         0         0         0         0         0      1500         0
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut interface = None;
+
+        for line in output_str.lines() {
+            if line.contains("interface:") {
+                let line_split: Vec<&str> = line.split(":").map(|x| x.trim()).collect();
+                if line_split.len() >= 2 {
+                    let interface_name = line_split[1];
+                    for i in interfaces() {
+                        if i.name == interface_name {
+                            interface = Some(i.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        match interface {
+            Some(i) => Ok(i),
+            None => {
+                return Err(PistolError::CanNotFoundInterface {
+                    i: format!("to dst {}", dst_addr),
+                });
+            }
+        }
+    }
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "macos"
+    ))]
+    pub(crate) fn infer_net_info(
         &mut self,
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
@@ -596,8 +738,7 @@ impl NeighborInfo {
                 let line_split: Vec<&str> = line.split(":").map(|x| x.trim()).collect();
                 if line_split.len() >= 2 {
                     let interface_name = line_split[1];
-                    let interfaces = interfaces();
-                    for i in interfaces {
+                    for i in interfaces() {
                         if i.name == interface_name {
                             interface = Some(i.clone());
                             break;
@@ -776,6 +917,21 @@ impl NeighborInfo {
 
         Ok(Some(ni))
     }
+    #[cfg(target_os = "windows")]
+    pub(crate) fn infer_net_info(
+        &mut self,
+        dst_addr: IpAddr,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Option<NetInfo>, PistolError> {
+        todo!()
+    }
+    #[cfg(target_os = "windows")]
+    pub(crate) fn infer_interface(
+        &mut self,
+        dst_addr: IpAddr,
+    ) -> Result<Option<NetInfo>, PistolError> {
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -788,10 +944,10 @@ mod tests {
         let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
         let src = None;
         let mut nis = NeighborInfo::new().unwrap();
-        if let Some(infer_result) = nis.infer(dst, src).unwrap() {
+        if let Some(infer_result) = nis.infer_net_info(dst, src).unwrap() {
             println!(
                 "infer result: {}, elapsed: {:?}",
-                infer_result.interface.name,
+                infer_result.inferred_interface.name,
                 start.elapsed()
             );
         } else {

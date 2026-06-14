@@ -53,6 +53,7 @@ use crate::SendWindow;
 use crate::Target;
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
+use crate::route::NeighborInfo;
 use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::utils::random_port;
@@ -156,36 +157,6 @@ fn loopback_interface() -> Result<NetworkInterface, PistolError> {
     Err(PistolError::CanNotFoundLoopbackInterface)
 }
 
-/// Find the network interface that can reach the destination address.
-fn find_interface_through_route_table(dst_addr: IpAddr) -> Result<NetworkInterface, PistolError> {
-    if dst_addr.is_loopback() {
-        return loopback_interface();
-    }
-
-    let rt = search_route_table(dst_addr)?;
-    match rt {
-        Some(rt) => {
-            return Ok(rt.dev);
-        }
-        None => (),
-    }
-
-    // if can not find the route
-    for n in interfaces() {
-        for ipn in &n.ips {
-            if ipn.ip() == dst_addr {
-                return loopback_interface();
-            } else if ipn.contains(dst_addr) {
-                return Ok(n.clone());
-            }
-        }
-    }
-
-    Err(PistolError::CanNotFoundInterface {
-        i: format!("to {}", dst_addr),
-    })
-}
-
 /// Find the source address that can reach the destination address,
 /// and it must be an address of the local machine.
 fn find_src_addr(
@@ -266,7 +237,8 @@ pub(crate) fn arp_scan_raw(
     let mut stream = PistolStream::new();
     stream.init(Some(String::from("arp and arp[6:2] = 2")))?;
 
-    let interface = find_interface_through_route_table(dst_ipv4.into())?;
+    let mut neighbor_output = NeighborInfo::new()?;
+    let interface = neighbor_output.infer_interface(dst_ipv4.into())?;
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
@@ -310,7 +282,6 @@ pub(crate) fn arp_scan_raw(
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
-                            update_neighbor_cache(addr, mac)?;
                             if !macs.contains(&mac) {
                                 macs.push(mac);
                                 all_done = true;
@@ -328,9 +299,8 @@ pub(crate) fn arp_scan_raw(
 
 fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
+    interface: NetworkInterface,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let interface = find_interface_through_route_table(dst_ipv4.into())?;
-
     let if_name = interface.name.clone();
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
@@ -366,7 +336,8 @@ pub(crate) fn ndp_ns_scan_raw(
     let mut stream = PistolStream::new();
     stream.init(Some(String::from("icmp6 and ip6[40] = 136")))?;
 
-    let interface = find_interface_through_route_table(dst_ipv6.into())?;
+    let mut neighbor_info = NeighborInfo::new()?;
+    let interface = neighbor_info.infer_interface(dst_ipv6.into())?;
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
@@ -410,7 +381,6 @@ pub(crate) fn ndp_ns_scan_raw(
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
                         Some((addr, mac)) => {
-                            update_neighbor_cache(addr, mac)?;
                             if !macs.contains(&mac) {
                                 all_done = true;
                                 macs.push(mac);
@@ -429,9 +399,8 @@ pub(crate) fn ndp_ns_scan_raw(
 
 pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
+    interface: NetworkInterface,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let interface = find_interface_through_route_table(dst_ipv6.into())?;
-
     let if_name = interface.name.clone();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
     let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
@@ -540,9 +509,10 @@ fn get_nmap_mac_prefixes() -> Result<HashMap<String, String>, PistolError> {
     Ok(nmap_mac_prefixes)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct MacScanState {
-    addr: IpAddr,
+    dst_addr: IpAddr,
+    interface: NetworkInterface,
     retries: usize,
     data_recved: bool,
 }
@@ -558,13 +528,17 @@ pub(crate) fn mac_scan(
         "(arp and arp[6:2] = 2) or (icmp6 and ip6[40] = 136)",
     )))?;
 
+    let mut neighbor_info = NeighborInfo::new()?;
+
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
     for t in targets {
         let dst_addr = t.dst_addr;
+        let interface = neighbor_info.infer_interface(dst_addr)?;
         let dst_port = 0;
         let state = MacScanState {
-            addr: dst_addr,
+            dst_addr,
+            interface,
             retries: 0,
             data_recved: false,
         };
@@ -583,7 +557,8 @@ pub(crate) fn mac_scan(
         let mut all_done = true;
         for (_key, state) in &mut loop_states {
             if state.retries < max_retries && !state.data_recved {
-                let dst_addr = state.addr;
+                let dst_addr = state.dst_addr;
+                let interface = state.interface.clone();
                 match dst_addr {
                     IpAddr::V4(dst_ipv4) => {
                         if window.check() {
@@ -596,7 +571,7 @@ pub(crate) fn mac_scan(
                             state.retries + 1,
                             max_retries
                         );
-                        let (spp, filters) = get_arp_scan_buff(dst_ipv4)?;
+                        let (spp, filters) = get_arp_scan_buff(dst_ipv4, interface)?;
                         all_filters.extend(filters);
 
                         stream.send_packet(spp)?;
@@ -616,7 +591,7 @@ pub(crate) fn mac_scan(
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
-                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6)?;
+                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6, interface.clone())?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
 
@@ -658,7 +633,7 @@ pub(crate) fn mac_scan(
                             #[cfg(feature = "debug")]
                             println!("recv mac scan response from {}, mac: {}", addr, mac);
                             for (_key, state) in &mut loop_states {
-                                if state.addr == addr {
+                                if state.dst_addr == addr {
                                     state.data_recved = true;
                                     let retries = state.retries;
                                     match mac_scan_rets.get_mut(&addr) {
@@ -676,7 +651,6 @@ pub(crate) fn mac_scan(
                                         }
                                     }
 
-                                    update_neighbor_cache(addr, mac)?;
                                     break;
                                 }
                             }
@@ -1092,7 +1066,7 @@ fn scan(
             for p in ni.dst_ports.clone() {
                 let dst_mac = ni.inferred_dst_mac;
                 let dst_addr = ni.inferred_dst_addr;
-                let o_dst_addr = ni.dst_addr;
+                let o_dst_addr = ni.ori_dst_addr;
                 let src_mac = ni.inferred_src_mac;
                 let src_addr = ni.inferred_src_addr;
                 let src_port = ni.src_port;
@@ -1112,7 +1086,7 @@ fn scan(
                     if_name: if_name,
                     cached,
                 };
-                loop_states.insert_ip_port(ni.dst_addr, p, state);
+                loop_states.insert_ip_port(ni.ori_dst_addr, p, state);
             }
         }
     }
@@ -1286,7 +1260,7 @@ fn scan_raw(
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
-    let addr_origin = net_info.dst_addr;
+    let addr_origin = net_info.ori_dst_addr;
     let src_port = match net_info.src_port {
         Some(s) => s,
         None => random_port(),
@@ -1579,9 +1553,9 @@ pub(crate) fn tcp_connect_scan(
     let reports = Arc::new(Mutex::new(Vec::new()));
     let mut handles = Vec::new();
     for ni in &net_infos {
-        let dst_addr = ni.dst_addr;
+        let dst_addr = ni.ori_dst_addr;
         let dst_ports = ni.dst_ports.clone();
-        let addr_origin = ni.dst_addr;
+        let addr_origin = ni.ori_dst_addr;
         let cached = false;
         for dst_port in dst_ports {
             let reports = reports.clone();
@@ -1654,9 +1628,9 @@ pub(crate) fn tcp_connect_scan_raw(
         return Err(PistolError::NoDstPortSpecified);
     }
 
-    let dst_addr = net_info.dst_addr;
+    let dst_addr = net_info.ori_dst_addr;
     let dst_port = net_info.dst_ports[0];
-    let addr_origin = net_info.dst_addr;
+    let addr_origin = net_info.ori_dst_addr;
     let cached = false;
 
     for i in 0..max_retries {
