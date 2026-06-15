@@ -391,7 +391,8 @@ pub fn os_detect(
     let mut ret = OsDetects::new(max_retries);
     let mut os_detects = Vec::new();
 
-    for ni in &net_infos {
+    for dt in &detect_targets {
+        let ni = &dt.net_info;
         if !ni.valid {
             let od = DetectReport::new_offline_host(ni.inferred_dst_addr);
             os_detects.push(od);
@@ -404,9 +405,13 @@ pub fn os_detect(
 
         let tx = tx.clone();
         recv_size += 1;
+
+        let dst_open_tcp_port = dt.dst_open_tcp_port;
+        let dst_closed_tcp_port = dt.dst_closed_tcp_port;
+        let dst_closed_udp_port = dt.dst_closed_udp_port;
+
         match dst_addr {
             IpAddr::V4(dst_ipv4) => {
-                let dst_ports = ni.dst_ports.clone();
                 let src_ipv4 = match ni.inferred_src_addr {
                     IpAddr::V4(src) => src,
                     _ => {
@@ -418,32 +423,25 @@ pub fn os_detect(
 
                 let nmap_os_db = get_nmap_os_db()?;
                 debug!("ipv4 nmap os db parse finish");
-                let if_name = ni.if_name.clone();
+                let interface = ni.inferred_interface.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
-                    let detect_rets = if dst_ports.len() >= 3 {
-                        let dst_open_tcp_port = dst_ports[0];
-                        let dst_closed_tcp_port = dst_ports[1];
-                        let dst_closed_udp_port = dst_ports[2];
-                        let os_detect_ret = os_probe_thread(
-                            dst_mac,
-                            dst_ipv4,
-                            dst_open_tcp_port,
-                            dst_closed_tcp_port,
-                            dst_closed_udp_port,
-                            src_mac,
-                            src_ipv4,
-                            if_name,
-                            nmap_os_db,
-                            top_k,
-                            timeout,
-                            max_retries,
-                        );
-                        os_detect_ret
-                    } else {
-                        Err(PistolError::OsDetectPortsNotEnough)
-                    };
-                    let od = match detect_rets {
+
+                    let detect_ret = os_probe_thread(
+                        dst_mac,
+                        dst_ipv4,
+                        dst_open_tcp_port,
+                        dst_closed_tcp_port,
+                        dst_closed_udp_port,
+                        src_mac,
+                        src_ipv4,
+                        interface,
+                        nmap_os_db,
+                        top_k,
+                        timeout,
+                        max_retries,
+                    );
+                    let od = match detect_ret {
                         Ok(Some((fingerprint, detects))) => {
                             let o = Detect {
                                 addr: dst_addr,
@@ -465,7 +463,6 @@ pub fn os_detect(
                 });
             }
             IpAddr::V6(dst_ipv6) => {
-                let dst_ports = ni.dst_ports.clone();
                 let src_ipv6 = match ni.inferred_src_addr {
                     IpAddr::V6(src) => src,
                     _ => {
@@ -477,33 +474,25 @@ pub fn os_detect(
 
                 let linear = gen_linear()?;
                 debug!("ipv6 gen linear parse finish");
-                let if_name = ni.if_name.clone();
+                let interface = ni.inferred_interface.clone();
                 pool.execute(move || {
                     let start_time = Instant::now();
-                    let detect_rets = if dst_ports.len() >= 3 {
-                        let dst_open_tcp_port = dst_ports[0];
-                        let dst_closed_tcp_port = dst_ports[1];
-                        let dst_closed_udp_port = dst_ports[2];
 
-                        let os_detect_ret = os_probe_thread6(
-                            dst_mac,
-                            dst_ipv6,
-                            dst_open_tcp_port,
-                            dst_closed_tcp_port,
-                            dst_closed_udp_port,
-                            src_mac,
-                            src_ipv6,
-                            if_name,
-                            top_k,
-                            linear,
-                            timeout,
-                            max_retries,
-                        );
-                        os_detect_ret
-                    } else {
-                        Err(PistolError::OsDetectPortsNotEnough)
-                    };
-                    let od = match detect_rets {
+                    let detect_ret = os_probe_thread6(
+                        dst_mac,
+                        dst_ipv6,
+                        dst_open_tcp_port,
+                        dst_closed_tcp_port,
+                        dst_closed_udp_port,
+                        src_mac,
+                        src_ipv6,
+                        interface,
+                        top_k,
+                        linear,
+                        timeout,
+                        max_retries,
+                    );
+                    let od = match detect_ret {
                         Ok((fingerprint, detects)) => {
                             let o = Detect6 {
                                 addr: dst_addr,
@@ -565,12 +554,13 @@ pub fn os_detect(
 }
 
 pub fn os_detect_raw(
-    net_info: NetInfo,
+    detect_target: DetectTarget,
     timeout: Duration,
     max_retries: usize,
     top_k: usize,
 ) -> Result<OsDetect, PistolError> {
     let mut os_detect = OsDetect::new();
+    let net_info = detect_target.net_info;
     if !net_info.valid {
         os_detect.finish(Some(DetectReport::new_offline_host(
             net_info.inferred_dst_addr,
@@ -582,11 +572,11 @@ pub fn os_detect_raw(
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
     let src_addr = net_info.inferred_src_addr;
-    let if_name = net_info.if_name.clone();
+    let interface = net_info.inferred_interface.clone();
 
-    let dst_open_tcp_port = net_info.dst_ports[0];
-    let dst_closed_tcp_port = net_info.dst_ports[1];
-    let dst_closed_udp_port = net_info.dst_ports[2];
+    let dst_open_tcp_port = detect_target.dst_open_tcp_port;
+    let dst_closed_tcp_port = detect_target.dst_closed_tcp_port;
+    let dst_closed_udp_port = detect_target.dst_closed_udp_port;
 
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -605,7 +595,7 @@ pub fn os_detect_raw(
                 dst_closed_udp_port,
                 src_mac,
                 src_ipv4,
-                if_name,
+                interface,
                 nmap_os_db,
                 top_k,
                 timeout,
@@ -654,7 +644,7 @@ pub fn os_detect_raw(
                 dst_closed_udp_port,
                 src_mac,
                 src_ipv6,
-                if_name,
+                interface,
                 top_k,
                 linear,
                 timeout,

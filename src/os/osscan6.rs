@@ -1,4 +1,5 @@
 use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
@@ -1409,7 +1410,7 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    if_name: String,
+    interface: NetworkInterface,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<AllPacketRR6, PistolError> {
@@ -1421,7 +1422,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
         detect_begin,
@@ -1432,7 +1433,7 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
         detect_begin,
@@ -1443,7 +1444,7 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
         detect_begin,
@@ -1455,7 +1456,7 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
         detect_begin,
@@ -1467,7 +1468,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
         detect_begin,
@@ -1480,7 +1481,7 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
         detect_begin,
@@ -1573,7 +1574,7 @@ pub(crate) fn os_probe_thread6(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    if_name: String,
+    interface: NetworkInterface,
     top_k: usize,
     linear: Linear,
     timeout: Duration,
@@ -1588,7 +1589,7 @@ pub(crate) fn os_probe_thread6(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
-        if_name.clone(),
+        interface.clone(),
         timeout,
         max_retries,
     )?;
@@ -1605,7 +1606,7 @@ pub(crate) fn os_probe_thread6(
         dst_closed_udp_port,
         src_mac,
         src_ipv6.into(),
-        if_name.clone(),
+        interface.clone(),
         timeout,
         good_results,
     )?;

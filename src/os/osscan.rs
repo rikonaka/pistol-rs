@@ -2,6 +2,8 @@ use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
 use pnet::datalink::MacAddr;
+use pnet::datalink::NetworkInterface;
+use pnet::datalink::interfaces;
 use pnet::packet::ethernet::EtherTypes;
 use rand::RngExt;
 use std::collections::HashMap;
@@ -64,7 +66,7 @@ use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
-use crate::route::dst_in_local_net;
+use crate::trace::TraceTarget;
 use crate::trace::icmp_trace;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
@@ -181,6 +183,17 @@ impl Fingerprint {
     }
 }
 
+fn dst_in_local_net(dst_addr: IpAddr) -> bool {
+    for i in interfaces() {
+        for ipn in i.ips {
+            if ipn.contains(dst_addr) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn get_scan_line(
     dst_mac: MacAddr,
     dst_addr: IpAddr,
@@ -189,7 +202,7 @@ pub(crate) fn get_scan_line(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_addr: IpAddr,
-    if_name: String,
+    interface: NetworkInterface,
     timeout: Duration,
     good_results: bool,
 ) -> Result<String, PistolError> {
@@ -240,21 +253,25 @@ pub(crate) fn get_scan_line(
         1
     } else {
         debug!("send trace packet");
-        let icmp_trace_net_info = NetInfo {
+        let net_info = NetInfo {
             inferred_dst_mac: dst_mac,
             inferred_src_mac: src_mac,
             inferred_dst_addr: dst_addr,
             inferred_src_addr: src_addr,
+            inferred_interface: interface.clone(),
             origin_dst_addr: dst_addr,
             origin_src_addr: Some(src_addr),
-            dst_ports: Vec::new(),
-            src_port: None,
-            if_name: if_name,
             cached: true,
             cost: Duration::ZERO,
             valid: true,
         };
-        let trace = icmp_trace(icmp_trace_net_info, timeout)?;
+        let trace_target = TraceTarget {
+            net_info: net_info.clone(),
+            if_name: interface.name.clone(),
+            dst_port: None,
+            src_port: None,
+        };
+        let trace = icmp_trace(trace_target, timeout)?;
         trace.hops
     };
 
@@ -962,7 +979,7 @@ fn send_all_probes(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    interface: NetworkInterface,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<AllPacketRR, PistolError> {
@@ -973,7 +990,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
     )?;
@@ -983,7 +1000,7 @@ fn send_all_probes(
         dst_ipv4,
         src_mac,
         src_ipv4,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
     )?;
@@ -994,7 +1011,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
     )?;
@@ -1006,7 +1023,7 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv4,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
     )?;
@@ -1017,7 +1034,7 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv4,
-        if_name.clone(),
+        interface.name.clone(),
         timeout,
         max_retries,
     )?;
@@ -1930,7 +1947,7 @@ pub(crate) fn os_probe_thread(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    interface: NetworkInterface,
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
@@ -1980,7 +1997,7 @@ pub(crate) fn os_probe_thread(
         dst_closed_udp_port,
         src_mac,
         src_ipv4,
-        if_name.clone(),
+        interface.clone(),
         timeout,
         max_retries,
     )?;
@@ -1996,7 +2013,7 @@ pub(crate) fn os_probe_thread(
         dst_closed_udp_port,
         src_mac,
         src_ipv4.into(),
-        if_name.clone(),
+        interface.clone(),
         timeout,
         good_results,
     )?;
