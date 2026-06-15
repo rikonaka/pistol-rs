@@ -229,15 +229,25 @@ fn syn_trace_ipv6(
     Ok(trace)
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct TraceTarget {
+    pub net_info: NetInfo,
+    pub if_name: String,
+    pub dst_port: Option<u16>,
+    pub src_port: Option<u16>,
+}
+
 /// The default target port is 80 if not specified.
-pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn syn_trace(trace_target: TraceTarget, timeout: Duration) -> Result<Trace, PistolError> {
+    let net_info = trace_target.net_info;
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
-    let dst_port = if net_info.dst_ports.len() > 0 {
-        net_info.dst_ports[0]
-    } else {
-        // The default port is 80 if not specified, which is the same as nmap.
-        80
+    let dst_port = match trace_target.dst_port {
+        Some(p) => p,
+        None => {
+            // The default port is 80 if not specified, which is the same as nmap.
+            80
+        }
     };
     let src_mac = net_info.inferred_src_mac;
 
@@ -251,7 +261,7 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     });
                 }
             };
-            let if_name = net_info.if_name.clone();
+            let if_name = net_info.inferred_interface.name.clone();
             syn_trace_ipv4(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, if_name, timeout,
             )
@@ -265,7 +275,7 @@ pub fn syn_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     });
                 }
             };
-            let if_name = net_info.if_name.clone();
+            let if_name = net_info.inferred_interface.name.clone();
             syn_trace_ipv6(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, if_name, timeout,
             )
@@ -411,7 +421,8 @@ fn icmp_trace_ipv6(
     Ok(trace)
 }
 
-pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn icmp_trace(trace_target: TraceTarget, timeout: Duration) -> Result<Trace, PistolError> {
+    let net_info = trace_target.net_info;
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
@@ -425,7 +436,7 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.if_name.clone();
+            let if_name = net_info.inferred_interface.name.clone();
             icmp_trace_ipv4(dst_mac, dst_ipv4, src_mac, src_ipv4, if_name, timeout)
         }
         IpAddr::V6(dst_ipv6) => {
@@ -435,7 +446,7 @@ pub fn icmp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolE
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.if_name.clone();
+            let if_name = net_info.inferred_interface.name.clone();
             icmp_trace_ipv6(dst_mac, dst_ipv6, src_mac, src_ipv6, if_name, timeout)
         }
     }
@@ -567,7 +578,8 @@ fn udp_trace_ipv6(
     Ok(trace)
 }
 
-pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn udp_trace(trace_target: TraceTarget, timeout: Duration) -> Result<Trace, PistolError> {
+    let net_info = trace_target.net_info;
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
@@ -580,7 +592,7 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.if_name.clone();
+            let if_name = net_info.inferred_interface.name.clone();
             udp_trace_ipv4(dst_mac, dst_ipv4, src_mac, src_ipv4, if_name, timeout)
         }
         IpAddr::V6(dst_ipv6) => {
@@ -590,7 +602,7 @@ pub fn udp_trace(net_info: NetInfo, timeout: Duration) -> Result<Trace, PistolEr
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.if_name.clone();
+            let if_name = net_info.inferred_interface.name.clone();
             udp_trace_ipv6(dst_mac, dst_ipv6, src_mac, src_ipv6, if_name, timeout)
         }
     }

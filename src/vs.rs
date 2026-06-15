@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn test_vs_detect() {
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
-        let target = Target::new(dst_ipv4, Some(vec![22, 80, 8080]));
+        let target = Target::new(dst_ipv4, vec![22, 80, 8080], None, None);
         let timeout = Duration::from_secs_f64(0.5);
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default

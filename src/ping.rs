@@ -509,10 +509,19 @@ struct PingState {
     retries: usize,
     data_recved: bool,
     net_info: NetInfo,
+    dst_port: u16,
+    src_port: Option<u16>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PingTarget {
+    pub net_info: NetInfo,
+    pub dst_ports: Vec<u16>,
+    pub src_port: Option<u16>,
 }
 
 fn ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     method: PingMethods,
     timeout: Duration,
     max_retries: usize,
@@ -525,17 +534,28 @@ fn ping(
     let mut reports = Vec::new();
 
     let mut loop_states = LoopStates::default();
-    for ni in net_infos {
+    for pt in ping_targets {
+        let ni = pt.net_info;
         if ni.valid {
-            let dst_addr = ni.ori_dst_addr;
-            let state = PingState {
-                retries: 0,
-                data_recved: false,
-                net_info: ni.clone(),
-            };
-            loop_states.insert_ip(dst_addr, state);
+            for dst_port in pt.dst_ports {
+                let dst_addr = ni.origin_dst_addr;
+                let state = PingState {
+                    retries: 0,
+                    data_recved: false,
+                    net_info: ni.clone(),
+                    dst_port,
+                    src_port: pt.src_port,
+                };
+                loop_states.insert_ip(dst_addr, state);
+            }
         }
     }
+
+    let no_port_vec = vec![
+        PingMethods::IcmpEcho,
+        PingMethods::IcmpTimeStamp,
+        PingMethods::Icmpv6Echo,
+    ];
 
     let mut window = SendWindow::new(speed);
     loop {
@@ -544,10 +564,14 @@ fn ping(
         for (_key, state) in &mut loop_states {
             let ni = state.net_info.clone();
             let dst_mac = ni.inferred_dst_mac;
-            let dst_addr = ni.inferred_dst_addr;
             let src_mac = ni.inferred_src_mac;
-            let src_port = ni.src_port;
-            let if_name = ni.if_name.clone();
+            let dst_addr = ni.inferred_dst_addr;
+            let src_addr = ni.inferred_src_addr;
+
+            let dst_port = state.dst_port;
+            let src_port = state.src_port;
+            let if_name = ni.inferred_interface.name.clone();
+
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
                     let src_port = match src_port {
@@ -564,18 +588,8 @@ fn ping(
                         }
                     };
 
-                    let no_port_vec = vec![
-                        PingMethods::IcmpEcho,
-                        PingMethods::IcmpTimeStamp,
-                        PingMethods::Icmpv6Echo,
-                    ];
-
                     let dst_port = if !no_port_vec.contains(&method) {
-                        if ni.dst_ports.len() > 0 {
-                            Some(ni.dst_ports[0])
-                        } else {
-                            None
-                        }
+                        Some(dst_port)
                     } else {
                         None
                     };
@@ -609,11 +623,13 @@ fn ping(
                         Some(p) => p,
                         None => random_port(),
                     };
-                    let dst_port = if ni.dst_ports.len() > 0 {
-                        Some(ni.dst_ports[0])
+
+                    let dst_port = if !no_port_vec.contains(&method) {
+                        Some(dst_port)
                     } else {
                         None
                     };
+
                     let dst_port =
                         if method != PingMethods::IcmpEcho && method != PingMethods::Icmpv6Echo {
                             dst_port
@@ -696,7 +712,7 @@ fn ping(
 }
 
 pub fn ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     method: PingMethods,
     timeout: Duration,
     max_retries: usize,
@@ -705,14 +721,16 @@ pub fn ping_raw(
     stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
 
     let mut host_ping = HostPing::new(max_retries);
+
+    let net_info = ping_target.net_info;
     if !net_info.valid {
         host_ping.finish(None);
         return Ok(host_ping);
     }
 
     let dst_mac = net_info.inferred_dst_mac;
-    let dst_port = if net_info.dst_ports.len() > 0 {
-        net_info.dst_ports[0]
+    let dst_port = if ping_target.dst_ports.len() > 0 {
+        ping_target.dst_ports[0]
     } else {
         match method {
             PingMethods::Syn => SYN_PING_DEFAULT_PORT,
@@ -721,12 +739,13 @@ pub fn ping_raw(
             _ => 0,
         }
     };
+
     let src_mac = net_info.inferred_src_mac;
-    let src_port = match net_info.src_port {
+    let src_port = match ping_target.src_port {
         Some(p) => p,
         None => random_port(),
     };
-    let if_name = net_info.if_name.clone();
+    let if_name = net_info.inferred_interface.name.clone();
 
     let (spp, filters) = match net_info.inferred_dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -823,69 +842,69 @@ pub fn ping_raw(
 }
 
 pub fn tcp_syn_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
-    ping(net_infos, PingMethods::Syn, timeout, max_retries, speed)
+    ping(ping_targets, PingMethods::Syn, timeout, max_retries, speed)
 }
 
 /// TCP SYN Ping, raw version.
 /// Only for one target and one port.
 pub fn tcp_syn_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::Syn, timeout, max_retries)
+    ping_raw(ping_target, PingMethods::Syn, timeout, max_retries)
 }
 
 pub fn tcp_ack_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
-    ping(net_infos, PingMethods::Ack, timeout, max_retries, speed)
+    ping(ping_targets, PingMethods::Ack, timeout, max_retries, speed)
 }
 
 /// TCP ACK Ping, raw version.
 /// Only for one target and one port.
 pub fn tcp_ack_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::Ack, timeout, max_retries)
+    ping_raw(ping_target, PingMethods::Ack, timeout, max_retries)
 }
 
 pub fn udp_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
-    ping(net_infos, PingMethods::Udp, timeout, max_retries, speed)
+    ping(ping_targets, PingMethods::Udp, timeout, max_retries, speed)
 }
 
 /// UDP Ping, raw version.
 pub fn udp_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::Udp, timeout, max_retries)
+    ping_raw(ping_target, PingMethods::Udp, timeout, max_retries)
 }
 
 pub fn icmp_echo_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
     ping(
-        net_infos,
+        ping_targets,
         PingMethods::IcmpEcho,
         timeout,
         max_retries,
@@ -894,21 +913,21 @@ pub fn icmp_echo_ping(
 }
 
 pub fn icmp_echo_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_retries)
+    ping_raw(ping_target, PingMethods::IcmpEcho, timeout, max_retries)
 }
 
 pub fn icmp_timestamp_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
     ping(
-        net_infos,
+        ping_targets,
         PingMethods::IcmpTimeStamp,
         timeout,
         max_retries,
@@ -917,21 +936,26 @@ pub fn icmp_timestamp_ping(
 }
 
 pub fn icmp_timestamp_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpTimeStamp, timeout, max_retries)
+    ping_raw(
+        ping_target,
+        PingMethods::IcmpTimeStamp,
+        timeout,
+        max_retries,
+    )
 }
 
 pub fn icmp_address_mask_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
     ping(
-        net_infos,
+        ping_targets,
         PingMethods::IcmpAddressMask,
         timeout,
         max_retries,
@@ -940,21 +964,26 @@ pub fn icmp_address_mask_ping(
 }
 
 pub fn icmp_address_mask_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpAddressMask, timeout, max_retries)
+    ping_raw(
+        ping_target,
+        PingMethods::IcmpAddressMask,
+        timeout,
+        max_retries,
+    )
 }
 
 pub fn icmpv6_ping(
-    net_infos: Vec<NetInfo>,
+    ping_targets: Vec<PingTarget>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<HostPings, PistolError> {
     ping(
-        net_infos,
+        ping_targets,
         PingMethods::Icmpv6Echo,
         timeout,
         max_retries,
@@ -963,9 +992,9 @@ pub fn icmpv6_ping(
 }
 
 pub fn icmp_ping_raw(
-    net_info: NetInfo,
+    ping_target: PingTarget,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<HostPing, PistolError> {
-    ping_raw(net_info, PingMethods::IcmpEcho, timeout, max_retries)
+    ping_raw(ping_target, PingMethods::IcmpEcho, timeout, max_retries)
 }

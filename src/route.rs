@@ -49,8 +49,8 @@ pub(crate) struct NetInfo {
     /// Original user input destination IP address,
     /// which may be the same as infer_dst_addr if user input a valid IP address,
     /// or may be different if user input a hostname or an invalid IP address.
-    pub ori_dst_addr: IpAddr,
-    pub ori_src_addr: Option<IpAddr>,
+    pub origin_dst_addr: IpAddr,
+    pub origin_src_addr: Option<IpAddr>,
 }
 
 impl NetInfo {
@@ -64,8 +64,8 @@ impl NetInfo {
             cached: true,
             cost: Duration::ZERO,
             valid: false,
-            ori_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            ori_src_addr: None,
+            origin_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            origin_src_addr: None,
         }
     }
 }
@@ -589,8 +589,8 @@ impl NeighborInfo {
             inferred_src_mac,
             inferred_dst_addr,
             inferred_src_addr,
-            ori_dst_addr: dst_addr,
-            ori_src_addr: src_addr,
+            origin_dst_addr: dst_addr,
+            origin_src_addr: src_addr,
             inferred_interface: interface,
             cached,
             cost,

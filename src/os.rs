@@ -370,8 +370,16 @@ fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct DetectTarget {
+    pub net_info: NetInfo,
+    pub dst_open_tcp_port: u16,
+    pub dst_closed_tcp_port: u16,
+    pub dst_closed_udp_port: u16,
+}
+
 pub fn os_detect(
-    net_infos: Vec<NetInfo>,
+    detect_targets: Vec<DetectTarget>,
     threads: usize,
     timeout: Duration,
     max_retries: usize,

@@ -1034,14 +1034,9 @@ fn parse_response(eth_response: &[u8], method: ScanMethod) -> Result<PortStatus,
 struct PortScanState {
     retries: usize,
     recved: bool,
-    dst_mac: MacAddr,
-    dst_addr: IpAddr,
-    o_dst_addr: IpAddr,
+    net_info: NetInfo,
     dst_port: u16,
-    src_mac: MacAddr,
-    src_addr: IpAddr,
     src_port: Option<u16>,
-    if_name: String,
     cached: bool,
 }
 
@@ -1071,30 +1066,19 @@ fn scan(
     for st in scan_targets {
         let nt = st.net_info;
         if nt.valid {
-            for p in st.dst_ports.clone() {
-                let dst_mac = nt.inferred_dst_mac;
-                let dst_addr = nt.inferred_dst_addr;
-                let o_dst_addr = nt.ori_dst_addr;
-                let src_mac = nt.inferred_src_mac;
-                let src_addr = nt.inferred_src_addr;
-                let src_port = st.src_port;
+            for dst_port in st.dst_ports {
                 let if_name = nt.inferred_interface.name.clone();
                 let cached = nt.cached;
 
                 let state = PortScanState {
                     retries: 0,
                     recved: false,
-                    dst_mac,
-                    dst_addr,
-                    o_dst_addr,
-                    dst_port: p,
-                    src_mac,
-                    src_addr,
-                    src_port,
-                    if_name: if_name,
+                    net_info: nt.clone(),
+                    dst_port,
+                    src_port: st.src_port,
                     cached,
                 };
-                loop_states.insert_ip_port(nt.ori_dst_addr, p, state);
+                loop_states.insert_ip_port(nt.origin_dst_addr, dst_port, state);
             }
         }
     }
@@ -1109,10 +1093,13 @@ fn scan(
 
         let mut all_done = true;
         for (_key, state) in &mut loop_states {
-            let dst_mac = state.dst_mac;
-            let dst_addr = state.dst_addr;
+            let net_info = &state.net_info;
+            let dst_mac = net_info.inferred_dst_mac;
+            let src_mac = net_info.inferred_src_mac;
+            let dst_addr = net_info.inferred_dst_addr;
+            let src_addr = net_info.inferred_src_addr;
+
             let dst_port = state.dst_port;
-            let src_mac = state.src_mac;
             let src_port = match state.src_port {
                 Some(s) => s,
                 None => random_port(),
@@ -1120,12 +1107,10 @@ fn scan(
 
             match dst_addr {
                 IpAddr::V4(dst_ipv4) => {
-                    let src_ipv4 = match state.src_addr {
+                    let src_ipv4 = match src_addr {
                         IpAddr::V4(s) => s,
                         _ => {
-                            return Err(PistolError::AttackAddressNotMatch {
-                                addr: state.src_addr,
-                            });
+                            return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                         }
                     };
 
@@ -1134,7 +1119,7 @@ fn scan(
                             break;
                         }
 
-                        let if_name = state.if_name.clone();
+                        let if_name = net_info.inferred_interface.name.clone();
                         let (spp, filters) = build_scan_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
                             method,
@@ -1147,19 +1132,17 @@ fn scan(
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
-                    let src_ipv6 = match state.src_addr {
+                    let src_ipv6 = match src_addr {
                         IpAddr::V6(s) => s,
                         _ => {
-                            return Err(PistolError::AttackAddressNotMatch {
-                                addr: state.src_addr,
-                            });
+                            return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                         }
                     };
                     if state.retries < max_retries && !state.recved {
                         if window.check() {
                             break;
                         }
-                        let if_name = state.if_name.clone();
+                        let if_name = net_info.inferred_interface.name.clone();
                         let (spp, filters) = build_scan_buff6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
                             method,
@@ -1191,9 +1174,10 @@ fn scan(
                         if let Some(state) = loop_states.get_ip_port_mut(addr, port) {
                             state.recved = true;
 
+                            let net_info = &state.net_info;
                             let retries = state.retries;
-                            let addr = state.dst_addr;
-                            let origin_addr = state.o_dst_addr;
+                            let addr = net_info.inferred_dst_addr;
+                            let origin_addr = net_info.origin_dst_addr;
                             let port = state.dst_port;
                             let cached = state.cached;
 
@@ -1213,9 +1197,10 @@ fn scan(
                         if let Some(state) = loop_states.get_ip_mut(addr) {
                             state.recved = true;
 
+                            let net_info = &state.net_info;
                             let retries = state.retries;
-                            let addr = state.dst_addr;
-                            let origin_addr = state.o_dst_addr;
+                            let addr = net_info.inferred_dst_addr;
+                            let origin_addr = net_info.origin_dst_addr;
                             let port = state.dst_port;
                             let cached = state.cached;
 
@@ -1269,7 +1254,7 @@ fn scan_raw(
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
     let src_mac = net_info.inferred_src_mac;
-    let addr_origin = net_info.ori_dst_addr;
+    let addr_origin = net_info.origin_dst_addr;
     let src_port = match scan_target.src_port {
         Some(s) => s,
         None => random_port(),
@@ -1563,9 +1548,9 @@ pub(crate) fn tcp_connect_scan(
     let mut handles = Vec::new();
     for st in &scan_targets {
         let ni = &st.net_info;
-        let dst_addr = ni.ori_dst_addr;
+        let dst_addr = ni.origin_dst_addr;
         let dst_ports = st.dst_ports.clone();
-        let addr_origin = ni.ori_dst_addr;
+        let addr_origin = ni.origin_dst_addr;
         let cached = false;
         for dst_port in dst_ports {
             let reports = reports.clone();
@@ -1639,9 +1624,9 @@ pub(crate) fn tcp_connect_scan_raw(
     }
 
     let net_info = scan_target.net_info;
-    let dst_addr = net_info.ori_dst_addr;
+    let dst_addr = net_info.origin_dst_addr;
     let dst_port = scan_target.dst_ports[0];
-    let addr_origin = net_info.ori_dst_addr;
+    let addr_origin = net_info.origin_dst_addr;
     let cached = false;
 
     for i in 0..max_retries {
