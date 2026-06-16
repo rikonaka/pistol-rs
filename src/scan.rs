@@ -2,26 +2,9 @@
 use bitcode;
 use chrono::DateTime;
 use chrono::Local;
+use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
-use prettytable::Cell;
-use prettytable::Row;
-use prettytable::Table;
-use prettytable::row;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::fmt;
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
-use std::sync::Mutex;
-use std::thread;
-use std::time::Duration;
-use std::time::Instant;
-use subnetwork::Ipv4AddrExt;
-use subnetwork::Ipv6AddrExt;
-use tracing::error;
-
-use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherTypes;
@@ -31,9 +14,25 @@ use pnet::packet::icmpv6::Icmpv6Types;
 use pnet::packet::icmpv6::ndp::NeighborAdvertPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv6::Ipv6Packet;
+use prettytable::Cell;
+use prettytable::Row;
+use prettytable::Table;
+use prettytable::row;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::fmt;
 use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
+use std::time::Instant;
+use subnetwork::Ipv4AddrExt;
+use subnetwork::Ipv6AddrExt;
 use tracing::debug;
+use tracing::error;
 
 pub(crate) mod arp;
 pub(crate) mod ndp_ns;
@@ -44,13 +43,15 @@ pub(crate) mod udp;
 pub(crate) mod udp6;
 
 use crate::LoopStates;
+use crate::MacScanTarget;
 use crate::NetInfo;
 use crate::PacketFilter;
 use crate::PistolStream;
+use crate::PortScanTargetWithNetInfo;
 use crate::SendPacketParam;
 use crate::SendSpeed;
 use crate::SendWindow;
-use crate::Target;
+
 use crate::error::PistolError;
 use crate::layer::ipv6_multicast_mac;
 use crate::route::NeighborInfo;
@@ -518,7 +519,7 @@ struct MacScanState {
 }
 
 pub(crate) fn mac_scan(
-    targets: &[Target],
+    targets: &[MacScanTarget],
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -751,75 +752,6 @@ impl PortReport {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PortScan {
-    /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
-    /// so we record the time cost seconds of layer2 here.
-    pub layer2_cost: Duration,
-    pub port_report: Option<PortReport>,
-    pub start_time: DateTime<Local>,
-    pub finish_time: DateTime<Local>,
-    pub max_retries: usize,
-}
-
-impl fmt::Display for PortScan {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut table = Table::new();
-        table.add_row(Row::new(vec![
-            Cell::new("Port Scan").style_spec("c").with_hspan(4),
-        ]));
-
-        table.add_row(row![c -> "addr", c -> "port", c-> "status", c -> "retries"]);
-
-        match self.port_report {
-            Some(report) => {
-                let addr_str = format!("{}", report.origin_addr);
-                let status_str = format!("{}", report.status);
-                let time_cost_str = format!("{}", report.retries);
-
-                table.add_row(
-                    row![c -> addr_str, c -> report.port, c -> status_str, c -> time_cost_str],
-                );
-            }
-            None => (),
-        }
-
-        let summary1 = format!(
-            "start at: {}, finish at: {}, max_retries: {}",
-            self.start_time.format("%Y-%m-%d %H:%M:%S"),
-            self.finish_time.format("%Y-%m-%d %H:%M:%S"),
-            self.max_retries,
-        );
-        let total_cost = self.finish_time - self.start_time;
-        let total_cost = total_cost.as_seconds_f32();
-        let layer2_cost = self.layer2_cost.as_secs_f32();
-        let summary2 = format!(
-            "layer2 cost: {:.2}s, total cost: {:.2}s",
-            layer2_cost, total_cost
-        );
-        let summary = format!("{}\n{}", summary1, summary2);
-        table.add_row(Row::new(vec![Cell::new(&summary).with_hspan(4)]));
-        write!(f, "{}", table)
-    }
-}
-
-impl PortScan {
-    pub(crate) fn new(max_retries: usize) -> Self {
-        let now = Local::now();
-        Self {
-            layer2_cost: Duration::ZERO,
-            port_report: None,
-            start_time: now,
-            finish_time: now,
-            max_retries,
-        }
-    }
-    pub(crate) fn finish(&mut self, port_report: Option<PortReport>) {
-        self.finish_time = Local::now();
-        self.port_report = port_report;
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PortScans {
     /// Searching ip on arp cache or send arp (or ndp_ns) packet will cost some time,
@@ -1040,16 +972,9 @@ struct PortScanState {
     cached: bool,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ScanTarget {
-    pub net_info: NetInfo,
-    pub dst_ports: Vec<u16>,
-    pub src_port: Option<u16>,
-}
-
 /// General scan function.
 fn scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
@@ -1067,7 +992,6 @@ fn scan(
         let nt = st.net_info;
         if nt.valid {
             for dst_port in st.dst_ports {
-                let if_name = nt.inferred_interface.name.clone();
                 let cached = nt.cached;
 
                 let state = PortScanState {
@@ -1235,19 +1159,19 @@ fn scan(
 }
 
 fn scan_raw(
-    scan_target: ScanTarget,
+    scan_target: PortScanTargetWithNetInfo,
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
     filter: Option<String>,
-) -> Result<PortScan, PistolError> {
+) -> Result<PortScans, PistolError> {
     let mut stream = PistolStream::new();
     stream.init(filter)?;
 
-    let mut port_scan = PortScan::new(max_retries);
+    let mut port_scan = PortScans::new(max_retries);
     let net_info = scan_target.net_info;
     if !net_info.valid {
-        port_scan.finish(None);
+        port_scan.finish(Vec::new());
         return Ok(port_scan);
     }
 
@@ -1321,7 +1245,7 @@ fn scan_raw(
                                 cached,
                                 retries: i + 1,
                             };
-                            port_scan.finish(Some(report));
+                            port_scan.finish(vec![report]);
                             return Ok(port_scan);
                         }
                     } else if let Some(addr) = f.icmp_ip() {
@@ -1336,7 +1260,7 @@ fn scan_raw(
                                 cached,
                                 retries: i + 1,
                             };
-                            port_scan.finish(Some(report));
+                            port_scan.finish(vec![report]);
                             return Ok(port_scan);
                         }
                     }
@@ -1344,12 +1268,12 @@ fn scan_raw(
             }
         }
     }
-    port_scan.finish(None);
+    port_scan.finish(Vec::new());
     Ok(port_scan)
 }
 
 pub(crate) fn tcp_syn_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1367,20 +1291,8 @@ pub(crate) fn tcp_syn_scan(
     )
 }
 
-/// TCP SYN Scan, raw version.
-pub(crate) fn tcp_syn_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let filter = Some(String::from(
-        "(tcp and (((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)) or ((tcp[tcpflags] & tcp-rst) != 0))) or (icmp and icmp[0] == 3 and (icmp[1] == 1 or icmp[1] == 2 or icmp[1] == 3 or icmp[1] == 9 or icmp[1] == 10 or icmp[1] == 13)) or (icmp6 and icmp6[0] == 1 and (icmp6[1] == 0 or icmp6[1] == 1 or icmp6[1] == 3 or icmp6[1] == 4))",
-    ));
-    scan_raw(scan_target, ScanMethod::Syn, timeout, max_retries, filter)
-}
-
 pub(crate) fn tcp_fin_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1398,20 +1310,8 @@ pub(crate) fn tcp_fin_scan(
     )
 }
 
-/// TCP FIN Scan, raw version.
-pub(crate) fn tcp_fin_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let filter = Some(String::from(
-        "tcp and (tcp[13] & 0x11 != 0) or (icmp and ip[icmplen] == 3 and ip[icmplen+1] == 3)",
-    ));
-    scan_raw(scan_target, ScanMethod::Fin, timeout, max_retries, filter)
-}
-
 pub(crate) fn tcp_ack_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1427,18 +1327,8 @@ pub(crate) fn tcp_ack_scan(
     )
 }
 
-/// TCP ACK Scan, raw version.
-pub(crate) fn tcp_ack_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let filter = Some(String::from("tcp and tcp[13] & 0x10 != 0"));
-    scan_raw(scan_target, ScanMethod::Ack, timeout, max_retries, filter)
-}
-
 pub(crate) fn tcp_null_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1453,17 +1343,8 @@ pub(crate) fn tcp_null_scan(
     )
 }
 
-/// TCP Null Scan, raw version.
-pub(crate) fn tcp_null_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    scan_raw(scan_target, ScanMethod::Null, timeout, max_retries, None)
-}
-
 pub(crate) fn tcp_xmas_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1478,17 +1359,8 @@ pub(crate) fn tcp_xmas_scan(
     )
 }
 
-/// TCP Xmas Scan, raw version.
-pub(crate) fn tcp_xmas_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    scan_raw(scan_target, ScanMethod::Xmas, timeout, max_retries, None)
-}
-
 pub(crate) fn tcp_window_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1503,17 +1375,8 @@ pub(crate) fn tcp_window_scan(
     )
 }
 
-/// TCP Window Scan, raw version.
-pub(crate) fn tcp_window_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    scan_raw(scan_target, ScanMethod::Window, timeout, max_retries, None)
-}
-
 pub(crate) fn tcp_maimon_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1528,17 +1391,8 @@ pub(crate) fn tcp_maimon_scan(
     )
 }
 
-/// TCP Maimon Scan, raw version.
-pub(crate) fn tcp_maimon_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    scan_raw(scan_target, ScanMethod::Maimon, timeout, max_retries, None)
-}
-
 pub(crate) fn tcp_connect_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     _speed: SendSpeed,
@@ -1612,72 +1466,8 @@ pub(crate) fn tcp_connect_scan(
     Ok(port_scans)
 }
 
-/// TCP connect() Scan, raw version.
-pub(crate) fn tcp_connect_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let mut port_scan = PortScan::new(max_retries);
-    if scan_target.dst_ports.len() == 0 {
-        return Err(PistolError::NoDstPortSpecified);
-    }
-
-    let net_info = scan_target.net_info;
-    let dst_addr = net_info.origin_dst_addr;
-    let dst_port = scan_target.dst_ports[0];
-    let addr_origin = net_info.origin_dst_addr;
-    let cached = false;
-
-    for i in 0..max_retries {
-        let ret = tcp::send_connect_scan_packet(dst_addr, dst_port, timeout);
-        match ret {
-            Ok(port_status) => {
-                if port_status == PortStatus::Open || i == max_retries - 1 {
-                    let report = PortReport {
-                        addr: addr_origin,
-                        origin_addr: addr_origin,
-                        port: dst_port,
-                        status: port_status,
-                        cached,
-                        retries: i + 1,
-                    };
-                    port_scan.finish(Some(report));
-                    return Ok(port_scan);
-                }
-            }
-            Err(_e) => {
-                if i == max_retries - 1 {
-                    let port_status = PortStatus::Error;
-                    let report = PortReport {
-                        addr: addr_origin,
-                        origin_addr: addr_origin,
-                        port: dst_port,
-                        status: port_status,
-                        cached,
-                        retries: i + 1,
-                    };
-                    port_scan.finish(Some(report));
-                    return Ok(port_scan);
-                }
-            }
-        }
-    }
-
-    let report = PortReport {
-        addr: addr_origin,
-        origin_addr: addr_origin,
-        port: dst_port,
-        status: PortStatus::Closed,
-        cached,
-        retries: max_retries,
-    };
-    port_scan.finish(Some(report));
-    Ok(port_scan)
-}
-
 pub(crate) fn udp_scan(
-    scan_targets: Vec<ScanTarget>,
+    scan_targets: Vec<PortScanTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     speed: SendSpeed,
@@ -1691,16 +1481,6 @@ pub(crate) fn udp_scan(
         filter,
         speed,
     )
-}
-
-/// UDP Scan, raw version.
-pub(crate) fn udp_scan_raw(
-    scan_target: ScanTarget,
-    timeout: Duration,
-    max_retries: usize,
-) -> Result<PortScan, PistolError> {
-    let filter = None;
-    scan_raw(scan_target, ScanMethod::Udp, timeout, max_retries, filter)
 }
 
 #[cfg(test)]
