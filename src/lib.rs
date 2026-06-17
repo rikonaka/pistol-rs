@@ -1837,15 +1837,10 @@ impl Pistol {
     /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    pub fn tcp_ack_ping(
-        &mut self,
-        targets: &[Target],
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
-    ) -> Result<HostPings, PistolError> {
+    pub fn tcp_ack_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
+        let (ping_targets, dur) = PingTargetWithNetInfo::infer_tcp_multi(targets)?;
+        let mut ret = ping::tcp_ack_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1860,10 +1855,16 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<HostPing, PistolError> {
+    ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::tcp_ack_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let (ping_target, dur) =
+            PingTargetWithNetInfo::infer_tcp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = ping::tcp_ack_ping(
+            vec![ping_target],
+            self.timeout,
+            self.max_retries,
+            self.speed,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1871,15 +1872,10 @@ impl Pistol {
     /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    pub fn tcp_syn_ping(
-        &mut self,
-        targets: &[Target],
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
-    ) -> Result<HostPings, PistolError> {
+    pub fn tcp_syn_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
+        let (ping_targets, dur) = PingTargetWithNetInfo::infer_tcp_multi(targets)?;
+        let mut ret = ping::tcp_syn_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1894,10 +1890,16 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<HostPing, PistolError> {
+    ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::tcp_syn_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let (ping_target, dur) =
+            PingTargetWithNetInfo::infer_tcp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = ping::tcp_syn_ping(
+            vec![ping_target],
+            self.timeout,
+            self.max_retries,
+            self.speed,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1905,15 +1907,10 @@ impl Pistol {
     /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    pub fn udp_ping(
-        &mut self,
-        targets: &[Target],
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
-    ) -> Result<HostPings, PistolError> {
+    pub fn udp_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (net_infos, dur) = self.get_netinfo(targets, src_addr, src_port)?;
-        let mut ret = ping::udp_ping(net_infos, self.timeout, self.max_retries, self.speed)?;
+        let (ping_targets, dur) = PingTargetWithNetInfo::infer_tcp_multi(targets)?;
+        let mut ret = ping::udp_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1928,10 +1925,16 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<HostPing, PistolError> {
+    ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (net_info, dur) = self.get_netinfo_raw(dst_addr, vec![dst_port], src_addr, src_port)?;
-        let mut ret = ping::udp_ping_raw(net_info, self.timeout, self.max_retries)?;
+        let (ping_target, dur) =
+            PingTargetWithNetInfo::infer_tcp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let mut ret = ping::udp_ping(
+            vec![ping_target],
+            self.timeout,
+            self.max_retries,
+            self.speed,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2673,15 +2676,16 @@ impl IcmpPingTarget {
     }
 }
 
+/// For TCP and UDP ping use.
 #[derive(Debug, Clone)]
-pub struct TcpPingTarget {
+pub struct XxpPingTarget {
     pub dst_addr: IpAddr,
     pub dst_ports: Vec<u16>,
     pub src_addr: Option<IpAddr>,
     pub src_port: Option<u16>,
 }
 
-impl TcpPingTarget {
+impl XxpPingTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
@@ -2810,7 +2814,7 @@ impl PingTargetWithNetInfo {
         let cost = start.elapsed();
         Ok((values, cost))
     }
-    fn infer_tcp_multi(targets: &[TcpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_tcp_multi(targets: &[XxpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
@@ -2863,6 +2867,30 @@ impl PingTargetWithNetInfo {
             Ok((p, cost))
         } else {
             Err(PistolError::CanNotFoundNetInfo)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TcpTraceTarget {
+    pub dst_addr: IpAddr,
+    pub dst_port: u16,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
+}
+
+impl TcpTraceTarget {
+    pub fn new(
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Self {
+        Self {
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
         }
     }
 }
