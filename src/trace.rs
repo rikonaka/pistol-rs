@@ -15,8 +15,8 @@ use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
 
-use crate::NetInfo;
 use crate::PistolStream;
+use crate::TraceTargetWithNetInfo;
 use crate::error::PistolError;
 use crate::utils::random_port_range;
 use crate::utils::time_to_string;
@@ -229,16 +229,11 @@ fn syn_trace_ipv6(
     Ok(trace)
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct TraceTarget {
-    pub net_info: NetInfo,
-    pub if_name: String,
-    pub dst_port: Option<u16>,
-    pub src_port: Option<u16>,
-}
-
 /// The default target port is 80 if not specified.
-pub fn syn_trace(trace_target: TraceTarget, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn syn_trace(
+    trace_target: TraceTargetWithNetInfo,
+    timeout: Duration,
+) -> Result<Trace, PistolError> {
     let net_info = trace_target.net_info;
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
@@ -421,7 +416,10 @@ fn icmp_trace_ipv6(
     Ok(trace)
 }
 
-pub fn icmp_trace(trace_target: TraceTarget, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn icmp_trace(
+    trace_target: TraceTargetWithNetInfo,
+    timeout: Duration,
+) -> Result<Trace, PistolError> {
     let net_info = trace_target.net_info;
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
@@ -578,7 +576,10 @@ fn udp_trace_ipv6(
     Ok(trace)
 }
 
-pub fn udp_trace(trace_target: TraceTarget, timeout: Duration) -> Result<Trace, PistolError> {
+pub fn udp_trace(
+    trace_target: TraceTargetWithNetInfo,
+    timeout: Duration,
+) -> Result<Trace, PistolError> {
     let net_info = trace_target.net_info;
     let dst_mac = net_info.inferred_dst_mac;
     let dst_addr = net_info.inferred_dst_addr;
