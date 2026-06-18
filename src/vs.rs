@@ -18,10 +18,9 @@ use tracing::debug;
 use tracing::error;
 use zip::ZipArchive;
 
-use crate::Target;
+use crate::VersionScanTarget;
 use crate::error::PistolError;
 use crate::utils::time_to_string;
-use crate::vs::dbparser::nmap_service_probes_parser;
 use crate::vs::vscan::MatchX;
 use crate::vs::vscan::vs_scan_thread;
 
@@ -141,11 +140,8 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 }
 
 pub fn vs_scan(
-    targets: &[Target],
+    targets: &[VersionScanTarget],
     threads: usize,
-    only_null_probe: bool,
-    only_tcp_recommended: bool,
-    only_udp_recommended: bool,
     intensity: usize,
     timeout: Duration,
 ) -> Result<PistolVsScans, PistolError> {
@@ -157,12 +153,17 @@ pub fn vs_scan(
     debug!("nmap service db load finish");
 
     let mut recv_size = 0;
-    for target in targets {
-        let dst_addr = target.dst_addr;
-        for &dst_port in &target.dst_ports {
-            let origin = target.origin_dst.clone();
+    for t in targets {
+        let dst_addr = t.dst_addr;
+        for &dst_port in &t.dst_ports {
+            let origin = t.origin.clone();
             let tx = tx.clone();
             let service_probes = service_probes.clone();
+
+            let only_null_probe = t.only_null_probe;
+            let only_tcp_recommended = t.only_tcp_recommended;
+            let only_udp_recommended = t.only_udp_recommended;
+
             debug!("dst: {}, port: {}", dst_addr, dst_port);
             pool.execute(move || {
                 let start_time = Instant::now();
@@ -205,73 +206,31 @@ pub fn vs_scan(
     Ok(ret)
 }
 
-pub fn vs_scan_raw(
-    dst_addr: IpAddr,
-    dst_port: u16,
-    only_null_probe: bool,
-    only_tcp_recommended: bool,
-    only_udp_recommended: bool,
-    intensity: usize,
-    timeout: Duration,
-) -> Result<PortService, PistolError> {
-    let nsp_str = include_str!("./db/nmap-service-probes");
-    let mut nsp_lines = Vec::new();
-    for l in nsp_str.lines() {
-        nsp_lines.push(l.to_string());
-    }
-    debug!("nmap service db load finish");
-
-    let service_probes = nmap_service_probes_parser(nsp_lines)?;
-    debug!("nmap service db parse finish");
-
-    let start_time = Instant::now();
-    match vs_scan_thread(
-        dst_addr,
-        dst_port,
-        only_null_probe,
-        only_tcp_recommended,
-        only_udp_recommended,
-        intensity,
-        service_probes,
-        timeout,
-    ) {
-        Ok(matchs) => {
-            let port_service = PortService {
-                addr: dst_addr,
-                port: dst_port,
-                origin: None,
-                matchs,
-                time_cost: start_time.elapsed(),
-            };
-            Ok(port_service)
-        }
-        Err(e) => Err(e),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Target;
+    use crate::Pistol;
+    use crate::VersionScanTarget;
     use std::net::Ipv4Addr;
     #[test]
     fn test_vs_detect() {
         let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
-        let target = Target::new(dst_ipv4, vec![22, 80, 8080], None, None);
-        let timeout = Duration::from_secs_f64(0.5);
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
-        let intensity = 7; // nmap default
-        let threads = 8;
-        let ret = vs_scan(
-            &[target],
-            threads,
+        let target = VersionScanTarget::new(
+            dst_ipv4,
+            vec![22, 80, 8080],
+            None,
+            None,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
-            intensity,
-            timeout,
-        )
-        .unwrap();
+        );
+        let intensity = 7; // nmap default
+        let threads = 8;
+
+        let mut pistol = Pistol::new();
+        pistol.set_timeout(0.5);
+        let ret = pistol.vs_scan(&[target], threads, intensity).unwrap();
         println!("{}", ret);
     }
 }

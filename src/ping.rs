@@ -499,12 +499,10 @@ fn ping(
                         None => random_port(),
                     };
 
-                    let src_ipv4 = match ni.inferred_src_addr {
+                    let src_ipv4 = match src_addr {
                         IpAddr::V4(src) => src,
                         _ => {
-                            return Err(PistolError::AttackAddressNotMatch {
-                                addr: ni.inferred_src_addr,
-                            });
+                            return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                         }
                     };
 
@@ -531,12 +529,10 @@ fn ping(
                     }
                 }
                 IpAddr::V6(dst_ipv6) => {
-                    let src_ipv6 = match ni.inferred_src_addr {
+                    let src_ipv6 = match src_addr {
                         IpAddr::V6(src) => src,
                         _ => {
-                            return Err(PistolError::AttackAddressNotMatch {
-                                addr: ni.inferred_src_addr,
-                            });
+                            return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                         }
                     };
                     let src_port = match src_port {

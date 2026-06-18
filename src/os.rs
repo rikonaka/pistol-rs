@@ -18,10 +18,10 @@ use std::time::Instant;
 use threadpool::ThreadPool;
 use tracing::debug;
 use tracing::error;
-use tracing::warn;
 use zip::ZipArchive;
 
 use crate::NetInfo;
+use crate::OsDetectTargetWithNetInfo;
 use crate::error::PistolError;
 use crate::os::dbparser::NmapOsDb;
 use crate::os::osscan::Fingerprint;
@@ -138,29 +138,6 @@ impl DetectReport {
             IpAddr::V4(_) => DetectReport::V4(Detect::new_offline_host(addr)),
             IpAddr::V6(_) => DetectReport::V6(Detect6::new_offline_host(addr)),
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OsDetect {
-    pub layer2_cost: Duration,
-    pub detect_report: Option<DetectReport>,
-    pub start_time: DateTime<Local>,
-    pub finish_time: DateTime<Local>,
-}
-
-impl OsDetect {
-    fn new() -> Self {
-        Self {
-            layer2_cost: Duration::ZERO,
-            detect_report: None,
-            start_time: Local::now(),
-            finish_time: Local::now(),
-        }
-    }
-    fn finish(&mut self, os_detect: Option<DetectReport>) {
-        self.finish_time = Local::now();
-        self.detect_report = os_detect;
     }
 }
 
@@ -379,7 +356,7 @@ pub(crate) struct DetectTarget {
 }
 
 pub fn os_detect(
-    detect_targets: Vec<DetectTarget>,
+    detect_targets: Vec<OsDetectTargetWithNetInfo>,
     threads: usize,
     timeout: Duration,
     max_retries: usize,
@@ -551,133 +528,4 @@ pub fn os_detect(
     }
     ret.finish(os_detects);
     Ok(ret)
-}
-
-pub fn os_detect_raw(
-    detect_target: DetectTarget,
-    timeout: Duration,
-    max_retries: usize,
-    top_k: usize,
-) -> Result<OsDetect, PistolError> {
-    let mut os_detect = OsDetect::new();
-    let net_info = detect_target.net_info;
-    if !net_info.valid {
-        os_detect.finish(Some(DetectReport::new_offline_host(
-            net_info.inferred_dst_addr,
-        )));
-        return Ok(os_detect);
-    }
-    let start_time = Instant::now();
-    let dst_mac = net_info.inferred_dst_mac;
-    let dst_addr = net_info.inferred_dst_addr;
-    let src_mac = net_info.inferred_src_mac;
-    let src_addr = net_info.inferred_src_addr;
-    let interface = net_info.inferred_interface.clone();
-
-    let dst_open_tcp_port = detect_target.dst_open_tcp_port;
-    let dst_closed_tcp_port = detect_target.dst_closed_tcp_port;
-    let dst_closed_udp_port = detect_target.dst_closed_udp_port;
-
-    match dst_addr {
-        IpAddr::V4(dst_ipv4) => {
-            let src_ipv4 = match src_addr {
-                IpAddr::V4(src) => src,
-                _ => return Err(PistolError::CanNotFoundSrcAddress),
-            };
-            let nmap_os_db = get_nmap_os_db()?;
-            debug!("ipv4 nmap os db parse finish");
-            let nmap_os_db = nmap_os_db.to_vec();
-            match os_probe_thread(
-                dst_mac,
-                dst_ipv4,
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-                src_mac,
-                src_ipv4,
-                interface,
-                nmap_os_db,
-                top_k,
-                timeout,
-                max_retries,
-            ) {
-                Ok(Some((fingerprint, detects))) => {
-                    let o = Detect {
-                        addr: dst_addr,
-                        alive: true,
-                        fingerprint,
-                        detects,
-                        layer3_cost: start_time.elapsed(),
-                        layer2_cost: Duration::ZERO,
-                    };
-                    let dr = DetectReport::V4(o);
-                    os_detect.finish(Some(dr));
-                    Ok(os_detect)
-                }
-                Ok(None) | Err(_) => {
-                    let o = Detect {
-                        addr: dst_addr,
-                        alive: false,
-                        fingerprint: Fingerprint::default(),
-                        detects: Vec::new(),
-                        layer3_cost: start_time.elapsed(),
-                        layer2_cost: Duration::ZERO,
-                    };
-                    let dr = DetectReport::V4(o);
-                    os_detect.finish(Some(dr));
-                    Ok(os_detect)
-                }
-            }
-        }
-        IpAddr::V6(dst_ipv6) => {
-            let src_ipv6 = match src_addr {
-                IpAddr::V6(src) => src,
-                _ => return Err(PistolError::CanNotFoundSrcAddress),
-            };
-            let linear = gen_linear()?;
-            debug!("ipv6 gen linear parse finish");
-            match os_probe_thread6(
-                dst_mac,
-                dst_ipv6,
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-                src_mac,
-                src_ipv6,
-                interface,
-                top_k,
-                linear,
-                timeout,
-                max_retries,
-            ) {
-                Ok((fingerprint, detects)) => {
-                    let o = Detect6 {
-                        addr: dst_addr,
-                        alive: true,
-                        fingerprint,
-                        detects,
-                        layer3_cost: start_time.elapsed(),
-                        layer2_cost: Duration::ZERO,
-                    };
-                    let dr = DetectReport::V6(o);
-                    os_detect.finish(Some(dr));
-                    Ok(os_detect)
-                }
-                Err(e) => {
-                    warn!("os probe error: {}", e);
-                    let o = Detect6 {
-                        addr: dst_addr,
-                        alive: false,
-                        fingerprint: Fingerprint6::default(),
-                        detects: Vec::new(),
-                        layer3_cost: start_time.elapsed(),
-                        layer2_cost: Duration::ZERO,
-                    };
-                    let dr = DetectReport::V6(o);
-                    os_detect.finish(Some(dr));
-                    Ok(os_detect)
-                }
-            }
-        }
-    }
 }

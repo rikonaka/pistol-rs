@@ -16,6 +16,7 @@ use std::time::Duration;
 use tracing::debug;
 use tracing::warn;
 
+use crate::IcmpTraceTarget;
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::NetInfo;
@@ -66,7 +67,6 @@ use crate::os::rr::RequestResponse;
 use crate::os::rr::SEQRR;
 use crate::os::rr::TXRR;
 use crate::os::rr::U1RR;
-use crate::trace::TraceTarget;
 use crate::trace::icmp_trace;
 use crate::utils::random_port;
 use crate::utils::random_port_range;
@@ -265,7 +265,7 @@ pub(crate) fn get_scan_line(
             cost: Duration::ZERO,
             valid: true,
         };
-        let trace_target = TraceTarget {
+        let trace_target = IcmpTraceTarget {
             net_info: net_info.clone(),
             if_name: interface.name.clone(),
             dst_port: None,

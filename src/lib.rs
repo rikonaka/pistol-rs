@@ -74,12 +74,12 @@ mod trace;
 mod utils;
 mod vs;
 
-use crate::error::PistolError;
-use crate::flood::Floods;
 use crate::layer::ETHERNET_HEADER_SIZE;
 use crate::layer::PNET_BUFF_SIZE;
+
+use crate::error::PistolError;
+use crate::flood::Floods;
 use crate::layer::PacketFilter;
-use crate::os::OsDetect;
 use crate::os::OsDetects;
 use crate::os::dbparser::NmapOsDb;
 use crate::ping::HostPings;
@@ -89,7 +89,6 @@ use crate::scan::MacScans;
 use crate::scan::PortScans;
 use crate::trace::Trace;
 use crate::vs::PistolVsScans;
-use crate::vs::PortService;
 
 pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
@@ -1284,7 +1283,7 @@ impl Pistol {
                 net_info: net_info.clone(),
                 dst_ports: t.dst_ports.clone(),
                 src_port: t.src_port,
-                origin: t.origin,
+                origin: t.origin.clone(),
             };
             scan_targets.push(p);
         }
@@ -2216,13 +2215,19 @@ impl Pistol {
     /// it max_retries to identify the operating system running on the target machine.
     pub fn os_detect(
         &mut self,
-        targets: &[Target],
+        targets: &[OsDetectTarget],
         threads: usize,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
         self.init_logger();
-        let (net_infos, dur) = self.get_netinfo(targets, None, None)?;
-        let mut ret = os::os_detect(net_infos, threads, self.timeout, self.max_retries, top_k)?;
+        let (detect_targets, dur) = OsDetectTargetWithNetInfo::infer_multi(targets)?;
+        let mut ret = os::os_detect(
+            detect_targets,
+            threads,
+            self.timeout,
+            self.max_retries,
+            top_k,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2237,16 +2242,26 @@ impl Pistol {
         dst_open_tcp_port: u16,
         dst_closed_tcp_port: u16,
         dst_closed_udp_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
         top_k: usize,
-    ) -> Result<OsDetect, PistolError> {
+    ) -> Result<OsDetects, PistolError> {
         self.init_logger();
-        let (net_info, dur) = self.get_netinfo_raw(
+        let (detect_target, dur) = OsDetectTargetWithNetInfo::infer_single(
             dst_addr,
-            vec![dst_open_tcp_port, dst_closed_tcp_port, dst_closed_udp_port],
-            None,
-            None,
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
+            src_addr,
+            src_port,
         )?;
-        let mut ret = os::os_detect_raw(net_info, self.timeout, self.max_retries, top_k)?;
+        let mut ret = os::os_detect(
+            vec![detect_target],
+            1,
+            self.timeout,
+            self.max_retries,
+            top_k,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2258,23 +2273,12 @@ impl Pistol {
     /// it max_retries to determine the service type and version.
     pub fn vs_scan(
         &self,
-        targets: &[Target],
+        targets: &[VersionScanTarget],
         threads: usize,
-        only_null_probe: bool,
-        only_tcp_recommended: bool,
-        only_udp_recommended: bool,
         intensity: usize,
     ) -> Result<PistolVsScans, PistolError> {
         self.init_logger();
-        vs::vs_scan(
-            targets,
-            threads,
-            only_null_probe,
-            only_tcp_recommended,
-            only_udp_recommended,
-            intensity,
-            self.timeout,
-        )
+        vs::vs_scan(targets, threads, intensity, self.timeout)
     }
     /// The raw version of vs_scan function.
     /// It sends various probes to the target IP address and port
@@ -2285,21 +2289,25 @@ impl Pistol {
         &self,
         dst_addr: IpAddr,
         dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
         only_null_probe: bool,
         only_tcp_recommended: bool,
         only_udp_recommended: bool,
         intensity: usize,
-    ) -> Result<PortService, PistolError> {
+    ) -> Result<PistolVsScans, PistolError> {
         self.init_logger();
-        vs::vs_scan_raw(
+        let vs_target = VersionScanTarget::new(
             dst_addr,
-            dst_port,
+            vec![dst_port],
+            src_addr,
+            src_port,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
-            intensity,
-            self.timeout,
-        )
+        );
+
+        vs::vs_scan(&[vs_target], 1, intensity, self.timeout)
     }
 }
 
@@ -3519,6 +3527,131 @@ impl FloodTargetWithNetInfo {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OsDetectTarget {
+    pub dst_addr: IpAddr,
+    pub dst_open_tcp_port: u16,
+    pub dst_closed_tcp_port: u16,
+    pub dst_closed_udp_port: u16,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
+    pub origin: Option<String>,
+}
+
+impl OsDetectTarget {
+    pub fn new(
+        dst_addr: IpAddr,
+        dst_open_tcp_port: u16,
+        dst_closed_tcp_port: u16,
+        dst_closed_udp_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Self {
+        Self {
+            dst_addr,
+            dst_open_tcp_port,
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
+            src_addr,
+            src_port,
+            origin: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OsDetectTargetWithNetInfo {
+    pub net_info: NetInfo,
+    pub dst_open_tcp_port: u16,
+    pub dst_closed_tcp_port: u16,
+    pub dst_closed_udp_port: u16,
+    pub src_port: Option<u16>,
+    pub origin: Option<String>,
+}
+
+impl OsDetectTargetWithNetInfo {
+    fn infer_multi(targets: &[OsDetectTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
+        let start = Instant::now();
+        let mut neighbor_info = NeighborInfo::new()?;
+        let mut values = Vec::new();
+        for t in targets {
+            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+                let p = Self {
+                    net_info,
+                    dst_open_tcp_port: t.dst_open_tcp_port,
+                    dst_closed_tcp_port: t.dst_closed_tcp_port,
+                    dst_closed_udp_port: t.dst_closed_udp_port,
+                    src_port: t.src_port,
+                    origin: t.origin.clone(),
+                };
+                values.push(p);
+            }
+        }
+        let cost = start.elapsed();
+        Ok((values, cost))
+    }
+    fn infer_single(
+        dst_addr: IpAddr,
+        dst_open_tcp_port: u16,
+        dst_closed_tcp_port: u16,
+        dst_closed_udp_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+    ) -> Result<(Self, Duration), PistolError> {
+        let start = Instant::now();
+        let mut neighbor_info = NeighborInfo::new()?;
+        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+            let p = Self {
+                net_info,
+                dst_open_tcp_port,
+                dst_closed_tcp_port,
+                dst_closed_udp_port,
+                src_port,
+                origin: None,
+            };
+            let cost = start.elapsed();
+            Ok((p, cost))
+        } else {
+            Err(PistolError::CanNotFoundNetInfo)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionScanTarget {
+    pub dst_addr: IpAddr,
+    pub dst_ports: Vec<u16>,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
+    pub origin: Option<String>,
+    pub only_null_probe: bool,
+    pub only_tcp_recommended: bool,
+    pub only_udp_recommended: bool,
+}
+
+impl VersionScanTarget {
+    pub fn new(
+        dst_addr: IpAddr,
+        dst_ports: Vec<u16>,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        only_null_probe: bool,
+        only_tcp_recommended: bool,
+        only_udp_recommended: bool,
+    ) -> Self {
+        Self {
+            dst_addr,
+            dst_ports,
+            src_addr,
+            src_port,
+            origin: None,
+            only_null_probe,
+            only_tcp_recommended,
+            only_udp_recommended,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3526,33 +3659,18 @@ mod tests {
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_net_info_detect() {
-        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
-        let mut pistol = Pistol::new();
-        let (net_infos, cost) = pistol.get_netinfo(&targets, None, None).unwrap();
+        let targets = IcmpPingTarget::from_subnet("192.168.5.0/24", None).unwrap();
+        let (ping_targets, cost) = PingTargetWithNetInfo::infer_icmp_multi(&targets).unwrap();
         println!(
-            "net_infos len: {}, cost: {:.2}s",
-            net_infos.len(),
+            "ping_targets len: {}, cost: {:.2}s",
+            ping_targets.len(),
             cost.as_secs_f32()
         );
 
         sleep(Duration::from_secs(3));
 
-        for ni in net_infos {
-            if ni.valid {
-                println!("net_info: {}", ni);
-            }
-        }
-    }
-    #[test]
-    fn test_load_cache() {
-        let nc = NetCache::load();
-        if let Some(nc) = nc {
-            let nbs = nc.system_network_cache.neighbors;
-            let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
-            let mac = nbs[&dst_addr];
-            println!("{}", mac);
-        } else {
-            println!("no cache file found");
+        for pt in ping_targets {
+            println!("ping target: {}", pt);
         }
     }
     #[test]
