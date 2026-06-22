@@ -434,11 +434,6 @@ impl SendWindow {
     }
 }
 
-const NETWORK_CACHE_PATH: &str = ".plnetcache";
-// When the cache is created more than 1 hour ago,
-// it will be considered expired and will be deleted.
-const NETWORK_CACHE_EXPIRE_HOURS: i64 = 1;
-
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub enum LoopKey {
     Ip(IpAddr),
@@ -669,15 +664,6 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
             ),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct DetectInfo {
-    inferred_src_addr: IpAddr,
-    dst_ports: Vec<u16>,
-    src_port: Option<u16>,
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
 }
 
 struct L2Sender {
@@ -2243,7 +2229,6 @@ impl Pistol {
         dst_closed_tcp_port: u16,
         dst_closed_udp_port: u16,
         src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
         self.init_logger();
@@ -2253,7 +2238,6 @@ impl Pistol {
             dst_closed_tcp_port,
             dst_closed_udp_port,
             src_addr,
-            src_port,
         )?;
         let mut ret = os::os_detect(
             vec![detect_target],
@@ -2289,8 +2273,6 @@ impl Pistol {
         &self,
         dst_addr: IpAddr,
         dst_port: u16,
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
         only_null_probe: bool,
         only_tcp_recommended: bool,
         only_udp_recommended: bool,
@@ -2300,8 +2282,6 @@ impl Pistol {
         let vs_target = VersionScanTarget::new(
             dst_addr,
             vec![dst_port],
-            src_addr,
-            src_port,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
@@ -3533,9 +3513,6 @@ pub struct OsDetectTarget {
     pub dst_open_tcp_port: u16,
     pub dst_closed_tcp_port: u16,
     pub dst_closed_udp_port: u16,
-    pub src_addr: Option<IpAddr>,
-    pub src_port: Option<u16>,
-    pub origin: Option<String>,
 }
 
 impl OsDetectTarget {
@@ -3544,17 +3521,12 @@ impl OsDetectTarget {
         dst_open_tcp_port: u16,
         dst_closed_tcp_port: u16,
         dst_closed_udp_port: u16,
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
     ) -> Self {
         Self {
             dst_addr,
             dst_open_tcp_port,
             dst_closed_tcp_port,
             dst_closed_udp_port,
-            src_addr,
-            src_port,
-            origin: None,
         }
     }
 }
@@ -3565,8 +3537,6 @@ pub(crate) struct OsDetectTargetWithNetInfo {
     pub dst_open_tcp_port: u16,
     pub dst_closed_tcp_port: u16,
     pub dst_closed_udp_port: u16,
-    pub src_port: Option<u16>,
-    pub origin: Option<String>,
 }
 
 impl OsDetectTargetWithNetInfo {
@@ -3575,14 +3545,12 @@ impl OsDetectTargetWithNetInfo {
         let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, None)? {
                 let p = Self {
                     net_info,
                     dst_open_tcp_port: t.dst_open_tcp_port,
                     dst_closed_tcp_port: t.dst_closed_tcp_port,
                     dst_closed_udp_port: t.dst_closed_udp_port,
-                    src_port: t.src_port,
-                    origin: t.origin.clone(),
                 };
                 values.push(p);
             }
@@ -3596,7 +3564,6 @@ impl OsDetectTargetWithNetInfo {
         dst_closed_tcp_port: u16,
         dst_closed_udp_port: u16,
         src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
         let mut neighbor_info = NeighborInfo::new()?;
@@ -3606,8 +3573,6 @@ impl OsDetectTargetWithNetInfo {
                 dst_open_tcp_port,
                 dst_closed_tcp_port,
                 dst_closed_udp_port,
-                src_port,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -3621,8 +3586,6 @@ impl OsDetectTargetWithNetInfo {
 pub struct VersionScanTarget {
     pub dst_addr: IpAddr,
     pub dst_ports: Vec<u16>,
-    pub src_addr: Option<IpAddr>,
-    pub src_port: Option<u16>,
     pub origin: Option<String>,
     pub only_null_probe: bool,
     pub only_tcp_recommended: bool,
@@ -3633,8 +3596,6 @@ impl VersionScanTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
         only_null_probe: bool,
         only_tcp_recommended: bool,
         only_udp_recommended: bool,
@@ -3642,8 +3603,6 @@ impl VersionScanTarget {
         Self {
             dst_addr,
             dst_ports,
-            src_addr,
-            src_port,
             origin: None,
             only_null_probe,
             only_tcp_recommended,
@@ -3670,7 +3629,7 @@ mod tests {
         sleep(Duration::from_secs(3));
 
         for pt in ping_targets {
-            println!("ping target: {}", pt);
+            println!("ping target: {:?}", pt);
         }
     }
     #[test]
@@ -3770,7 +3729,7 @@ mod tests {
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
-        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -3810,11 +3769,13 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
-        let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 78).into(),
-            Some(vec![22, 80, 443, 8080]),
+        let targets = vec![PortScanTarget::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)),
+            vec![22, 80, 443, 8080],
+            src_ipv4,
+            src_port,
         )];
-        let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        let ret = pistol.tcp_syn_scan(&targets).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -3826,11 +3787,13 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
-        let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 3).into(),
-            Some(vec![22, 80, 443]),
+        let targets = vec![PortScanTarget::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)),
+            vec![22, 80, 443],
+            src_ipv4,
+            src_port,
         )];
-        let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        let ret = pistol.tcp_syn_scan(&targets).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -3844,12 +3807,14 @@ mod tests {
         let src_port = None;
         let dst_ports: Vec<u16> = (22..10240).collect();
         // let dst_ports: Vec<u16> = (22..1024).collect();
-        let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 78).into(),
-            // Some(vec![22, 80, 443]),
-            Some(dst_ports),
+        let targets = vec![PortScanTarget::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)),
+            // vec![22, 80, 443],
+            dst_ports,
+            src_ipv4,
+            src_port,
         )];
-        let ret = pistol.tcp_syn_scan(&targets, src_ipv4, src_port).unwrap();
+        let ret = pistol.tcp_syn_scan(&targets).unwrap();
         println!("{}", ret.as_str(true));
     }
     #[test]
@@ -3864,14 +3829,14 @@ mod tests {
 
         let dst_ports: Vec<u16> = (22..10240).collect();
 
-        let targets = vec![Target::new(
-            Ipv4Addr::new(192, 168, 5, 78).into(),
-            // Some(vec![22, 80, 443]),
-            Some(dst_ports),
+        let targets = vec![PortScanTarget::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)),
+            // vec![22, 80, 443],
+            dst_ports,
+            src_ipv4,
+            src_port,
         )];
-        let ret = pistol
-            .tcp_connect_scan(&targets, src_ipv4, src_port)
-            .unwrap();
+        let ret = pistol.tcp_connect_scan(&targets).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -3986,20 +3951,18 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         pistol.set_timeout(2.5);
         // pistol.set_log_level("debug");
 
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
+        let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
         // `dst_open_tcp_port` must be a certain open tcp port.
         let dst_open_tcp_port = 22;
         // `dst_closed_tcp_port` must be a certain closed tcp port.
         let dst_closed_tcp_port = 8765;
         // `dst_closed_udp_port` must be a certain closed udp port.
         let dst_closed_udp_port = 9876;
-        let target = Target::new(
-            dst_ipv4.into(),
-            Some(vec![
-                dst_open_tcp_port, // The order of these three ports cannot be disrupted.
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
+        let target = OsDetectTarget::new(
+            dst_addr,
+            dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
         );
         let top_k = 3;
         let threads = 8;
@@ -4084,20 +4047,20 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         // pistol.set_log_level("debug");
 
         // fe80::c395:cac0:2c61:5162
-        let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0xc395, 0xcac0, 0x2c61, 0x5162);
+        let dst_addr = IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0xc395, 0xcac0, 0x2c61, 0x5162,
+        ));
         // `dst_open_tcp_port` must be a certain open tcp port.
         let dst_open_tcp_port = 22;
         // `dst_closed_tcp_port` must be a certain closed tcp port.
         let dst_closed_tcp_port = 8765;
         // `dst_closed_udp_port` must be a certain closed udp port.
         let dst_closed_udp_port = 9876;
-        let target = Target::new(
-            dst_ipv6.into(),
-            Some(vec![
-                dst_open_tcp_port, // The order of these three ports cannot be disrupted.
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
+        let target = OsDetectTarget::new(
+            dst_addr.into(),
+            dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
         );
         let top_k = 3;
         let threads = 8;
@@ -4119,23 +4082,20 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         pistol.set_timeout(2.5);
 
         let dst_addr = Ipv4Addr::new(192, 168, 5, 78);
-        let target = Target::new(dst_addr.into(), Some(vec![22, 80, 8080]));
         // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
         // only_tcp_recommended = true: only try the tcp probe recommended port
         // only_udp_recommended = true: only try the udp probe recommended port
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
+        let target = VersionScanTarget::new(
+            dst_addr.into(),
+            vec![22, 80, 8080],
+            only_null_probe,
+            only_tcp_recommended,
+            only_udp_recommended,
+        );
         let intensity = 7; // nmap default
         let threads = 8;
-        let ret = pistol
-            .vs_scan(
-                &[target],
-                threads,
-                only_null_probe,
-                only_tcp_recommended,
-                only_udp_recommended,
-                intensity,
-            )
-            .unwrap();
+        let ret = pistol.vs_scan(&[target], threads, intensity).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -4147,7 +4107,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         pistol.set_max_retries(2);
         // pistol.set_log_level("debug");
 
-        let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -4174,10 +4134,10 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let mut targets = vec![];
         for ip in subnet {
             // Test with a example port `22`
-            let host = Target::new(ip.into(), Some(vec![22]));
+            let host = PortScanTarget::new(IpAddr::V4(ip), vec![22], src_addr, src_port);
             targets.push(host);
         }
-        let ret = pistol.tcp_syn_scan(&targets, src_addr, src_port).unwrap();
+        let ret = pistol.tcp_syn_scan(&targets).unwrap();
         println!("{}", ret);
     }
     #[test]
@@ -4193,13 +4153,11 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let dst_closed_tcp_port = 8765;
         // `dst_closed_udp_port` must be a certain closed udp port.
         let dst_closed_udp_port = 9876;
-        let target = Target::new(
+        let target = OsDetectTarget::new(
             dst_ipv4.into(),
-            Some(vec![
-                dst_open_tcp_port, // The order of these three ports cannot be disrupted.
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
+            dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
         );
         let top_k = 3;
         let threads = 8;
@@ -4218,13 +4176,11 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let target = Target::new(
+        let target = OsDetectTarget::new(
             dst_ipv6.into(),
-            Some(vec![
-                dst_open_tcp_port,
-                dst_closed_tcp_port,
-                dst_closed_udp_port,
-            ]),
+            dst_open_tcp_port, // The order of these three ports cannot be disrupted.
+            dst_closed_tcp_port,
+            dst_closed_udp_port,
         );
 
         let top_k = 3;
@@ -4239,23 +4195,20 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         pistol.set_timeout(2.5);
 
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
-        let target = Target::new(dst_addr.into(), Some(vec![22, 80, 8080]));
+        let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
+        let target = VersionScanTarget::new(
+            IpAddr::V4(dst_addr),
+            vec![22, 80, 8080],
+            only_null_probe,
+            only_tcp_recommended,
+            only_udp_recommended,
+        );
         // only_null_probe = true, only_tcp_recommended = any, only_udp_recomended = any: only try the NULL probe (for TCP)
         // only_tcp_recommended = true: only try the tcp probe recommended port
         // only_udp_recommended = true: only try the udp probe recommended port
-        let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
         let intensity = 7; // nmap default
         let threads = 8;
-        let ret = pistol
-            .vs_scan(
-                &[target],
-                threads,
-                only_null_probe,
-                only_tcp_recommended,
-                only_udp_recommended,
-                intensity,
-            )
-            .unwrap();
+        let ret = pistol.vs_scan(&[target], threads, intensity).unwrap();
         println!("{}", ret);
     }
 }

@@ -16,12 +16,12 @@ use std::time::Duration;
 use tracing::debug;
 use tracing::warn;
 
-use crate::IcmpTraceTarget;
 use crate::LoopKey;
 use crate::LoopStates;
 use crate::NetInfo;
 use crate::PistolStream;
 use crate::SendPacketParam;
+use crate::TraceTargetWithNetInfo;
 use crate::error::PistolError;
 use crate::layer::Layer3Filter;
 use crate::layer::Layer4FilterIcmp;
@@ -265,11 +265,11 @@ pub(crate) fn get_scan_line(
             cost: Duration::ZERO,
             valid: true,
         };
-        let trace_target = IcmpTraceTarget {
+        let trace_target = TraceTargetWithNetInfo {
             net_info: net_info.clone(),
-            if_name: interface.name.clone(),
             dst_port: None,
             src_port: None,
+            origin: None,
         };
         let trace = icmp_trace(trace_target, timeout)?;
         trace.hops

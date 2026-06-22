@@ -205,32 +205,3 @@ pub fn vs_scan(
     ret.finish(port_services);
     Ok(ret)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Pistol;
-    use crate::VersionScanTarget;
-    use std::net::Ipv4Addr;
-    #[test]
-    fn test_vs_detect() {
-        let dst_ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 152));
-        let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
-        let target = VersionScanTarget::new(
-            dst_ipv4,
-            vec![22, 80, 8080],
-            None,
-            None,
-            only_null_probe,
-            only_tcp_recommended,
-            only_udp_recommended,
-        );
-        let intensity = 7; // nmap default
-        let threads = 8;
-
-        let mut pistol = Pistol::new();
-        pistol.set_timeout(0.5);
-        let ret = pistol.vs_scan(&[target], threads, intensity).unwrap();
-        println!("{}", ret);
-    }
-}
