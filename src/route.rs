@@ -305,6 +305,9 @@ impl NeighborInfo {
         // ➜  pistol-rs git:(dev) ✗ ip route get 114.114.114.114
         // 114.114.114.114 via 192.168.5.2 dev ens33 src 192.168.5.3 uid 1000
         //     cache
+        // ➜  pistol-rs git:(dev) ip route get 192.168.5.3
+        // local 192.168.5.3 dev lo src 192.168.5.3 uid 1000 
+        //     cache <local> 
         // ➜  pistol-rs git:(dev) ✗ ip -6 route get fe80::20c:29ff:fecf:622f
         // fe80::20c:29ff:fecf:622f from :: dev ens33 proto kernel src fe80::20c:29ff:feec:d037 metric 256 pref medium
         let output_str = String::from_utf8_lossy(&output.stdout);
