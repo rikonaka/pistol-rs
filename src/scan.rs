@@ -990,9 +990,9 @@ fn scan(
     let mut loop_states = LoopStates::default();
     for st in scan_targets {
         let nt = st.net_info;
-        if nt.valid {
+        if nt.is_valid {
             for dst_port in st.dst_ports {
-                let cached = nt.cached;
+                let cached = nt.is_cached;
 
                 let state = PortScanState {
                     retries: 0,

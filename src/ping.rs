@@ -456,7 +456,7 @@ fn ping(
     let mut loop_states = LoopStates::default();
     for pt in ping_targets {
         let ni = pt.net_info;
-        if ni.valid {
+        if ni.is_valid {
             for dst_port in pt.dst_ports {
                 let dst_addr = ni.origin_dst_addr;
                 let state = PingState {
@@ -599,7 +599,7 @@ fn ping(
                                 Ok(ps) => {
                                     state.data_recved = true;
                                     let dst_addr = state.net_info.inferred_dst_addr;
-                                    let cached = state.net_info.cached;
+                                    let cached = state.net_info.is_cached;
                                     let retries = state.retries;
 
                                     let ping_report = PingReport {

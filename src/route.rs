@@ -12,6 +12,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
+use tracing::warn;
 
 use crate::PistolStream;
 use crate::SendPacketParam;
@@ -43,9 +44,10 @@ pub(crate) struct NetInfo {
     pub inferred_src_addr: IpAddr,
     pub inferred_interface: NetworkInterface,
     /// Whether the network information is cached or inferred.
-    pub cached: bool,
     pub cost: Duration,
-    pub valid: bool,
+    pub is_cached: bool,
+    pub is_valid: bool,
+    pub is_loopback: bool,
     /// Original user input destination IP address,
     /// which may be the same as infer_dst_addr if user input a valid IP address,
     /// or may be different if user input a hostname or an invalid IP address.
@@ -61,9 +63,10 @@ impl NetInfo {
             inferred_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             inferred_src_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             inferred_interface: fake_interface(),
-            cached: true,
             cost: Duration::ZERO,
-            valid: false,
+            is_cached: true,
+            is_valid: false,
+            is_loopback: false,
             origin_dst_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             origin_src_addr: None,
         }
@@ -72,7 +75,7 @@ impl NetInfo {
 
 impl fmt::Display for NetInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.valid {
+        if self.is_valid {
             let output = format!(
                 "dst_mac: {}, src_mac: {}, dst_addr: {}, src_addr: {}, interface: {}",
                 self.inferred_dst_mac,
@@ -102,24 +105,20 @@ struct SystemNeighbor {
 
 #[cfg(target_os = "linux")]
 fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
-    let ipv4_output = Command::new("ip").arg("neighbor").arg("show").output()?;
+    let ipv4_output = Command::new("ip").arg("-4").arg("neighbor").output()?;
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     let arp_re = Regex::new(
-        r"^(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+dev\s+\S+\s+lladdr\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+$",
+        r"^(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+dev\s+\S+\s+lladdr\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+",
     )?;
     // 192.168.5.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
     // 192.168.5.2 dev ens33 lladdr 00:50:56:f7:49:0d REACHABLE
     // 192.168.5.78 dev ens33 lladdr 00:0c:29:cf:62:2f STALE
 
-    let ipv6_output = Command::new("ip")
-        .arg("-6")
-        .arg("neighbor")
-        .arg("show")
-        .output()?;
+    let ipv6_output = Command::new("ip").arg("-6").arg("neighbor").output()?;
     let ipv6_output_str = String::from_utf8_lossy(&ipv6_output.stdout);
     // ignore INCOMPLETE entries
     let ndp_re =
-        Regex::new(r"^(?P<ip>[0-9a-fA-F:]+)\s+dev\s+\S+\s+lladdr\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+$")?;
+        Regex::new(r"^(?P<ip>[0-9a-fA-F:]+)\s+dev\s+\S+\s+lladdr\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+")?;
     // fe80::c395:cac0:2c61:5161 dev ens33 INCOMPLETE
     // fe80::c395:cac0:2c61:5162 dev ens33 lladdr 00:0c:29:cf:62:39 REACHABLE
 
@@ -140,6 +139,8 @@ fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
         .arg("show")
         .arg("neighbors")
         .output()?;
+
+    todo!()
 }
 
 #[cfg(any(
@@ -153,7 +154,7 @@ fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     // ignore incomplete entries
     let arp_re = Regex::new(
-        r"^\?\s+\((?P<ip>\d{1,3}\.\d{1,3}.\d{1,3}.\d{1,3})\)\s+at\s+(?P<mac>[0-9a-fA-F:]+)\s+on\s+\S+\s+\S+\s+\S+\s+\[\S+\]$",
+        r"^\?\s+\((?P<ip>\d{1,3}\.\d{1,3}.\d{1,3}.\d{1,3})\)\s+at\s+(?P<mac>[0-9a-fA-F:]+)\s+on\s+\S+\s+\S+\s+\S+\s+\[\S+\]",
     )?;
     // ? (169.254.169.254) at (incomplete) on en0 [ethernet]
     // ? (172.16.86.1) at c2:c7:db:1d:39:66 on bridge102 ifscope permanent [bridge]
@@ -176,7 +177,7 @@ fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
     let ipv6_output = Command::new("ndp").arg("-an").output()?;
     let ipv6_output_str = String::from_utf8_lossy(&ipv6_output.stdout);
     let ndp_re =
-        Regex::new(r"^(?P<ip>[0-9\w:%]+)\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+\s+\S+\s+\w(\s+\w)?$")?;
+        Regex::new(r"^(?P<ip>[0-9\w:%]+)\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+\s+\S+\s+\w(\s+\w)?")?;
     // Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
     // 2409:8a6c:1763:4351::1000               de:cb:f1:62:24:68    en0 permanent R
     // 2409:8a6c:1763:4351:da:8c8b:e171:9e55   de:cb:f1:62:24:68    en0 permanent R
@@ -209,6 +210,113 @@ fn system_neighbor_cache() -> Result<SystemNeighbor, PistolError> {
 }
 
 fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
+    let mut neighbor_cache = HashMap::new();
+    let sn = system_neighbor_cache()?;
+
+    for line in sn.ipv4.lines() {
+        if let Some(caps) = sn.re4.captures(line) {
+            if let Some(ip_str) = caps.name("ip") {
+                let ip_str = ip_str.as_str();
+                let ip = IpAddr::from_str(ip_str)?;
+                if let Some(mac_str) = caps.name("mac") {
+                    let mac_str = mac_str.as_str();
+                    match MacAddr::from_str(mac_str) {
+                        Ok(m) => {
+                            neighbor_cache.insert(ip, m);
+                        }
+                        Err(_e) => {
+                            return Err(PistolError::ParseMacAddrErr {
+                                mac: mac_str.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            debug!("line does not match arp regex: {}", line);
+        }
+    }
+
+    for line in sn.ipv6.lines() {
+        if let Some(caps) = sn.re6.captures(line) {
+            if let Some(ip_str) = caps.name("ip") {
+                let ip_str = ip_str.as_str();
+                let ip_str = if ip_str.contains("%") {
+                    let ip_str_split: Vec<&str> = ip_str.split("%").collect();
+                    ip_str_split[0]
+                } else {
+                    ip_str
+                };
+                let ip = IpAddr::from_str(ip_str)?;
+                if let Some(mac_str) = caps.name("mac") {
+                    let mac_str = mac_str.as_str();
+                    match MacAddr::from_str(mac_str) {
+                        Ok(m) => {
+                            neighbor_cache.insert(ip, m);
+                        }
+                        Err(_e) => {
+                            return Err(PistolError::ParseMacAddrErr {
+                                mac: mac_str.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            debug!("line does not match ndp regex: {}", line);
+        }
+    }
+
+    Ok(neighbor_cache)
+}
+
+#[derive(Debug, Clone)]
+struct SystemRouteTable {
+    ipv4: String,
+    default_re4: Regex,
+    route_re4: Regex,
+    ipv6: String,
+    route_re6: Regex,
+    default_re6: Regex,
+}
+
+#[cfg(target_os = "linux")]
+fn system_route_table_cache() -> Result<SystemRouteTable, PistolError> {
+    let ipv4_output = Command::new("ip").arg("-4").arg("route").output()?;
+    let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
+    let default_re4 = Regex::new(r"^default via (?P<via>\S+) dev (?P<dev>\S+)(\s\w+)?")?;
+    let route_re4 = Regex::new(
+        r"^(?P<net>[0-9.]+)/(?P<prefix>\d+) dev (?P<dev>\S+) proto kernel scope link src (?P<src>[0-9.]+)",
+    )?;
+    // default via 192.168.5.2 dev ens33 onlink
+    // 192.168.5.0/24 dev ens33 proto kernel scope link src 192.168.5.3
+
+    let ipv6_output = Command::new("ip").arg("-6").arg("route").output()?;
+    let ipv6_output_str = String::from_utf8_lossy(&ipv6_output.stdout);
+    // ignore INCOMPLETE entries
+    let route_re6 = Regex::new(
+        r"^(?P<net>[0-9a-f:]+)/(?P<prefix>\d+) dev (?P<dev>\S+) proto kernel (scope\s)?(link\s)?(src\s(?P<src>[0-9a-f:]+)\s)?metric \d+ pref medium",
+    )?;
+    let default_re6 = Regex::new(
+        r"^(?P<net>[0-9a-f:]+)/(?P<prefix>\d+) via (?P<via>[0-9a-f:]+) dev (?P<dev>\S+) metric \d+ pref medium",
+    )?;
+    // fe80::/64 dev ens33 proto kernel metric 256 pref medium
+    // 2001:db8:0:1::/64 dev eth0 proto kernel scope link src 2001:db8:0:1:5054:ff:fe00:0001 metric 100 pref medium
+    // default
+    // 2001:db8:10:20::/56 via 2001:db8:0:1::ff dev eth0 metric 60 pref medium
+
+    let srt = SystemRouteTable {
+        ipv4: ipv4_output_str.to_string(),
+        default_re4,
+        route_re4,
+        ipv6: ipv6_output_str.to_string(),
+        default_re6,
+        route_re6,
+    };
+    Ok(srt)
+}
+
+fn get_route_table_cache() -> Result<HashMap<IpAddr, MacAddr>, PistolError> {
     let mut neighbor_cache = HashMap::new();
     let sn = system_neighbor_cache()?;
 
@@ -306,18 +414,31 @@ impl NeighborInfo {
         // 114.114.114.114 via 192.168.5.2 dev ens33 src 192.168.5.3 uid 1000
         //     cache
         // ➜  pistol-rs git:(dev) ip route get 192.168.5.3
-        // local 192.168.5.3 dev lo src 192.168.5.3 uid 1000 
-        //     cache <local> 
+        // local 192.168.5.3 dev lo src 192.168.5.3 uid 1000
+        //     cache <local>
         // ➜  pistol-rs git:(dev) ✗ ip -6 route get fe80::20c:29ff:fecf:622f
         // fe80::20c:29ff:fecf:622f from :: dev ens33 proto kernel src fe80::20c:29ff:feec:d037 metric 256 pref medium
         let output_str = String::from_utf8_lossy(&output.stdout);
         let mut interface = None;
 
-        let localnet_re = Regex::new(r"^\S+ dev (?P<dev>\S+) src \S+ uid \d+")?;
+        let localnet_re = Regex::new(r"^((?P<type>\w+)\s)?\S+ dev (?P<dev>\S+) src \S+ uid \d+")?;
         let route_re = Regex::new(r"^\S+ via \S+ dev (?P<dev>\S+) src \S+ uid \d+")?;
 
         for line in output_str.lines() {
             if let Some(caps) = localnet_re.captures(line) {
+                if let Some(type_str) = caps.name("type") {
+                    let type_str = type_str.as_str();
+                    if type_str == "local" {
+                        for i in interfaces() {
+                            if i.is_loopback() {
+                                interface = Some(i.clone());
+                                break;
+                            }
+                        }
+                    } else {
+                        warn!("unknown route type: {}", type_str);
+                    }
+                }
                 if let Some(dev_str) = caps.name("dev") {
                     let dev_str = dev_str.as_str();
                     for i in interfaces() {
@@ -375,6 +496,9 @@ impl NeighborInfo {
         // ➜  pistol-rs git:(dev) ✗ ip route get 114.114.114.114
         // 114.114.114.114 via 192.168.5.2 dev ens33 src 192.168.5.3 uid 1000
         //     cache
+        // ➜  pistol-rs git:(dev) ip route get 192.168.5.3
+        // local 192.168.5.3 dev lo src 192.168.5.3 uid 1000
+        //     cache <local>
         // ➜  pistol-rs git:(dev) ✗ ip -6 route get fe80::20c:29ff:fecf:622f
         // fe80::20c:29ff:fecf:622f from :: dev ens33 proto kernel src fe80::20c:29ff:feec:d037 metric 256 pref medium
 
@@ -383,16 +507,28 @@ impl NeighborInfo {
         let mut interface = None;
         let mut inferred_src_addr = None;
         let mut is_route = false;
-        let mut cached = false;
+        let mut is_cached = false;
+        let mut is_loopback = false;
 
-        let localnet_re = Regex::new(r"^(?P<ip>\S+) dev (?P<dev>\S+) src (?P<src>\S+) uid \d+")?;
+        let localnet_re = Regex::new(
+            r"^((?P<type>\w+)\s)?(?P<ip>\S+) dev (?P<dev>\S+) src (?P<src>\S+) uid \d+",
+        )?;
         let route_re =
             Regex::new(r"^(?P<ip>\S+) via (?P<via>\S+) dev (?P<dev>\S+) src (?P<src>\S+) uid \d+")?;
 
         for line in output_str.lines() {
             if let Some(caps) = localnet_re.captures(line) {
+                if let Some(type_str) = caps.name("type") {
+                    let type_str = type_str.as_str();
+                    if type_str == "local" {
+                        is_loopback = true;
+                    } else {
+                        warn!("unknown route type: {}", type_str);
+                    }
+                }
                 if let Some(ip_str) = caps.name("ip") {
                     let ip_str = ip_str.as_str();
+                    println!("line: [{}], localnet_re ip_str: {}", line, ip_str);
                     let ip = IpAddr::from_str(ip_str)?;
                     inferred_dst_addr = Some(ip);
                 }
@@ -442,7 +578,7 @@ impl NeighborInfo {
             }
         }
 
-        let interface = match interface {
+        let inferred_interface = match interface {
             Some(i) => i,
             None => {
                 return Err(PistolError::CanNotFoundInterface {
@@ -460,7 +596,7 @@ impl NeighborInfo {
             Some(s) => s,
             None => {
                 let mut isa = None;
-                for ipn in &interface.ips {
+                for ipn in &inferred_interface.ips {
                     if ipn.contains(inferred_dst_addr) {
                         isa = Some(ipn.ip());
                     }
@@ -473,7 +609,7 @@ impl NeighborInfo {
             }
         };
 
-        let inferred_src_mac = match interface.mac {
+        let inferred_src_mac = match inferred_interface.mac {
             Some(m) => m,
             None => return Err(PistolError::CanNotFoundSrcMacAddress),
         };
@@ -498,7 +634,7 @@ impl NeighborInfo {
                         src_mac: inferred_src_mac,
                         eth_type: EtherTypes::Arp,
                         l3_payload: buff,
-                        if_name: interface.name.clone(),
+                        if_name: inferred_interface.name.clone(),
                         retransmit: 1,
                     };
                     arp_buffs.push((ssp, filters));
@@ -521,7 +657,7 @@ impl NeighborInfo {
                             src_mac: inferred_src_mac,
                             eth_type: EtherTypes::Ipv6,
                             l3_payload: buff,
-                            if_name: interface.name.clone(),
+                            if_name: inferred_interface.name.clone(),
                             retransmit: 1,
                         };
                         (spp, filters)
@@ -534,7 +670,7 @@ impl NeighborInfo {
                             src_mac: inferred_src_mac,
                             eth_type: EtherTypes::Ipv6,
                             l3_payload: buff,
-                            if_name: interface.name.clone(),
+                            if_name: inferred_interface.name.clone(),
                             retransmit: 1,
                         };
                         (spp, filters)
@@ -576,10 +712,10 @@ impl NeighborInfo {
                 }
             }
         } else {
-            cached = true;
+            is_cached = true;
         }
 
-        let valid = if inferred_dst_mac == MacAddr::zero() {
+        let is_valid = if inferred_dst_mac == MacAddr::zero() {
             false
         } else {
             true
@@ -592,12 +728,13 @@ impl NeighborInfo {
             inferred_src_mac,
             inferred_dst_addr,
             inferred_src_addr,
+            inferred_interface,
+            cost,
+            is_valid,
+            is_cached,
+            is_loopback,
             origin_dst_addr: dst_addr,
             origin_src_addr: src_addr,
-            inferred_interface: interface,
-            cached,
-            cost,
-            valid,
         };
 
         Ok(Some(ni))

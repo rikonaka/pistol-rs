@@ -370,7 +370,7 @@ pub fn os_detect(
 
     for dt in &detect_targets {
         let ni = &dt.net_info;
-        if !ni.valid {
+        if !ni.is_valid {
             let od = DetectReport::new_offline_host(ni.inferred_dst_addr);
             os_detects.push(od);
             continue;

@@ -194,6 +194,27 @@ fn dst_in_local_net(dst_addr: IpAddr) -> bool {
     false
 }
 
+fn addr_is_loopback(dst_addr: IpAddr) -> bool {
+    let m1 = match dst_addr {
+        IpAddr::V4(ipv4) => ipv4.is_loopback(),
+        IpAddr::V6(ipv6) => ipv6.is_loopback(),
+    };
+
+    if m1 {
+        return true;
+    }
+
+    for i in interfaces() {
+        for p in i.ips {
+            if p.ip() == dst_addr {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 pub(crate) fn get_scan_line(
     dst_mac: MacAddr,
     dst_addr: IpAddr,
@@ -225,6 +246,7 @@ pub(crate) fn get_scan_line(
     // This test exists because it is possible for the ICMP TTL calculation to be incorrect
     // when intermediate machines change the TTL;
     // it distinguishes between a host that is truly directly connected and what may be just a miscalculation.
+    let is_loopback = addr_is_loopback(dst_addr);
     let pv = match dst_addr {
         IpAddr::V4(addr) => {
             if addr.is_loopback() || addr.is_private() {
@@ -259,11 +281,12 @@ pub(crate) fn get_scan_line(
             inferred_dst_addr: dst_addr,
             inferred_src_addr: src_addr,
             inferred_interface: interface.clone(),
+            cost: Duration::ZERO,
+            is_valid: true,
+            is_cached: true,
+            is_loopback,
             origin_dst_addr: dst_addr,
             origin_src_addr: Some(src_addr),
-            cached: true,
-            cost: Duration::ZERO,
-            valid: true,
         };
         let trace_target = TraceTargetWithNetInfo {
             net_info: net_info.clone(),
