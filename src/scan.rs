@@ -425,6 +425,103 @@ pub(crate) fn get_ndp_ns_scan_buff(
     Ok((spp, filters))
 }
 
+pub(crate) fn ndp_ra_scan_raw(
+    dst_ipv6: Ipv6Addr,
+    timeout: Duration,
+    max_retries: usize,
+) -> Result<(Vec<MacAddr>, Duration), PistolError> {
+    let start = Instant::now();
+    let mut stream = PistolStream::new();
+    stream.init(Some(String::from("icmp6 and ip6[40] = 136")))?;
+
+    let mut neighbor_info = NeighborInfo::new()?;
+    let interface = neighbor_info.infer_interface(dst_ipv6.into())?;
+    if interface.is_loopback() {
+        return Ok((Vec::new(), Duration::ZERO));
+    }
+
+    let if_name = interface.name.clone();
+    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
+        IpAddr::V6(s) => s,
+        _ => return Err(PistolError::CanNotFoundSrcAddress),
+    };
+
+    let dst_mac = ipv6_multicast_mac(dst_ipv6);
+
+    debug!("use interface {} and src ipv6 {}", &if_name, src_ipv6);
+    let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+    let spp = SendPacketParam {
+        dst_mac,
+        src_mac,
+        l3_payload: ndp_ns_buff.clone(),
+        eth_type: EtherTypes::Ipv6,
+        if_name: if_name.clone(),
+        retransmit: 1,
+    };
+
+    let mut all_done = false;
+    let mut macs = Vec::new();
+    for i in 0..max_retries {
+        if all_done {
+            break;
+        }
+        debug!(
+            "send ndp ns scan packet to {}, retry: #{}/{}",
+            dst_ipv6,
+            i + 1,
+            max_retries
+        );
+        stream.send_packet(spp.clone())?;
+        let response = stream.recv_packet(timeout)?;
+        for r in &response {
+            for f in &filters {
+                if f.check(r) {
+                    match parse_mac_scan_response(r) {
+                        Some((addr, mac)) => {
+                            if !macs.contains(&mac) {
+                                all_done = true;
+                                macs.push(mac);
+                            }
+                        }
+                        None => (),
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok((macs, start.elapsed()))
+}
+
+pub(crate) fn get_ndp_ra_scan_buff(
+    dst_ipv6: Ipv6Addr,
+    interface: NetworkInterface,
+) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
+    let if_name = interface.name.clone();
+    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
+        IpAddr::V6(s) => s,
+        _ => return Err(PistolError::CanNotFoundSrcAddress),
+    };
+    let dst_mac = ipv6_multicast_mac(dst_ipv6);
+
+    debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
+    let (ndp_ns_buff, filters) = build_ndp_ns_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+
+    let spp = SendPacketParam {
+        dst_mac,
+        src_mac,
+        l3_payload: ndp_ns_buff.clone(),
+        eth_type: EtherTypes::Ipv6,
+        if_name: if_name.clone(),
+        retransmit: 1,
+    };
+
+    Ok((spp, filters))
+}
+
 pub(crate) fn parse_mac_scan_response(eth_response: &[u8]) -> Option<(IpAddr, MacAddr)> {
     if eth_response.len() == 0 {
         return None;

@@ -92,14 +92,12 @@ pub enum PistolError {
     CanNotFoundNetInfo,
 
     /* ROUTE ERROR */
-    #[error("subnetwork error")]
-    RegexError(#[from] regex::Error),
-    #[error("invalid route via address: {addr}")]
-    InvalidRouteViaAddress { addr: IpAddr },
-    #[error("address parse error")]
-    AddrParseError(#[from] std::net::AddrParseError),
     #[error("mac address parse error: {mac}")]
     ParseMacAddrErr { mac: String },
+    #[error("crossnet error")]
+    CrossNetError(#[from] crossnet::error::CrossNetError),
+    #[error("route addr type error")]
+    RouteAddrTypeError,
 
     /* OTHER ERROR */
     #[error("std error")]
