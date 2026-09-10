@@ -148,12 +148,20 @@ fn infer_ifname(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetworkInterf
                 }
             };
 
+            let dst2 = match route.gateway {
+                Some(gateway) => match gateway {
+                    NetRouteAddr::IpAddr(gateway_addr) => gateway_addr,
+                    _ => dst,
+                },
+                None => dst,
+            };
 
-            let ifname = neighbor_cache.search_ifname(&dst)?;
-            match ifname {
-                Some(name) => {
+            // If the target needs to go through a gateway,
+            // we need to find the interface name of the gateway.
+            match neighbor_cache.search_ifname(&dst2)? {
+                Some(n) => {
                     for i in &ifs {
-                        if i.name == name {
+                        if i.name == n {
                             return Ok(Some(i.clone()));
                         }
                     }
@@ -179,7 +187,7 @@ fn infer_ifname(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetworkInterf
 pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo>, PistolError> {
     let neigh_cache = get_neighbor_cache()?;
     let route_cache = get_route_cache()?;
-    let route = match route_cache.search_route(dst) {
+    let route = match route_cache.search_route(&dst) {
         Some(nr) => nr,
         None => {
             // Return default route if no route found,
