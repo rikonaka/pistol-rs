@@ -26,7 +26,7 @@ use crate::layer::PayloadMatchIp;
 pub(crate) fn build_ndp_ra_scan_packet(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-) -> Result<(MacAddr, Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
+) -> Result<(Arc<[u8]>, Vec<Arc<PacketFilter>>), PistolError> {
     // router solicitation
     let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0002);
     // let route_addr_ipv6 = Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 0x0001);
@@ -107,7 +107,6 @@ pub(crate) fn build_ndp_ra_scan_packet(
         payload: Some(payload),
     };
     let filter = Arc::new(PacketFilter::Layer4FilterIcmpv6(layer4_icmpv6));
-    let dst_mac = MacAddr(33, 33, 00, 00, 00, 02);
     let ipv6_buff = Arc::new(ipv6_buff);
-    Ok((dst_mac, ipv6_buff, vec![filter]))
+    Ok((ipv6_buff, vec![filter]))
 }

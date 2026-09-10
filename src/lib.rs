@@ -1263,7 +1263,7 @@ impl Pistol {
         // since we will use the operating system's TCP stack to send packets.
         let mut scan_targets = Vec::new();
         for t in targets {
-            let mut net_info = NetInfo::invalid();
+            let mut net_info = NetInfo::fake();
             net_info.is_valid = true;
             let p = PortScanTargetWithNetInfo {
                 net_info: net_info.clone(),
@@ -1293,7 +1293,7 @@ impl Pistol {
         self.init_logger();
         // we do not need to get mac info for tcp connect scan,
         // since we will use the operating system's TCP stack to send packets.
-        let mut net_info = NetInfo::invalid();
+        let mut net_info = NetInfo::fake();
         net_info.is_valid = true;
         let scan_target = PortScanTargetWithNetInfo {
             net_info: net_info.clone(),

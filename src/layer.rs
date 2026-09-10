@@ -1335,7 +1335,7 @@ impl PacketFilter {
     }
 }
 
-pub(crate) fn ipv6_multicast_mac(ip: Ipv6Addr) -> MacAddr {
+pub(crate) fn ipv6_solicited_node_multicast_mac(ip: Ipv6Addr) -> MacAddr {
     let ip_octets = ip.octets();
     // 33:33:FF:xx:xx:xx
     MacAddr::new(
@@ -1346,6 +1346,11 @@ pub(crate) fn ipv6_multicast_mac(ip: Ipv6Addr) -> MacAddr {
         ip_octets[14],
         ip_octets[15],
     )
+}
+
+pub(crate) fn ipv6_all_routers_multicast_mac() -> MacAddr {
+    // 33:33:00:00:00:02
+    MacAddr::new(0x33, 0x33, 0x00, 0x00, 0x00, 0x02)
 }
 
 #[cfg(test)]

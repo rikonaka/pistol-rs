@@ -1,4 +1,4 @@
-use crossnet::neigh;
+use crossnet::iface::MacAddr as CrossNetMacAddr;
 use crossnet::neigh::get_neighbor_cache;
 use crossnet::route::NetRouteAddr;
 use crossnet::route::get_route_cache;
@@ -21,13 +21,14 @@ use tracing::warn;
 use crate::PistolStream;
 use crate::SendPacketParam;
 use crate::error::PistolError;
-use crate::layer::ipv6_multicast_mac;
+use crate::layer::ipv6_solicited_node_multicast_mac;
 use crate::scan::arp::build_arp_scan_buff;
-use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
-use crate::scan::ndp_rs::build_ndp_ra_scan_packet;
-use crate::scan::parse_mac_scan_response;
 use crate::scan::arp_scan_raw;
+use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::scan::ndp_ns_scan_raw;
+use crate::scan::ndp_ra::build_ndp_ra_scan_packet;
+use crate::scan::ndp_ra_scan_raw;
+use crate::scan::parse_mac_scan_response;
 
 pub(crate) fn fake_interface() -> NetworkInterface {
     NetworkInterface {
@@ -62,7 +63,7 @@ pub(crate) struct NetInfo {
 }
 
 impl NetInfo {
-    pub(crate) fn invalid() -> Self {
+    pub(crate) fn fake() -> Self {
         NetInfo {
             inferred_dst_mac: MacAddr::zero(),
             inferred_src_mac: MacAddr::zero(),
@@ -101,64 +102,180 @@ impl fmt::Display for NetInfo {
     }
 }
 
+fn crossnet_mac_std(mac: CrossNetMacAddr) -> Result<MacAddr, PistolError> {
+    let mac_octects = mac.octets();
+    if mac_octects.len() < 6 {
+        Err(PistolError::ParseMacAddrErr {
+            mac: mac.to_string(),
+        })
+    } else {
+        Ok(MacAddr::new(
+            mac_octects[0],
+            mac_octects[1],
+            mac_octects[2],
+            mac_octects[3],
+            mac_octects[4],
+            mac_octects[5],
+        ))
+    }
+}
+
+fn infer_ifname(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetworkInterface>, PistolError> {
+    let ifs = interfaces();
+    match src {
+        Some(s) => {
+            for i in &ifs {
+                for ip in &i.ips {
+                    if ip.ip() == s {
+                        return Ok(Some(i.clone()));
+                    }
+                }
+            }
+        }
+        None => {
+            let neighbor_cache = get_neighbor_cache()?;
+            let route_cache = get_route_cache()?;
+
+            let route = match route_cache.search_route(&dst) {
+                Some(nr) => nr,
+                None => {
+                    // Return default route if no route found,
+                    // but we need to check if the default route is valid.
+                    match route_cache.get_default_route() {
+                        Some(dr) => dr,
+                        None => return Err(PistolError::CanNotFoundRoute { dst }),
+                    }
+                }
+            };
+
+
+            let ifname = neighbor_cache.search_ifname(&dst)?;
+            match ifname {
+                Some(name) => {
+                    for i in &ifs {
+                        if i.name == name {
+                            return Ok(Some(i.clone()));
+                        }
+                    }
+                }
+                None => {
+                    // Very rare case, if the neighbor cache
+                    // does not have the interface name for
+                    // the destination address.
+                    for i in &ifs {
+                        for ip in &i.ips {
+                            if ip.contains(dst) {
+                                return Ok(Some(i.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
 pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo>, PistolError> {
     let neigh_cache = get_neighbor_cache()?;
     let route_cache = get_route_cache()?;
-    match route_cache.search_route(dst) {
-        Some(nr) => {
-            match nr.gateway {
-                Some(nra) => {
-                    // If the route has a gateway,
-                    // means the destination is not in the same subnet,
-                    // we need to use the gateway's mac address as the destination mac address.
-                    let c_inferred_dst_mac = match nra {
-                        NetRouteAddr::IpPool(_p) => {
-                            // The route addr can not be IpPool.
-                            return Err(PistolError::RouteAddrTypeError);
-                        }
-                        NetRouteAddr::IpAddr(route_addr) => {
-                            match neigh_cache.search_mac(&route_addr) {
-                                Some(route_mac) => route_mac,
-                                None => {
-                                    // send arp(ipv4) or ndp(ipv6) to get the mac address of the gateway
-                                    let timeout = Duration::from_secs_f32(1.0);
-                                    match route_addr {
-                                        IpAddr::V4(r4) => {
-                                            arp_scan_raw(r4, timeout, 2)?;
-                                        }
-                                        IpAddr::V6(r6) => {
+    let route = match route_cache.search_route(dst) {
+        Some(nr) => nr,
+        None => {
+            // Return default route if no route found,
+            // but we need to check if the default route is valid.
+            match route_cache.get_default_route() {
+                Some(dr) => dr,
+                None => return Err(PistolError::CanNotFoundRoute { dst }),
+            }
+        }
+    };
 
-                                        }
+    let inferred_dst_mac = match route.gateway {
+        Some(nra) => {
+            // If the route has a gateway,
+            // means the destination is not in the same subnet,
+            // we need to use the gateway's mac address as the destination mac address.
+            match nra {
+                NetRouteAddr::IpPool(_p) => {
+                    // The route addr can not be IpPool.
+                    return Err(PistolError::RouteAddrTypeError);
+                }
+                NetRouteAddr::IpAddr(route_addr) => {
+                    match neigh_cache.search_mac(&route_addr) {
+                        Some(route_mac) => crossnet_mac_std(route_mac)?,
+                        None => {
+                            // send arp(ipv4) or ndp(ipv6) to get the mac address of the gateway
+                            let timeout = Duration::from_secs_f32(1.0);
+                            match route_addr {
+                                IpAddr::V4(d4) => {
+                                    let (macs, _dur) = arp_scan_raw(d4, timeout, 2)?;
+                                    if macs.len() > 0 {
+                                        macs[0]
+                                    } else {
+                                        return Err(PistolError::CanNotFoundMac { dst });
+                                    }
+                                }
+                                IpAddr::V6(d6) => {
+                                    let (macs, _dur) = ndp_ra_scan_raw(d6, timeout, 2)?;
+                                    if macs.len() > 0 {
+                                        macs[0]
+                                    } else {
+                                        return Err(PistolError::CanNotFoundMac { dst });
                                     }
                                 }
                             }
                         }
-                        NetRouteAddr::MacAddr(route_mac) => {
-                            // The route addr is a mac address, we can use it directly.
-                            route_mac
-                        }
-                    };
-
-                    let inferred_dst_mac_octects = c_inferred_dst_mac.octets();
-                    if inferred_dst_mac_octects.len() < 6 {
-                        return Err(PistolError::ParseMacAddrErr {
-                            mac: c_inferred_dst_mac.to_string(),
-                        });
                     }
-                    let inferred_dst_mac = MacAddr::new(
-                        inferred_dst_mac_octects[0],
-                        inferred_dst_mac_octects[1],
-                        inferred_dst_mac_octects[2],
-                        inferred_dst_mac_octects[3],
-                        inferred_dst_mac_octects[4],
-                        inferred_dst_mac_octects[5],
-                    );
                 }
-                None => {}
+                NetRouteAddr::MacAddr(route_mac) => {
+                    // The route addr is a mac address, we can use it directly.
+                    crossnet_mac_std(route_mac)?
+                }
             }
         }
-        None => {}
-    }
+        None => {
+            match neigh_cache.search_mac(&dst) {
+                Some(mac) => crossnet_mac_std(mac)?,
+                None => {
+                    // send arp(ipv4) or ndp(ipv6) to get the mac address of the destination
+                    let timeout = Duration::from_secs_f32(1.0);
+                    match dst {
+                        IpAddr::V4(d4) => {
+                            let (macs, _dur) = arp_scan_raw(d4, timeout, 2)?;
+                            if macs.len() > 0 {
+                                macs[0]
+                            } else {
+                                return Err(PistolError::CanNotFoundMac { dst });
+                            }
+                        }
+                        IpAddr::V6(d6) => {
+                            let (macs, _dur) = ndp_ra_scan_raw(d6, timeout, 2)?;
+                            if macs.len() > 0 {
+                                macs[0]
+                            } else {
+                                return Err(PistolError::CanNotFoundMac { dst });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let ni = NetInfo {
+        inferred_dst_mac,
+        inferred_src_mac,
+        inferred_dst_addr,
+        inferred_src_addr,
+        inferred_interface,
+        cost,
+        is_cached,
+        is_valid,
+        is_loopback,
+        origin_dst_addr,
+        origin_src_addr,
+    };
 
     let mut nis = NeighborInfo::new()?;
     nis.infer_net_info(dst, src)
