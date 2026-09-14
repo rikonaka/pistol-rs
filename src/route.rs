@@ -192,7 +192,7 @@ fn detect_mac(dst_addr: &IpAddr) -> Result<Option<MacAddr>, PistolError> {
             if macs.len() > 0 {
                 Ok(Some(macs[0]))
             } else {
-                eprintln!("can not found mac address for the destination address {dst_addr}");
+                warn!("can not found mac address for the destination address {dst_addr}");
                 Ok(None)
             }
         }
@@ -201,7 +201,7 @@ fn detect_mac(dst_addr: &IpAddr) -> Result<Option<MacAddr>, PistolError> {
             if macs.len() > 0 {
                 Ok(Some(macs[0]))
             } else {
-                eprintln!("can not found mac address for the destination address {dst_addr}");
+                warn!("can not found mac address for the destination address {dst_addr}");
                 Ok(None)
             }
         }
@@ -214,6 +214,9 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
 
     let neigh_cache = get_neighbor_cache()?;
     let route_cache = get_route_cache()?;
+
+    debug!("infer_net_info: dst: {}, src: {:?}", dst, src);
+
     let route = match route_cache.search_route(&dst) {
         Some(nr) => nr,
         None => {
@@ -260,7 +263,6 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
                 Some(mac) => crossnet_mac_convert(&mac)?,
                 None => {
                     // send arp(ipv4) or ndp(ipv6) to get the mac address of the destination
-                    let timeout = Duration::from_secs_f32(1.0);
                     match detect_mac(&dst)? {
                         Some(mac) => mac,
                         None => return Ok(None),
