@@ -1,34 +1,23 @@
 use crossnet::iface::MacAddr as CrossNetMacAddr;
+use crossnet::neigh::NeighborCache;
 use crossnet::neigh::get_neighbor_cache;
 use crossnet::route::NetRouteAddr;
+use crossnet::route::RouteCache;
 use crossnet::route::get_route_cache;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
-use pnet::packet::ethernet::EtherTypes;
-use regex::Regex;
-use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
-use std::process::Command;
-use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::debug;
 use tracing::warn;
 
-use crate::PistolStream;
-use crate::SendPacketParam;
 use crate::error::PistolError;
-use crate::layer::ipv6_solicited_node_multicast_mac;
-use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::arp_scan_raw;
-use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
-use crate::scan::ndp_ns_scan_raw;
-use crate::scan::ndp_ra::build_ndp_ra_scan_packet;
 use crate::scan::ndp_ra_scan_raw;
-use crate::scan::parse_mac_scan_response;
 
 pub(crate) fn fake_interface() -> NetworkInterface {
     NetworkInterface {
@@ -102,7 +91,7 @@ impl fmt::Display for NetInfo {
     }
 }
 
-fn crossnet_mac_std(mac: CrossNetMacAddr) -> Result<MacAddr, PistolError> {
+fn crossnet_mac_convert(mac: &CrossNetMacAddr) -> Result<MacAddr, PistolError> {
     let mac_octects = mac.octets();
     if mac_octects.len() < 6 {
         Err(PistolError::ParseMacAddrErr {
@@ -120,7 +109,12 @@ fn crossnet_mac_std(mac: CrossNetMacAddr) -> Result<MacAddr, PistolError> {
     }
 }
 
-fn infer_ifname(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetworkInterface>, PistolError> {
+pub(crate) fn infer_if(
+    dst: IpAddr,
+    src: Option<IpAddr>,
+    neighbor: Option<NeighborCache>,
+    route: Option<RouteCache>,
+) -> Result<Option<NetworkInterface>, PistolError> {
     let ifs = interfaces();
     match src {
         Some(s) => {
@@ -133,8 +127,14 @@ fn infer_ifname(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetworkInterf
             }
         }
         None => {
-            let neighbor_cache = get_neighbor_cache()?;
-            let route_cache = get_route_cache()?;
+            let neighbor_cache = match neighbor {
+                Some(n) => n,
+                None => get_neighbor_cache()?,
+            };
+            let route_cache = match route {
+                Some(r) => r,
+                None => get_route_cache()?,
+            };
 
             let route = match route_cache.search_route(&dst) {
                 Some(nr) => nr,
@@ -184,7 +184,34 @@ fn infer_ifname(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetworkInterf
     Ok(None)
 }
 
+fn detect_mac(dst_addr: &IpAddr) -> Result<Option<MacAddr>, PistolError> {
+    let timeout = Duration::from_secs_f32(1.0);
+    match dst_addr {
+        IpAddr::V4(d4) => {
+            let (macs, _dur) = arp_scan_raw(*d4, timeout, 2)?;
+            if macs.len() > 0 {
+                Ok(Some(macs[0]))
+            } else {
+                eprintln!("can not found mac address for the destination address {dst_addr}");
+                Ok(None)
+            }
+        }
+        IpAddr::V6(d6) => {
+            let (macs, _dur) = ndp_ra_scan_raw(*d6, timeout, 2)?;
+            if macs.len() > 0 {
+                Ok(Some(macs[0]))
+            } else {
+                eprintln!("can not found mac address for the destination address {dst_addr}");
+                Ok(None)
+            }
+        }
+    }
+}
+
 pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo>, PistolError> {
+    let start = Instant::now();
+    let mut is_cached = true;
+
     let neigh_cache = get_neighbor_cache()?;
     let route_cache = get_route_cache()?;
     let route = match route_cache.search_route(&dst) {
@@ -199,7 +226,7 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
         }
     };
 
-    let inferred_dst_mac = match route.gateway {
+    let inferred_dst_mac = match &route.gateway {
         Some(nra) => {
             // If the route has a gateway,
             // means the destination is not in the same subnet,
@@ -210,66 +237,83 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
                     return Err(PistolError::RouteAddrTypeError);
                 }
                 NetRouteAddr::IpAddr(route_addr) => {
-                    match neigh_cache.search_mac(&route_addr) {
-                        Some(route_mac) => crossnet_mac_std(route_mac)?,
+                    match neigh_cache.search_mac(route_addr) {
+                        Some(route_mac) => crossnet_mac_convert(&route_mac)?,
                         None => {
                             // send arp(ipv4) or ndp(ipv6) to get the mac address of the gateway
-                            let timeout = Duration::from_secs_f32(1.0);
-                            match route_addr {
-                                IpAddr::V4(d4) => {
-                                    let (macs, _dur) = arp_scan_raw(d4, timeout, 2)?;
-                                    if macs.len() > 0 {
-                                        macs[0]
-                                    } else {
-                                        return Err(PistolError::CanNotFoundMac { dst });
-                                    }
-                                }
-                                IpAddr::V6(d6) => {
-                                    let (macs, _dur) = ndp_ra_scan_raw(d6, timeout, 2)?;
-                                    if macs.len() > 0 {
-                                        macs[0]
-                                    } else {
-                                        return Err(PistolError::CanNotFoundMac { dst });
-                                    }
-                                }
+                            is_cached = false;
+                            match detect_mac(route_addr)? {
+                                Some(mac) => mac,
+                                None => return Ok(None),
                             }
                         }
                     }
                 }
                 NetRouteAddr::MacAddr(route_mac) => {
                     // The route addr is a mac address, we can use it directly.
-                    crossnet_mac_std(route_mac)?
+                    crossnet_mac_convert(route_mac)?
                 }
             }
         }
         None => {
             match neigh_cache.search_mac(&dst) {
-                Some(mac) => crossnet_mac_std(mac)?,
+                Some(mac) => crossnet_mac_convert(&mac)?,
                 None => {
                     // send arp(ipv4) or ndp(ipv6) to get the mac address of the destination
                     let timeout = Duration::from_secs_f32(1.0);
-                    match dst {
-                        IpAddr::V4(d4) => {
-                            let (macs, _dur) = arp_scan_raw(d4, timeout, 2)?;
-                            if macs.len() > 0 {
-                                macs[0]
-                            } else {
-                                return Err(PistolError::CanNotFoundMac { dst });
-                            }
-                        }
-                        IpAddr::V6(d6) => {
-                            let (macs, _dur) = ndp_ra_scan_raw(d6, timeout, 2)?;
-                            if macs.len() > 0 {
-                                macs[0]
-                            } else {
-                                return Err(PistolError::CanNotFoundMac { dst });
-                            }
-                        }
+                    match detect_mac(&dst)? {
+                        Some(mac) => mac,
+                        None => return Ok(None),
                     }
                 }
             }
         }
     };
+
+    let inferred_interface = match infer_if(
+        dst,
+        src,
+        Some(neigh_cache.clone()),
+        Some(route_cache.clone()),
+    )? {
+        Some(i) => i,
+        None => return Err(PistolError::CanNotFoundInterface { addr: dst }),
+    };
+
+    let inferred_src_mac = match inferred_interface.mac {
+        Some(mac) => mac,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
+    };
+
+    // If the route has a gateway,
+    // we need to use the gateway's IP address as the destination IP address.
+    let inferred_dst_addr = match &route.gateway {
+        Some(nra) => match nra {
+            NetRouteAddr::IpAddr(route_addr) => route_addr.clone(),
+            _ => dst,
+        },
+        None => dst,
+    };
+
+    let inferred_src_addr = match src {
+        Some(s) => s,
+        None => {
+            // If user did not specify source IP address,
+            // we will use the IP address of the selected interface.
+            let ips = &inferred_interface.ips;
+            if ips.len() > 0 {
+                ips[0].ip()
+            } else {
+                return Err(PistolError::CanNotFoundSrcAddress);
+            }
+        }
+    };
+
+    let cost = start.elapsed();
+    let is_valid = true;
+    let is_loopback = inferred_interface.is_loopback();
+    let origin_dst_addr = dst;
+    let origin_src_addr = src;
 
     let ni = NetInfo {
         inferred_dst_mac,
@@ -284,9 +328,7 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
         origin_dst_addr,
         origin_src_addr,
     };
-
-    let mut nis = NeighborInfo::new()?;
-    nis.infer_net_info(dst, src)
+    Ok(Some(ni))
 }
 
 #[cfg(test)]
@@ -298,8 +340,7 @@ mod tests {
         let start = Instant::now();
         let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
         let src = None;
-        let mut nis = NeighborInfo::new().unwrap();
-        if let Some(infer_result) = nis.infer_net_info(dst, src).unwrap() {
+        if let Some(infer_result) = infer_net_info(dst, src).unwrap() {
             println!(
                 "infer result: {}, elapsed: {:?}",
                 infer_result.inferred_interface.name,

@@ -38,6 +38,8 @@ pub enum PistolError {
     CanNotParseEthernetPacket,
     #[error("try to lock some var failed: {e}")]
     LockVarFailed { e: String },
+    #[error("can not found the interface for the destination address {addr}")]
+    CanNotFoundInterface { addr: IpAddr },
 
     /* SERVICE DETECT ERROR */
     #[error("parse int error")]
@@ -74,8 +76,6 @@ pub enum PistolError {
     RouteAddrTypeError,
     #[error("can not found route for the destination address {dst}")]
     CanNotFoundRoute { dst: IpAddr },
-    #[error("can not found mac address for the destination address {dst}")]
-    CanNotFoundMac { dst: IpAddr },
 
     /* OTHER ERROR */
     #[error("std error")]

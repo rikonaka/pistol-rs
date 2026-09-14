@@ -2,6 +2,8 @@
 use bitcode;
 use chrono::DateTime;
 use chrono::Local;
+use crossnet::neigh::get_neighbor_cache;
+use crossnet::route::get_route_cache;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
@@ -55,6 +57,7 @@ use crate::SendWindow;
 use crate::error::PistolError;
 use crate::layer::ipv6_all_routers_multicast_mac;
 use crate::layer::ipv6_solicited_node_multicast_mac;
+use crate::route::infer_if;
 use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::scan::ndp_ra::build_ndp_ra_scan_packet;
@@ -239,8 +242,14 @@ pub(crate) fn arp_scan_raw(
     let mut stream = PistolStream::new();
     stream.init(Some(String::from("arp and arp[6:2] = 2")))?;
 
-    let mut neighbor_output = NeighborInfo::new()?;
-    let interface = neighbor_output.infer_interface(dst_ipv4.into())?;
+    let interface = match infer_if(dst_ipv4.into(), None, None, None)? {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                addr: dst_ipv4.into(),
+            });
+        }
+    };
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
@@ -283,7 +292,7 @@ pub(crate) fn arp_scan_raw(
             for f in &filters {
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
-                        Some((addr, mac)) => {
+                        Some((_addr, mac)) => {
                             if !macs.contains(&mac) {
                                 macs.push(mac);
                                 all_done = true;
@@ -338,8 +347,14 @@ pub(crate) fn ndp_ns_scan_raw(
     let mut stream = PistolStream::new();
     stream.init(Some(String::from("icmp6 and ip6[40] = 136")))?;
 
-    let mut neighbor_info = NeighborInfo::new()?;
-    let interface = neighbor_info.infer_interface(dst_ipv6.into())?;
+    let interface = match infer_if(dst_ipv6.into(), None, None, None)? {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                addr: dst_ipv6.into(),
+            });
+        }
+    };
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
@@ -382,7 +397,7 @@ pub(crate) fn ndp_ns_scan_raw(
             for f in &filters {
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
-                        Some((addr, mac)) => {
+                        Some((_addr, mac)) => {
                             if !macs.contains(&mac) {
                                 all_done = true;
                                 macs.push(mac);
@@ -435,8 +450,14 @@ pub(crate) fn ndp_ra_scan_raw(
     let mut stream = PistolStream::new();
     stream.init(Some(String::from("icmp6 and ip6[40] = 134")))?;
 
-    let mut neighbor_info = NeighborInfo::new()?;
-    let interface = neighbor_info.infer_interface(dst_ipv6.into())?;
+    let interface = match infer_if(dst_ipv6.into(), None, None, None)? {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                addr: dst_ipv6.into(),
+            });
+        }
+    };
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
@@ -451,7 +472,7 @@ pub(crate) fn ndp_ra_scan_raw(
     let dst_mac = ipv6_all_routers_multicast_mac();
 
     debug!("use interface {} and src ipv6 {}", &if_name, src_ipv6);
-    let (ndp_ra_buff, filters) = build_ndp_ra_scan_packet(dst_ipv6, src_mac, src_ipv6)?;
+    let (ndp_ra_buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
     let spp = SendPacketParam {
         dst_mac,
         src_mac,
@@ -479,7 +500,7 @@ pub(crate) fn ndp_ra_scan_raw(
             for f in &filters {
                 if f.check(r) {
                     match parse_mac_scan_response(r) {
-                        Some((addr, mac)) => {
+                        Some((_addr, mac)) => {
                             if !macs.contains(&mac) {
                                 all_done = true;
                                 macs.push(mac);
@@ -627,13 +648,19 @@ pub(crate) fn mac_scan(
         "(arp and arp[6:2] = 2) or (icmp6 and ip6[40] = 136)",
     )))?;
 
-    let mut neighbor_info = NeighborInfo::new()?;
-
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
+
+    let neigh = get_neighbor_cache()?;
+    let route = get_route_cache()?;
     for t in targets {
         let dst_addr = t.dst_addr;
-        let interface = neighbor_info.infer_interface(dst_addr)?;
+        let interface = match infer_if(dst_addr, None, Some(neigh.clone()), Some(route.clone()))? {
+            Some(i) => i,
+            None => {
+                return Err(PistolError::CanNotFoundInterface { addr: dst_addr });
+            }
+        };
         let dst_port = 0;
         let state = MacScanState {
             dst_addr,
