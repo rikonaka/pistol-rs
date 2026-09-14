@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
-use chrono::DateTime;
 use chrono::Local;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
@@ -10,7 +9,6 @@ use pcapture::Capture;
 use pnet::datalink;
 use pnet::datalink::DataLinkSender;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 #[cfg(feature = "debug")]
 use pnet::packet::Packet;
 use pnet::packet::ethernet::EtherType;
@@ -32,16 +30,12 @@ use pnet::packet::udp::UdpPacket;
 use pnet::transport::TransportChannelType::Layer3;
 use pnet::transport::TransportSender;
 use pnet::transport::transport_channel;
-use serde::Deserialize;
-use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::btree_map::IntoIter;
 use std::collections::btree_map::Iter;
 use std::collections::btree_map::IterMut;
-use std::fmt;
-use std::fs;
 use std::hash::Hash;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -49,10 +43,7 @@ use std::net::Ipv6Addr;
 use std::panic::Location;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::LazyLock;
-use std::sync::Mutex;
 use std::thread;
-use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 use subnetwork::Ipv4Pool;
@@ -83,8 +74,8 @@ use crate::layer::PacketFilter;
 use crate::os::OsDetects;
 use crate::os::dbparser::NmapOsDb;
 use crate::ping::HostPings;
-use crate::route::NeighborInfo;
 use crate::route::NetInfo;
+use crate::route::infer_net_info;
 use crate::scan::MacScans;
 use crate::scan::PortScans;
 use crate::trace::Trace;
@@ -896,7 +887,7 @@ impl PistolStream {
                         sleep_millis = 500;
                     }
 
-                    sleep(Duration::from_millis(sleep_millis));
+                    thread::sleep(Duration::from_millis(sleep_millis));
                     self.l2_receiver_ready_sleep = true;
                 }
                 break;
@@ -1285,9 +1276,9 @@ impl Pistol {
     /// If there is no response within the specified timeout, it indicates that the port is filtered
     pub fn tcp_connect_scan_raw(
         &mut self,
-        dst_addr: IpAddr,
+        _dst_addr: IpAddr,
         dst_port: u16,
-        src_addr: Option<IpAddr>,
+        _src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
@@ -2539,10 +2530,9 @@ struct PortScanTargetWithNetInfo {
 impl PortScanTargetWithNetInfo {
     fn infer_multi(targets: &[PortScanTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = PortScanTargetWithNetInfo {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
@@ -2562,8 +2552,7 @@ impl PortScanTargetWithNetInfo {
         src_port: Option<u16>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = PortScanTargetWithNetInfo {
                 net_info,
                 dst_ports: vec![dst_port],
@@ -2811,10 +2800,9 @@ pub(crate) struct PingTargetWithNetInfo {
 impl PingTargetWithNetInfo {
     fn infer_icmp_multi(targets: &[IcmpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
                     dst_ports: vec![],
@@ -2829,10 +2817,9 @@ impl PingTargetWithNetInfo {
     }
     fn infer_xxp_multi(targets: &[XxpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
@@ -2850,8 +2837,7 @@ impl PingTargetWithNetInfo {
         src_addr: Option<IpAddr>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_ports: vec![],
@@ -2871,8 +2857,7 @@ impl PingTargetWithNetInfo {
         src_port: Option<u16>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_ports,
@@ -3121,10 +3106,9 @@ pub(crate) struct TraceTargetWithNetInfo {
 impl TraceTargetWithNetInfo {
     fn infer_xxp_multi(targets: &[XxpTraceTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
                     dst_port: t.dst_port,
@@ -3139,10 +3123,9 @@ impl TraceTargetWithNetInfo {
     }
     fn infer_icmp_multi(targets: &[IcmpTraceTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
                     dst_port: None,
@@ -3162,8 +3145,7 @@ impl TraceTargetWithNetInfo {
         src_port: Option<u16>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_port,
@@ -3181,8 +3163,7 @@ impl TraceTargetWithNetInfo {
         src_addr: Option<IpAddr>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_port: None,
@@ -3431,10 +3412,9 @@ pub(crate) struct FloodTargetWithNetInfo {
 impl FloodTargetWithNetInfo {
     fn infer_xxp_multi(targets: &[XxpFloodTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
                     dst_port: t.dst_port,
@@ -3449,10 +3429,9 @@ impl FloodTargetWithNetInfo {
     }
     fn infer_icmp_multi(targets: &[IcmpFloodTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
                     dst_port: None,
@@ -3472,8 +3451,7 @@ impl FloodTargetWithNetInfo {
         src_port: Option<u16>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_port,
@@ -3491,8 +3469,7 @@ impl FloodTargetWithNetInfo {
         src_addr: Option<IpAddr>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_port: None,
@@ -3542,10 +3519,9 @@ pub(crate) struct OsDetectTargetWithNetInfo {
 impl OsDetectTargetWithNetInfo {
     fn infer_multi(targets: &[OsDetectTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = neighbor_info.infer_net_info(t.dst_addr, None)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, None)? {
                 let p = Self {
                     net_info,
                     dst_open_tcp_port: t.dst_open_tcp_port,
@@ -3566,8 +3542,7 @@ impl OsDetectTargetWithNetInfo {
         src_addr: Option<IpAddr>,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        let mut neighbor_info = NeighborInfo::new()?;
-        if let Some(net_info) = neighbor_info.infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
             let p = Self {
                 net_info,
                 dst_open_tcp_port,
