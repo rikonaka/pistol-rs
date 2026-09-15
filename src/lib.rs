@@ -7,7 +7,6 @@ use crossbeam_channel::unbounded;
 use dns_lookup::lookup_host;
 use pcapture::Capture;
 use pnet::datalink;
-use pnet::datalink::DataLinkSender;
 use pnet::datalink::MacAddr;
 #[cfg(feature = "debug")]
 use pnet::packet::Packet;
@@ -658,7 +657,7 @@ fn debug_show_packet(ethernet_packet: &[u8], show_ether_type: Option<EtherType>)
 }
 
 struct L2Sender {
-    sender: Box<dyn DataLinkSender>,
+    sender: Box<dyn datalink::DataLinkSender>,
 }
 
 struct L3Sender {
@@ -1260,7 +1259,6 @@ impl Pistol {
                 net_info: net_info.clone(),
                 dst_ports: t.dst_ports.clone(),
                 src_port: t.src_port,
-                origin: t.origin.clone(),
             };
             scan_targets.push(p);
         }
@@ -1290,7 +1288,6 @@ impl Pistol {
             net_info: net_info.clone(),
             dst_ports: vec![dst_port],
             src_port,
-            origin: None,
         };
         let mut ret = scan::tcp_connect_scan(
             vec![scan_target],
@@ -1399,8 +1396,8 @@ impl Pistol {
     pub fn tcp_null_scan(
         &mut self,
         targets: &[PortScanTarget],
-        src_addr: Option<IpAddr>,
-        src_port: Option<u16>,
+        _src_addr: Option<IpAddr>,
+        _src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
@@ -2524,7 +2521,6 @@ struct PortScanTargetWithNetInfo {
     pub net_info: NetInfo,
     pub dst_ports: Vec<u16>,
     pub src_port: Option<u16>,
-    pub origin: Option<String>,
 }
 
 impl PortScanTargetWithNetInfo {
@@ -2537,7 +2533,6 @@ impl PortScanTargetWithNetInfo {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
                     src_port: t.src_port,
-                    origin: t.origin.clone(),
                 };
                 values.push(p);
             }
@@ -2557,7 +2552,6 @@ impl PortScanTargetWithNetInfo {
                 net_info,
                 dst_ports: vec![dst_port],
                 src_port,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -2794,7 +2788,6 @@ pub(crate) struct PingTargetWithNetInfo {
     pub dst_ports: Vec<u16>,
     /// For ICMP ping, the source port is not used, so it is set to None. For TCP ping, it is used if specified.
     pub src_port: Option<u16>,
-    pub origin: Option<String>,
 }
 
 impl PingTargetWithNetInfo {
@@ -2807,7 +2800,6 @@ impl PingTargetWithNetInfo {
                     net_info,
                     dst_ports: vec![],
                     src_port: None,
-                    origin: t.origin.clone(),
                 };
                 values.push(p);
             }
@@ -2824,7 +2816,6 @@ impl PingTargetWithNetInfo {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
                     src_port: t.src_port,
-                    origin: t.origin.clone(),
                 };
                 values.push(p);
             }
@@ -2842,7 +2833,6 @@ impl PingTargetWithNetInfo {
                 net_info,
                 dst_ports: vec![],
                 src_port: None,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -2862,7 +2852,6 @@ impl PingTargetWithNetInfo {
                 net_info,
                 dst_ports,
                 src_port,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -3100,44 +3089,9 @@ pub(crate) struct TraceTargetWithNetInfo {
     pub net_info: NetInfo,
     pub dst_port: Option<u16>,
     pub src_port: Option<u16>,
-    pub origin: Option<String>,
 }
 
 impl TraceTargetWithNetInfo {
-    fn infer_xxp_multi(targets: &[XxpTraceTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
-        let start = Instant::now();
-        let mut values = Vec::new();
-        for t in targets {
-            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
-                let p = Self {
-                    net_info,
-                    dst_port: t.dst_port,
-                    src_port: t.src_port,
-                    origin: t.origin.clone(),
-                };
-                values.push(p);
-            }
-        }
-        let cost = start.elapsed();
-        Ok((values, cost))
-    }
-    fn infer_icmp_multi(targets: &[IcmpTraceTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
-        let start = Instant::now();
-        let mut values = Vec::new();
-        for t in targets {
-            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
-                let p = Self {
-                    net_info,
-                    dst_port: None,
-                    src_port: None,
-                    origin: t.origin.clone(),
-                };
-                values.push(p);
-            }
-        }
-        let cost = start.elapsed();
-        Ok((values, cost))
-    }
     fn infer_xxp_single(
         dst_addr: IpAddr,
         dst_port: Option<u16>,
@@ -3150,7 +3104,6 @@ impl TraceTargetWithNetInfo {
                 net_info,
                 dst_port,
                 src_port,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -3168,7 +3121,6 @@ impl TraceTargetWithNetInfo {
                 net_info,
                 dst_port: None,
                 src_port: None,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -3406,7 +3358,6 @@ pub(crate) struct FloodTargetWithNetInfo {
     pub net_info: NetInfo,
     pub dst_port: Option<u16>,
     pub src_port: Option<u16>,
-    pub origin: Option<String>,
 }
 
 impl FloodTargetWithNetInfo {
@@ -3419,7 +3370,6 @@ impl FloodTargetWithNetInfo {
                     net_info,
                     dst_port: t.dst_port,
                     src_port: t.src_port,
-                    origin: t.origin.clone(),
                 };
                 values.push(p);
             }
@@ -3436,7 +3386,6 @@ impl FloodTargetWithNetInfo {
                     net_info,
                     dst_port: None,
                     src_port: None,
-                    origin: t.origin.clone(),
                 };
                 values.push(p);
             }
@@ -3456,7 +3405,6 @@ impl FloodTargetWithNetInfo {
                 net_info,
                 dst_port,
                 src_port,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -3474,7 +3422,6 @@ impl FloodTargetWithNetInfo {
                 net_info,
                 dst_port: None,
                 src_port: None,
-                origin: None,
             };
             let cost = start.elapsed();
             Ok((p, cost))
@@ -3745,7 +3692,7 @@ mod tests {
         let src_ipv4 = None;
         let src_port = None;
         let targets = vec![PortScanTarget::new(
-            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131)),
             vec![22, 80, 443, 8080],
             src_ipv4,
             src_port,
@@ -3783,7 +3730,7 @@ mod tests {
         let dst_ports: Vec<u16> = (22..10240).collect();
         // let dst_ports: Vec<u16> = (22..1024).collect();
         let targets = vec![PortScanTarget::new(
-            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131)),
             // vec![22, 80, 443],
             dst_ports,
             src_ipv4,

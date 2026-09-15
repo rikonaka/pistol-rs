@@ -107,6 +107,7 @@ fn syn_trace_ipv4(
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
+    src_port: u16,
     if_name: String,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
@@ -124,14 +125,13 @@ fn syn_trace_ipv4(
     let trace_start = Instant::now();
 
     for ttl in 1..=TRACE_MAX_HOPS {
-        let random_src_port = random_port_range(1000, 65535);
         let (spp, filters) = tcp::build_syn_trace_packet(
             dst_mac,
             dst_ipv4,
             dst_port,
             src_mac,
             src_ipv4,
-            random_src_port,
+            src_port,
             if_name.clone(),
             ip_id,
             ttl,
@@ -176,6 +176,7 @@ fn syn_trace_ipv6(
     dst_port: u16,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
+    src_port: u16,
     if_name: String,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
@@ -187,14 +188,13 @@ fn syn_trace_ipv6(
     let trace_start = Instant::now();
 
     for hop_limit in 1..=TRACE_MAX_HOPS {
-        let random_src_port = random_port_range(1000, 65535);
         let (spp, filters) = tcp6::build_syn_trace_packet(
             dst_mac,
             dst_ipv6,
             dst_port,
             src_mac,
             src_ipv6,
-            random_src_port,
+            src_port,
             if_name.clone(),
             hop_limit,
         )?;
@@ -245,6 +245,10 @@ pub fn syn_trace(
         }
     };
     let src_mac = net_info.inferred_src_mac;
+    let src_port = match trace_target.src_port {
+        Some(s) => s,
+        None => random_port_range(1000, 65535),
+    };
 
     match dst_addr {
         IpAddr::V4(dst_ipv4) => {
@@ -258,7 +262,7 @@ pub fn syn_trace(
             };
             let if_name = net_info.inferred_interface.name.clone();
             syn_trace_ipv4(
-                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, if_name, timeout,
+                dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, timeout,
             )
         }
         IpAddr::V6(dst_ipv6) => {
@@ -272,7 +276,7 @@ pub fn syn_trace(
             };
             let if_name = net_info.inferred_interface.name.clone();
             syn_trace_ipv6(
-                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, if_name, timeout,
+                dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name, timeout,
             )
         }
     }

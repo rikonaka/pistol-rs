@@ -292,7 +292,6 @@ pub(crate) fn get_scan_line(
             net_info: net_info.clone(),
             dst_port: None,
             src_port: None,
-            origin: None,
         };
         let trace = icmp_trace(trace_target, timeout)?;
         trace.hops

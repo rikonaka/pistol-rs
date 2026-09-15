@@ -6,7 +6,6 @@ use crossnet::neigh::get_neighbor_cache;
 use crossnet::route::get_route_cache;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
-use pnet::datalink::interfaces;
 use pnet::packet::Packet;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherTypes;
@@ -153,15 +152,6 @@ impl MacScans {
     }
 }
 
-fn loopback_interface() -> Result<NetworkInterface, PistolError> {
-    for interface in interfaces() {
-        if interface.is_loopback() {
-            return Ok(interface);
-        }
-    }
-    Err(PistolError::CanNotFoundLoopbackInterface)
-}
-
 /// Find the source address that can reach the destination address,
 /// and it must be an address of the local machine.
 fn find_src_addr(
@@ -263,7 +253,10 @@ pub(crate) fn arp_scan_raw(
     let dst_mac = MacAddr::broadcast();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
 
-    debug!("use interface {} and src ipv4 {}", &if_name, src_ipv4);
+    debug!(
+        "arp scan {} use interface {} and src ipv4 {}({})",
+        dst_ipv4, &if_name, src_ipv4, src_mac,
+    );
     let (arp_buff, filters) = build_arp_scan_buff(dst_ipv4, src_mac, src_ipv4)?;
     let spp = SendPacketParam {
         dst_mac,
@@ -515,33 +508,6 @@ pub(crate) fn ndp_ra_scan_raw(
     }
 
     Ok((macs, start.elapsed()))
-}
-
-pub(crate) fn get_ndp_ra_scan_buff(
-    dst_ipv6: Ipv6Addr,
-    interface: NetworkInterface,
-) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let if_name = interface.name.clone();
-    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
-        IpAddr::V6(s) => s,
-        _ => return Err(PistolError::CanNotFoundSrcAddress),
-    };
-    let dst_mac = ipv6_all_routers_multicast_mac();
-
-    debug!("use interface {} and src ipv6 {}", interface.name, src_ipv6);
-    let (ndp_ra_buff, filters) = build_ndp_ra_scan_packet(src_mac, src_ipv6)?;
-
-    let spp = SendPacketParam {
-        dst_mac,
-        src_mac,
-        l3_payload: ndp_ra_buff.clone(),
-        eth_type: EtherTypes::Ipv6,
-        if_name: if_name.clone(),
-        retransmit: 1,
-    };
-
-    Ok((spp, filters))
 }
 
 pub(crate) fn parse_mac_scan_response(eth_response: &[u8]) -> Option<(IpAddr, MacAddr)> {

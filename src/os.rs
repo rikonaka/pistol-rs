@@ -20,7 +20,6 @@ use tracing::debug;
 use tracing::error;
 use zip::ZipArchive;
 
-use crate::NetInfo;
 use crate::OsDetectTargetWithNetInfo;
 use crate::error::PistolError;
 use crate::os::dbparser::NmapOsDb;
@@ -345,14 +344,6 @@ fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
     } else {
         Err(PistolError::ZipEmptyError)
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct DetectTarget {
-    pub net_info: NetInfo,
-    pub dst_open_tcp_port: u16,
-    pub dst_closed_tcp_port: u16,
-    pub dst_closed_udp_port: u16,
 }
 
 pub fn os_detect(

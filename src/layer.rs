@@ -1,6 +1,4 @@
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
-use pnet::datalink::interfaces;
 use pnet::packet::Packet;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherType;
@@ -111,51 +109,6 @@ fn get_icmpv6_payload_fast(icmpv6_packet: &[u8]) -> &[u8] {
         _ => &icmpv6_packet[4..],
     }
 }
-
-pub(crate) fn find_interface_by_index(if_index: u32) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        if if_index == interface.index {
-            return Some(interface);
-        }
-    }
-    None
-}
-
-/// Use source IP address to find local interface
-pub(crate) fn find_interface_by_src_ip(src_addr: IpAddr) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            let i = ip.ip();
-            if src_addr == i {
-                return Some(interface);
-            }
-        }
-    }
-    None
-}
-
-/*
-pub(crate) fn find_interface_by_dst_ip(dst_addr: IpAddr) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        for ip in &interface.ips {
-            // check if dst_addr is in the same subnet as i
-            if ip.contains(dst_addr) {
-                return Some(interface);
-            }
-        }
-    }
-    None
-}
-
-pub(crate) fn find_interface_by_name(name: &str) -> Option<NetworkInterface> {
-    for interface in interfaces() {
-        if name == interface.name {
-            return Some(interface);
-        }
-    }
-    None
-}
-*/
 
 #[derive(Debug, Clone)]
 pub(crate) struct Layer2Filter {
@@ -1356,7 +1309,11 @@ pub(crate) fn ipv6_all_routers_multicast_mac() -> MacAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pnet::datalink;
+    use pnet::datalink::Channel;
+    use pnet::datalink::ChannelType;
+    use pnet::datalink::Config;
+    use pnet::datalink::channel;
+    use pnet::datalink::interfaces;
     use pnet::packet::icmp::IcmpTypes;
     use pnet::packet::icmpv6::Icmpv6Types;
     use std::net::Ipv4Addr;
@@ -1555,12 +1512,12 @@ mod tests {
     }
     #[test]
     fn test_layer2_send() {
-        let config = datalink::Config {
+        let config = Config {
             write_buffer_size: PNET_BUFF_SIZE,
             read_buffer_size: PNET_BUFF_SIZE,
             read_timeout: Some(Duration::new(1, 0)),
             write_timeout: Some(Duration::new(1, 0)),
-            channel_type: datalink::ChannelType::Layer2,
+            channel_type: ChannelType::Layer2,
             bpf_fd_attempts: 1000,
             linux_fanout: None,
             promiscuous: false,
@@ -1569,10 +1526,19 @@ mod tests {
 
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
-        let interface = find_interface_by_src_ip(src_ipv4.into()).unwrap();
+        let mut interface = None;
+        for i in &interfaces() {
+            for n in &i.ips {
+                if n.ip() == src_ipv4 {
+                    interface = Some(i.clone());
+                }
+            }
+        }
 
-        let (mut sender, _) = match datalink::channel(&interface, config) {
-            Ok(datalink::Channel::Ethernet(tx, rx)) => (tx, rx),
+        let interface = interface.unwrap();
+
+        let (mut sender, _) = match channel(&interface, config) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
             _ => panic!("create datalink channel failed"),
         };
 

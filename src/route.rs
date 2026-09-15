@@ -184,24 +184,24 @@ pub(crate) fn infer_if(
     Ok(None)
 }
 
-fn detect_mac(dst_addr: &IpAddr) -> Result<Option<MacAddr>, PistolError> {
+fn detect_mac(dst_addr: IpAddr) -> Result<Option<MacAddr>, PistolError> {
     let timeout = Duration::from_secs_f32(1.0);
     match dst_addr {
         IpAddr::V4(d4) => {
-            let (macs, _dur) = arp_scan_raw(*d4, timeout, 2)?;
+            let (macs, _dur) = arp_scan_raw(d4, timeout, 2)?;
             if macs.len() > 0 {
                 Ok(Some(macs[0]))
             } else {
-                warn!("can not found mac address for the destination address {dst_addr}");
+                warn!("can not detect mac address for the destination address {dst_addr}");
                 Ok(None)
             }
         }
         IpAddr::V6(d6) => {
-            let (macs, _dur) = ndp_ra_scan_raw(*d6, timeout, 2)?;
+            let (macs, _dur) = ndp_ra_scan_raw(d6, timeout, 2)?;
             if macs.len() > 0 {
                 Ok(Some(macs[0]))
             } else {
-                warn!("can not found mac address for the destination address {dst_addr}");
+                warn!("can not detect mac address for the destination address {dst_addr}");
                 Ok(None)
             }
         }
@@ -245,7 +245,7 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
                         None => {
                             // send arp(ipv4) or ndp(ipv6) to get the mac address of the gateway
                             is_cached = false;
-                            match detect_mac(route_addr)? {
+                            match detect_mac(*route_addr)? {
                                 Some(mac) => mac,
                                 None => return Ok(None),
                             }
@@ -263,7 +263,7 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
                 Some(mac) => crossnet_mac_convert(&mac)?,
                 None => {
                     // send arp(ipv4) or ndp(ipv6) to get the mac address of the destination
-                    match detect_mac(&dst)? {
+                    match detect_mac(dst)? {
                         Some(mac) => mac,
                         None => return Ok(None),
                     }
@@ -340,16 +340,20 @@ mod tests {
     #[test]
     fn test_infer_net_info() {
         let start = Instant::now();
-        let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
+        // let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
+        let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131));
         let src = None;
-        if let Some(infer_result) = infer_net_info(dst, src).unwrap() {
-            println!(
-                "infer result: {}, elapsed: {:?}",
-                infer_result.inferred_interface.name,
-                start.elapsed()
-            );
-        } else {
-            println!("infer result: None, elapsed: {:?}", start.elapsed());
+        match infer_net_info(dst, src).unwrap() {
+            Some(infer_result) => {
+                println!(
+                    "infer result: {}, elapsed: {:?}",
+                    infer_result.inferred_dst_mac,
+                    start.elapsed()
+                );
+            }
+            None => {
+                println!("infer result: None, elapsed: {:?}", start.elapsed());
+            }
         }
     }
 }
