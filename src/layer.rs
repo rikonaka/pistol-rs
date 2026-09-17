@@ -1229,6 +1229,9 @@ impl PacketFilter {
             false
         }
     }
+    /// This function is very readable,
+    /// but because it needs to parse data packets frequently,
+    /// its efficiency is not as high as `check_fast()`.
     pub(crate) fn check(&self, ethernet_packet: &[u8]) -> bool {
         if ethernet_packet.len() > 0 {
             match self {

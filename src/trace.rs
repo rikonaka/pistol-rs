@@ -112,7 +112,16 @@ fn syn_trace_ipv4(
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and ip and tcp", dst_ipv4)))?;
+    let tcp_syn_ack_filter = "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_timeexceeded_unreach_filter =
+        "(icmp and (icmp[icmptype] == icmp-timeexceeded or icmp[icmptype] == icmp-unreach))";
+
+    let filter = Some(format!(
+        "({tcp_syn_ack_filter} or {tcp_rst_filter} or {icmp_timeexceeded_unreach_filter}) and dst host {src_ipv4}"
+    ));
+
+    stream.init(filter)?;
 
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -181,7 +190,15 @@ fn syn_trace_ipv6(
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and ip6 and tcp", dst_ipv6)))?;
+    let tcp_syn_ack_filter = "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp6_timeexceeded_unreach_filter =
+        "(icmp6 and (icmp6[icmptype] == icmp6-timeexceeded or icmp6[icmptype] == icmp6-unreach))";
+
+    let filter = Some(format!(
+        "({tcp_syn_ack_filter} or {tcp_rst_filter} or {icmp6_timeexceeded_unreach_filter}) and dst host {src_ipv6}"
+    ));
+    stream.init(filter)?;
 
     let mut trace = Trace::new(dst_ipv6.into());
     let mut last_response_hop_limit = 0;
@@ -291,7 +308,10 @@ fn icmp_trace_ipv4(
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and icmp", dst_ipv4)))?;
+    let filter = Some(format!(
+        "icmp and (icmp[icmptype] == icmp-echoreply or icmp[icmptype] == icmp-timeexceeded or icmp[icmptype] == icmp-unreach) and dst host {src_ipv4}"
+    ));
+    stream.init(filter)?;
 
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -364,7 +384,10 @@ fn icmp_trace_ipv6(
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and icmp6", dst_ipv6)))?;
+    let filter = Some(format!(
+        "icmp6 and (icmp6[icmptype] == icmp6-echoreply or icmp6[icmptype] == icmp6-timeexceeded or icmp6[icmptype] == icmp6-unreach) and dst host {src_ipv6}"
+    ));
+    stream.init(filter)?;
 
     let mut trace = Trace::new(dst_ipv6.into());
     let mut rng = rand::rng();
@@ -463,7 +486,14 @@ fn udp_trace_ipv4(
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and ip and udp", dst_ipv4)))?;
+    let udp_filter = "udp";
+    let icmp_filter =
+        "(icmp and (icmp[icmptype] == icmp-timeexceeded or icmp[icmptype] == icmp-unreach))";
+
+    let filter = Some(format!(
+        "({udp_filter} or {icmp_filter}) and dst host {src_ipv4}"
+    ));
+    stream.init(filter)?;
 
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -530,7 +560,14 @@ fn udp_trace_ipv6(
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and ip6 and udp", dst_ipv6)))?;
+    let udp_filter = "udp";
+    let icmp6_filter =
+        "(icmp6 and (icmp6[icmptype] == icmp6-timeexceeded or icmp6[icmptype] == icmp6-unreach))";
+
+    let filter = Some(format!(
+        "({udp_filter} or {icmp6_filter}) and dst host {src_ipv6}"
+    ));
+    stream.init(filter)?;
 
     let mut trace = Trace::new(dst_ipv6.into());
     let mut last_response_hop_limit = 0;

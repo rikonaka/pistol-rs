@@ -82,9 +82,6 @@ use crate::vs::PistolVsScans;
 
 pub type Result<T, E = error::PistolError> = std::result::Result<T, E>;
 
-// sec
-const ATTACK_DEFAULT_TIMEOUT: f32 = 1.0;
-
 pub const TOP_100_PORTS: [u16; 100] = [
     7, 9, 13, 21, 22, 23, 25, 26, 37, 53, 79, 80, 81, 88, 106, 110, 111, 113, 119, 135, 139, 143,
     144, 179, 199, 389, 427, 443, 444, 445, 465, 513, 514, 515, 543, 544, 548, 554, 587, 631, 646,
@@ -379,7 +376,8 @@ impl SendWindow {
             reach_bandwidth_limited: false,
         }
     }
-    fn check(&mut self) -> bool {
+    /// Check the send window is full or not.
+    fn is_full(&mut self) -> bool {
         if self.current_send >= self.window_size {
             debug!(
                 "send window is full: current={}, window={}",
@@ -1024,10 +1022,10 @@ impl Default for Pistol {
     fn default() -> Self {
         Pistol {
             if_name: None,
-            log_level: Some(Level::INFO), // default log level is info
-            timeout: Duration::from_secs_f32(ATTACK_DEFAULT_TIMEOUT),
-            max_retries: 2,           // default 2 max_retries
-            speed: SendSpeed::Medium, // default send speed is medium
+            log_level: Some(Level::INFO), // default log level is INFO
+            timeout: Duration::from_secs_f32(1.0), // default timeout is 1.0
+            max_retries: 2,               // default max_retries is 2
+            speed: SendSpeed::Medium,     // default send speed is medium
         }
     }
 }
@@ -1085,12 +1083,13 @@ impl Pistol {
     pub fn get_max_retries(&self) -> usize {
         self.max_retries
     }
-    /// Set the sending speed for sending packets, which may affect the success rate of receiving packets.
-    pub fn set_send_speed(&mut self, speed: SendSpeed) {
+    /// Set the sending speed for sending packets,
+    /// which may affect the success rate of receiving packets.
+    pub fn set_speed(&mut self, speed: SendSpeed) {
         self.speed = speed;
     }
     /// Get the sending speed.
-    pub fn get_send_speed(&self) -> SendSpeed {
+    pub fn get_speed(&self) -> SendSpeed {
         self.speed
     }
     fn init_logger(&self) {

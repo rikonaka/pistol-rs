@@ -2,10 +2,7 @@
 use bitcode;
 use chrono::DateTime;
 use chrono::Local;
-use crossnet::neigh::get_neighbor_cache;
-use crossnet::route::get_route_cache;
 use pnet::datalink::MacAddr;
-use pnet::datalink::NetworkInterface;
 use pnet::packet::Packet;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherTypes;
@@ -30,8 +27,6 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-use subnetwork::Ipv4AddrExt;
-use subnetwork::Ipv6AddrExt;
 use tracing::debug;
 use tracing::error;
 
@@ -56,7 +51,7 @@ use crate::SendWindow;
 use crate::error::PistolError;
 use crate::layer::ipv6_all_routers_multicast_mac;
 use crate::layer::ipv6_solicited_node_multicast_mac;
-use crate::route::infer_if;
+use crate::route::infer_net_info;
 use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
 use crate::scan::ndp_ra::build_ndp_ra_scan_packet;
@@ -152,77 +147,6 @@ impl MacScans {
     }
 }
 
-/// Find the source address that can reach the destination address,
-/// and it must be an address of the local machine.
-fn find_src_addr(
-    src_interface: &NetworkInterface,
-    dst_addr: IpAddr,
-) -> Result<IpAddr, PistolError> {
-    struct IpAddrWithLip {
-        ip: IpAddr,
-        lip: u8,
-    }
-
-    let init_ip = match dst_addr {
-        IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-        IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-    };
-
-    let mut lip_compare = IpAddrWithLip {
-        ip: init_ip,
-        lip: 0,
-    };
-
-    for ipn in &src_interface.ips {
-        if (ipn.is_ipv4() && dst_addr.is_ipv4()) || (ipn.is_ipv6() && dst_addr.is_ipv6()) {
-            let ip = ipn.ip();
-            match ip {
-                IpAddr::V4(i4) => {
-                    if let IpAddr::V4(d4) = dst_addr {
-                        if d4 == i4 {
-                            // If the destination address is the same as the source address,
-                            // we can directly return it.
-                            return Ok(ip);
-                        }
-                        let s = Ipv4AddrExt::from(i4);
-                        let lip = s.largest_identical_prefix(d4);
-                        if lip > lip_compare.lip {
-                            lip_compare.ip = ip;
-                            lip_compare.lip = lip;
-                        }
-                    }
-                }
-                IpAddr::V6(i6) => {
-                    if let IpAddr::V6(d6) = dst_addr {
-                        if d6 == i6 {
-                            return Ok(ip);
-                        }
-                        if d6.is_unicast_link_local() || d6.is_multicast() {
-                            // For link-local or multicast ipv6 address,
-                            // the source address must be a link-local address.
-                            if !i6.is_unicast_link_local() {
-                                continue;
-                            }
-                        }
-                        let s = Ipv6AddrExt::from(i6);
-                        let lip = s.largest_identical_prefix(d6);
-                        if lip > lip_compare.lip {
-                            lip_compare.ip = ip;
-                            lip_compare.lip = lip;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if lip_compare.ip.is_unspecified() {
-        Err(PistolError::CanNotFoundSrcAddress)
-    } else {
-        Ok(lip_compare.ip)
-    }
-}
-
 pub(crate) fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
     timeout: Duration,
@@ -230,28 +154,32 @@ pub(crate) fn arp_scan_raw(
 ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("arp and arp[6:2] = 2")))?;
+    let filter = Some(format!("arp and arp[6:2] = 2 and src host {dst_ipv4}"));
+    stream.init(filter)?;
 
-    let interface = match infer_if(dst_ipv4.into(), None, None, None)? {
-        Some(i) => i,
-        None => {
-            return Err(PistolError::CanNotFoundInterface {
-                addr: dst_ipv4.into(),
-            });
-        }
+    let net_info = match infer_net_info(dst_ipv4.into(), None)? {
+        Some(n) => n,
+        None => return Err(PistolError::CanNotFoundNetInfo),
     };
+
+    let interface = net_info.inferred_interface;
+    let if_name = interface.name.clone();
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
 
-    let if_name = interface.name.clone();
-    let src_ipv4 = match find_src_addr(&interface, dst_ipv4.into())? {
+    let src_ipv4 = match net_info.inferred_src_addr {
         IpAddr::V4(s) => s,
-        _ => return Err(PistolError::CanNotFoundSrcAddress),
+        IpAddr::V6(_) => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.inferred_src_addr,
+            });
+        }
     };
+
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
-    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
+    let src_mac = net_info.inferred_src_mac;
 
     debug!(
         "arp scan {} use interface {} and src ipv4 {}({})",
@@ -303,16 +231,24 @@ pub(crate) fn arp_scan_raw(
 
 fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
-    interface: NetworkInterface,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
+    let net_info = match infer_net_info(dst_ipv4.into(), None)? {
+        Some(n) => n,
+        None => return Err(PistolError::CanNotFoundNetInfo),
+    };
+
+    let interface = net_info.inferred_interface;
     let if_name = interface.name.clone();
     // broadcast mac address
     let dst_mac = MacAddr::broadcast();
-    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-
-    let src_ipv4 = match find_src_addr(&interface, dst_ipv4.into())? {
+    let src_mac = net_info.inferred_src_mac;
+    let src_ipv4 = match net_info.inferred_src_addr {
         IpAddr::V4(s) => s,
-        _ => return Err(PistolError::CanNotFoundSrcAddress),
+        IpAddr::V6(_) => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.inferred_src_addr,
+            });
+        }
     };
 
     debug!("use interface {} and src ipv4 {}", if_name, src_ipv4);
@@ -338,25 +274,30 @@ pub(crate) fn ndp_ns_scan_raw(
 ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("icmp6 and ip6[40] = 136")))?;
+    let filter = Some(format!(
+        "icmp6 and icmp6[icmptype] == icmp6-neighboradvert and src host {dst_ipv6}",
+    ));
+    stream.init(filter)?;
 
-    let interface = match infer_if(dst_ipv6.into(), None, None, None)? {
-        Some(i) => i,
-        None => {
-            return Err(PistolError::CanNotFoundInterface {
-                addr: dst_ipv6.into(),
-            });
-        }
+    let net_info = match infer_net_info(dst_ipv6.into(), None)? {
+        Some(n) => n,
+        None => return Err(PistolError::CanNotFoundNetInfo),
     };
+
+    let interface = net_info.inferred_interface;
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
 
     let if_name = interface.name.clone();
     let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
+    let src_ipv6 = match net_info.inferred_src_addr {
         IpAddr::V6(s) => s,
-        _ => return Err(PistolError::CanNotFoundSrcAddress),
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.inferred_src_addr,
+            });
+        }
     };
 
     let dst_mac = ipv6_solicited_node_multicast_mac(dst_ipv6);
@@ -409,13 +350,22 @@ pub(crate) fn ndp_ns_scan_raw(
 
 pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
-    interface: NetworkInterface,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
+    let net_info = match infer_net_info(dst_ipv6.into(), None)? {
+        Some(n) => n,
+        None => return Err(PistolError::CanNotFoundNetInfo),
+    };
+
+    let interface = net_info.inferred_interface;
     let if_name = interface.name.clone();
-    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
+    let src_mac = net_info.inferred_src_mac;
+    let src_ipv6 = match net_info.inferred_src_addr {
         IpAddr::V6(s) => s,
-        _ => return Err(PistolError::CanNotFoundSrcAddress),
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.inferred_src_addr,
+            });
+        }
     };
     let dst_mac = ipv6_solicited_node_multicast_mac(dst_ipv6);
 
@@ -441,25 +391,31 @@ pub(crate) fn ndp_ra_scan_raw(
 ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("icmp6 and ip6[40] = 134")))?;
+    // We don't known the route address correctly here.
+    let filter = Some(String::from(
+        "icmp6 and icmp6[icmptype] == icmp6-routeradvert",
+    ));
+    stream.init(filter)?;
 
-    let interface = match infer_if(dst_ipv6.into(), None, None, None)? {
-        Some(i) => i,
-        None => {
-            return Err(PistolError::CanNotFoundInterface {
-                addr: dst_ipv6.into(),
-            });
-        }
+    let net_info = match infer_net_info(dst_ipv6.into(), None)? {
+        Some(n) => n,
+        None => return Err(PistolError::CanNotFoundNetInfo),
     };
+
+    let interface = net_info.inferred_interface;
     if interface.is_loopback() {
         return Ok((Vec::new(), Duration::ZERO));
     }
 
     let if_name = interface.name.clone();
-    let src_mac = interface.mac.ok_or(PistolError::CanNotFoundSrcMacAddress)?;
-    let src_ipv6 = match find_src_addr(&interface, dst_ipv6.into())? {
+    let src_mac = net_info.inferred_src_mac;
+    let src_ipv6 = match net_info.inferred_src_addr {
         IpAddr::V6(s) => s,
-        _ => return Err(PistolError::CanNotFoundSrcAddress),
+        _ => {
+            return Err(PistolError::AttackAddressNotMatch {
+                addr: net_info.inferred_src_addr,
+            });
+        }
     };
 
     let dst_mac = ipv6_all_routers_multicast_mac();
@@ -598,7 +554,6 @@ fn get_nmap_mac_prefixes() -> Result<HashMap<String, String>, PistolError> {
 #[derive(Debug, Clone)]
 struct MacScanState {
     dst_addr: IpAddr,
-    interface: NetworkInterface,
     retries: usize,
     data_recved: bool,
 }
@@ -617,20 +572,11 @@ pub(crate) fn mac_scan(
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
 
-    let neigh = get_neighbor_cache()?;
-    let route = get_route_cache()?;
     for t in targets {
         let dst_addr = t.dst_addr;
-        let interface = match infer_if(dst_addr, None, Some(neigh.clone()), Some(route.clone()))? {
-            Some(i) => i,
-            None => {
-                return Err(PistolError::CanNotFoundInterface { addr: dst_addr });
-            }
-        };
         let dst_port = 0;
         let state = MacScanState {
             dst_addr,
-            interface,
             retries: 0,
             data_recved: false,
         };
@@ -648,22 +594,17 @@ pub(crate) fn mac_scan(
 
         let mut all_done = true;
         for (_key, state) in &mut loop_states {
-            if state.retries < max_retries && !state.data_recved {
+            if state.retries < max_retries && !state.data_recved && !window.is_full() {
                 let dst_addr = state.dst_addr;
-                let interface = state.interface.clone();
                 match dst_addr {
                     IpAddr::V4(dst_ipv4) => {
-                        if window.check() {
-                            break;
-                        }
-
                         debug!(
                             "arp scan packets to {}: #{}/{}",
                             dst_ipv4,
                             state.retries + 1,
                             max_retries
                         );
-                        let (spp, filters) = get_arp_scan_buff(dst_ipv4, interface)?;
+                        let (spp, filters) = get_arp_scan_buff(dst_ipv4)?;
                         all_filters.extend(filters);
 
                         stream.send_packet(spp)?;
@@ -673,9 +614,6 @@ pub(crate) fn mac_scan(
                         all_done = false;
                     }
                     IpAddr::V6(dst_ipv6) => {
-                        if window.check() {
-                            break;
-                        }
                         debug!(
                             "ndp_ns scan packets to {}: #{}/{}",
                             dst_ipv6,
@@ -683,7 +621,7 @@ pub(crate) fn mac_scan(
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
-                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6, interface.clone())?;
+                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6)?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
 
@@ -1125,15 +1063,12 @@ fn scan(
                     let src_ipv4 = match src_addr {
                         IpAddr::V4(s) => s,
                         _ => {
+                            // When dst is ipv4, the src must be ipv4 too.
                             return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                         }
                     };
 
-                    if state.retries < max_retries && !state.recved {
-                        if window.check() {
-                            break;
-                        }
-
+                    if state.retries < max_retries && !state.recved && !window.is_full() {
                         let if_name = net_info.inferred_interface.name.clone();
                         let (spp, filters) = build_scan_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
@@ -1153,10 +1088,7 @@ fn scan(
                             return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                         }
                     };
-                    if state.retries < max_retries && !state.recved {
-                        if window.check() {
-                            break;
-                        }
+                    if state.retries < max_retries && !state.recved && !window.is_full() {
                         let if_name = net_info.inferred_interface.name.clone();
                         let (spp, filters) = build_scan_buff6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
@@ -1255,8 +1187,14 @@ pub(crate) fn tcp_syn_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    let filter = Some(String::from(
-        "(tcp and (((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)) or ((tcp[tcpflags] & tcp-rst) != 0))) or (icmp and icmp[0] == 3 and (icmp[1] == 1 or icmp[1] == 2 or icmp[1] == 3 or icmp[1] == 9 or icmp[1] == 10 or icmp[1] == 13)) or (icmp6 and icmp6[0] == 1 and (icmp6[1] == 0 or icmp6[1] == 1 or icmp6[1] == 3 or icmp6[1] == 4))",
+    let tcp_syn_ack_both_filter =
+        "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
     ));
     scan(
         scan_targets,
@@ -1274,8 +1212,12 @@ pub(crate) fn tcp_fin_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    let filter = Some(String::from(
-        "tcp and (tcp[13] & 0x11 != 0) or (icmp and ip[icmplen] == 3 and ip[icmplen+1] == 3)",
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
     ));
     scan(
         scan_targets,
@@ -1293,7 +1235,13 @@ pub(crate) fn tcp_ack_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    let filter = Some(String::from("tcp and tcp[13] & 0x10 != 0"));
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+    ));
     scan(
         scan_targets,
         ScanMethod::Ack,
@@ -1310,12 +1258,19 @@ pub(crate) fn tcp_null_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+    ));
     scan(
         scan_targets,
         ScanMethod::Null,
         timeout,
         max_retries,
-        None,
+        filter,
         speed,
     )
 }
@@ -1326,12 +1281,19 @@ pub(crate) fn tcp_xmas_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+    ));
     scan(
         scan_targets,
         ScanMethod::Xmas,
         timeout,
         max_retries,
-        None,
+        filter,
         speed,
     )
 }
@@ -1342,12 +1304,19 @@ pub(crate) fn tcp_window_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
+    let tcp_rst_filter = "(tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "icmp[icmptype] == icmp-unreach";
+    let icmp6_unreach_filter = "icmp6[icmp6type] == icmp6-unreach";
+
+    let filter = Some(format!(
+        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+    ));
     scan(
         scan_targets,
         ScanMethod::Window,
         timeout,
         max_retries,
-        None,
+        filter,
         speed,
     )
 }
@@ -1358,12 +1327,19 @@ pub(crate) fn tcp_maimon_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+    ));
     scan(
         scan_targets,
         ScanMethod::Maimon,
         timeout,
         max_retries,
-        None,
+        filter,
         speed,
     )
 }
@@ -1449,7 +1425,13 @@ pub(crate) fn udp_scan(
     max_retries: usize,
     speed: SendSpeed,
 ) -> Result<PortScans, PistolError> {
-    let filter = None;
+    let udp_filter = "udp";
+    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
+    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
+
+    let filter = Some(format!(
+        "{udp_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+    ));
     scan(
         scan_targets,
         ScanMethod::Udp,

@@ -512,11 +512,7 @@ fn ping(
                         None
                     };
 
-                    if state.retries < max_retries && !state.data_recved {
-                        if window.check() {
-                            break;
-                        }
-
+                    if state.retries < max_retries && !state.data_recved && !window.is_full() {
                         let (spp, filters) = build_ping_buff(
                             dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
                             method,
@@ -553,11 +549,7 @@ fn ping(
                             None
                         };
 
-                    if state.retries < max_retries && !state.data_recved {
-                        if window.check() {
-                            break;
-                        }
-
+                    if state.retries < max_retries && !state.data_recved && !window.is_full() {
                         let (spp, filters) = build_ping_buff6(
                             dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
                             method,
