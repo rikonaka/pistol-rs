@@ -338,7 +338,7 @@ pub enum SendSpeed {
 }
 
 impl SendSpeed {
-    pub fn value(&self) -> (usize, usize) {
+    fn default_value(&self) -> (usize, usize) {
         match self {
             SendSpeed::VeryFast => (20000, 500),
             SendSpeed::Fast => (10000, 500),
@@ -369,7 +369,7 @@ struct SendWindow {
 
 impl SendWindow {
     fn new(speed: SendSpeed) -> Self {
-        let (window_size, window_size_increment) = speed.value();
+        let (window_size, window_size_increment) = speed.default_value();
         Self {
             window_size,
             window_size_increment,
@@ -2529,7 +2529,7 @@ impl PortScanTargetWithNetInfo {
         let mut values = Vec::new();
         for t in targets {
             if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
-                let p = PortScanTargetWithNetInfo {
+                let p: PortScanTargetWithNetInfo = Self {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
                     src_port: t.src_port,
@@ -2548,7 +2548,7 @@ impl PortScanTargetWithNetInfo {
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
         if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
-            let p = PortScanTargetWithNetInfo {
+            let p = Self {
                 net_info,
                 dst_ports: vec![dst_port],
                 src_port,
