@@ -376,7 +376,8 @@ impl SendWindow {
             reach_bandwidth_limited: false,
         }
     }
-    /// Check the send window is full or not.
+    /// Check whether the send window is full.
+    /// If it is, stop sending packets.
     fn is_full(&mut self) -> bool {
         if self.current_send >= self.window_size {
             debug!(
