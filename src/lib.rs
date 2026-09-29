@@ -313,7 +313,7 @@ pub const TOP_1000_UDP_PORTS: [u16; 1000] = [
 /// The faster the sending speed,
 /// the larger possiblity of network congestion and packet loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SendSpeed {
+pub enum SendRate {
     /// Not very stable, but the fastest sending speed, which may cause network congestion and packet loss.
     VeryFast,
     /// The blance between sending speed and network congestion, which is the default sending speed.
@@ -334,14 +334,14 @@ pub enum SendSpeed {
     Custom(usize, usize),
 }
 
-impl SendSpeed {
+impl SendRate {
     fn default_value(&self) -> (usize, usize) {
         match self {
-            SendSpeed::VeryFast => (20000, 500),
-            SendSpeed::Fast => (10000, 500),
-            SendSpeed::Medium => (5000, 250),
-            SendSpeed::Slow => (1000, 250),
-            SendSpeed::Custom(ws, wsi) => (*ws, *wsi),
+            SendRate::VeryFast => (20000, 500),
+            SendRate::Fast => (10000, 500),
+            SendRate::Medium => (5000, 250),
+            SendRate::Slow => (1000, 250),
+            SendRate::Custom(ws, wsi) => (*ws, *wsi),
         }
     }
 }
@@ -365,7 +365,7 @@ struct SendWindow {
 }
 
 impl SendWindow {
-    fn new(speed: SendSpeed) -> Self {
+    fn new(speed: SendRate) -> Self {
         let (window_size, window_size_increment) = speed.default_value();
         Self {
             window_size,
@@ -1016,7 +1016,7 @@ pub struct Pistol {
     log_level: Option<Level>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 }
 
 impl Default for Pistol {
@@ -1026,7 +1026,7 @@ impl Default for Pistol {
             log_level: Some(Level::INFO), // default log level is INFO
             timeout: Duration::from_secs_f32(1.0), // default timeout is 1.0
             max_retries: 2,               // default max_retries is 2
-            speed: SendSpeed::Medium,     // default send speed is medium
+            send_rate: SendRate::Medium,  // default send speed is medium
         }
     }
 }
@@ -1086,12 +1086,12 @@ impl Pistol {
     }
     /// Set the sending speed for sending packets,
     /// which may affect the success rate of receiving packets.
-    pub fn set_speed(&mut self, speed: SendSpeed) {
-        self.speed = speed;
+    pub fn set_send_rate(&mut self, speed: SendRate) {
+        self.send_rate = speed;
     }
     /// Get the sending speed.
-    pub fn get_speed(&self) -> SendSpeed {
-        self.speed
+    pub fn get_send_rate(&self) -> SendRate {
+        self.send_rate
     }
     fn init_logger(&self) {
         if let Some(log_level) = self.log_level {
@@ -1168,7 +1168,7 @@ impl Pistol {
     /// ```
     pub fn mac_scan(&mut self, targets: &[MacScanTarget]) -> Result<MacScans, PistolError> {
         self.init_logger();
-        scan::mac_scan(targets, self.timeout, self.max_retries, self.speed)
+        scan::mac_scan(targets, self.timeout, self.max_retries, self.send_rate)
     }
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
@@ -1203,7 +1203,7 @@ impl Pistol {
     pub fn tcp_ack_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret = scan::tcp_ack_scan(targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret = scan::tcp_ack_scan(targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1222,7 +1222,8 @@ impl Pistol {
         self.init_logger();
         let (target, dur) =
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = scan::tcp_ack_scan(vec![target], self.timeout, self.max_retries, self.speed)?;
+        let mut ret =
+            scan::tcp_ack_scan(vec![target], self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1263,7 +1264,7 @@ impl Pistol {
             scan_targets.push(p);
         }
         let mut ret =
-            scan::tcp_connect_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+            scan::tcp_connect_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = Duration::ZERO;
         Ok(ret)
     }
@@ -1293,7 +1294,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = Duration::ZERO;
         Ok(ret)
@@ -1317,7 +1318,8 @@ impl Pistol {
     pub fn tcp_fin_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (net_infos, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret = scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries, self.speed)?;
+        let mut ret =
+            scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1339,7 +1341,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1358,7 +1360,7 @@ impl Pistol {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
-            scan::tcp_maimon_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+            scan::tcp_maimon_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1380,7 +1382,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1402,7 +1404,7 @@ impl Pistol {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
-            scan::tcp_null_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+            scan::tcp_null_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1424,7 +1426,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1503,9 +1505,14 @@ impl Pistol {
     pub fn tcp_syn_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret = scan::tcp_syn_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret =
+            scan::tcp_syn_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
+    }
+    /// Use binary search to find the network sending rate.
+    pub fn run_send_rate_test(&mut self) -> Result<(), PistolError> {
+        Ok(())
     }
     /// The raw version of tcp_syn_scan function.
     /// It sends a TCP SYN packet to the target IP address and port, and waits for a response.
@@ -1525,7 +1532,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1546,7 +1553,7 @@ impl Pistol {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
-            scan::tcp_window_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+            scan::tcp_window_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1568,7 +1575,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1584,7 +1591,7 @@ impl Pistol {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
-            scan::tcp_xmas_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+            scan::tcp_xmas_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1606,7 +1613,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1626,7 +1633,7 @@ impl Pistol {
     pub fn udp_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret = scan::udp_scan(scan_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret = scan::udp_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1649,7 +1656,7 @@ impl Pistol {
             vec![scan_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1676,8 +1683,12 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
-        let mut ret =
-            ping::icmp_address_mask_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret = ping::icmp_address_mask_ping(
+            ping_targets,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1696,7 +1707,7 @@ impl Pistol {
             vec![ping_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1715,7 +1726,7 @@ impl Pistol {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
         let mut ret =
-            ping::icmp_echo_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+            ping::icmp_echo_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1734,7 +1745,7 @@ impl Pistol {
             vec![ping_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1758,8 +1769,12 @@ impl Pistol {
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
-        let mut ret =
-            ping::icmp_timestamp_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret = ping::icmp_timestamp_ping(
+            ping_targets,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1783,7 +1798,7 @@ impl Pistol {
             vec![ping_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1802,7 +1817,8 @@ impl Pistol {
     pub fn icmpv6_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
-        let mut ret = ping::icmpv6_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret =
+            ping::icmpv6_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1813,7 +1829,8 @@ impl Pistol {
     pub fn tcp_ack_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = ping::tcp_ack_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret =
+            ping::tcp_ack_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1836,7 +1853,7 @@ impl Pistol {
             vec![ping_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1848,7 +1865,8 @@ impl Pistol {
     pub fn tcp_syn_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = ping::tcp_syn_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret =
+            ping::tcp_syn_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1871,7 +1889,7 @@ impl Pistol {
             vec![ping_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1883,7 +1901,7 @@ impl Pistol {
     pub fn udp_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = ping::udp_ping(ping_targets, self.timeout, self.max_retries, self.speed)?;
+        let mut ret = ping::udp_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1906,7 +1924,7 @@ impl Pistol {
             vec![ping_target],
             self.timeout,
             self.max_retries,
-            self.speed,
+            self.send_rate,
         )?;
         ret.layer2_cost = dur;
         Ok(ret)

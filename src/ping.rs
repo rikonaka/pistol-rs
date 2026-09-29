@@ -28,7 +28,7 @@ use crate::NetInfo;
 use crate::PingTargetWithNetInfo;
 use crate::PistolStream;
 use crate::SendPacketParam;
-use crate::SendSpeed;
+use crate::SendRate;
 use crate::SendWindow;
 use crate::error::PistolError;
 use crate::layer::PacketFilter;
@@ -445,7 +445,7 @@ fn ping(
     method: PingMethods,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
     let mut stream = PistolStream::new();
     stream.init(Some(String::from("tcp or udp or icmp or icmp6")))?;
@@ -477,7 +477,7 @@ fn ping(
         PingMethods::Icmpv6Echo,
     ];
 
-    let mut window = SendWindow::new(speed);
+    let mut window = SendWindow::new(send_rate);
     loop {
         let mut all_done = true;
         let mut all_filters = Vec::new();
@@ -623,41 +623,59 @@ pub(crate) fn tcp_syn_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
-    ping(ping_targets, PingMethods::Syn, timeout, max_retries, speed)
+    ping(
+        ping_targets,
+        PingMethods::Syn,
+        timeout,
+        max_retries,
+        send_rate,
+    )
 }
 
 pub(crate) fn tcp_ack_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
-    ping(ping_targets, PingMethods::Ack, timeout, max_retries, speed)
+    ping(
+        ping_targets,
+        PingMethods::Ack,
+        timeout,
+        max_retries,
+        send_rate,
+    )
 }
 
 pub(crate) fn udp_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
-    ping(ping_targets, PingMethods::Udp, timeout, max_retries, speed)
+    ping(
+        ping_targets,
+        PingMethods::Udp,
+        timeout,
+        max_retries,
+        send_rate,
+    )
 }
 
 pub(crate) fn icmp_echo_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
         PingMethods::IcmpEcho,
         timeout,
         max_retries,
-        speed,
+        send_rate,
     )
 }
 
@@ -665,14 +683,14 @@ pub(crate) fn icmp_timestamp_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
         PingMethods::IcmpTimeStamp,
         timeout,
         max_retries,
-        speed,
+        send_rate,
     )
 }
 
@@ -680,14 +698,14 @@ pub(crate) fn icmp_address_mask_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
         PingMethods::IcmpAddressMask,
         timeout,
         max_retries,
-        speed,
+        send_rate,
     )
 }
 
@@ -695,13 +713,13 @@ pub(crate) fn icmpv6_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
-    speed: SendSpeed,
+    send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
         PingMethods::Icmpv6Echo,
         timeout,
         max_retries,
-        speed,
+        send_rate,
     )
 }
