@@ -1312,11 +1312,11 @@ pub(crate) fn ipv6_all_routers_multicast_mac() -> MacAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pnet::datalink;
     use pnet::datalink::Channel;
     use pnet::datalink::ChannelType;
     use pnet::datalink::Config;
     use pnet::datalink::channel;
-    use pnet::datalink::interfaces;
     use pnet::packet::icmp::IcmpTypes;
     use pnet::packet::icmpv6::Icmpv6Types;
     use std::net::Ipv4Addr;
@@ -1530,7 +1530,7 @@ mod tests {
         // let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 5);
         let src_ipv4 = Ipv4Addr::new(192, 168, 5, 3);
         let mut interface = None;
-        for i in &interfaces() {
+        for i in &datalink::interfaces() {
             for n in &i.ips {
                 if n.ip() == src_ipv4 {
                     interface = Some(i.clone());

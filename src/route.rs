@@ -4,9 +4,9 @@ use crossnet::neigh::get_neighbor_cache;
 use crossnet::route::NetRouteAddr;
 use crossnet::route::RouteCache;
 use crossnet::route::get_route_cache;
+use pnet::datalink;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
-use pnet::datalink::interfaces;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -115,7 +115,7 @@ pub(crate) fn infer_if(
     neighbor: Option<NeighborCache>,
     route: Option<RouteCache>,
 ) -> Result<Option<NetworkInterface>, PistolError> {
-    let ifs = interfaces();
+    let ifs = datalink::interfaces();
     match src {
         Some(s) => {
             for i in &ifs {

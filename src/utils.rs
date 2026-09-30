@@ -96,7 +96,7 @@ impl PistolHex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pnet::datalink::interfaces;
+    use pnet::datalink;
     #[test]
     fn test_convert() {
         let v = [1, 1, 1, 1];
@@ -120,7 +120,7 @@ mod tests {
     }
     #[test]
     fn interface_loopback() {
-        for interface in interfaces() {
+        for interface in datalink::interfaces() {
             if interface.is_loopback() {
                 println!("{} is loopback interface", interface);
             }
@@ -128,7 +128,7 @@ mod tests {
     }
     #[test]
     fn interface_list() {
-        for interface in interfaces() {
+        for interface in datalink::interfaces() {
             println!("list interface: {}, {:?}", interface.name, interface.ips);
         }
     }

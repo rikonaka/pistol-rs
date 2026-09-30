@@ -1,5 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("lib.md")]
+#[cfg(feature = "debug")]
 use chrono::Local;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
@@ -518,6 +519,7 @@ impl<V> LoopStates<V> {
     }
 }
 
+#[cfg(feature = "debug")]
 fn get_ts() -> String {
     let now = Local::now();
     let ts = now.format("%H:%M:%S%.6f");
@@ -1059,7 +1061,7 @@ impl Pistol {
         };
         self.log_level = log_level;
     }
-    /// Get log level for tracing.      
+    /// Get log level for tracing.
     pub fn get_log_level(&self) -> Option<Level> {
         self.log_level
     }
@@ -1510,10 +1512,6 @@ impl Pistol {
         ret.layer2_cost = dur;
         Ok(ret)
     }
-    /// Use binary search to find the network sending rate.
-    pub fn run_send_rate_test(&mut self) -> Result<(), PistolError> {
-        Ok(())
-    }
     /// The raw version of tcp_syn_scan function.
     /// It sends a TCP SYN packet to the target IP address and port, and waits for a response.
     /// Based on the response received (or lack thereof),
@@ -1536,6 +1534,22 @@ impl Pistol {
         )?;
         ret.layer2_cost = dur;
         Ok(ret)
+    }
+    /// Use binary search to find the network sending rate through tcp syn scan.
+    pub fn run_send_rate_test(
+        &mut self,
+        dst_addr: IpAddr,
+        dst_port: u16,
+        src_addr: Option<IpAddr>,
+        src_port: Option<u16>,
+        epoch: usize,
+        interval: Duration,
+    ) -> Result<usize, PistolError> {
+        let (scan_target, _dur) =
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let best_window_size =
+            scan::tcp_send_rate_test(scan_target, self.timeout, epoch, self.max_retries, interval)?;
+        Ok(best_window_size)
     }
     /// TCP Window Scan.
     /// Window scan is exactly the same as ACK scan except
@@ -2749,7 +2763,7 @@ impl XxpPingTarget {
         }
         Ok(targets)
     }
-    /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).   
+    /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
     pub fn from_domain(
         dst_domain: &str,
         dst_ports: Vec<u16>,
@@ -3699,6 +3713,26 @@ mod tests {
         let dst_ipv6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0x20c, 0x29ff, 0xfecf, 0x622f);
         let (mac, rtt) = pistol.ndp_ns_scan_raw(dst_ipv6).unwrap();
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
+    }
+    #[test]
+    fn test_run_send_rate() {
+        let mut pistol = Pistol::new();
+        pistol.set_max_retries(2);
+        pistol.set_timeout(1.5);
+        pistol.set_log_level("debug");
+
+        let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131));
+        let dst_port = 22;
+        let src_addr = None;
+        let src_port = None;
+
+        let epoch = 10;
+        let interval = Duration::from_secs(2);
+
+        let best_window_size = pistol
+            .run_send_rate_test(dst_addr, dst_port, src_addr, src_port, epoch, interval)
+            .unwrap();
+        println!("best window size: {}", best_window_size);
     }
     #[test]
     fn test_tcp_syn_scan() {

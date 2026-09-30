@@ -1,9 +1,9 @@
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
+use pnet::datalink;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
-use pnet::datalink::interfaces;
 use pnet::packet::ethernet::EtherTypes;
 use rand::RngExt;
 use std::collections::HashMap;
@@ -184,7 +184,7 @@ impl Fingerprint {
 }
 
 fn dst_in_local_net(dst_addr: IpAddr) -> bool {
-    for i in interfaces() {
+    for i in datalink::interfaces() {
         for ipn in i.ips {
             if ipn.contains(dst_addr) {
                 return true;
@@ -204,7 +204,7 @@ fn addr_is_loopback(dst_addr: IpAddr) -> bool {
         return true;
     }
 
-    for i in interfaces() {
+    for i in datalink::interfaces() {
         for p in i.ips {
             if p.ip() == dst_addr {
                 return true;
