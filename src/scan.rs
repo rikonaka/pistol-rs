@@ -1379,6 +1379,9 @@ pub(crate) fn tcp_send_rate_test(
         "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
     ));
 
+    let dst_addr = scan_target.net_info.inferred_dst_addr;
+    let filter = Some(format!("src host {}", dst_addr));
+
     for _ in 0..epoch {
         let scan_target = scan_target.clone();
         let filter = filter.clone();
