@@ -64,7 +64,7 @@ pub enum PistolError {
     BuildPacketError { location: String },
 
     /* LIB */
-    #[error("can not found the target net info")]
+    #[error("can not found the target net info, the target may not be online")]
     CanNotFoundNetInfo,
 
     /* ROUTE ERROR */

@@ -1371,7 +1371,8 @@ pub(crate) fn tcp_send_rate_test(
 
     let tcp_syn_ack_both_filter =
         "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    // let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
+    let tcp_rst_filter = "()";
     let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
     let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
 
@@ -1379,8 +1380,8 @@ pub(crate) fn tcp_send_rate_test(
         "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
     ));
 
-    let dst_addr = scan_target.net_info.inferred_dst_addr;
-    let filter = Some(format!("src host {}", dst_addr));
+    // let dst_addr = scan_target.net_info.inferred_dst_addr;
+    // let filter = Some(format!("src host {}", dst_addr));
 
     for _ in 0..epoch {
         let scan_target = scan_target.clone();
