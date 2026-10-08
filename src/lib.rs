@@ -36,6 +36,7 @@ use std::collections::HashMap;
 use std::collections::btree_map::IntoIter;
 use std::collections::btree_map::Iter;
 use std::collections::btree_map::IterMut;
+use std::fmt;
 use std::hash::Hash;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -1113,7 +1114,7 @@ impl Pistol {
     /// It is similar to the `arp-scan` tool.
     /// ```rust
     /// use pistol::Pistol;
-    /// use pistol::Target;
+    /// use pistol::MacScanTarget;
     ///
     /// fn main() {
     ///     let mut pistol = Pistol::new();
@@ -1122,7 +1123,7 @@ impl Pistol {
     ///     pistol.set_timeout(0.5);
     ///     // set the max_retries same as `arp-scan`
     ///     pistol.set_max_retries(2);
-    ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
+    ///     let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
     ///     let ret = pistol.mac_scan(&targets).unwrap();
     ///     println!("{}", ret);
     /// }
@@ -1168,7 +1169,7 @@ impl Pistol {
     /// 7 packets received by filter, 0 packets dropped by kernel
     /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.043 seconds (125.31 hosts/sec). 5 responded
     /// ```
-    pub fn mac_scan(&mut self, targets: &[MacScanTarget]) -> Result<MacScans, PistolError> {
+    pub fn mac_scan(&mut self, targets: &MacScanTargets) -> Result<MacScans, PistolError> {
         self.init_logger();
         scan::mac_scan(targets, self.timeout, self.max_retries, self.send_rate)
     }
@@ -2322,24 +2323,38 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
     Ok(ret)
 }
 
-pub struct MacScanTarget {
-    pub dst_addr: IpAddr,
-    pub src_addr: Option<IpAddr>,
-    pub origin: Option<String>,
+struct MacScanTarget {
+    dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
+    origin: Option<String>,
 }
 
-impl MacScanTarget {
+impl fmt::Display for MacScanTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.origin {
+            Some(o) => write!(f, "{}({})", o, self.dst_addr),
+            None => write!(f, "{}", self.dst_addr),
+        }
+    }
+}
+
+pub struct MacScanTargets {
+    data: Vec<MacScanTarget>,
+}
+
+impl MacScanTargets {
     pub fn new(dst_addr: IpAddr, src_addr: Option<IpAddr>) -> Self {
-        Self {
+        let mac_scan_target = MacScanTarget {
             dst_addr,
             src_addr,
             origin: None,
+        };
+
+        Self {
+            data: vec![mac_scan_target],
         }
     }
-    pub fn from_subnet(
-        dst_subnet: &str,
-        src_addr: Option<IpAddr>,
-    ) -> Result<Vec<Self>, PistolError> {
+    pub fn from_subnet(dst_subnet: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2348,7 +2363,7 @@ impl MacScanTarget {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let target = Self {
+                let target = MacScanTarget {
                     dst_addr: ip.into(),
                     src_addr,
                     origin: Some(dst_subnet.to_string()),
@@ -2356,12 +2371,10 @@ impl MacScanTarget {
                 targets.push(target);
             }
         }
-        Ok(targets)
+
+        Ok(Self { data: targets })
     }
-    pub fn from_subnet6(
-        dst_subnet: &str,
-        src_addr: Option<IpAddr>,
-    ) -> Result<Vec<Self>, PistolError> {
+    pub fn from_subnet6(dst_subnet: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
         let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2370,7 +2383,7 @@ impl MacScanTarget {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let target = Self {
+                let target = MacScanTarget {
                     dst_addr: ip.into(),
                     src_addr,
                     origin: Some(dst_subnet.to_string()),
@@ -2378,45 +2391,40 @@ impl MacScanTarget {
                 targets.push(target);
             }
         }
-        Ok(targets)
+
+        Ok(Self { data: targets })
     }
-    pub fn from_domain(
-        dst_domain: &str,
-        src_addr: Option<IpAddr>,
-    ) -> Result<Vec<Self>, PistolError> {
+    pub fn from_domain(dst_domain: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut ret = Vec::new();
+        let mut targets = Vec::new();
 
         for ip in ips {
             if ip.is_ipv4() {
-                let target = Self {
+                let target = MacScanTarget {
                     dst_addr: ip,
                     src_addr,
                     origin: Some(dst_domain.to_string()),
                 };
-                ret.push(target);
+                targets.push(target);
             }
         }
-        Ok(ret)
+        Ok(Self { data: targets })
     }
-    pub fn from_domain6(
-        dst_domain: &str,
-        src_addr: Option<IpAddr>,
-    ) -> Result<Vec<Self>, PistolError> {
+    pub fn from_domain6(dst_domain: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut ret = Vec::new();
+        let mut targets = Vec::new();
 
         for ip in ips {
             if ip.is_ipv6() {
-                let target = Self {
+                let target = MacScanTarget {
                     dst_addr: ip,
                     src_addr,
                     origin: Some(dst_domain.to_string()),
                 };
-                ret.push(target);
+                targets.push(target);
             }
         }
-        Ok(ret)
+        Ok(Self { data: targets })
     }
 }
 
@@ -3683,7 +3691,7 @@ mod tests {
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
-        let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = MacScanTargets::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -4081,7 +4089,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         pistol.set_max_retries(2);
         // pistol.set_log_level("debug");
 
-        let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = MacScanTargets::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }

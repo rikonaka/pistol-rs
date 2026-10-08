@@ -43,7 +43,7 @@ pub(crate) mod udp;
 pub(crate) mod udp6;
 
 use crate::LoopStates;
-use crate::MacScanTarget;
+use crate::MacScanTargets;
 use crate::NetInfo;
 use crate::PacketFilter;
 use crate::PistolStream;
@@ -252,8 +252,9 @@ pub(crate) fn arp_scan_raw(
 
 fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
+    src_addr: Option<IpAddr>,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let net_info = match infer_net_info(dst_ipv4.into(), None)? {
+    let net_info = match infer_net_info(dst_ipv4.into(), src_addr)? {
         Some(n) => n,
         None => return Err(PistolError::CanNotFoundNetInfo),
     };
@@ -389,8 +390,9 @@ pub(crate) fn ndp_ns_scan_raw(
 
 pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
+    src_addr: Option<IpAddr>,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let net_info = match infer_net_info(dst_ipv6.into(), None)? {
+    let net_info = match infer_net_info(dst_ipv6.into(), src_addr)? {
         Some(n) => n,
         None => return Err(PistolError::CanNotFoundNetInfo),
     };
@@ -593,12 +595,13 @@ fn get_nmap_mac_prefixes() -> Result<HashMap<String, String>, PistolError> {
 #[derive(Debug, Clone)]
 struct MacScanState {
     dst_addr: IpAddr,
+    src_addr: Option<IpAddr>,
     retries: usize,
     data_recved: bool,
 }
 
 pub(crate) fn mac_scan(
-    targets: &[MacScanTarget],
+    targets: &MacScanTargets,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -611,11 +614,13 @@ pub(crate) fn mac_scan(
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
 
-    for t in targets {
+    for t in &targets.data {
         let dst_addr = t.dst_addr;
+        let src_addr = t.src_addr;
         let dst_port = 0;
         let state = MacScanState {
             dst_addr,
+            src_addr,
             retries: 0,
             data_recved: false,
         };
@@ -643,7 +648,7 @@ pub(crate) fn mac_scan(
                             state.retries + 1,
                             max_retries
                         );
-                        let (spp, filters) = get_arp_scan_buff(dst_ipv4)?;
+                        let (spp, filters) = get_arp_scan_buff(dst_ipv4, state.src_addr)?;
                         all_filters.extend(filters);
 
                         stream.send_packet(spp)?;
@@ -660,7 +665,7 @@ pub(crate) fn mac_scan(
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
-                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6)?;
+                        let (spp, filters) = get_ndp_ns_scan_buff(dst_ipv6, state.src_addr)?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
 
@@ -675,7 +680,7 @@ pub(crate) fn mac_scan(
         #[cfg(feature = "debug")]
         println!(
             "send packets to {} targets, cost: {:.2}s",
-            targets.len(),
+            targets.data.len(),
             send_start.elapsed().as_secs_f32()
         );
 
@@ -1286,10 +1291,10 @@ fn scan2(
                 };
 
                 let if_name = if_name.clone();
-                println!(
-                    "{} {} {} {} {} {} {}",
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name
-                );
+                // println!(
+                //     "{} {} {} {} {} {} {}",
+                //     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name
+                // );
                 let (spp, filters) = build_scan_buff(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, method,
                 )?;
@@ -1344,9 +1349,10 @@ const INIT_WINDOW_SIZE_STEP: usize = 1000;
 const SUCCESS_THRESHOLD: f32 = 0.999999;
 const SMALLEST_WINDOW_SIZE_STEP: usize = 50;
 
+/// This function returns the floor value of f32.
 fn floor_to_usize(f: f32) -> usize {
     if f.is_nan() || f.is_infinite() || f < 0.0 {
-        // smallest step
+        warn!("the window size value is invalid");
         SMALLEST_WINDOW_SIZE_STEP
     } else {
         let step = f.floor() as usize;
@@ -1371,13 +1377,9 @@ pub(crate) fn tcp_send_rate_test(
 
     let tcp_syn_ack_both_filter =
         "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
-    // let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let tcp_rst_filter = "()";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
+    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
     let filter = Some(format!(
-        "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or icmp or icmp6"
     ));
 
     // let dst_addr = scan_target.net_info.inferred_dst_addr;
