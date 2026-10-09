@@ -47,7 +47,7 @@ use crate::MacScanTargets;
 use crate::NetInfo;
 use crate::PacketFilter;
 use crate::PistolStream;
-use crate::PortScanTargetWithNetInfo;
+use crate::PortScanTargetsWithNetInfo;
 use crate::SendPacketParam;
 use crate::SendRate;
 use crate::SendWindow;
@@ -1048,7 +1048,7 @@ struct PortScanState {
 
 /// General scan function.
 fn scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
@@ -1232,7 +1232,7 @@ fn scan(
 
 /// This function is a variant of the send function, used to determine the sending rate.
 fn scan2(
-    scan_target: PortScanTargetWithNetInfo,
+    scan_target: PortScanTargetsWithNetInfo,
     timeout: Duration,
     max_retries: usize,
     filter: Option<String>,
@@ -1366,7 +1366,7 @@ fn floor_to_usize(f: f32) -> usize {
 
 /// Return the optimal sending window size.
 pub(crate) fn tcp_send_rate_test(
-    scan_target: PortScanTargetWithNetInfo,
+    scan_target: PortScanTargetsWithNetInfo,
     timeout: Duration,
     epoch: usize,
     max_retries: usize,
@@ -1415,7 +1415,7 @@ pub(crate) fn tcp_send_rate_test(
 }
 
 pub(crate) fn tcp_syn_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1440,7 +1440,7 @@ pub(crate) fn tcp_syn_scan(
 }
 
 pub(crate) fn tcp_fin_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1463,7 +1463,7 @@ pub(crate) fn tcp_fin_scan(
 }
 
 pub(crate) fn tcp_ack_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1486,7 +1486,7 @@ pub(crate) fn tcp_ack_scan(
 }
 
 pub(crate) fn tcp_null_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1509,7 +1509,7 @@ pub(crate) fn tcp_null_scan(
 }
 
 pub(crate) fn tcp_xmas_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1532,7 +1532,7 @@ pub(crate) fn tcp_xmas_scan(
 }
 
 pub(crate) fn tcp_window_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1555,7 +1555,7 @@ pub(crate) fn tcp_window_scan(
 }
 
 pub(crate) fn tcp_maimon_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1578,7 +1578,7 @@ pub(crate) fn tcp_maimon_scan(
 }
 
 pub(crate) fn tcp_connect_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     _send_rate: SendRate,
@@ -1653,7 +1653,7 @@ pub(crate) fn tcp_connect_scan(
 }
 
 pub(crate) fn udp_scan(
-    scan_targets: Vec<PortScanTargetWithNetInfo>,
+    scan_targets: Vec<PortScanTargetsWithNetInfo>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
