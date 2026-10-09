@@ -2799,12 +2799,21 @@ impl XxpPingTargets {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Self {
+        let dst_ports_str = dst_ports_abbreviation(&dst_ports);
+        let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
+            Some(format!(
+                "{}:{}(s) -> {}:{}(d)",
+                sa, sp, dst_addr, dst_ports_str
+            ))
+        } else {
+            Some(format!("{}:{}(d)", dst_addr, dst_ports_str))
+        };
         let target = XPT {
             dst_addr,
             dst_ports,
             src_addr,
             src_port,
-            origin: None,
+            origin,
         };
 
         Self { data: vec![target] }
@@ -2815,11 +2824,11 @@ impl XxpPingTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Vec<Self>, PistolError> {
+    ) -> Result<Self, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
         for ip in ip_pool {
-            let target = Self {
+            let target = XPT {
                 dst_addr: IpAddr::V4(ip),
                 dst_ports: dst_ports.clone(),
                 src_addr,
@@ -2828,7 +2837,7 @@ impl XxpPingTargets {
             };
             targets.push(target);
         }
-        Ok(targets)
+        Ok(Self { data: targets })
     }
     /// Only supported the IPv6 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet6(
@@ -2836,11 +2845,11 @@ impl XxpPingTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Vec<Self>, PistolError> {
+    ) -> Result<Self, PistolError> {
         let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
         for ip in ip_pool {
-            let target = Self {
+            let target = XPT {
                 dst_addr: IpAddr::V6(ip),
                 dst_ports: dst_ports.clone(),
                 src_addr,
@@ -2849,7 +2858,7 @@ impl XxpPingTargets {
             };
             targets.push(target);
         }
-        Ok(targets)
+        Ok(Self { data: targets })
     }
     /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
     pub fn from_domain(
@@ -2863,6 +2872,11 @@ impl XxpPingTargets {
 
         for ip in ips {
             if ip.is_ipv4() {
+                let origin = if let Some(sa) = src_addr {
+                    Some(format!("{}(s) -> {}(d)", sa, dst_domain))
+                } else {
+                    Some(format!("{}(d)", dst_domain))
+                };
                 let target = Self {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
