@@ -18,7 +18,7 @@ use tracing::debug;
 use tracing::error;
 use zip::ZipArchive;
 
-use crate::VersionScanTargets;
+use crate::VersionScanTarget;
 use crate::error::PistolError;
 use crate::utils::time_to_string;
 use crate::vs::vscan::MatchX;
@@ -140,7 +140,7 @@ fn get_nmap_service_probes() -> Result<Vec<ServiceProbe>, PistolError> {
 }
 
 pub fn vs_scan(
-    targets: &VersionScanTargets,
+    targets: &[VersionScanTarget],
     threads: usize,
     intensity: usize,
     timeout: Duration,
@@ -153,7 +153,7 @@ pub fn vs_scan(
     debug!("nmap service db load finish");
 
     let mut recv_size = 0;
-    for t in &targets.data {
+    for t in targets {
         let dst_addr = t.dst_addr;
         for &dst_port in &t.dst_ports {
             let origin = t.origin.clone();

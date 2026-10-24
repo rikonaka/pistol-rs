@@ -36,7 +36,6 @@ use std::collections::HashMap;
 use std::collections::btree_map::IntoIter;
 use std::collections::btree_map::Iter;
 use std::collections::btree_map::IterMut;
-use std::fmt;
 use std::hash::Hash;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -1114,7 +1113,7 @@ impl Pistol {
     /// It is similar to the `arp-scan` tool.
     /// ```rust
     /// use pistol::Pistol;
-    /// use pistol::MacScanTarget;
+    /// use pistol::Target;
     ///
     /// fn main() {
     ///     let mut pistol = Pistol::new();
@@ -1123,7 +1122,7 @@ impl Pistol {
     ///     pistol.set_timeout(0.5);
     ///     // set the max_retries same as `arp-scan`
     ///     pistol.set_max_retries(2);
-    ///     let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
+    ///     let targets = Target::from_subnet("192.168.5.0/24", None).unwrap();
     ///     let ret = pistol.mac_scan(&targets).unwrap();
     ///     println!("{}", ret);
     /// }
@@ -1169,7 +1168,7 @@ impl Pistol {
     /// 7 packets received by filter, 0 packets dropped by kernel
     /// Ending arp-scan 1.10.0: 256 hosts scanned in 2.043 seconds (125.31 hosts/sec). 5 responded
     /// ```
-    pub fn mac_scan(&mut self, targets: &MacScanTargets) -> Result<MacScans, PistolError> {
+    pub fn mac_scan(&mut self, targets: &[MacScanTarget]) -> Result<MacScans, PistolError> {
         self.init_logger();
         scan::mac_scan(targets, self.timeout, self.max_retries, self.send_rate)
     }
@@ -1203,9 +1202,9 @@ impl Pistol {
     /// We then labels them as unfiltered, meaning that they are reachable by the ACK packet,
     /// but whether they are open or closed is undetermined.
     /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
-    pub fn tcp_ack_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_ack_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret = scan::tcp_ack_scan(targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1224,7 +1223,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret =
             scan::tcp_ack_scan(vec![target], self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1250,16 +1249,16 @@ impl Pistol {
     /// so it very cause a expansive system cost.
     pub fn tcp_connect_scan(
         &mut self,
-        targets: &PortScanTargets,
+        targets: &[PortScanTarget],
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         // we do not need to get mac info for tcp connect scan,
         // since we will use the operating system's TCP stack to send packets.
         let mut scan_targets = Vec::new();
-        for t in &targets.data {
+        for t in targets {
             let mut net_info = NetInfo::fake();
             net_info.is_valid = true;
-            let p = PortScanTargetsWithNetInfo {
+            let p = PortScanTargetWithNetInfo {
                 net_info: net_info.clone(),
                 dst_ports: t.dst_ports.clone(),
                 src_port: t.src_port,
@@ -1288,7 +1287,7 @@ impl Pistol {
         // since we will use the operating system's TCP stack to send packets.
         let mut net_info = NetInfo::fake();
         net_info.is_valid = true;
-        let scan_target = PortScanTargetsWithNetInfo {
+        let scan_target = PortScanTargetWithNetInfo {
             net_info: net_info.clone(),
             dst_ports: vec![dst_port],
             src_port,
@@ -1318,9 +1317,9 @@ impl Pistol {
     /// if the port is closed and no response at all if the port is open.
     /// As long as none of those three bits are included,
     /// any combination of the other three (FIN, PSH, and URG) are OK.
-    pub fn tcp_fin_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_fin_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (net_infos, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (net_infos, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
             scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1339,7 +1338,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan(
             vec![scan_target],
             self.timeout,
@@ -1356,9 +1355,12 @@ impl Pistol {
     /// According to RFC 793 (TCP),
     /// a RST packet should be generated in response to such a probe whether the port is open or closed.
     /// However, Uriel noticed that many BSD-derived systems simply drop the packet if the port is open.
-    pub fn tcp_maimon_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_maimon_scan(
+        &mut self,
+        targets: &[PortScanTarget],
+    ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
             scan::tcp_maimon_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1377,7 +1379,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan(
             vec![scan_target],
             self.timeout,
@@ -1395,9 +1397,14 @@ impl Pistol {
     /// and no response at all if the port is open.
     /// As long as none of those three bits are included,
     /// any combination of the other three (FIN, PSH, and URG) are OK.
-    pub fn tcp_null_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_null_scan(
+        &mut self,
+        targets: &[PortScanTarget],
+        _src_addr: Option<IpAddr>,
+        _src_port: Option<u16>,
+    ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
             scan::tcp_null_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1416,7 +1423,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan(
             vec![scan_target],
             self.timeout,
@@ -1497,9 +1504,9 @@ impl Pistol {
     /// Nmap done: 1 IP address (1 host up) scanned in 14.65 seconds
     /// sudo nmap -p 22-10240 -sS 192.168.5.78  0.04s user 0.00s system 0% cpu 14.784 total
     /// ```
-    pub fn tcp_syn_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_syn_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
             scan::tcp_syn_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1518,7 +1525,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan(
             vec![scan_target],
             self.timeout,
@@ -1539,7 +1546,7 @@ impl Pistol {
         interval: Duration,
     ) -> Result<usize, PistolError> {
         let (scan_target, _dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let best_window_size =
             scan::tcp_send_rate_test(scan_target, self.timeout, epoch, self.max_retries, interval)?;
         Ok(best_window_size)
@@ -1553,9 +1560,12 @@ impl Pistol {
     /// On some systems, open ports use a positive window size (even for RST packets)
     /// while closed ones have a zero window.
     /// Window scan sends the same bare ACK probe as ACK scan.
-    pub fn tcp_window_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_window_scan(
+        &mut self,
+        targets: &[PortScanTarget],
+    ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
             scan::tcp_window_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1574,7 +1584,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan(
             vec![scan_target],
             self.timeout,
@@ -1591,9 +1601,9 @@ impl Pistol {
     /// if the port is closed and no response at all if the port is open.
     /// As long as none of those three bits are included,
     /// any combination of the other three (FIN, PSH, and URG) are OK.
-    pub fn tcp_xmas_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn tcp_xmas_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret =
             scan::tcp_xmas_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
@@ -1612,7 +1622,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan(
             vec![scan_target],
             self.timeout,
@@ -1634,9 +1644,9 @@ impl Pistol {
     /// For most ports, this packet will be empty (no payload),
     /// but for a few of the more common ports a protocol-specific payload will be sent.
     /// Based on the response, or lack thereof, the port is assigned to one of four states.
-    pub fn udp_scan(&mut self, targets: &PortScanTargets) -> Result<PortScans, PistolError> {
+    pub fn udp_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetsWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
         let mut ret = scan::udp_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
         ret.layer2_cost = dur;
         Ok(ret)
@@ -1655,7 +1665,7 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_target, dur) =
-            PortScanTargetsWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::udp_scan(
             vec![scan_target],
             self.timeout,
@@ -1683,7 +1693,7 @@ impl Pistol {
     /// while forgetting that other ICMP queries can be used for the same purpose.
     pub fn icmp_address_mask_ping(
         &mut self,
-        targets: &IcmpPingTargets,
+        targets: &[IcmpPingTarget],
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
@@ -1726,7 +1736,7 @@ impl Pistol {
     /// For this reason, ICMP-only scans are rarely reliable enough against unknown targets over the Internet.
     /// But for system administrators monitoring an internal network,
     /// this can be a practical and efficient approach.
-    pub fn icmp_echo_ping(&mut self, targets: &IcmpPingTargets) -> Result<HostPings, PistolError> {
+    pub fn icmp_echo_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
         let mut ret =
@@ -1769,7 +1779,7 @@ impl Pistol {
     /// while forgetting that other ICMP queries can be used for the same purpose.
     pub fn icmp_timestamp_ping(
         &mut self,
-        targets: &IcmpPingTargets,
+        targets: &[IcmpPingTarget],
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
@@ -1818,7 +1828,7 @@ impl Pistol {
     /// For this reason, ICMPv6-only scans are rarely reliable enough against unknown targets over the Internet.
     /// But for system administrators monitoring an internal network,
     /// this can be a practical and efficient approach.
-    pub fn icmpv6_ping(&mut self, targets: &IcmpPingTargets) -> Result<HostPings, PistolError> {
+    pub fn icmpv6_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
         let mut ret =
@@ -1830,7 +1840,7 @@ impl Pistol {
     /// This ping probe stays away from being similar to a ACK port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    pub fn tcp_ack_ping(&mut self, targets: &XxpPingTargets) -> Result<HostPings, PistolError> {
+    pub fn tcp_ack_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
         let mut ret =
@@ -1866,7 +1876,7 @@ impl Pistol {
     /// This ping probe stays away from being similar to a SYN port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    pub fn tcp_syn_ping(&mut self, targets: &XxpPingTargets) -> Result<HostPings, PistolError> {
+    pub fn tcp_syn_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
         let mut ret =
@@ -1902,7 +1912,7 @@ impl Pistol {
     /// This ping probe stays away from being similar to a UDP port scan, and to keep the probe stealthy,
     /// we chose to have the user manually provide a port number
     /// that is open on the target machine instead of traversing all ports.
-    pub fn udp_ping(&mut self, targets: &XxpPingTargets) -> Result<HostPings, PistolError> {
+    pub fn udp_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
         let mut ret = ping::udp_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
@@ -2211,7 +2221,7 @@ impl Pistol {
     /// it max_retries to identify the operating system running on the target machine.
     pub fn os_detect(
         &mut self,
-        targets: &OsDetectTargets,
+        targets: &[OsDetectTarget],
         threads: usize,
         top_k: usize,
     ) -> Result<OsDetects, PistolError> {
@@ -2267,7 +2277,7 @@ impl Pistol {
     /// it max_retries to determine the service type and version.
     pub fn vs_scan(
         &self,
-        targets: &VersionScanTargets,
+        targets: &[VersionScanTarget],
         threads: usize,
         intensity: usize,
     ) -> Result<PistolVsScans, PistolError> {
@@ -2289,7 +2299,7 @@ impl Pistol {
         intensity: usize,
     ) -> Result<PistolVsScans, PistolError> {
         self.init_logger();
-        let vs_target = VersionScanTargets::new(
+        let vs_target = VersionScanTarget::new(
             dst_addr,
             vec![dst_port],
             only_null_probe,
@@ -2297,7 +2307,7 @@ impl Pistol {
             only_udp_recommended,
         );
 
-        vs::vs_scan(&vs_target, 1, intensity, self.timeout)
+        vs::vs_scan(&[vs_target], 1, intensity, self.timeout)
     }
 }
 
@@ -2312,48 +2322,24 @@ pub fn dns_query(hostname: &str) -> Result<Vec<IpAddr>, PistolError> {
     Ok(ret)
 }
 
-/// MacScanTarget
-#[derive(Debug, Clone)]
-struct MST {
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-    origin: Option<String>,
+pub struct MacScanTarget {
+    pub dst_addr: IpAddr,
+    pub src_addr: Option<IpAddr>,
+    pub origin: Option<String>,
 }
 
-impl fmt::Display for MST {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.origin {
-            Some(o) => write!(f, "{}({})", o, self.dst_addr),
-            None => write!(f, "{}", self.dst_addr),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MacScanTargets {
-    data: Vec<MST>,
-}
-
-impl MacScanTargets {
+impl MacScanTarget {
     pub fn new(dst_addr: IpAddr, src_addr: Option<IpAddr>) -> Self {
-        let origin = match src_addr {
-            Some(s) => Some(format!("{}(s) -> {}(d)", s, dst_addr)),
-            None => Some(format!("{}(d)", dst_addr)),
-        };
-
-        let mac_scan_target = MST {
+        Self {
             dst_addr,
             src_addr,
-            origin,
-        };
-        Self {
-            data: vec![mac_scan_target],
+            origin: None,
         }
     }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
-    }
-    pub fn from_subnet(dst_subnet: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_subnet(
+        dst_subnet: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2362,7 +2348,7 @@ impl MacScanTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let target = MST {
+                let target = Self {
                     dst_addr: ip.into(),
                     src_addr,
                     origin: Some(dst_subnet.to_string()),
@@ -2370,9 +2356,12 @@ impl MacScanTargets {
                 targets.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
-    pub fn from_subnet6(dst_subnet: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_subnet6(
+        dst_subnet: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2381,7 +2370,7 @@ impl MacScanTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let target = MST {
+                let target = Self {
                     dst_addr: ip.into(),
                     src_addr,
                     origin: Some(dst_subnet.to_string()),
@@ -2389,105 +2378,71 @@ impl MacScanTargets {
                 targets.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
-    pub fn from_domain(dst_domain: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_domain(
+        dst_domain: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv4() {
-                let target = MST {
+                let target = Self {
                     dst_addr: ip,
                     src_addr,
                     origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(ret)
     }
-    pub fn from_domain6(dst_domain: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_domain6(
+        dst_domain: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv6() {
-                let target = MST {
+                let target = Self {
                     dst_addr: ip,
                     src_addr,
                     origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
-    }
-}
-
-/// PortScanTarget
-#[derive(Debug, Clone)]
-struct PST {
-    dst_addr: IpAddr,
-    dst_ports: Vec<u16>,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
-    origin: Option<String>,
-}
-
-const PST_MAX_DST_PORTS_LEN: usize = 3;
-
-fn dst_ports_abbreviation(dst_ports: &[u16]) -> String {
-    if dst_ports.len() > PST_MAX_DST_PORTS_LEN {
-        format!("[{:?}]", &dst_ports)
-    } else {
-        format!("{:?}", &dst_ports[0..PST_MAX_DST_PORTS_LEN])
-    }
-}
-
-impl fmt::Display for PST {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dst_ports_str = dst_ports_abbreviation(&self.dst_ports);
-        match &self.origin {
-            Some(o) => write!(f, "{}({}:{})", o, self.dst_addr, dst_ports_str),
-            None => write!(f, "{}", self.dst_addr),
-        }
+        Ok(ret)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct PortScanTargets {
-    data: Vec<PST>,
+pub struct PortScanTarget {
+    pub dst_addr: IpAddr,
+    pub dst_ports: Vec<u16>,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
+    pub origin: Option<String>,
 }
 
-impl PortScanTargets {
+impl PortScanTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Self {
-        let dst_ports_str = dst_ports_abbreviation(&dst_ports);
-        let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-            Some(format!(
-                "{}:{}(s) -> {}:{}(d)",
-                sa, sp, dst_addr, dst_ports_str
-            ))
-        } else {
-            Some(format!("{}:{}(d)", dst_addr, dst_ports_str))
-        };
-
-        let target = PST {
+        Self {
             dst_addr,
             dst_ports,
             src_addr,
             src_port,
-            origin,
-        };
-        Self { data: vec![target] }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
+            origin: None,
+        }
     }
     /// Only supported the IPv4 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet(
@@ -2495,7 +2450,7 @@ impl PortScanTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2504,26 +2459,17 @@ impl PortScanTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let dst_ports_str = dst_ports_abbreviation(&dst_ports);
-                let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-                    Some(format!(
-                        "{}:{}(s) -> {}:{}(d)",
-                        sa, sp, dst_subnet, dst_ports_str
-                    ))
-                } else {
-                    Some(format!("{}:{}(d)", dst_subnet, dst_ports_str))
-                };
-                let target = PST {
+                let target = Self {
                     dst_addr: ip.into(),
                     dst_ports: dst_ports.clone(),
                     src_addr,
                     src_port,
-                    origin,
+                    origin: Some(dst_subnet.to_string()),
                 };
                 targets.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
     /// Only supported the IPv6 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet6(
@@ -2531,7 +2477,7 @@ impl PortScanTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2540,26 +2486,17 @@ impl PortScanTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let dst_ports_str = dst_ports_abbreviation(&dst_ports);
-                let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-                    Some(format!(
-                        "{}:{}(s) -> {}:{}(d)",
-                        sa, sp, dst_subnet, dst_ports_str
-                    ))
-                } else {
-                    Some(format!("{}:{}(d)", dst_subnet, dst_ports_str))
-                };
-                let target = PST {
+                let target = Self {
                     dst_addr: ip.into(),
                     dst_ports: dst_ports.clone(),
                     src_addr,
                     src_port,
-                    origin,
+                    origin: Some(dst_subnet.to_string()),
                 };
                 targets.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
     /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
     pub fn from_domain(
@@ -2567,32 +2504,23 @@ impl PortScanTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv4() {
-                let dst_ports_str = dst_ports_abbreviation(&dst_ports);
-                let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-                    Some(format!(
-                        "{}:{}(s) -> {}:{}(d)",
-                        sa, sp, dst_domain, dst_ports_str
-                    ))
-                } else {
-                    Some(format!("{}:{}(d)", dst_domain, dst_ports_str))
-                };
-                let target = PST {
+                let target = Self {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
                     src_addr,
                     src_port,
-                    origin,
+                    origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(ret)
     }
     /// If possible, convert the domain name to an IPv6 address, otherwise return an error (returns all IPv6 addresses).
     pub fn from_domain6(
@@ -2600,49 +2528,40 @@ impl PortScanTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv6() {
-                let dst_ports_str = dst_ports_abbreviation(&dst_ports);
-                let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-                    Some(format!(
-                        "{}:{}(s) -> {}:{}(d)",
-                        sa, sp, dst_domain, dst_ports_str
-                    ))
-                } else {
-                    Some(format!("{}:{}(d)", dst_domain, dst_ports_str))
-                };
-                let target = PST {
+                let target = Self {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
                     src_addr,
                     src_port,
-                    origin,
+                    origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(ret)
     }
 }
 
 #[derive(Debug, Clone)]
-struct PortScanTargetsWithNetInfo {
-    net_info: NetInfo,
-    dst_ports: Vec<u16>,
-    src_port: Option<u16>,
+struct PortScanTargetWithNetInfo {
+    pub net_info: NetInfo,
+    pub dst_ports: Vec<u16>,
+    pub src_port: Option<u16>,
 }
 
-impl PortScanTargetsWithNetInfo {
-    fn infer_multi(targets: &PortScanTargets) -> Result<(Vec<Self>, Duration), PistolError> {
+impl PortScanTargetWithNetInfo {
+    fn infer_multi(targets: &[PortScanTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
-        for t in &targets.data {
+        for t in targets {
             if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
-                let p: PortScanTargetsWithNetInfo = Self {
+                let p: PortScanTargetWithNetInfo = Self {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
                     src_port: t.src_port,
@@ -2674,33 +2593,26 @@ impl PortScanTargetsWithNetInfo {
     }
 }
 
-/// IcmpPingTarget
 #[derive(Debug, Clone)]
-struct IPT {
-    dst_addr: IpAddr,
-    src_addr: Option<IpAddr>,
-    origin: Option<String>,
+pub struct IcmpPingTarget {
+    pub dst_addr: IpAddr,
+    pub src_addr: Option<IpAddr>,
+    pub origin: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct IcmpPingTargets {
-    data: Vec<IPT>,
-}
-
-impl IcmpPingTargets {
+impl IcmpPingTarget {
     pub fn new(dst_addr: IpAddr, src_addr: Option<IpAddr>) -> Self {
-        let target = IPT {
+        Self {
             dst_addr,
             src_addr,
             origin: None,
-        };
-        Self { data: vec![target] }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
+        }
     }
     /// Only supported the IPv4 target (by default, network address and broadcast address addresses are ignored).
-    pub fn from_subnet(dst_subnet: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_subnet(
+        dst_subnet: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2709,23 +2621,21 @@ impl IcmpPingTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let origin = if let Some(sa) = src_addr {
-                    Some(format!("{}(s) -> {}(d)", sa, dst_subnet))
-                } else {
-                    Some(format!("{}(d)", dst_subnet))
-                };
-                let target = IPT {
+                let target = Self {
                     dst_addr: ip.into(),
                     src_addr,
-                    origin,
+                    origin: Some(dst_subnet.to_string()),
                 };
                 targets.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
     /// Only supported the IPv6 target (by default, network address and broadcast address addresses are ignored).
-    pub fn from_subnet6(dst_subnet: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_subnet6(
+        dst_subnet: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -2734,105 +2644,82 @@ impl IcmpPingTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let origin = if let Some(sa) = src_addr {
-                    Some(format!("{}(s) -> {}(d)", sa, dst_subnet))
-                } else {
-                    Some(format!("{}(d)", dst_subnet))
-                };
-                let target = IPT {
+                let target = Self {
                     dst_addr: ip.into(),
                     src_addr,
-                    origin,
+                    origin: Some(dst_subnet.to_string()),
                 };
                 targets.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
     // If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
-    pub fn from_domain(dst_domain: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
+    pub fn from_domain(
+        dst_domain: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv4() {
-                let origin = if let Some(sa) = src_addr {
-                    Some(format!("{}(s) -> {}(d)", sa, dst_domain))
-                } else {
-                    Some(format!("{}(d)", dst_domain))
-                };
-                let target = IPT {
-                    dst_addr: ip,
-                    src_addr,
-                    origin,
-                };
-                targets.push(target);
-            }
-        }
-        Ok(Self { data: targets })
-    }
-    /// If possible, convert the domain name to an IPv6 address, otherwise return an error (returns all IPv6 addresses).
-    pub fn from_domain6(dst_domain: &str, src_addr: Option<IpAddr>) -> Result<Self, PistolError> {
-        let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
-
-        for ip in ips {
-            if ip.is_ipv6() {
-                let target = IPT {
+                let target = Self {
                     dst_addr: ip,
                     src_addr,
                     origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(ret)
+    }
+    /// If possible, convert the domain name to an IPv6 address, otherwise return an error (returns all IPv6 addresses).
+    pub fn from_domain6(
+        dst_domain: &str,
+        src_addr: Option<IpAddr>,
+    ) -> Result<Vec<Self>, PistolError> {
+        let ips = dns_query(dst_domain)?;
+        let mut ret = Vec::new();
+
+        for ip in ips {
+            if ip.is_ipv6() {
+                let target = Self {
+                    dst_addr: ip,
+                    src_addr,
+                    origin: Some(dst_domain.to_string()),
+                };
+                ret.push(target);
+            }
+        }
+        Ok(ret)
     }
 }
 
-/// For TCP and UDP ping use (XxpPingTarget).
+/// For TCP and UDP ping use.
 #[derive(Debug, Clone)]
-struct XPT {
-    dst_addr: IpAddr,
-    dst_ports: Vec<u16>,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
-    origin: Option<String>,
+pub struct XxpPingTarget {
+    pub dst_addr: IpAddr,
+    pub dst_ports: Vec<u16>,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
+    pub origin: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-struct XxpPingTargets {
-    data: Vec<XPT>,
-}
-
-impl XxpPingTargets {
+impl XxpPingTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Self {
-        let dst_ports_str = dst_ports_abbreviation(&dst_ports);
-        let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-            Some(format!(
-                "{}:{}(s) -> {}:{}(d)",
-                sa, sp, dst_addr, dst_ports_str
-            ))
-        } else {
-            Some(format!("{}:{}(d)", dst_addr, dst_ports_str))
-        };
-        let target = XPT {
+        Self {
             dst_addr,
             dst_ports,
             src_addr,
             src_port,
-            origin,
-        };
-
-        Self { data: vec![target] }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
+            origin: None,
+        }
     }
     /// Only supported the IPv4 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet(
@@ -2840,11 +2727,11 @@ impl XxpPingTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
         for ip in ip_pool {
-            let target = XPT {
+            let target = Self {
                 dst_addr: IpAddr::V4(ip),
                 dst_ports: dst_ports.clone(),
                 src_addr,
@@ -2853,7 +2740,7 @@ impl XxpPingTargets {
             };
             targets.push(target);
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
     /// Only supported the IPv6 target (by default, network address and broadcast address addresses are ignored).
     pub fn from_subnet6(
@@ -2861,11 +2748,11 @@ impl XxpPingTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv6Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
         for ip in ip_pool {
-            let target = XPT {
+            let target = Self {
                 dst_addr: IpAddr::V6(ip),
                 dst_ports: dst_ports.clone(),
                 src_addr,
@@ -2874,7 +2761,7 @@ impl XxpPingTargets {
             };
             targets.push(target);
         }
-        Ok(Self { data: targets })
+        Ok(targets)
     }
     /// If possible, convert the domain name to an IPv4 address, otherwise return an error (returns all IPv4 addresses).
     pub fn from_domain(
@@ -2882,28 +2769,23 @@ impl XxpPingTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv4() {
-                let origin = if let Some(sa) = src_addr {
-                    Some(format!("{}(s) -> {}(d)", sa, dst_domain))
-                } else {
-                    Some(format!("{}(d)", dst_domain))
-                };
-                let target = XPT {
+                let target = Self {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
                     src_addr,
                     src_port,
-                    origin,
+                    origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(ret)
     }
     /// If possible, convert the domain name to an IPv6 address, otherwise return an error
     pub fn from_domain6(
@@ -2911,28 +2793,23 @@ impl XxpPingTargets {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ips = dns_query(dst_domain)?;
-        let mut targets = Vec::new();
+        let mut ret = Vec::new();
 
         for ip in ips {
             if ip.is_ipv6() {
-                let origin = if let Some(sa) = src_addr {
-                    Some(format!("{}(s) -> {}(d)", sa, dst_domain))
-                } else {
-                    Some(format!("{}(d)", dst_domain))
-                };
-                let target = XPT {
+                let target = Self {
                     dst_addr: ip,
                     dst_ports: dst_ports.clone(),
                     src_addr,
                     src_port,
-                    origin,
+                    origin: Some(dst_domain.to_string()),
                 };
-                targets.push(target);
+                ret.push(target);
             }
         }
-        Ok(Self { data: targets })
+        Ok(ret)
     }
 }
 
@@ -2946,10 +2823,10 @@ pub(crate) struct PingTargetWithNetInfo {
 }
 
 impl PingTargetWithNetInfo {
-    fn infer_icmp_multi(targets: &IcmpPingTargets) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_icmp_multi(targets: &[IcmpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
-        for t in &targets.data {
+        for t in targets {
             if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
@@ -2962,10 +2839,10 @@ impl PingTargetWithNetInfo {
         let cost = start.elapsed();
         Ok((values, cost))
     }
-    fn infer_xxp_multi(targets: &XxpPingTargets) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_xxp_multi(targets: &[XxpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
-        for t in &targets.data {
+        for t in targets {
             if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
                 let p = Self {
                     net_info,
@@ -3017,44 +2894,35 @@ impl PingTargetWithNetInfo {
 }
 
 #[derive(Debug, Clone)]
-struct XTT {
-    dst_addr: IpAddr,
-    dst_port: Option<u16>,
-    src_addr: Option<IpAddr>,
-    src_port: Option<u16>,
-    origin: Option<String>,
+pub struct XxpTraceTarget {
+    pub dst_addr: IpAddr,
+    pub dst_port: Option<u16>,
+    pub src_addr: Option<IpAddr>,
+    pub src_port: Option<u16>,
+    pub origin: Option<String>,
 }
 
-pub struct XxpTraceTargets {
-    data: Vec<XTT>,
-}
-
-impl XxpTraceTargets {
+impl XxpTraceTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_port: Option<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
     ) -> Self {
-        let xtt = XTT {
+        Self {
             dst_addr,
             dst_port,
             src_addr,
             src_port,
             origin: None,
-        };
-
-        Self { data: vec![xtt] }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
+        }
     }
     pub fn from_subnet(
         dst_subnet: &str,
         dst_port: Option<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-    ) -> Result<Self, PistolError> {
+    ) -> Result<Vec<Self>, PistolError> {
         let ip_pool = Ipv4Pool::from_str(dst_subnet)?;
         let mut targets = Vec::new();
 
@@ -3063,15 +2931,6 @@ impl XxpTraceTargets {
             if i == 0 || (last > 0 && i == last - 1) {
                 continue;
             } else {
-                let origin = if let (Some(sa), Some(sp)) = (src_addr, src_port) {
-                    if let Some(dp) = dst_port {
-                        Some(format!("{}:{}(s) -> {}:{}(d)", sa, sp, dst_subnet, dp ))
-                    } else {
-                        Some(format!("{}:{}(s) -> {}(d)", sa, sp, dst_subnet))
-                    }
-                } else {
-                    Some(format!("{}(d)", dst_subnet))
-                };
                 let target = Self {
                     dst_addr: ip.into(),
                     dst_port,
@@ -3172,9 +3031,6 @@ impl IcmpTraceTarget {
             src_addr,
             origin: None,
         }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
     }
     pub fn from_subnet(
         dst_subnet: &str,
@@ -3330,9 +3186,6 @@ impl XxpFloodTarget {
             origin: None,
         }
     }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
-    }
     pub fn from_subnet(
         dst_subnet: &str,
         dst_port: Option<u16>,
@@ -3447,9 +3300,6 @@ impl IcmpFloodTarget {
             src_addr,
             origin: None,
         }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
     }
     pub fn from_subnet(
         dst_subnet: &str,
@@ -3614,36 +3464,26 @@ impl FloodTargetWithNetInfo {
 }
 
 #[derive(Debug, Clone)]
-struct ODT {
-    dst_addr: IpAddr,
-    dst_open_tcp_port: u16,
-    dst_closed_tcp_port: u16,
-    dst_closed_udp_port: u16,
-    origin: Option<String>,
+pub struct OsDetectTarget {
+    pub dst_addr: IpAddr,
+    pub dst_open_tcp_port: u16,
+    pub dst_closed_tcp_port: u16,
+    pub dst_closed_udp_port: u16,
 }
 
-pub struct OsDetectTargets {
-    data: Vec<ODT>,
-}
-
-impl OsDetectTargets {
+impl OsDetectTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_open_tcp_port: u16,
         dst_closed_tcp_port: u16,
         dst_closed_udp_port: u16,
     ) -> Self {
-        let odt = ODT {
+        Self {
             dst_addr,
             dst_open_tcp_port,
             dst_closed_tcp_port,
             dst_closed_udp_port,
-            origin: None,
-        };
-        Self { data: vec![odt] }
-    }
-    pub fn extend(&mut self, a: &Self) {
-        self.data.extend_from_slice(&a.data);
+        }
     }
 }
 
@@ -3656,10 +3496,10 @@ pub(crate) struct OsDetectTargetWithNetInfo {
 }
 
 impl OsDetectTargetWithNetInfo {
-    fn infer_multi(targets: &OsDetectTargets) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_multi(targets: &[OsDetectTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
-        for t in &targets.data {
+        for t in targets {
             if let Some(net_info) = infer_net_info(t.dst_addr, None)? {
                 let p = Self {
                     net_info,
@@ -3697,20 +3537,16 @@ impl OsDetectTargetWithNetInfo {
 }
 
 #[derive(Debug, Clone)]
-struct VST {
-    dst_addr: IpAddr,
-    dst_ports: Vec<u16>,
-    origin: Option<String>,
-    only_null_probe: bool,
-    only_tcp_recommended: bool,
-    only_udp_recommended: bool,
+pub struct VersionScanTarget {
+    pub dst_addr: IpAddr,
+    pub dst_ports: Vec<u16>,
+    pub origin: Option<String>,
+    pub only_null_probe: bool,
+    pub only_tcp_recommended: bool,
+    pub only_udp_recommended: bool,
 }
 
-pub struct VersionScanTargets {
-    data: Vec<VST>,
-}
-
-impl VersionScanTargets {
+impl VersionScanTarget {
     pub fn new(
         dst_addr: IpAddr,
         dst_ports: Vec<u16>,
@@ -3718,16 +3554,14 @@ impl VersionScanTargets {
         only_tcp_recommended: bool,
         only_udp_recommended: bool,
     ) -> Self {
-        let vst = VST {
+        Self {
             dst_addr,
             dst_ports,
             origin: None,
             only_null_probe,
             only_tcp_recommended,
             only_udp_recommended,
-        };
-
-        Self { data: vec![vst] }
+        }
     }
 }
 
@@ -3738,7 +3572,7 @@ mod tests {
     use subnetwork::CrossIpv4Pool;
     #[test]
     fn test_net_info_detect() {
-        let targets = IcmpPingTargets::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = IcmpPingTarget::from_subnet("192.168.5.0/24", None).unwrap();
         let (ping_targets, cost) = PingTargetWithNetInfo::infer_icmp_multi(&targets).unwrap();
         println!(
             "ping_targets len: {}, cost: {:.2}s",
@@ -3849,7 +3683,7 @@ mod tests {
         pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
-        let targets = MacScanTargets::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -3909,7 +3743,7 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
-        let targets = vec![PortScanTargets::new(
+        let targets = vec![PortScanTarget::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131)),
             vec![22, 80, 443, 8080],
             src_ipv4,
@@ -3927,12 +3761,12 @@ mod tests {
 
         let src_ipv4 = None;
         let src_port = None;
-        let targets = PortScanTargets::new(
+        let targets = vec![PortScanTarget::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 5, 3)),
             vec![22, 80, 443],
             src_ipv4,
             src_port,
-        );
+        )];
         let ret = pistol.tcp_syn_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -3947,7 +3781,7 @@ mod tests {
         let src_port = None;
         let dst_ports: Vec<u16> = (22..10240).collect();
         // let dst_ports: Vec<u16> = (22..1024).collect();
-        let targets = vec![PortScanTargets::new(
+        let targets = vec![PortScanTarget::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131)),
             // vec![22, 80, 443],
             dst_ports,
@@ -3969,7 +3803,7 @@ mod tests {
 
         let dst_ports: Vec<u16> = (22..10240).collect();
 
-        let targets = vec![PST::new(
+        let targets = vec![PortScanTarget::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78)),
             // vec![22, 80, 443],
             dst_ports,
@@ -4098,7 +3932,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let dst_closed_tcp_port = 8765;
         // `dst_closed_udp_port` must be a certain closed udp port.
         let dst_closed_udp_port = 9876;
-        let target = ODT::new(
+        let target = OsDetectTarget::new(
             dst_addr,
             dst_open_tcp_port, // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port,
@@ -4196,7 +4030,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let dst_closed_tcp_port = 8765;
         // `dst_closed_udp_port` must be a certain closed udp port.
         let dst_closed_udp_port = 9876;
-        let target = ODT::new(
+        let target = OsDetectTarget::new(
             dst_addr.into(),
             dst_open_tcp_port, // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port,
@@ -4226,7 +4060,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         // only_tcp_recommended = true: only try the tcp probe recommended port
         // only_udp_recommended = true: only try the udp probe recommended port
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
-        let target = VST::new(
+        let target = VersionScanTarget::new(
             dst_addr.into(),
             vec![22, 80, 8080],
             only_null_probe,
@@ -4247,7 +4081,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         pistol.set_max_retries(2);
         // pistol.set_log_level("debug");
 
-        let targets = MacScanTargets::from_subnet("192.168.5.0/24", None).unwrap();
+        let targets = MacScanTarget::from_subnet("192.168.5.0/24", None).unwrap();
         let ret = pistol.mac_scan(&targets).unwrap();
         println!("{}", ret);
     }
@@ -4274,7 +4108,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let mut targets = vec![];
         for ip in subnet {
             // Test with a example port `22`
-            let host = PST::new(IpAddr::V4(ip), vec![22], src_addr, src_port);
+            let host = PortScanTarget::new(IpAddr::V4(ip), vec![22], src_addr, src_port);
             targets.push(host);
         }
         let ret = pistol.tcp_syn_scan(&targets).unwrap();
@@ -4293,7 +4127,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let dst_closed_tcp_port = 8765;
         // `dst_closed_udp_port` must be a certain closed udp port.
         let dst_closed_udp_port = 9876;
-        let target = ODT::new(
+        let target = OsDetectTarget::new(
             dst_ipv4.into(),
             dst_open_tcp_port, // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port,
@@ -4316,7 +4150,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
         let dst_open_tcp_port = 22;
         let dst_closed_tcp_port = 8765;
         let dst_closed_udp_port = 9876;
-        let target = ODT::new(
+        let target = OsDetectTarget::new(
             dst_ipv6.into(),
             dst_open_tcp_port, // The order of these three ports cannot be disrupted.
             dst_closed_tcp_port,
@@ -4336,7 +4170,7 @@ OS:0accc0000%ST=1.0802%RT=1.0814)EXTRA(FL=12345)
 
         let dst_addr = Ipv4Addr::new(192, 168, 5, 5);
         let (only_null_probe, only_tcp_recommended, only_udp_recommended) = (false, true, true);
-        let target = VST::new(
+        let target = VersionScanTarget::new(
             IpAddr::V4(dst_addr),
             vec![22, 80, 8080],
             only_null_probe,
