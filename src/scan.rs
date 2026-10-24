@@ -1352,6 +1352,7 @@ const SMALLEST_WINDOW_SIZE_STEP: usize = 50;
 /// This function returns the floor value of f32.
 fn floor_to_usize(f: f32) -> usize {
     if f.is_nan() || f.is_infinite() || f < 0.0 {
+        // smallest step
         warn!("the window size value is invalid");
         SMALLEST_WINDOW_SIZE_STEP
     } else {
