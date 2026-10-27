@@ -1365,6 +1365,13 @@ fn floor_to_usize(f: f32) -> usize {
     }
 }
 
+const TCP_SYN_ACK_BOTH_FILTER: &str =
+    "(tcp and ((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)))";
+const TCP_RST_FILTER: &str = "(tcp and ((tcp[tcpflags] & tcp-rst) != 0))";
+const ICMP_UNREACH_FILTER: &str = "(icmp and icmp[icmptype] == 3)";
+const ICMP6_UNREACH_FILTER: &str = "(icmp6 and icmp6[icmp6type] == 1)";
+const UDP_FILTER: &str = "udp";
+
 /// Return the optimal sending window size.
 pub(crate) fn tcp_send_rate_test(
     scan_target: PortScanTargetWithNetInfo,
@@ -1376,15 +1383,9 @@ pub(crate) fn tcp_send_rate_test(
     let mut window_size = INIT_WINDOW_SIZE as f32;
     let mut window_size_step = INIT_WINDOW_SIZE_STEP as f32;
 
-    let tcp_syn_ack_both_filter =
-        "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
     let filter = Some(format!(
-        "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or icmp or icmp6"
+        "{TCP_SYN_ACK_BOTH_FILTER} or {TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
-
-    // let dst_addr = scan_target.net_info.inferred_dst_addr;
-    // let filter = Some(format!("src host {}", dst_addr));
 
     for _ in 0..epoch {
         let scan_target = scan_target.clone();
@@ -1421,14 +1422,8 @@ pub(crate) fn tcp_syn_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_syn_ack_both_filter =
-        "(tcp and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack))";
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{tcp_syn_ack_both_filter} or {tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_SYN_ACK_BOTH_FILTER} or {TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1446,12 +1441,8 @@ pub(crate) fn tcp_fin_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1469,12 +1460,8 @@ pub(crate) fn tcp_ack_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1492,12 +1479,8 @@ pub(crate) fn tcp_null_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1515,12 +1498,8 @@ pub(crate) fn tcp_xmas_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1538,12 +1517,8 @@ pub(crate) fn tcp_window_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_rst_filter = "(tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "icmp[icmptype] == icmp-unreach";
-    let icmp6_unreach_filter = "icmp6[icmp6type] == icmp6-unreach";
-
     let filter = Some(format!(
-        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1561,12 +1536,8 @@ pub(crate) fn tcp_maimon_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let tcp_rst_filter = "(tcp and tcp[tcpflags] & tcp-rst != 0)";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{tcp_rst_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,
@@ -1659,12 +1630,8 @@ pub(crate) fn udp_scan(
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
-    let udp_filter = "udp";
-    let icmp_unreach_filter = "(icmp and icmp[icmptype] == icmp-unreach)";
-    let icmp6_unreach_filter = "(icmp6 and icmp6[icmp6type] == icmp6-unreach)";
-
     let filter = Some(format!(
-        "{udp_filter} or {icmp_unreach_filter} or {icmp6_unreach_filter}"
+        "{UDP_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
     ));
     scan(
         scan_targets,

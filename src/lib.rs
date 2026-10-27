@@ -3726,7 +3726,7 @@ mod tests {
         let src_addr = None;
         let src_port = None;
 
-        let epoch = 10;
+        let epoch = 1;
         let interval = Duration::from_secs(2);
 
         let best_window_size = pistol
