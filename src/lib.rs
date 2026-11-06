@@ -1542,13 +1542,22 @@ impl Pistol {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        epoch: usize,
+        epochs: usize,
         interval: Duration,
     ) -> Result<usize, PistolError> {
+        if epochs == 0 {
+            panic!("the epochs parameter cannot be zero");
+        }
+
         let (scan_target, _dur) =
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
-        let best_window_size =
-            scan::tcp_send_rate_test(scan_target, self.timeout, epoch, self.max_retries, interval)?;
+        let best_window_size = scan::tcp_send_rate_test(
+            scan_target,
+            self.timeout,
+            epochs,
+            self.max_retries,
+            interval,
+        )?;
         Ok(best_window_size)
     }
     /// TCP Window Scan.
@@ -3718,7 +3727,7 @@ mod tests {
     fn test_run_send_rate() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(1.5);
+        pistol.set_timeout(3.5);
         pistol.set_log_level("debug");
 
         let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131));

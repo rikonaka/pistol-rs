@@ -1291,10 +1291,6 @@ fn scan2(
                 };
 
                 let if_name = if_name.clone();
-                // println!(
-                //     "{} {} {} {} {} {} {}",
-                //     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name
-                // );
                 let (spp, filters) = build_scan_buff(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, method,
                 )?;
@@ -1325,6 +1321,7 @@ fn scan2(
         }
 
         let response = stream.recv_packet(timeout)?;
+        println!("response len: {}", response.len());
 
         let mut matched_packet_count = 0;
         for r in &response {
@@ -1376,18 +1373,19 @@ const UDP_FILTER: &str = "udp";
 pub(crate) fn tcp_send_rate_test(
     scan_target: PortScanTargetWithNetInfo,
     timeout: Duration,
-    epoch: usize,
+    epochs: usize,
     max_retries: usize,
     interval: Duration,
 ) -> Result<usize, PistolError> {
     let mut window_size = INIT_WINDOW_SIZE as f32;
     let mut window_size_step = INIT_WINDOW_SIZE_STEP as f32;
 
+    let dst_addr = scan_target.net_info.inferred_dst_addr;
     let filter = Some(format!(
-        "{TCP_SYN_ACK_BOTH_FILTER} or {TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER}"
+        "src host {dst_addr} and ({TCP_SYN_ACK_BOTH_FILTER} or {TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER})"
     ));
 
-    for _ in 0..epoch {
+    for _ in 0..epochs {
         let scan_target = scan_target.clone();
         let filter = filter.clone();
 
