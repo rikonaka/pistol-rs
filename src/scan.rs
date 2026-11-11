@@ -153,13 +153,14 @@ impl MacScans {
 
 pub(crate) fn arp_scan_raw(
     dst_ipv4: Ipv4Addr,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
     let start = Instant::now();
     let mut stream = PistolStream::new();
     let filter = Some(format!("arp and arp[6:2] = 2 and src host {dst_ipv4}"));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut best_lip = 0;
     let mut best_interface = None;
@@ -291,6 +292,7 @@ fn get_arp_scan_buff(
 
 pub(crate) fn ndp_ns_scan_raw(
     dst_ipv6: Ipv6Addr,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
@@ -299,7 +301,7 @@ pub(crate) fn ndp_ns_scan_raw(
     let filter = Some(format!(
         "icmp6 and icmp6[icmptype] == icmp6-neighboradvert and src host {dst_ipv6}",
     ));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut best_lip = 0;
     let mut best_interface = None;
@@ -427,6 +429,7 @@ pub(crate) fn get_ndp_ns_scan_buff(
 
 pub(crate) fn ndp_ra_scan_raw(
     dst_ipv6: Ipv6Addr,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
@@ -436,7 +439,7 @@ pub(crate) fn ndp_ra_scan_raw(
     let filter = Some(String::from(
         "icmp6 and icmp6[icmptype] == icmp6-routeradvert",
     ));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let net_info = match infer_net_info(dst_ipv6.into(), None)? {
         Some(n) => n,
@@ -602,14 +605,18 @@ struct MacScanState {
 
 pub(crate) fn mac_scan(
     targets: &[MacScanTarget],
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
 ) -> Result<MacScans, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from(
-        "(arp and arp[6:2] = 2) or (icmp6 and ip6[40] = 136)",
-    )))?;
+    stream.init(
+        Some(String::from(
+            "(arp and arp[6:2] = 2) or (icmp6 and ip6[40] = 136)",
+        )),
+        if_name,
+    )?;
 
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
@@ -1049,6 +1056,7 @@ struct PortScanState {
 /// General scan function.
 fn scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     method: ScanMethod,
     timeout: Duration,
     max_retries: usize,
@@ -1056,7 +1064,7 @@ fn scan(
     send_rate: SendRate,
 ) -> Result<PortScans, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut port_scans = PortScans::new(max_retries);
     let mut reports = Vec::new();
@@ -1230,17 +1238,20 @@ fn scan(
     Ok(port_scans)
 }
 
-/// This function is a variant of the send function, used to determine the sending rate.
+/// This function is a variant of the send function,
+/// used to determine the send interval value.
+/// This function return avg received packets count,
 fn scan2(
     scan_target: PortScanTargetWithNetInfo,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
+    send_interval: u64,
     filter: Option<String>,
     window_size: usize,
-    interval: Duration,
-) -> Result<Vec<usize>, PistolError> {
+) -> Result<usize, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let nt = scan_target.net_info;
     // There should be only one target port when run send rate test.
@@ -1264,17 +1275,12 @@ fn scan2(
         return Err(PistolError::CanNotFoundNetInfo);
     };
 
-    let src_port = match scan_target.src_port {
-        Some(s) => s,
-        None => random_port(),
-    };
-
     let dst_mac = nt.inferred_dst_mac;
     let src_mac = nt.inferred_src_mac;
     let dst_addr = nt.inferred_dst_addr;
     let src_addr = nt.inferred_src_addr;
     let if_name = nt.inferred_interface.name;
-    let mut recv_packet_counts = Vec::new();
+    let mut rets = Vec::new();
 
     for _ in 0..max_retries {
         let mut all_filters = Vec::new();
@@ -1291,14 +1297,26 @@ fn scan2(
                 };
 
                 let if_name = if_name.clone();
+                let src_port = match scan_target.src_port {
+                    Some(s) => s,
+                    None => random_port(),
+                };
                 let (spp, filters) = build_scan_buff(
                     dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, method,
                 )?;
                 all_filters.extend(filters);
+
+                let s = Instant::now();
                 for _ in 0..window_size {
                     let spp = spp.clone();
                     stream.send_packet(spp)?;
+                    // Manual sleep time, the data is sent too fast.
+                    // We let this program send it all out.
+                    thread::sleep(Duration::from_millis(send_interval));
                 }
+
+                let cost_f64 = s.elapsed().as_secs_f64();
+                debug!("total cost: {:.3}s", cost_f64,);
             }
             IpAddr::V6(dst_ipv6) => {
                 let src_ipv6 = match src_addr {
@@ -1309,58 +1327,60 @@ fn scan2(
                 };
 
                 let if_name = if_name.clone();
+                let src_port = match scan_target.src_port {
+                    Some(s) => s,
+                    None => random_port(),
+                };
                 let (spp, filters) = build_scan_buff6(
                     dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name, method,
                 )?;
                 all_filters.extend(filters);
+
+                let s = Instant::now();
                 for _ in 0..window_size {
                     let spp = spp.clone();
                     stream.send_packet(spp)?;
+                    thread::sleep(Duration::from_millis(send_interval));
                 }
+                let cost_f64 = s.elapsed().as_secs_f64();
+                debug!("total cost: {:.3}s", cost_f64,);
             }
         }
 
+        let s = Instant::now();
         let response = stream.recv_packet(timeout)?;
-        println!("response len: {}", response.len());
+        debug!(
+            "response len: {}, cost: {:.2}s",
+            response.len(),
+            s.elapsed().as_secs_f32()
+        );
 
-        let mut matched_packet_count = 0;
+        let mut matched_packet_num = 0;
         for r in &response {
             for f in &all_filters {
                 if f.check_fast(r) {
-                    matched_packet_count += 1;
+                    matched_packet_num += 1;
                     break;
                 }
             }
         }
 
-        println!("window: {}, recved: {}", window_size, matched_packet_count);
-        recv_packet_counts.push(matched_packet_count);
-        thread::sleep(interval);
+        debug!("window: {}, recved: {}", window_size, matched_packet_num);
+        rets.push(matched_packet_num);
     }
 
-    Ok(recv_packet_counts)
-}
-
-const INIT_WINDOW_SIZE: usize = 1000;
-const INIT_WINDOW_SIZE_STEP: usize = 1000;
-const SUCCESS_THRESHOLD: f32 = 0.999999;
-const SMALLEST_WINDOW_SIZE_STEP: usize = 50;
-
-/// This function returns the floor value of f32.
-fn floor_to_usize(f: f32) -> usize {
-    if f.is_nan() || f.is_infinite() || f < 0.0 {
-        // smallest step
-        warn!("the window size value is invalid");
-        SMALLEST_WINDOW_SIZE_STEP
-    } else {
-        let step = f.floor() as usize;
-        if step < SMALLEST_WINDOW_SIZE_STEP {
-            SMALLEST_WINDOW_SIZE_STEP
-        } else {
-            step
-        }
+    let mut sum = 0;
+    for c in rets {
+        sum += c;
     }
+
+    let avg_count = sum / max_retries;
+
+    Ok(avg_count)
 }
+
+const DEFAULT_TEST_WINDOW_SIZE: usize = 1000;
+const DEFAULT_TEST_SUCCESS_THRESHOLD: f64 = 0.999999;
 
 const TCP_SYN_ACK_BOTH_FILTER: &str =
     "(tcp and ((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)))";
@@ -1369,53 +1389,81 @@ const ICMP_UNREACH_FILTER: &str = "(icmp and icmp[icmptype] == 3)";
 const ICMP6_UNREACH_FILTER: &str = "(icmp6 and icmp6[icmp6type] == 1)";
 const UDP_FILTER: &str = "udp";
 
-/// Return the optimal sending window size.
-pub(crate) fn tcp_send_rate_test(
+/// Return the optimal send interval value.
+pub(crate) fn tcp_send_interval_test(
     scan_target: PortScanTargetWithNetInfo,
+    if_name: &str,
     timeout: Duration,
-    epochs: usize,
     max_retries: usize,
-    interval: Duration,
-) -> Result<usize, PistolError> {
-    let mut window_size = INIT_WINDOW_SIZE as f32;
-    let mut window_size_step = INIT_WINDOW_SIZE_STEP as f32;
+    search_steps: usize,
+    init_send_interval: u64,
+) -> Result<u64, PistolError> {
+    let window_size = DEFAULT_TEST_WINDOW_SIZE;
+    // for debug
+    // window_size = 100.0;
+    let mut send_interval = init_send_interval;
 
     let dst_addr = scan_target.net_info.inferred_dst_addr;
     let filter = Some(format!(
         "src host {dst_addr} and ({TCP_SYN_ACK_BOTH_FILTER} or {TCP_RST_FILTER} or {ICMP_UNREACH_FILTER} or {ICMP6_UNREACH_FILTER})"
     ));
 
-    for _ in 0..epochs {
+    // send_interval: recv_success_rate
+    let mut map: HashMap<u64, f64> = HashMap::new();
+
+    for _ in 0..search_steps {
         let scan_target = scan_target.clone();
         let filter = filter.clone();
 
-        let rets = scan2(
+        let avg_count = scan2(
             scan_target,
+            if_name,
             timeout,
             max_retries,
+            send_interval,
             filter,
-            floor_to_usize(window_size),
-            interval,
+            window_size,
         )?;
-        let mut sum = 0;
-        for c in &rets {
-            sum += c;
-        }
-        let avg = sum as f32 / rets.len() as f32;
-        let send_success_rate = avg / window_size as f32;
-        if send_success_rate >= SUCCESS_THRESHOLD {
-            window_size += window_size_step;
+
+        let recv_success_rate = avg_count as f64 / window_size as f64;
+
+        if recv_success_rate >= DEFAULT_TEST_SUCCESS_THRESHOLD {
+            debug!("received packet successfully");
+            send_interval /= 2;
         } else {
-            window_size_step = 0.5 * window_size_step;
-            window_size -= window_size_step;
+            send_interval *= 2;
+        }
+
+        match map.get_mut(&send_interval) {
+            Some(r) => {
+                if *r > recv_success_rate {
+                    // Take the lowest success rate as the final success rate.
+                    *r = recv_success_rate;
+                }
+            }
+            None => {
+                map.insert(send_interval, recv_success_rate);
+            }
         }
     }
 
-    Ok(floor_to_usize(window_size))
+    debug!("send_interval map: {:?}", map);
+
+    let mut best_send_interval = init_send_interval;
+    let mut best_recv_success_rate = 0.0;
+    for (k, v) in map {
+        if v > best_recv_success_rate {
+            best_send_interval = k;
+            best_recv_success_rate = v;
+        }
+    }
+
+    Ok(best_send_interval)
 }
 
 pub(crate) fn tcp_syn_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1425,6 +1473,7 @@ pub(crate) fn tcp_syn_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Syn,
         timeout,
         max_retries,
@@ -1435,6 +1484,7 @@ pub(crate) fn tcp_syn_scan(
 
 pub(crate) fn tcp_fin_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1444,6 +1494,7 @@ pub(crate) fn tcp_fin_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Fin,
         timeout,
         max_retries,
@@ -1454,6 +1505,7 @@ pub(crate) fn tcp_fin_scan(
 
 pub(crate) fn tcp_ack_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1463,6 +1515,7 @@ pub(crate) fn tcp_ack_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Ack,
         timeout,
         max_retries,
@@ -1473,6 +1526,7 @@ pub(crate) fn tcp_ack_scan(
 
 pub(crate) fn tcp_null_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1482,6 +1536,7 @@ pub(crate) fn tcp_null_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Null,
         timeout,
         max_retries,
@@ -1492,6 +1547,7 @@ pub(crate) fn tcp_null_scan(
 
 pub(crate) fn tcp_xmas_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1501,6 +1557,7 @@ pub(crate) fn tcp_xmas_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Xmas,
         timeout,
         max_retries,
@@ -1511,6 +1568,7 @@ pub(crate) fn tcp_xmas_scan(
 
 pub(crate) fn tcp_window_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1520,6 +1578,7 @@ pub(crate) fn tcp_window_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Window,
         timeout,
         max_retries,
@@ -1530,6 +1589,7 @@ pub(crate) fn tcp_window_scan(
 
 pub(crate) fn tcp_maimon_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1539,6 +1599,7 @@ pub(crate) fn tcp_maimon_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Maimon,
         timeout,
         max_retries,
@@ -1624,6 +1685,7 @@ pub(crate) fn tcp_connect_scan(
 
 pub(crate) fn udp_scan(
     scan_targets: Vec<PortScanTargetWithNetInfo>,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
@@ -1633,6 +1695,7 @@ pub(crate) fn udp_scan(
     ));
     scan(
         scan_targets,
+        if_name,
         ScanMethod::Udp,
         timeout,
         max_retries,

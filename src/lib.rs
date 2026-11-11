@@ -754,55 +754,72 @@ impl PistolStream {
     fn run_receiver(
         sender: Sender<Vec<Arc<[u8]>>>,
         filter: Option<String>,
+        if_name: &str,
     ) -> Result<u64, PistolError> {
         let (s, r) = unbounded::<()>();
         let mut interface_count = 0;
-        for interface in datalink::interfaces() {
+
+        // Only listen on the necessary interfaces.
+        let listen_ifs = if if_name == "all" {
+            let mut v = Vec::new();
+            for i in datalink::interfaces() {
+                v.push(i.name)
+            }
+            v
+        } else {
+            vec![if_name.to_string()]
+        };
+
+        for iname in listen_ifs {
             interface_count += 1;
             let sender = sender.clone();
             let filter = filter.clone();
             let s = s.clone();
             thread::spawn(move || {
-                debug!("start receiver for if_name: {}", interface.name);
-                let mut cap = match Capture::new(&interface.name) {
+                debug!("start receiver for if_name: {}", iname);
+                let mut cap = match Capture::new(&iname) {
                     Ok(cap) => cap,
                     Err(e) => {
-                        error!("create capture for {} error: {}", interface.name, e);
+                        error!("create capture for {} error: {}", iname, e);
                         return;
                     }
                 };
-                cap.set_buffer_size(8 * 1024 * 1024);
-                cap.set_timeout(50);
+                // cap.set_buffer_size(8 * 1024 * 1024);
+                cap.set_buffer_size(1024);
+                cap.set_timeout(10);
                 // cap.set_promiscuous_mode(true);
                 // cap.set_immediate_mode(true);
                 if let Some(filter) = &filter {
                     cap.set_filter(filter);
                 }
 
-                let mut send_ready = false;
+                let mut receiver_is_ready = false;
 
                 loop {
-                    if !send_ready {
+                    if !receiver_is_ready {
                         // Send a signal to indicate the receiver is ready to receive packets,
                         // so that the sender can start sending packets without worrying about packet loss.
                         if let Err(e) = s.send(()) {
                             error!("send ready signal error: {}", e);
                         } else {
-                            send_ready = true;
+                            receiver_is_ready = true;
                         }
                     }
 
-                    if let Ok(packets) = cap.fetch_as_vec() {
-                        let mut pa = Vec::new();
-                        for p in packets {
-                            // #[cfg(feature = "debug")]
-                            // debug_show_packet(p, Some(EtherTypes::Ipv4));
-                            pa.push(Arc::from(p));
+                    match cap.fetch_as_vec() {
+                        Ok(packets) => {
+                            let mut pa = Vec::new();
+                            for p in packets {
+                                // #[cfg(feature = "debug")]
+                                // debug_show_packet(p, Some(EtherTypes::Ipv4));
+                                pa.push(Arc::from(p));
+                            }
+                            if let Err(e) = sender.send(pa) {
+                                // timeout will drop sender
+                                error!("send packet to {} error: {}", iname, e);
+                            }
                         }
-                        if let Err(e) = sender.send(pa) {
-                            // timeout will drop sender
-                            debug!("send packet to {} error: {}", interface.name, e);
-                        }
+                        Err(e) => error!("fetch packets from pcapture error: {e}"),
                     }
                 }
             });
@@ -825,18 +842,18 @@ impl PistolStream {
     /// Initialize the PistolStream,
     /// which includes initializing the layer2 sender,
     /// layer3 sender and receiver.
-    fn init(&mut self, filter: Option<String>) -> Result<(), PistolError> {
+    fn init(&mut self, filter: Option<String>, if_name: &str) -> Result<(), PistolError> {
         self.init_sender_layer2()?;
         self.init_sender_layer3()?;
 
         let (sender, receiver) = unbounded::<Vec<Arc<[u8]>>>();
         self.l2_receiver = Some(receiver);
 
-        match Self::run_receiver(sender, filter) {
+        match Self::run_receiver(sender, filter, if_name) {
             Ok(count) => {
                 self.l2_receiver_count = count;
                 self.l2_receiver_ready = true;
-                debug!("receiver is ready");
+                debug!("{count} receiver(s) is ready");
             }
             Err(e) => error!("init receiver error: {}", e),
         }
@@ -853,18 +870,21 @@ impl PistolStream {
     fn recv_packet(&mut self, timeout: Duration) -> Result<Vec<Arc<[u8]>>, PistolError> {
         let mut matched_packets = Vec::new();
         if let Some(receiver) = &self.l2_receiver {
-            let recv_timeout = Duration::from_millis(10);
             let start = Instant::now();
             loop {
                 if start.elapsed() >= timeout {
                     break;
                 }
                 loop {
-                    match receiver.recv_timeout(recv_timeout) {
-                        Ok(packet) => {
-                            matched_packets.extend_from_slice(&packet);
+                    if !receiver.is_empty() {
+                        match receiver.recv() {
+                            Ok(packet) => {
+                                matched_packets.extend_from_slice(&packet);
+                            }
+                            Err(_e) => break,
                         }
-                        Err(_e) => break,
+                    } else {
+                        break;
                     }
                 }
             }
@@ -918,56 +938,69 @@ impl PistolStream {
         ethernet_packet.set_payload(&l3_payload);
 
         if dst_mac == src_mac {
-            // reset
-            for (ifn, l3s) in &mut self.l3_senders {
-                if !l3s.is_loopback {
-                    continue;
-                }
-                let m = format!(
-                    "dm: {}, sm: {}, et: {}, l: {}",
-                    dst_mac,
-                    src_mac,
-                    eth_type.to_string().to_lowercase(),
-                    l3_payload.len()
-                );
-                debug!("send loopback packet through {}: {}", ifn, m);
-                let mut l3_payload = l3_payload.to_vec();
-                match eth_type {
-                    EtherTypes::Ipv4 => {
-                        let mut packet = MutableIpv4Packet::new(&mut l3_payload).ok_or(
-                            PistolError::BuildPacketError {
-                                location: Location::caller().to_string(),
-                            },
-                        )?;
-                        packet.set_source(Ipv4Addr::LOCALHOST);
-                        packet.set_destination(Ipv4Addr::LOCALHOST);
-                        for _ in 0..retransmit {
-                            l3s.sender_ipv4
-                                .send_to(&packet, Ipv4Addr::LOCALHOST.into())?;
-                        }
-                    }
-                    EtherTypes::Ipv6 => {
-                        let mut packet = MutableIpv6Packet::new(&mut l3_payload).ok_or(
-                            PistolError::BuildPacketError {
-                                location: Location::caller().to_string(),
-                            },
-                        )?;
-                        packet.set_source(Ipv6Addr::LOCALHOST);
-                        packet.set_destination(Ipv6Addr::LOCALHOST);
-                        for _ in 0..retransmit {
-                            l3s.sender_ipv6
-                                .send_to(&packet, Ipv6Addr::LOCALHOST.into())?;
-                        }
-                    }
-                    _ => {
+            // loopback address
+            match self.l3_senders.get_mut(&if_name) {
+                Some(l3s) => {
+                    if !l3s.is_loopback {
                         error!(
-                            "unsupported ether_type for loopback packet: {}, drop it",
-                            eth_type
+                            "the local loopback address sending interface is not a loopback interface"
                         );
+                    } else {
+                        let debug_msg = format!(
+                            "dm: {}, sm: {}, et: {}, l: {}",
+                            dst_mac,
+                            src_mac,
+                            eth_type.to_string().to_lowercase(),
+                            l3_payload.len()
+                        );
+                        // debug!("send loopback packet through {}: {}", if_name, m);
+                        let mut l3_payload = l3_payload.to_vec();
+                        match eth_type {
+                            EtherTypes::Ipv4 => {
+                                let mut packet = MutableIpv4Packet::new(&mut l3_payload).ok_or(
+                                    PistolError::BuildPacketError {
+                                        location: Location::caller().to_string(),
+                                    },
+                                )?;
+                                packet.set_source(Ipv4Addr::LOCALHOST);
+                                packet.set_destination(Ipv4Addr::LOCALHOST);
+                                for _ in 0..retransmit {
+                                    if let Err(e) =
+                                        l3s.sender_ipv4.send_to(&packet, Ipv4Addr::LOCALHOST.into())
+                                    {
+                                        error!("send packet error, {}, {}", debug_msg, e);
+                                    }
+                                }
+                            }
+                            EtherTypes::Ipv6 => {
+                                let mut packet = MutableIpv6Packet::new(&mut l3_payload).ok_or(
+                                    PistolError::BuildPacketError {
+                                        location: Location::caller().to_string(),
+                                    },
+                                )?;
+                                packet.set_source(Ipv6Addr::LOCALHOST);
+                                packet.set_destination(Ipv6Addr::LOCALHOST);
+                                for _ in 0..retransmit {
+                                    if let Err(e) =
+                                        l3s.sender_ipv6.send_to(&packet, Ipv6Addr::LOCALHOST.into())
+                                    {
+                                        error!("send packet error, {}, {}", debug_msg, e);
+                                    }
+                                }
+                            }
+                            _ => {
+                                error!(
+                                    "unsupported ether_type for loopback packet: {}, drop it",
+                                    eth_type
+                                );
+                            }
+                        }
                     }
                 }
+                None => error!("failed to find l3_sender for interface {if_name}"),
             }
         } else {
+            // normal address
             let l3_payload_len = l3_payload.len();
             let ethernet_buff_len = ETHERNET_HEADER_SIZE + l3_payload_len;
             let mut buff = vec![0u8; ethernet_buff_len];
@@ -984,7 +1017,7 @@ impl PistolStream {
             ethernet_packet.set_ethertype(eth_type);
             ethernet_packet.set_payload(&l3_payload);
 
-            let m = format!(
+            let debug_msg = format!(
                 "dm: {}, sm: {}, et: {}, l: {}",
                 dst_mac,
                 src_mac,
@@ -992,20 +1025,21 @@ impl PistolStream {
                 l3_payload.len()
             );
 
-            for (ifn, l2_sender) in &mut self.l2_senders {
-                if *ifn == if_name {
+            match self.l2_senders.get_mut(&if_name) {
+                Some(l2s) => {
                     // If retransmit is 1, it means no retransmission, just send once,
                     // and if retransmit is greater than 1, it means retransmission,
                     // send multiple times (used in flood attack).
                     for _ in 0..retransmit {
-                        if let Some(r) = l2_sender.sender.send_to(&buff, None) {
+                        if let Some(r) = l2s.sender.send_to(&buff, None) {
                             match r {
-                                Ok(_) => debug!("send packet success, {}", m),
-                                Err(e) => error!("send packet error, {}, {}", m, e),
+                                Ok(_) => (), // debug!("send packet success, {}", m),
+                                Err(e) => error!("send packet error, {}, {}", debug_msg, e),
                             }
                         }
                     }
                 }
+                None => error!("failed to find l2_sender for interface {if_name}"),
             }
         }
         Ok(())
@@ -1014,21 +1048,23 @@ impl PistolStream {
 
 #[derive(Debug, Clone)]
 pub struct Pistol {
-    if_name: Option<String>,
+    if_name: String,
     log_level: Option<Level>,
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
+    send_interval: u64, // millis
 }
 
 impl Default for Pistol {
     fn default() -> Self {
         Pistol {
-            if_name: None,
-            log_level: Some(Level::INFO), // default log level is INFO
+            if_name: String::from("all"),          // default if_name is all
+            log_level: Some(Level::INFO),          // default log level is INFO
             timeout: Duration::from_secs_f32(1.0), // default timeout is 1.0
-            max_retries: 2,               // default max_retries is 2
-            send_rate: SendRate::Medium,  // default send speed is medium
+            max_retries: 2,                        // default max_retries is 2
+            send_rate: SendRate::Medium,           // default send speed is medium
+            send_interval: 25,                     // default send interval is 25
         }
     }
 }
@@ -1041,11 +1077,19 @@ impl Pistol {
     /// Set the interface name for sending and receiving data.
     /// If not set, the program will try to automatically select an appropriate interface.
     pub fn set_interface(&mut self, if_name: &str) {
-        self.if_name = Some(if_name.to_string());
+        self.if_name = if_name.to_string();
     }
     /// Get the interface name for sending and receiving data.
-    pub fn get_interface(&self) -> Option<String> {
+    pub fn get_interface(&self) -> String {
         self.if_name.clone()
+    }
+    /// Set the interval between each packet send.
+    pub fn set_send_interval(&mut self, send_interval: u64) {
+        self.send_interval = send_interval;
+    }
+    /// Get the interval between each packet send.
+    pub fn get_send_interval(&self) -> u64 {
+        self.send_interval
     }
     /// Set log level for tracing.
     pub fn set_log_level(&mut self, log_level: &str) {
@@ -1170,7 +1214,13 @@ impl Pistol {
     /// ```
     pub fn mac_scan(&mut self, targets: &[MacScanTarget]) -> Result<MacScans, PistolError> {
         self.init_logger();
-        scan::mac_scan(targets, self.timeout, self.max_retries, self.send_rate)
+        scan::mac_scan(
+            targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )
     }
     /// The raw version of arp_scan function.
     /// It sends an ARP request to the target IPv4 address and waits for a reply.
@@ -1180,7 +1230,7 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
     ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
         self.init_logger();
-        scan::arp_scan_raw(dst_ipv4, self.timeout, self.max_retries)
+        scan::arp_scan_raw(dst_ipv4, &self.if_name, self.timeout, self.max_retries)
     }
     /// The raw version of ndp_ns_scan function.
     /// It sends an NDP Neighbor Solicitation to the target IPv6 address and waits for a reply.
@@ -1191,7 +1241,7 @@ impl Pistol {
         dst_ipv6: Ipv6Addr,
     ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
         self.init_logger();
-        scan::ndp_ns_scan_raw(dst_ipv6, self.timeout, self.max_retries)
+        scan::ndp_ns_scan_raw(dst_ipv6, &self.if_name, self.timeout, self.max_retries)
     }
     /// TCP ACK Scan.
     /// This scan is different than the others discussed so far in
@@ -1205,7 +1255,13 @@ impl Pistol {
     pub fn tcp_ack_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret = scan::tcp_ack_scan(targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_ack_scan(
+            targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1224,8 +1280,13 @@ impl Pistol {
         self.init_logger();
         let (target, dur) =
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret =
-            scan::tcp_ack_scan(vec![target], self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_ack_scan(
+            vec![target],
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1320,8 +1381,13 @@ impl Pistol {
     pub fn tcp_fin_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (net_infos, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret =
-            scan::tcp_fin_scan(net_infos, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_fin_scan(
+            net_infos,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1341,6 +1407,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_fin_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1361,8 +1428,13 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret =
-            scan::tcp_maimon_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_maimon_scan(
+            scan_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1382,6 +1454,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_maimon_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1405,8 +1478,13 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret =
-            scan::tcp_null_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_null_scan(
+            scan_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1426,6 +1504,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_null_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1507,8 +1586,13 @@ impl Pistol {
     pub fn tcp_syn_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret =
-            scan::tcp_syn_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_syn_scan(
+            scan_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1528,6 +1612,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_syn_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1535,30 +1620,32 @@ impl Pistol {
         ret.layer2_cost = dur;
         Ok(ret)
     }
-    /// Use binary search to find the network sending rate through tcp syn scan.
-    pub fn run_send_rate_test(
+    /// Search for the optimal packet send interval value.
+    pub fn run_send_interval_test(
         &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
-        epochs: usize,
-        interval: Duration,
-    ) -> Result<usize, PistolError> {
-        if epochs == 0 {
-            panic!("the epochs parameter cannot be zero");
+        search_steps: usize,
+        init_send_interval: u64,
+    ) -> Result<u64, PistolError> {
+        if search_steps == 0 {
+            panic!("the search steps parameter cannot be zero");
         }
 
+        self.init_logger();
         let (scan_target, _dur) =
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
-        let best_window_size = scan::tcp_send_rate_test(
+        let best_send_interval = scan::tcp_send_interval_test(
             scan_target,
+            &self.if_name,
             self.timeout,
-            epochs,
             self.max_retries,
-            interval,
+            search_steps,
+            init_send_interval,
         )?;
-        Ok(best_window_size)
+        Ok(best_send_interval)
     }
     /// TCP Window Scan.
     /// Window scan is exactly the same as ACK scan except
@@ -1575,8 +1662,13 @@ impl Pistol {
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret =
-            scan::tcp_window_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_window_scan(
+            scan_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1596,6 +1688,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_window_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1613,8 +1706,13 @@ impl Pistol {
     pub fn tcp_xmas_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret =
-            scan::tcp_xmas_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::tcp_xmas_scan(
+            scan_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1634,6 +1732,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::tcp_xmas_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1656,7 +1755,13 @@ impl Pistol {
     pub fn udp_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
         let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
-        let mut ret = scan::udp_scan(scan_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = scan::udp_scan(
+            scan_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1677,6 +1782,7 @@ impl Pistol {
             PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
         let mut ret = scan::udp_scan(
             vec![scan_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1708,6 +1814,7 @@ impl Pistol {
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
         let mut ret = ping::icmp_address_mask_ping(
             ping_targets,
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1728,6 +1835,7 @@ impl Pistol {
         let (ping_target, dur) = PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
         let mut ret = ping::icmp_address_mask_ping(
             vec![ping_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1748,8 +1856,13 @@ impl Pistol {
     pub fn icmp_echo_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
-        let mut ret =
-            ping::icmp_echo_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = ping::icmp_echo_ping(
+            ping_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1766,6 +1879,7 @@ impl Pistol {
         let (ping_target, dur) = PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
         let mut ret = ping::icmp_echo_ping(
             vec![ping_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1794,6 +1908,7 @@ impl Pistol {
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
         let mut ret = ping::icmp_timestamp_ping(
             ping_targets,
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1819,6 +1934,7 @@ impl Pistol {
         let (ping_target, dur) = PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
         let mut ret = ping::icmp_timestamp_ping(
             vec![ping_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1840,8 +1956,13 @@ impl Pistol {
     pub fn icmpv6_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
-        let mut ret =
-            ping::icmpv6_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = ping::icmpv6_ping(
+            ping_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1852,8 +1973,13 @@ impl Pistol {
     pub fn tcp_ack_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret =
-            ping::tcp_ack_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = ping::tcp_ack_ping(
+            ping_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1874,6 +2000,7 @@ impl Pistol {
             PingTargetWithNetInfo::infer_xxp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = ping::tcp_ack_ping(
             vec![ping_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1888,8 +2015,13 @@ impl Pistol {
     pub fn tcp_syn_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret =
-            ping::tcp_syn_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = ping::tcp_syn_ping(
+            ping_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1910,6 +2042,7 @@ impl Pistol {
             PingTargetWithNetInfo::infer_xxp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = ping::tcp_syn_ping(
             vec![ping_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -1924,7 +2057,13 @@ impl Pistol {
     pub fn udp_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
         let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = ping::udp_ping(ping_targets, self.timeout, self.max_retries, self.send_rate)?;
+        let mut ret = ping::udp_ping(
+            ping_targets,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+            self.send_rate,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -1945,6 +2084,7 @@ impl Pistol {
             PingTargetWithNetInfo::infer_xxp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
         let mut ret = ping::udp_ping(
             vec![ping_target],
+            &self.if_name,
             self.timeout,
             self.max_retries,
             self.send_rate,
@@ -3729,17 +3869,25 @@ mod tests {
         pistol.set_max_retries(2);
         pistol.set_timeout(3.5);
         pistol.set_log_level("debug");
+        pistol.set_interface("ens33");
 
         let dst_addr = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131));
         let dst_port = 22;
         let src_addr = None;
         let src_port = None;
 
-        let epoch = 1;
-        let interval = Duration::from_secs(2);
+        let search_steps = 10;
+        let init_send_interval = 5;
 
         let best_window_size = pistol
-            .run_send_rate_test(dst_addr, dst_port, src_addr, src_port, epoch, interval)
+            .run_send_interval_test(
+                dst_addr,
+                dst_port,
+                src_addr,
+                src_port,
+                search_steps,
+                init_send_interval,
+            )
             .unwrap();
         println!("best window size: {}", best_window_size);
     }

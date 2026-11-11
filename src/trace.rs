@@ -108,7 +108,7 @@ fn syn_trace_ipv4(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     src_port: u16,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
@@ -121,7 +121,7 @@ fn syn_trace_ipv4(
         "({tcp_syn_ack_filter} or {tcp_rst_filter} or {icmp_timeexceeded_unreach_filter}) and dst host {src_ipv4}"
     ));
 
-    stream.init(filter)?;
+    stream.init(filter, &if_name)?;
 
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -141,7 +141,7 @@ fn syn_trace_ipv4(
             src_mac,
             src_ipv4,
             src_port,
-            if_name.clone(),
+            if_name.to_string(),
             ip_id,
             ttl,
         )?;
@@ -186,7 +186,7 @@ fn syn_trace_ipv6(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     src_port: u16,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
@@ -198,7 +198,7 @@ fn syn_trace_ipv6(
     let filter = Some(format!(
         "({tcp_syn_ack_filter} or {tcp_rst_filter} or {icmp6_timeexceeded_unreach_filter}) and dst host {src_ipv6}"
     ));
-    stream.init(filter)?;
+    stream.init(filter, &if_name)?;
 
     let mut trace = Trace::new(dst_ipv6.into());
     let mut last_response_hop_limit = 0;
@@ -212,7 +212,7 @@ fn syn_trace_ipv6(
             src_mac,
             src_ipv6,
             src_port,
-            if_name.clone(),
+            if_name.to_string(),
             hop_limit,
         )?;
 
@@ -277,7 +277,7 @@ pub fn syn_trace(
                     });
                 }
             };
-            let if_name = net_info.inferred_interface.name.clone();
+            let if_name = net_info.inferred_interface.name.as_str();
             syn_trace_ipv4(
                 dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, timeout,
             )
@@ -291,7 +291,7 @@ pub fn syn_trace(
                     });
                 }
             };
-            let if_name = net_info.inferred_interface.name.clone();
+            let if_name = net_info.inferred_interface.name.as_str();
             syn_trace_ipv6(
                 dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name, timeout,
             )
@@ -304,14 +304,14 @@ fn icmp_trace_ipv4(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
     let filter = Some(format!(
         "icmp and (icmp[icmptype] == icmp-echoreply or icmp[icmptype] == icmp-timeexceeded or icmp[icmptype] == icmp-unreach) and dst host {src_ipv4}"
     ));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -329,7 +329,7 @@ fn icmp_trace_ipv4(
             dst_ipv4,
             src_mac,
             src_ipv4,
-            if_name.clone(),
+            if_name.to_string(),
             ip_id,
             ttl,
             icmp_id,
@@ -380,14 +380,14 @@ fn icmp_trace_ipv6(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
     let filter = Some(format!(
         "icmp6 and (icmp6[icmptype] == icmp6-echoreply or icmp6[icmptype] == icmp6-timeexceeded or icmp6[icmptype] == icmp6-unreach) and dst host {src_ipv6}"
     ));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut trace = Trace::new(dst_ipv6.into());
     let mut rng = rand::rng();
@@ -401,7 +401,7 @@ fn icmp_trace_ipv6(
             dst_ipv6,
             src_mac,
             src_ipv6,
-            if_name.clone(),
+            if_name.to_string(),
             hop_limit,
             icmpv6_id,
             hop_limit as u16,
@@ -461,7 +461,7 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.inferred_interface.name.clone();
+            let if_name = net_info.inferred_interface.name.as_str();
             icmp_trace_ipv4(dst_mac, dst_ipv4, src_mac, src_ipv4, if_name, timeout)
         }
         IpAddr::V6(dst_ipv6) => {
@@ -471,7 +471,7 @@ pub fn icmp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.inferred_interface.name.clone();
+            let if_name = net_info.inferred_interface.name.as_str();
             icmp_trace_ipv6(dst_mac, dst_ipv6, src_mac, src_ipv6, if_name, timeout)
         }
     }
@@ -482,7 +482,7 @@ fn udp_trace_ipv4(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
@@ -493,7 +493,7 @@ fn udp_trace_ipv4(
     let filter = Some(format!(
         "({udp_filter} or {icmp_filter}) and dst host {src_ipv4}"
     ));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut trace = Trace::new(dst_ipv4.into());
     let mut rng = rand::rng();
@@ -514,7 +514,7 @@ fn udp_trace_ipv4(
             src_mac,
             src_ipv4,
             random_src_port,
-            if_name.clone(),
+            if_name.to_string(),
             ip_id,
             ttl,
         )?;
@@ -556,7 +556,7 @@ fn udp_trace_ipv6(
     dst_ipv6: Ipv6Addr,
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
 ) -> Result<Trace, PistolError> {
     let mut stream = PistolStream::new();
@@ -567,7 +567,7 @@ fn udp_trace_ipv6(
     let filter = Some(format!(
         "({udp_filter} or {icmp6_filter}) and dst host {src_ipv6}"
     ));
-    stream.init(filter)?;
+    stream.init(filter, if_name)?;
 
     let mut trace = Trace::new(dst_ipv6.into());
     let mut last_response_hop_limit = 0;
@@ -583,7 +583,7 @@ fn udp_trace_ipv6(
             src_mac,
             src_ipv6,
             random_src_port,
-            if_name.clone(),
+            if_name.to_string(),
             hop_limit,
         )?;
 
@@ -634,7 +634,7 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.inferred_interface.name.clone();
+            let if_name = net_info.inferred_interface.name.as_str();
             udp_trace_ipv4(dst_mac, dst_ipv4, src_mac, src_ipv4, if_name, timeout)
         }
         IpAddr::V6(dst_ipv6) => {
@@ -644,7 +644,7 @@ pub fn udp_trace(
                     return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
                 }
             };
-            let if_name = net_info.inferred_interface.name.clone();
+            let if_name = net_info.inferred_interface.name.as_str();
             udp_trace_ipv6(dst_mac, dst_ipv6, src_mac, src_ipv6, if_name, timeout)
         }
     }

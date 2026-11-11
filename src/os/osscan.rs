@@ -371,12 +371,12 @@ fn send_seq_probes(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<SEQRR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv4)))?;
+    stream.init(Some(format!("host {} and tcp", dst_ipv4)), if_name)?;
 
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
@@ -442,7 +442,7 @@ fn send_seq_probes(
                         src_mac,
                         eth_type: EtherTypes::Ipv4,
                         l3_payload: buff,
-                        if_name: if_name.clone(),
+                        if_name: if_name.to_string(),
                         retransmit: 1,
                     };
 
@@ -531,12 +531,12 @@ fn send_ie_probes(
     dst_ipv4: Ipv4Addr,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<IERR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and icmp", dst_ipv4)))?;
+    stream.init(Some(format!("host {} and icmp", dst_ipv4)), if_name)?;
 
     let mut rng = rand::rng();
     let id_1 = rng.random();
@@ -586,7 +586,7 @@ fn send_ie_probes(
                         src_mac,
                         eth_type: EtherTypes::Ipv4,
                         l3_payload: buff,
-                        if_name: if_name.clone(),
+                        if_name: if_name.to_string(),
                         retransmit: 1,
                     };
 
@@ -656,12 +656,12 @@ fn send_ecn_probe(
     dst_open_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<ECNRR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv4)))?;
+    stream.init(Some(format!("host {} and tcp", dst_ipv4)), if_name)?;
 
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -689,7 +689,7 @@ fn send_ecn_probe(
         src_mac,
         eth_type: EtherTypes::Ipv4,
         l3_payload: buff.clone(),
-        if_name: if_name.clone(),
+        if_name: if_name.to_string(),
         retransmit: 1,
     };
 
@@ -726,12 +726,12 @@ fn send_tx_probes(
     dst_closed_tcp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<TXRR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv4)))?;
+    stream.init(Some(format!("host {} and tcp", dst_ipv4)), if_name)?;
 
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
@@ -844,7 +844,7 @@ fn send_tx_probes(
                         src_mac,
                         eth_type: EtherTypes::Ipv4,
                         l3_payload: buff.clone(),
-                        if_name: if_name.clone(),
+                        if_name: if_name.to_string(),
                         retransmit: 1,
                     };
 
@@ -932,12 +932,15 @@ fn send_u1_probe(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
-    if_name: String,
+    if_name: &str,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<U1RR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and (icmp or udp)", dst_ipv4)))?;
+    stream.init(
+        Some(format!("host {} and (icmp or udp)", dst_ipv4)),
+        if_name,
+    )?;
 
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -965,7 +968,7 @@ fn send_u1_probe(
             src_mac,
             eth_type: EtherTypes::Ipv4,
             l3_payload: buff.clone(),
-            if_name: if_name.clone(),
+            if_name: if_name.to_string(),
             retransmit: 1,
         };
 
@@ -1012,7 +1015,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
-        interface.name.clone(),
+        interface.name.as_str(),
         timeout,
         max_retries,
     )?;
@@ -1022,7 +1025,7 @@ fn send_all_probes(
         dst_ipv4,
         src_mac,
         src_ipv4,
-        interface.name.clone(),
+        interface.name.as_str(),
         timeout,
         max_retries,
     )?;
@@ -1033,7 +1036,7 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
-        interface.name.clone(),
+        interface.name.as_str(),
         timeout,
         max_retries,
     )?;
@@ -1045,7 +1048,7 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv4,
-        interface.name.clone(),
+        interface.name.as_str(),
         timeout,
         max_retries,
     )?;
@@ -1056,7 +1059,7 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv4,
-        interface.name.clone(),
+        interface.name.as_str(),
         timeout,
         max_retries,
     )?;
