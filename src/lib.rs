@@ -1628,7 +1628,6 @@ impl Pistol {
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
         search_steps: usize,
-        init_send_interval: u64,
     ) -> Result<u64, PistolError> {
         if search_steps == 0 {
             panic!("the search steps parameter cannot be zero");
@@ -1643,7 +1642,6 @@ impl Pistol {
             self.timeout,
             self.max_retries,
             search_steps,
-            init_send_interval,
         )?;
         Ok(best_send_interval)
     }
@@ -3864,9 +3862,9 @@ mod tests {
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
     }
     #[test]
-    fn test_run_send_rate() {
+    fn test_run_send_interval_test() {
         let mut pistol = Pistol::new();
-        pistol.set_max_retries(2);
+        pistol.set_max_retries(4);
         pistol.set_timeout(3.5);
         pistol.set_log_level("debug");
         pistol.set_interface("ens33");
@@ -3876,18 +3874,10 @@ mod tests {
         let src_addr = None;
         let src_port = None;
 
-        let search_steps = 10;
-        let init_send_interval = 5;
+        let search_steps = 8;
 
         let best_window_size = pistol
-            .run_send_interval_test(
-                dst_addr,
-                dst_port,
-                src_addr,
-                src_port,
-                search_steps,
-                init_send_interval,
-            )
+            .run_send_interval_test(dst_addr, dst_port, src_addr, src_port, search_steps)
             .unwrap();
         println!("best window size: {}", best_window_size);
     }

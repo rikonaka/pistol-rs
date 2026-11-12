@@ -1238,149 +1238,9 @@ fn scan(
     Ok(port_scans)
 }
 
-/// This function is a variant of the send function,
-/// used to determine the send interval value.
-/// This function return avg received packets count,
-fn scan2(
-    scan_target: PortScanTargetWithNetInfo,
-    if_name: &str,
-    timeout: Duration,
-    max_retries: usize,
-    send_interval: u64,
-    filter: Option<String>,
-    window_size: usize,
-) -> Result<usize, PistolError> {
-    let mut stream = PistolStream::new();
-    stream.init(filter, if_name)?;
-
-    let nt = scan_target.net_info;
-    // There should be only one target port when run send rate test.
-    let dst_port = if nt.is_valid {
-        match scan_target.dst_ports.len() {
-            0 => {
-                warn!(
-                    "at least one target port should be provided for network send rate detection"
-                );
-                80
-            }
-            1 => scan_target.dst_ports[0],
-            _ => {
-                warn!(
-                    "network send rate detection only requires one target port, and the program will only use the first port"
-                );
-                scan_target.dst_ports[0]
-            }
-        }
-    } else {
-        return Err(PistolError::CanNotFoundNetInfo);
-    };
-
-    let dst_mac = nt.inferred_dst_mac;
-    let src_mac = nt.inferred_src_mac;
-    let dst_addr = nt.inferred_dst_addr;
-    let src_addr = nt.inferred_src_addr;
-    let if_name = nt.inferred_interface.name;
-    let mut rets = Vec::new();
-
-    for _ in 0..max_retries {
-        let mut all_filters = Vec::new();
-
-        let method = ScanMethod::Syn;
-        match dst_addr {
-            IpAddr::V4(dst_ipv4) => {
-                let src_ipv4 = match src_addr {
-                    IpAddr::V4(s) => s,
-                    _ => {
-                        // When dst is ipv4, the src must be ipv4 too.
-                        return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
-                    }
-                };
-
-                let if_name = if_name.clone();
-                let src_port = match scan_target.src_port {
-                    Some(s) => s,
-                    None => random_port(),
-                };
-                let (spp, filters) = build_scan_buff(
-                    dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, method,
-                )?;
-                all_filters.extend(filters);
-
-                let s = Instant::now();
-                for _ in 0..window_size {
-                    let spp = spp.clone();
-                    stream.send_packet(spp)?;
-                    // Manual sleep time, the data is sent too fast.
-                    // We let this program send it all out.
-                    thread::sleep(Duration::from_millis(send_interval));
-                }
-
-                let cost_f64 = s.elapsed().as_secs_f64();
-                debug!("total cost: {:.3}s", cost_f64,);
-            }
-            IpAddr::V6(dst_ipv6) => {
-                let src_ipv6 = match src_addr {
-                    IpAddr::V6(s) => s,
-                    _ => {
-                        return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
-                    }
-                };
-
-                let if_name = if_name.clone();
-                let src_port = match scan_target.src_port {
-                    Some(s) => s,
-                    None => random_port(),
-                };
-                let (spp, filters) = build_scan_buff6(
-                    dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name, method,
-                )?;
-                all_filters.extend(filters);
-
-                let s = Instant::now();
-                for _ in 0..window_size {
-                    let spp = spp.clone();
-                    stream.send_packet(spp)?;
-                    thread::sleep(Duration::from_millis(send_interval));
-                }
-                let cost_f64 = s.elapsed().as_secs_f64();
-                debug!("total cost: {:.3}s", cost_f64,);
-            }
-        }
-
-        let s = Instant::now();
-        let response = stream.recv_packet(timeout)?;
-        debug!(
-            "response len: {}, cost: {:.2}s",
-            response.len(),
-            s.elapsed().as_secs_f32()
-        );
-
-        let mut matched_packet_num = 0;
-        for r in &response {
-            for f in &all_filters {
-                if f.check_fast(r) {
-                    matched_packet_num += 1;
-                    break;
-                }
-            }
-        }
-
-        debug!("window: {}, recved: {}", window_size, matched_packet_num);
-        rets.push(matched_packet_num);
-    }
-
-    let mut sum = 0;
-    for c in rets {
-        sum += c;
-    }
-
-    let avg_count = sum / max_retries;
-
-    Ok(avg_count)
-}
-
 const DEFAULT_TEST_WINDOW_SIZE: usize = 1000;
-const DEFAULT_TEST_SUCCESS_THRESHOLD: f64 = 0.999999;
+const DEFAULT_INIT_SEND_INTERVAL_NANOS: u64 = 200000;
+const DEFAULT_SEND_INTERVAL_UPDATE_NANOS: u64 = 200000;
 
 const TCP_SYN_ACK_BOTH_FILTER: &str =
     "(tcp and ((tcp[tcpflags] & (tcp-syn|tcp-ack)) == (tcp-syn|tcp-ack)))";
@@ -1390,18 +1250,19 @@ const ICMP6_UNREACH_FILTER: &str = "(icmp6 and icmp6[icmp6type] == 1)";
 const UDP_FILTER: &str = "udp";
 
 /// Return the optimal send interval value.
+/// This function is a variant of the send function,
+/// used to determine the send interval value.
 pub(crate) fn tcp_send_interval_test(
     scan_target: PortScanTargetWithNetInfo,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
     search_steps: usize,
-    init_send_interval: u64,
 ) -> Result<u64, PistolError> {
     let window_size = DEFAULT_TEST_WINDOW_SIZE;
     // for debug
     // window_size = 100.0;
-    let mut send_interval = init_send_interval;
+    let mut send_interval_nanos = DEFAULT_INIT_SEND_INTERVAL_NANOS;
 
     let dst_addr = scan_target.net_info.inferred_dst_addr;
     let filter = Some(format!(
@@ -1411,30 +1272,131 @@ pub(crate) fn tcp_send_interval_test(
     // send_interval: recv_success_rate
     let mut map: HashMap<u64, f64> = HashMap::new();
 
+    let mut stream = PistolStream::new();
+    stream.init(filter, if_name)?;
+
     for _ in 0..search_steps {
+        debug!("testing on interval {send_interval_nanos} ns");
         let scan_target = scan_target.clone();
-        let filter = filter.clone();
 
-        let avg_count = scan2(
-            scan_target,
-            if_name,
-            timeout,
-            max_retries,
-            send_interval,
-            filter,
-            window_size,
-        )?;
-
-        let recv_success_rate = avg_count as f64 / window_size as f64;
-
-        if recv_success_rate >= DEFAULT_TEST_SUCCESS_THRESHOLD {
-            debug!("received packet successfully");
-            send_interval /= 2;
+        let nt = scan_target.net_info;
+        // There should be only one target port when run send rate test.
+        let dst_port = if nt.is_valid {
+            match scan_target.dst_ports.len() {
+                0 => {
+                    warn!(
+                        "at least one target port should be provided for network send rate detection"
+                    );
+                    80
+                }
+                1 => scan_target.dst_ports[0],
+                _ => {
+                    warn!(
+                        "network send rate detection only requires one target port, and the program will only use the first port"
+                    );
+                    scan_target.dst_ports[0]
+                }
+            }
         } else {
-            send_interval *= 2;
+            return Err(PistolError::CanNotFoundNetInfo);
+        };
+
+        let dst_mac = nt.inferred_dst_mac;
+        let src_mac = nt.inferred_src_mac;
+        let dst_addr = nt.inferred_dst_addr;
+        let src_addr = nt.inferred_src_addr;
+        let if_name = nt.inferred_interface.name;
+        let mut rets = Vec::new();
+
+        for _ in 0..max_retries {
+            let mut all_filters = Vec::new();
+
+            let method = ScanMethod::Syn;
+            match dst_addr {
+                IpAddr::V4(dst_ipv4) => {
+                    let src_ipv4 = match src_addr {
+                        IpAddr::V4(s) => s,
+                        _ => {
+                            // When dst is ipv4, the src must be ipv4 too.
+                            return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
+                        }
+                    };
+
+                    let if_name = if_name.clone();
+                    let src_port = match scan_target.src_port {
+                        Some(s) => s,
+                        None => random_port(),
+                    };
+                    let (spp, filters) = build_scan_buff(
+                        dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name, method,
+                    )?;
+                    all_filters.extend(filters);
+
+                    let s = Instant::now();
+                    for _ in 0..window_size {
+                        let spp = spp.clone();
+                        stream.send_packet(spp)?;
+                        // Manual sleep time, the data is sent too fast.
+                        // We let this program send it all out.
+                        thread::sleep(Duration::from_nanos(send_interval_nanos));
+                    }
+
+                    let cost_f64 = s.elapsed().as_secs_f64();
+                    debug!("total cost: {:.3}s", cost_f64,);
+                }
+                IpAddr::V6(dst_ipv6) => {
+                    let src_ipv6 = match src_addr {
+                        IpAddr::V6(s) => s,
+                        _ => {
+                            return Err(PistolError::AttackAddressNotMatch { addr: src_addr });
+                        }
+                    };
+
+                    let if_name = if_name.clone();
+                    let src_port = match scan_target.src_port {
+                        Some(s) => s,
+                        None => random_port(),
+                    };
+                    let (spp, filters) = build_scan_buff6(
+                        dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name, method,
+                    )?;
+                    all_filters.extend(filters);
+
+                    let s = Instant::now();
+                    for _ in 0..window_size {
+                        let spp = spp.clone();
+                        stream.send_packet(spp)?;
+                        thread::sleep(Duration::from_nanos(send_interval_nanos));
+                    }
+                    let cost_f64 = s.elapsed().as_secs_f64();
+                    debug!("total cost: {:.3}s", cost_f64,);
+                }
+            }
+
+            let response = stream.recv_packet(timeout)?;
+
+            let mut matched_packet_num = 0;
+            for r in &response {
+                for f in &all_filters {
+                    if f.check_fast(r) {
+                        matched_packet_num += 1;
+                        break;
+                    }
+                }
+            }
+
+            debug!("window: {}, recved: {}", window_size, matched_packet_num);
+            rets.push(matched_packet_num);
         }
 
-        match map.get_mut(&send_interval) {
+        let mut sum = 0;
+        for c in rets {
+            sum += c;
+        }
+
+        let avg_count = sum / max_retries;
+        let recv_success_rate = avg_count as f64 / window_size as f64;
+        match map.get_mut(&send_interval_nanos) {
             Some(r) => {
                 if *r > recv_success_rate {
                     // Take the lowest success rate as the final success rate.
@@ -1442,14 +1404,16 @@ pub(crate) fn tcp_send_interval_test(
                 }
             }
             None => {
-                map.insert(send_interval, recv_success_rate);
+                map.insert(send_interval_nanos, recv_success_rate);
             }
         }
+
+        send_interval_nanos += DEFAULT_SEND_INTERVAL_UPDATE_NANOS;
     }
 
     debug!("send_interval map: {:?}", map);
 
-    let mut best_send_interval = init_send_interval;
+    let mut best_send_interval = DEFAULT_INIT_SEND_INTERVAL_NANOS;
     let mut best_recv_success_rate = 0.0;
     for (k, v) in map {
         if v > best_recv_success_rate {
