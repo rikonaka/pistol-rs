@@ -39,9 +39,6 @@ pcapture = { version = "0.3.18", features = ["pcapng", "libpcap"] }
 default = []
 debug = []
 
-[[example]]
-name = "mac_scan"
-
 [workspace]
 members = [
     "tools/recv_check", "tools/send_check",
