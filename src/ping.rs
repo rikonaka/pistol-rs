@@ -442,6 +442,7 @@ struct PingState {
 
 fn ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     method: PingMethods,
     if_name: &str,
     timeout: Duration,
@@ -449,7 +450,11 @@ fn ping(
     send_rate: SendRate,
 ) -> Result<HostPings, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(String::from("tcp or udp or icmp or icmp6")), if_name)?;
+    stream.init(
+        Some(String::from("tcp or udp or icmp or icmp6")),
+        if_name,
+        send_interval,
+    )?;
 
     let mut pistol_pings = HostPings::new(max_retries);
     let mut reports = Vec::new();
@@ -622,6 +627,7 @@ fn ping(
 
 pub(crate) fn tcp_syn_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -629,6 +635,7 @@ pub(crate) fn tcp_syn_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::Syn,
         if_name,
         timeout,
@@ -639,6 +646,7 @@ pub(crate) fn tcp_syn_ping(
 
 pub(crate) fn tcp_ack_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -646,6 +654,7 @@ pub(crate) fn tcp_ack_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::Ack,
         if_name,
         timeout,
@@ -656,6 +665,7 @@ pub(crate) fn tcp_ack_ping(
 
 pub(crate) fn udp_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -663,6 +673,7 @@ pub(crate) fn udp_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::Udp,
         if_name,
         timeout,
@@ -673,6 +684,7 @@ pub(crate) fn udp_ping(
 
 pub(crate) fn icmp_echo_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -680,6 +692,7 @@ pub(crate) fn icmp_echo_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::IcmpEcho,
         if_name,
         timeout,
@@ -690,6 +703,7 @@ pub(crate) fn icmp_echo_ping(
 
 pub(crate) fn icmp_timestamp_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -697,6 +711,7 @@ pub(crate) fn icmp_timestamp_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::IcmpTimeStamp,
         if_name,
         timeout,
@@ -707,6 +722,7 @@ pub(crate) fn icmp_timestamp_ping(
 
 pub(crate) fn icmp_address_mask_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -714,6 +730,7 @@ pub(crate) fn icmp_address_mask_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::IcmpAddressMask,
         if_name,
         timeout,
@@ -724,6 +741,7 @@ pub(crate) fn icmp_address_mask_ping(
 
 pub(crate) fn icmpv6_ping(
     ping_targets: Vec<PingTargetWithNetInfo>,
+    send_interval: u64,
     if_name: &str,
     timeout: Duration,
     max_retries: usize,
@@ -731,6 +749,7 @@ pub(crate) fn icmpv6_ping(
 ) -> Result<HostPings, PistolError> {
     ping(
         ping_targets,
+        send_interval,
         PingMethods::Icmpv6Echo,
         if_name,
         timeout,

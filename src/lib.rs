@@ -684,6 +684,7 @@ struct PistolStream {
     l2_receiver_ready: bool,
     l2_receiver_ready_sleep: bool,
     l2_receiver_count: u64,
+    send_interval: u64, // ns
 }
 
 impl PistolStream {
@@ -695,6 +696,7 @@ impl PistolStream {
             l2_receiver_ready: false,
             l2_receiver_ready_sleep: false,
             l2_receiver_count: 0,
+            send_interval: 800000,
         }
     }
     fn init_sender_layer2(&mut self) -> Result<(), PistolError> {
@@ -842,9 +844,16 @@ impl PistolStream {
     /// Initialize the PistolStream,
     /// which includes initializing the layer2 sender,
     /// layer3 sender and receiver.
-    fn init(&mut self, filter: Option<String>, if_name: &str) -> Result<(), PistolError> {
+    fn init(
+        &mut self,
+        filter: Option<String>,
+        if_name: &str,
+        send_interval: u64,
+    ) -> Result<(), PistolError> {
         self.init_sender_layer2()?;
         self.init_sender_layer3()?;
+
+        self.send_interval = send_interval;
 
         let (sender, receiver) = unbounded::<Vec<Arc<[u8]>>>();
         self.l2_receiver = Some(receiver);
@@ -861,9 +870,11 @@ impl PistolStream {
         Ok(())
     }
     /// For some scenarios (flood attack), user may only want to send packets without receiving packets,
-    fn init_without_receiver(&mut self) -> Result<(), PistolError> {
+    fn init_without_receiver(&mut self, send_interval: u64) -> Result<(), PistolError> {
         self.init_sender_layer2()?;
         self.init_sender_layer3()?;
+
+        self.send_interval = send_interval;
 
         Ok(())
     }
@@ -1042,6 +1053,8 @@ impl PistolStream {
                 None => error!("failed to find l2_sender for interface {if_name}"),
             }
         }
+
+        thread::sleep(Duration::from_nanos(self.send_interval));
         Ok(())
     }
 }

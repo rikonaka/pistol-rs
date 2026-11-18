@@ -135,11 +135,12 @@ fn ipv4_flood_thread(
     src_ipv4: Ipv4Addr,
     src_port: u16,
     if_name: String,
+    send_interval: u64,
     method: FloodMethods,
     retransmit: usize,
 ) -> Result<usize, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init_without_receiver()?;
+    stream.init_without_receiver(send_interval)?;
 
     let buff = match method {
         FloodMethods::Icmp => icmp::build_icmp_flood_packet(dst_ipv4, src_ipv4)?,
@@ -174,11 +175,12 @@ fn ipv6_flood_thread(
     src_ipv6: Ipv6Addr,
     src_port: u16,
     if_name: String,
+    send_interval: u64,
     method: FloodMethods,
     retransmit: usize,
 ) -> Result<usize, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init_without_receiver()?;
+    stream.init_without_receiver(send_interval)?;
 
     let buff = match method {
         FloodMethods::Icmp => icmpv6::send_icmpv6_flood_packet(dst_ipv6, src_ipv6)?,
@@ -207,6 +209,7 @@ fn ipv6_flood_thread(
 
 fn flood(
     flood_targets: Vec<FloodTargetWithNetInfo>,
+    send_interval: u64,
     method: FloodMethods,
     retransmit: usize,
     repeat: usize,
@@ -249,8 +252,16 @@ fn flood(
                     thread::spawn(move || {
                         let start_time = Instant::now();
                         let ret = ipv4_flood_thread(
-                            dst_mac, dst_ipv4, dst_port, src_mac, src_ipv4, src_port, if_name,
-                            method, retransmit,
+                            dst_mac,
+                            dst_ipv4,
+                            dst_port,
+                            src_mac,
+                            src_ipv4,
+                            src_port,
+                            if_name,
+                            send_interval,
+                            method,
+                            retransmit,
                         );
                         if let Err(e) = tx.send((dst_addr, ret, start_time)) {
                             error!("failed to send to tx on func flood: {}", e);
@@ -289,8 +300,16 @@ fn flood(
                     thread::spawn(move || {
                         let start_time = Instant::now();
                         let ret = ipv6_flood_thread(
-                            dst_mac, dst_ipv6, dst_port, src_mac, src_ipv6, src_port, if_name,
-                            method, retransmit,
+                            dst_mac,
+                            dst_ipv6,
+                            dst_port,
+                            src_mac,
+                            src_ipv6,
+                            src_port,
+                            if_name,
+                            send_interval,
+                            method,
+                            retransmit,
                         );
                         if let Err(e) = tx.send((dst_addr, ret, start_time)) {
                             error!("failed to send to tx on func flood: {}", e);
@@ -325,12 +344,14 @@ fn flood(
 
 pub(crate) fn icmp_flood(
     flood_targets: Vec<FloodTargetWithNetInfo>,
+    send_interval: u64,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
+        send_interval,
         FloodMethods::Icmp,
         retransmit,
         repeat,
@@ -340,12 +361,14 @@ pub(crate) fn icmp_flood(
 
 pub(crate) fn tcp_syn_flood(
     flood_targets: Vec<FloodTargetWithNetInfo>,
+    send_interval: u64,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
+        send_interval,
         FloodMethods::Syn,
         retransmit,
         repeat,
@@ -355,12 +378,14 @@ pub(crate) fn tcp_syn_flood(
 
 pub(crate) fn tcp_ack_flood(
     flood_targets: Vec<FloodTargetWithNetInfo>,
+    send_interval: u64,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
+        send_interval,
         FloodMethods::Ack,
         retransmit,
         repeat,
@@ -370,12 +395,14 @@ pub(crate) fn tcp_ack_flood(
 
 pub(crate) fn tcp_ack_psh_flood(
     flood_targets: Vec<FloodTargetWithNetInfo>,
+    send_interval: u64,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
+        send_interval,
         FloodMethods::AckPsh,
         retransmit,
         repeat,
@@ -385,12 +412,14 @@ pub(crate) fn tcp_ack_psh_flood(
 
 pub(crate) fn udp_flood(
     flood_targets: Vec<FloodTargetWithNetInfo>,
+    send_interval: u64,
     retransmit: usize,
     repeat: usize,
     fake_src: bool,
 ) -> Result<Floods, PistolError> {
     flood(
         flood_targets,
+        send_interval,
         FloodMethods::Udp,
         retransmit,
         repeat,

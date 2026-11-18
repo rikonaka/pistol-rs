@@ -372,11 +372,16 @@ fn send_seq_probes(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<SEQRR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv4)), if_name)?;
+    stream.init(
+        Some(format!("host {} and tcp", dst_ipv4)),
+        if_name,
+        send_interval,
+    )?;
 
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
@@ -532,11 +537,16 @@ fn send_ie_probes(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<IERR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and icmp", dst_ipv4)), if_name)?;
+    stream.init(
+        Some(format!("host {} and icmp", dst_ipv4)),
+        if_name,
+        send_interval,
+    )?;
 
     let mut rng = rand::rng();
     let id_1 = rng.random();
@@ -657,11 +667,16 @@ fn send_ecn_probe(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<ECNRR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv4)), if_name)?;
+    stream.init(
+        Some(format!("host {} and tcp", dst_ipv4)),
+        if_name,
+        send_interval,
+    )?;
 
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -727,11 +742,16 @@ fn send_tx_probes(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<TXRR, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv4)), if_name)?;
+    stream.init(
+        Some(format!("host {} and tcp", dst_ipv4)),
+        if_name,
+        send_interval,
+    )?;
 
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = Vec::new();
@@ -933,6 +953,7 @@ fn send_u1_probe(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<U1RR, PistolError> {
@@ -940,6 +961,7 @@ fn send_u1_probe(
     stream.init(
         Some(format!("host {} and (icmp or udp)", dst_ipv4)),
         if_name,
+        send_interval,
     )?;
 
     let src_port = random_port();
@@ -1005,9 +1027,12 @@ fn send_all_probes(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     interface: NetworkInterface,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<AllPacketRR, PistolError> {
+    let if_name = &interface.name;
+
     debug!("sending SEQ probe");
     let seq = send_seq_probes(
         dst_mac,
@@ -1015,7 +1040,8 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
     )?;
@@ -1025,7 +1051,8 @@ fn send_all_probes(
         dst_ipv4,
         src_mac,
         src_ipv4,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
     )?;
@@ -1036,7 +1063,8 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv4,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
     )?;
@@ -1048,7 +1076,8 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv4,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
     )?;
@@ -1059,7 +1088,8 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv4,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
     )?;
@@ -1973,6 +2003,7 @@ pub(crate) fn os_probe_thread(
     src_mac: MacAddr,
     src_ipv4: Ipv4Addr,
     interface: NetworkInterface,
+    send_interval: u64,
     nmap_os_db: Vec<NmapOsDb>,
     top_k: usize,
     timeout: Duration,
@@ -2023,6 +2054,7 @@ pub(crate) fn os_probe_thread(
         src_mac,
         src_ipv4,
         interface.clone(),
+        send_interval,
         timeout,
         max_retries,
     )?;

@@ -348,6 +348,7 @@ fn get_nmap_os_db() -> Result<Vec<NmapOsDb>, PistolError> {
 
 pub fn os_detect(
     detect_targets: Vec<OsDetectTargetWithNetInfo>,
+    send_interval: u64,
     threads: usize,
     timeout: Duration,
     max_retries: usize,
@@ -404,6 +405,7 @@ pub fn os_detect(
                         src_mac,
                         src_ipv4,
                         interface,
+                        send_interval,
                         nmap_os_db,
                         top_k,
                         timeout,
@@ -455,6 +457,7 @@ pub fn os_detect(
                         src_mac,
                         src_ipv6,
                         interface,
+                        send_interval,
                         top_k,
                         linear,
                         timeout,

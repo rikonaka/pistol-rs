@@ -538,12 +538,17 @@ fn send_seq_probes(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
 ) -> Result<SEQRR6, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv6)), if_name)?;
+    stream.init(
+        Some(format!("host {} and tcp", dst_ipv6)),
+        if_name,
+        send_interval,
+    )?;
 
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
@@ -732,12 +737,17 @@ fn send_ie_probes(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
 ) -> Result<IERR6, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and icmp6", dst_ipv6)), if_name)?;
+    stream.init(
+        Some(format!("host {} and icmp6", dst_ipv6)),
+        if_name,
+        send_interval,
+    )?;
 
     let buff_1 = packet6::ie_packet_1_layer3(dst_ipv6, src_ipv6)?;
     let buff_2 = packet6::ie_packet_2_layer3(dst_ipv6, src_ipv6)?;
@@ -880,12 +890,17 @@ fn send_nx_probes(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
 ) -> Result<NXRR6, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and icmp6", dst_ipv6)), if_name)?;
+    stream.init(
+        Some(format!("host {} and icmp6", dst_ipv6)),
+        if_name,
+        send_interval,
+    )?;
 
     let buff_1 = packet6::ni_packet_layer3(dst_ipv6, src_ipv6)?;
     let buff_2 = packet6::ns_packet_layer3(dst_ipv6, src_ipv6, src_mac)?;
@@ -1018,6 +1033,7 @@ fn send_u1_probe(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
@@ -1026,6 +1042,7 @@ fn send_u1_probe(
     stream.init(
         Some(format!("host {} and (icmp6 or udp)", dst_ipv6)),
         if_name,
+        send_interval,
     )?;
 
     let src_port = random_port();
@@ -1101,12 +1118,17 @@ fn send_tecn_probe(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
 ) -> Result<TECNRR6, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv6)), if_name)?;
+    stream.init(
+        Some(format!("host {} and tcp", dst_ipv6)),
+        if_name,
+        send_interval,
+    )?;
 
     let src_port = random_port();
     let layer3 = Layer3Filter {
@@ -1181,12 +1203,17 @@ fn send_tx_probes(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     if_name: &str,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
     detect_begin: Instant,
 ) -> Result<TXRR6, PistolError> {
     let mut stream = PistolStream::new();
-    stream.init(Some(format!("host {} and tcp", dst_ipv6)), if_name)?;
+    stream.init(
+        Some(format!("host {} and tcp", dst_ipv6)),
+        if_name,
+        send_interval,
+    )?;
 
     let src_port_start = random_port_range(1000, 6540);
     let mut src_ports = HashMap::new();
@@ -1414,10 +1441,12 @@ fn send_all_probes(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     interface: NetworkInterface,
+    send_interval: u64,
     timeout: Duration,
     max_retries: usize,
 ) -> Result<AllPacketRR6, PistolError> {
     let detect_begin = Instant::now();
+    let if_name = &interface.name;
     debug!("sending SEQ probe");
     let seq = send_seq_probes(
         dst_mac,
@@ -1425,7 +1454,8 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
         detect_begin,
@@ -1436,7 +1466,8 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
         detect_begin,
@@ -1447,7 +1478,8 @@ fn send_all_probes(
         dst_ipv6,
         src_mac,
         src_ipv6,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
         detect_begin,
@@ -1459,7 +1491,8 @@ fn send_all_probes(
         dst_closed_udp_port,
         src_mac,
         src_ipv6,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
         detect_begin,
@@ -1471,7 +1504,8 @@ fn send_all_probes(
         dst_open_tcp_port,
         src_mac,
         src_ipv6,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
         detect_begin,
@@ -1484,7 +1518,8 @@ fn send_all_probes(
         dst_closed_tcp_port,
         src_mac,
         src_ipv6,
-        interface.name.as_str(),
+        if_name,
+        send_interval,
         timeout,
         max_retries,
         detect_begin,
@@ -1578,6 +1613,7 @@ pub(crate) fn os_probe_thread6(
     src_mac: MacAddr,
     src_ipv6: Ipv6Addr,
     interface: NetworkInterface,
+    send_interval: u64,
     top_k: usize,
     linear: Linear,
     timeout: Duration,
@@ -1593,6 +1629,7 @@ pub(crate) fn os_probe_thread6(
         src_mac,
         src_ipv6,
         interface.clone(),
+        send_interval,
         timeout,
         max_retries,
     )?;
