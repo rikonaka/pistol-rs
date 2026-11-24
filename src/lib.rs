@@ -1066,7 +1066,7 @@ pub struct Pistol {
     timeout: Duration,
     max_retries: usize,
     send_rate: SendRate,
-    send_interval: u64, // millis
+    send_interval: u64, // nanos
 }
 
 impl Default for Pistol {
@@ -1077,7 +1077,7 @@ impl Default for Pistol {
             timeout: Duration::from_secs_f32(1.0), // default timeout is 1.0
             max_retries: 2,                        // default max_retries is 2
             send_rate: SendRate::Medium,           // default send speed is medium
-            send_interval: 25,                     // default send interval is 25
+            send_interval: 800_000,                // default send interval is 800k ns
         }
     }
 }
@@ -1229,6 +1229,7 @@ impl Pistol {
         self.init_logger();
         scan::mac_scan(
             targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1243,7 +1244,13 @@ impl Pistol {
         dst_ipv4: Ipv4Addr,
     ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
         self.init_logger();
-        scan::arp_scan_raw(dst_ipv4, &self.if_name, self.timeout, self.max_retries)
+        scan::arp_scan_raw(
+            dst_ipv4,
+            self.send_interval,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+        )
     }
     /// The raw version of ndp_ns_scan function.
     /// It sends an NDP Neighbor Solicitation to the target IPv6 address and waits for a reply.
@@ -1254,7 +1261,13 @@ impl Pistol {
         dst_ipv6: Ipv6Addr,
     ) -> Result<(Vec<MacAddr>, Duration), PistolError> {
         self.init_logger();
-        scan::ndp_ns_scan_raw(dst_ipv6, &self.if_name, self.timeout, self.max_retries)
+        scan::ndp_ns_scan_raw(
+            dst_ipv6,
+            self.send_interval,
+            &self.if_name,
+            self.timeout,
+            self.max_retries,
+        )
     }
     /// TCP ACK Scan.
     /// This scan is different than the others discussed so far in
@@ -1267,9 +1280,10 @@ impl Pistol {
     /// Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
     pub fn tcp_ack_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_ack_scan(
             targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1291,10 +1305,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_ack_scan(
             vec![target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1393,9 +1413,10 @@ impl Pistol {
     /// any combination of the other three (FIN, PSH, and URG) are OK.
     pub fn tcp_fin_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (net_infos, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (net_infos, dur) = PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_fin_scan(
             net_infos,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1416,10 +1437,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_fin_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1440,9 +1467,11 @@ impl Pistol {
         targets: &[PortScanTarget],
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) =
+            PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_maimon_scan(
             scan_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1463,10 +1492,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_maimon_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1490,9 +1525,11 @@ impl Pistol {
         _src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) =
+            PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_null_scan(
             scan_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1513,10 +1550,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_null_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1598,9 +1641,11 @@ impl Pistol {
     /// ```
     pub fn tcp_syn_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) =
+            PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_syn_scan(
             scan_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1621,10 +1666,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_syn_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1647,8 +1698,13 @@ impl Pistol {
         }
 
         self.init_logger();
-        let (scan_target, _dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, _dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let best_send_interval = scan::tcp_send_interval_test(
             scan_target,
             &self.if_name,
@@ -1672,9 +1728,11 @@ impl Pistol {
         targets: &[PortScanTarget],
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) =
+            PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_window_scan(
             scan_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1695,10 +1753,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_window_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1716,9 +1780,11 @@ impl Pistol {
     /// any combination of the other three (FIN, PSH, and URG) are OK.
     pub fn tcp_xmas_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) =
+            PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::tcp_xmas_scan(
             scan_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1739,10 +1805,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::tcp_xmas_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1765,9 +1837,11 @@ impl Pistol {
     /// Based on the response, or lack thereof, the port is assigned to one of four states.
     pub fn udp_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_targets, dur) = PortScanTargetWithNetInfo::infer_multi(targets)?;
+        let (scan_targets, dur) =
+            PortScanTargetWithNetInfo::infer_multi(targets, self.send_interval)?;
         let mut ret = scan::udp_scan(
             scan_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1789,10 +1863,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<PortScans, PistolError> {
         self.init_logger();
-        let (scan_target, dur) =
-            PortScanTargetWithNetInfo::infer_single(dst_addr, dst_port, src_addr, src_port)?;
+        let (scan_target, dur) = PortScanTargetWithNetInfo::infer_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = scan::udp_scan(
             vec![scan_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1822,9 +1902,11 @@ impl Pistol {
         targets: &[IcmpPingTarget],
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_icmp_multi(targets, self.send_interval)?;
         let mut ret = ping::icmp_address_mask_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1843,9 +1925,11 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_target, dur) = PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
+        let (ping_target, dur) =
+            PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr, self.send_interval)?;
         let mut ret = ping::icmp_address_mask_ping(
             vec![ping_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1866,9 +1950,11 @@ impl Pistol {
     /// this can be a practical and efficient approach.
     pub fn icmp_echo_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_icmp_multi(targets, self.send_interval)?;
         let mut ret = ping::icmp_echo_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1887,9 +1973,11 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_target, dur) = PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
+        let (ping_target, dur) =
+            PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr, self.send_interval)?;
         let mut ret = ping::icmp_echo_ping(
             vec![ping_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1916,9 +2004,11 @@ impl Pistol {
         targets: &[IcmpPingTarget],
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_icmp_multi(targets, self.send_interval)?;
         let mut ret = ping::icmp_timestamp_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1942,9 +2032,11 @@ impl Pistol {
             Some(ipv4) => Some(IpAddr::V4(ipv4)),
             None => None,
         };
-        let (ping_target, dur) = PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
+        let (ping_target, dur) =
+            PingTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr, self.send_interval)?;
         let mut ret = ping::icmp_timestamp_ping(
             vec![ping_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1966,9 +2058,11 @@ impl Pistol {
     /// this can be a practical and efficient approach.
     pub fn icmpv6_ping(&mut self, targets: &[IcmpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_icmp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_icmp_multi(targets, self.send_interval)?;
         let mut ret = ping::icmpv6_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -1983,9 +2077,11 @@ impl Pistol {
     /// that is open on the target machine instead of traversing all ports.
     pub fn tcp_ack_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_xxp_multi(targets, self.send_interval)?;
         let mut ret = ping::tcp_ack_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -2007,10 +2103,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_target, dur) =
-            PingTargetWithNetInfo::infer_xxp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (ping_target, dur) = PingTargetWithNetInfo::infer_xxp_single(
+            dst_addr,
+            vec![dst_port],
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = ping::tcp_ack_ping(
             vec![ping_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -2025,9 +2127,11 @@ impl Pistol {
     /// that is open on the target machine instead of traversing all ports.
     pub fn tcp_syn_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_xxp_multi(targets, self.send_interval)?;
         let mut ret = ping::tcp_syn_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -2049,10 +2153,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_target, dur) =
-            PingTargetWithNetInfo::infer_xxp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (ping_target, dur) = PingTargetWithNetInfo::infer_xxp_single(
+            dst_addr,
+            vec![dst_port],
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = ping::tcp_syn_ping(
             vec![ping_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -2067,9 +2177,11 @@ impl Pistol {
     /// that is open on the target machine instead of traversing all ports.
     pub fn udp_ping(&mut self, targets: &[XxpPingTarget]) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_targets, dur) = PingTargetWithNetInfo::infer_xxp_multi(targets)?;
+        let (ping_targets, dur) =
+            PingTargetWithNetInfo::infer_xxp_multi(targets, self.send_interval)?;
         let mut ret = ping::udp_ping(
             ping_targets,
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -2091,10 +2203,16 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<HostPings, PistolError> {
         self.init_logger();
-        let (ping_target, dur) =
-            PingTargetWithNetInfo::infer_xxp_single(dst_addr, vec![dst_port], src_addr, src_port)?;
+        let (ping_target, dur) = PingTargetWithNetInfo::infer_xxp_single(
+            dst_addr,
+            vec![dst_port],
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
         let mut ret = ping::udp_ping(
             vec![ping_target],
+            self.send_interval,
             &self.if_name,
             self.timeout,
             self.max_retries,
@@ -2115,8 +2233,9 @@ impl Pistol {
         src_addr: Option<IpAddr>,
     ) -> Result<Trace, PistolError> {
         self.init_logger();
-        let (trace_target, dur) = TraceTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
-        let mut ret = trace::icmp_trace(trace_target, self.timeout)?;
+        let (trace_target, dur) =
+            TraceTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr, self.send_interval)?;
+        let mut ret = trace::icmp_trace(trace_target, self.send_interval, self.timeout)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2133,9 +2252,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<Trace, PistolError> {
         self.init_logger();
-        let (trace_target, dur) =
-            TraceTargetWithNetInfo::infer_xxp_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = trace::syn_trace(trace_target, self.timeout)?;
+        let (trace_target, dur) = TraceTargetWithNetInfo::infer_xxp_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
+        let mut ret = trace::syn_trace(trace_target, self.send_interval, self.timeout)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2152,9 +2276,14 @@ impl Pistol {
         src_port: Option<u16>,
     ) -> Result<Trace, PistolError> {
         self.init_logger();
-        let (trace_target, dur) =
-            TraceTargetWithNetInfo::infer_xxp_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = trace::udp_trace(trace_target, self.timeout)?;
+        let (trace_target, dur) = TraceTargetWithNetInfo::infer_xxp_single(
+            dst_addr,
+            dst_port,
+            src_addr,
+            src_port,
+            self.send_interval,
+        )?;
+        let mut ret = trace::udp_trace(trace_target, self.send_interval, self.timeout)?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2180,7 +2309,13 @@ impl Pistol {
     ) -> Result<Floods, PistolError> {
         self.init_logger();
         let (flood_targets, dur) = FloodTargetWithNetInfo::infer_icmp_multi(targets)?;
-        let mut ret = flood::icmp_flood(flood_targets, retransmit, repeat, fake_src)?;
+        let mut ret = flood::icmp_flood(
+            flood_targets,
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2196,7 +2331,13 @@ impl Pistol {
     ) -> Result<Floods, PistolError> {
         self.init_logger();
         let (flood_target, dur) = FloodTargetWithNetInfo::infer_icmp_single(dst_addr, src_addr)?;
-        let mut ret = flood::icmp_flood(vec![flood_target], retransmit, repeat, fake_src)?;
+        let mut ret = flood::icmp_flood(
+            vec![flood_target],
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2221,7 +2362,13 @@ impl Pistol {
     ) -> Result<Floods, PistolError> {
         self.init_logger();
         let (flood_targets, dur) = FloodTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = flood::tcp_ack_flood(flood_targets, retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_ack_flood(
+            flood_targets,
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2240,7 +2387,13 @@ impl Pistol {
         self.init_logger();
         let (flood_target, dur) =
             FloodTargetWithNetInfo::infer_xxp_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = flood::tcp_ack_flood(vec![flood_target], retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_ack_flood(
+            vec![flood_target],
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2266,7 +2419,13 @@ impl Pistol {
     ) -> Result<Floods, PistolError> {
         self.init_logger();
         let (flood_targets, dur) = FloodTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = flood::tcp_ack_psh_flood(flood_targets, retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_ack_psh_flood(
+            flood_targets,
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2286,7 +2445,13 @@ impl Pistol {
         self.init_logger();
         let (flood_target, dur) =
             FloodTargetWithNetInfo::infer_xxp_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = flood::tcp_ack_psh_flood(vec![flood_target], retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_ack_psh_flood(
+            vec![flood_target],
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2304,7 +2469,13 @@ impl Pistol {
     ) -> Result<Floods, PistolError> {
         self.init_logger();
         let (flood_target, dur) = FloodTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = flood::tcp_syn_flood(flood_target, retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_syn_flood(
+            flood_target,
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2323,7 +2494,13 @@ impl Pistol {
         self.init_logger();
         let (flood_target, dur) =
             FloodTargetWithNetInfo::infer_xxp_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = flood::tcp_syn_flood(vec![flood_target], retransmit, repeat, fake_src)?;
+        let mut ret = flood::tcp_syn_flood(
+            vec![flood_target],
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2342,7 +2519,13 @@ impl Pistol {
     ) -> Result<Floods, PistolError> {
         self.init_logger();
         let (flood_targets, dur) = FloodTargetWithNetInfo::infer_xxp_multi(targets)?;
-        let mut ret = flood::udp_flood(flood_targets, retransmit, repeat, fake_src)?;
+        let mut ret = flood::udp_flood(
+            flood_targets,
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2361,7 +2544,13 @@ impl Pistol {
         self.init_logger();
         let (flood_target, dur) =
             FloodTargetWithNetInfo::infer_xxp_single(dst_addr, dst_port, src_addr, src_port)?;
-        let mut ret = flood::udp_flood(vec![flood_target], retransmit, repeat, fake_src)?;
+        let mut ret = flood::udp_flood(
+            vec![flood_target],
+            self.send_interval,
+            retransmit,
+            repeat,
+            fake_src,
+        )?;
         ret.layer2_cost = dur;
         Ok(ret)
     }
@@ -2389,6 +2578,7 @@ impl Pistol {
         let (detect_targets, dur) = OsDetectTargetWithNetInfo::infer_multi(targets)?;
         let mut ret = os::os_detect(
             detect_targets,
+            self.send_interval,
             threads,
             self.timeout,
             self.max_retries,
@@ -2421,6 +2611,7 @@ impl Pistol {
         )?;
         let mut ret = os::os_detect(
             vec![detect_target],
+            self.send_interval,
             1,
             self.timeout,
             self.max_retries,
@@ -2716,11 +2907,14 @@ struct PortScanTargetWithNetInfo {
 }
 
 impl PortScanTargetWithNetInfo {
-    fn infer_multi(targets: &[PortScanTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_multi(
+        targets: &[PortScanTarget],
+        send_interval: u64,
+    ) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr, send_interval)? {
                 let p: PortScanTargetWithNetInfo = Self {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
@@ -2737,9 +2931,10 @@ impl PortScanTargetWithNetInfo {
         dst_port: u16,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
+        send_interval: u64,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr, send_interval)? {
             let p = Self {
                 net_info,
                 dst_ports: vec![dst_port],
@@ -2983,11 +3178,14 @@ pub(crate) struct PingTargetWithNetInfo {
 }
 
 impl PingTargetWithNetInfo {
-    fn infer_icmp_multi(targets: &[IcmpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_icmp_multi(
+        targets: &[IcmpPingTarget],
+        send_interval: u64,
+    ) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr, send_interval)? {
                 let p = Self {
                     net_info,
                     dst_ports: vec![],
@@ -2999,11 +3197,14 @@ impl PingTargetWithNetInfo {
         let cost = start.elapsed();
         Ok((values, cost))
     }
-    fn infer_xxp_multi(targets: &[XxpPingTarget]) -> Result<(Vec<Self>, Duration), PistolError> {
+    fn infer_xxp_multi(
+        targets: &[XxpPingTarget],
+        send_interval: u64,
+    ) -> Result<(Vec<Self>, Duration), PistolError> {
         let start = Instant::now();
         let mut values = Vec::new();
         for t in targets {
-            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr)? {
+            if let Some(net_info) = infer_net_info(t.dst_addr, t.src_addr, send_interval)? {
                 let p = Self {
                     net_info,
                     dst_ports: t.dst_ports.clone(),
@@ -3018,9 +3219,10 @@ impl PingTargetWithNetInfo {
     fn infer_icmp_single(
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
+        send_interval: u64,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr, send_interval)? {
             let p = Self {
                 net_info,
                 dst_ports: vec![],
@@ -3037,9 +3239,10 @@ impl PingTargetWithNetInfo {
         dst_ports: Vec<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
+        send_interval: u64,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr, send_interval)? {
             let p = Self {
                 net_info,
                 dst_ports,
@@ -3289,9 +3492,10 @@ impl TraceTargetWithNetInfo {
         dst_port: Option<u16>,
         src_addr: Option<IpAddr>,
         src_port: Option<u16>,
+        send_interval: u64,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr, send_interval)? {
             let p = Self {
                 net_info,
                 dst_port,
@@ -3306,9 +3510,10 @@ impl TraceTargetWithNetInfo {
     fn infer_icmp_single(
         dst_addr: IpAddr,
         src_addr: Option<IpAddr>,
+        send_interval: u64,
     ) -> Result<(Self, Duration), PistolError> {
         let start = Instant::now();
-        if let Some(net_info) = infer_net_info(dst_addr, src_addr)? {
+        if let Some(net_info) = infer_net_info(dst_addr, src_addr, send_interval)? {
             let p = Self {
                 net_info,
                 dst_port: None,

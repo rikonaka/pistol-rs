@@ -184,11 +184,15 @@ pub(crate) fn infer_if(
     Ok(None)
 }
 
-fn detect_mac(dst_addr: IpAddr, if_name: &str) -> Result<Option<MacAddr>, PistolError> {
+fn detect_mac(
+    dst_addr: IpAddr,
+    send_interval: u64,
+    if_name: &str,
+) -> Result<Option<MacAddr>, PistolError> {
     let timeout = Duration::from_secs_f32(1.0);
     match dst_addr {
         IpAddr::V4(d4) => {
-            let (macs, _dur) = arp_scan_raw(d4, if_name, timeout, 2)?;
+            let (macs, _dur) = arp_scan_raw(d4, send_interval, if_name, timeout, 2)?;
             if macs.len() > 0 {
                 Ok(Some(macs[0]))
             } else {
@@ -197,7 +201,7 @@ fn detect_mac(dst_addr: IpAddr, if_name: &str) -> Result<Option<MacAddr>, Pistol
             }
         }
         IpAddr::V6(d6) => {
-            let (macs, _dur) = ndp_ra_scan_raw(d6, if_name, timeout, 2)?;
+            let (macs, _dur) = ndp_ra_scan_raw(d6, send_interval, if_name, timeout, 2)?;
             if macs.len() > 0 {
                 Ok(Some(macs[0]))
             } else {
@@ -208,7 +212,11 @@ fn detect_mac(dst_addr: IpAddr, if_name: &str) -> Result<Option<MacAddr>, Pistol
     }
 }
 
-pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo>, PistolError> {
+pub fn infer_net_info(
+    dst: IpAddr,
+    src: Option<IpAddr>,
+    send_interval: u64,
+) -> Result<Option<NetInfo>, PistolError> {
     let start = Instant::now();
     let mut is_cached = true;
 
@@ -247,7 +255,7 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
                         None => {
                             // send arp(ipv4) or ndp(ipv6) to get the mac address of the gateway
                             is_cached = false;
-                            match detect_mac(*route_addr, if_name)? {
+                            match detect_mac(*route_addr, send_interval, if_name)? {
                                 Some(mac) => mac,
                                 None => return Ok(None),
                             }
@@ -265,7 +273,7 @@ pub fn infer_net_info(dst: IpAddr, src: Option<IpAddr>) -> Result<Option<NetInfo
                 Some(mac) => crossnet_mac_convert(&mac)?,
                 None => {
                     // send arp(ipv4) or ndp(ipv6) to get the mac address of the destination
-                    match detect_mac(dst, if_name)? {
+                    match detect_mac(dst, send_interval, if_name)? {
                         Some(mac) => mac,
                         None => return Ok(None),
                     }
@@ -345,7 +353,8 @@ mod tests {
         // let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 78));
         let dst = IpAddr::V4(Ipv4Addr::new(192, 168, 5, 131));
         let src = None;
-        match infer_net_info(dst, src).unwrap() {
+        let send_interval = 800_000;
+        match infer_net_info(dst, src, send_interval).unwrap() {
             Some(infer_result) => {
                 println!(
                     "infer result: {}, elapsed: {:?}",
