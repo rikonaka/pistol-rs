@@ -8,6 +8,7 @@ use pnet::datalink;
 use pnet::datalink::MacAddr;
 use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
+use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -228,7 +229,7 @@ pub fn infer_net_info_multi(
     targets: &[(IpAddr, Option<IpAddr>)],
 ) -> Result<Vec<NetInfo>, PistolError> {
     let start = Instant::now();
-    let mut rets = Vec::new();
+    let mut hm = HashMap::new();
 
     let neigh_cache = get_neighbor_cache()?;
     let route_cache = get_route_cache()?;
@@ -360,6 +361,11 @@ pub fn infer_net_info_multi(
             origin_dst_addr,
             origin_src_addr,
         };
+    }
+
+    let mut rets = Vec::new();
+    for h in hm {
+        rets.push(h);
     }
 
     Ok(rets)
