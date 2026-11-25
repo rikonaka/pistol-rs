@@ -256,8 +256,9 @@ fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
     send_interval: u64,
+    timeout: Duration,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let net_info = match infer_net_info(dst_ipv4.into(), src_addr, send_interval)? {
+    let net_info = match infer_net_info(dst_ipv4.into(), src_addr, send_interval, timeout)? {
         Some(n) => n,
         None => return Err(PistolError::CanNotFoundNetInfo),
     };
@@ -397,8 +398,9 @@ pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
     src_addr: Option<IpAddr>,
     send_interval: u64,
+    timeout: Duration,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let net_info = match infer_net_info(dst_ipv6.into(), src_addr, send_interval)? {
+    let net_info = match infer_net_info(dst_ipv6.into(), src_addr, send_interval, timeout)? {
         Some(n) => n,
         None => return Err(PistolError::CanNotFoundNetInfo),
     };
@@ -446,7 +448,7 @@ pub(crate) fn ndp_ra_scan_raw(
     ));
     stream.init(filter, if_name, send_interval)?;
 
-    let net_info = match infer_net_info(dst_ipv6.into(), None, send_interval)? {
+    let net_info = match infer_net_info(dst_ipv6.into(), None, send_interval, timeout)? {
         Some(n) => n,
         None => return Err(PistolError::CanNotFoundNetInfo),
     };
@@ -663,7 +665,7 @@ pub(crate) fn mac_scan(
                             max_retries
                         );
                         let (spp, filters) =
-                            get_arp_scan_buff(dst_ipv4, state.src_addr, send_interval)?;
+                            get_arp_scan_buff(dst_ipv4, state.src_addr, send_interval, timeout)?;
                         all_filters.extend(filters);
 
                         stream.send_packet(spp)?;
@@ -681,7 +683,7 @@ pub(crate) fn mac_scan(
                         );
                         // retry to send ndp_ns scan packet and recv response
                         let (spp, filters) =
-                            get_ndp_ns_scan_buff(dst_ipv6, state.src_addr, send_interval)?;
+                            get_ndp_ns_scan_buff(dst_ipv6, state.src_addr, send_interval, timeout)?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
 

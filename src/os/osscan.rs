@@ -223,6 +223,7 @@ pub(crate) fn get_scan_line(
     dst_closed_udp_port: u16,
     src_mac: MacAddr,
     src_addr: IpAddr,
+    send_interval: u64,
     interface: NetworkInterface,
     timeout: Duration,
     good_results: bool,
@@ -293,7 +294,7 @@ pub(crate) fn get_scan_line(
             dst_port: None,
             src_port: None,
         };
-        let trace = icmp_trace(trace_target, timeout)?;
+        let trace = icmp_trace(trace_target, send_interval, timeout)?;
         trace.hops
     };
 
@@ -2070,6 +2071,7 @@ pub(crate) fn os_probe_thread(
         dst_closed_udp_port,
         src_mac,
         src_ipv4.into(),
+        send_interval,
         interface.clone(),
         timeout,
         good_results,

@@ -1646,6 +1646,7 @@ pub(crate) fn os_probe_thread6(
         dst_closed_udp_port,
         src_mac,
         src_ipv6.into(),
+        send_interval,
         interface.clone(),
         timeout,
         good_results,
