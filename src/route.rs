@@ -10,6 +10,7 @@ use pnet::datalink::NetworkInterface;
 use pnet::datalink::interfaces;
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::Hash;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::time::Duration;
@@ -17,8 +18,11 @@ use std::time::Instant;
 use tracing::debug;
 use tracing::warn;
 
+use crate::MacScanTarget;
+use crate::SendRate;
 use crate::error::PistolError;
 use crate::scan::arp_scan_raw;
+use crate::scan::mac_scan;
 use crate::scan::ndp_ra_scan_raw;
 
 pub(crate) fn fake_interface() -> NetworkInterface {
@@ -114,8 +118,8 @@ fn crossnet_mac_convert(mac: &CrossNetMacAddr) -> Result<MacAddr, PistolError> {
 pub(crate) fn infer_if(
     dst: IpAddr,
     src: Option<IpAddr>,
-    neighbor: Option<NeighborCache>,
-    route: Option<RouteCache>,
+    neigh_cache: &NeighborCache,
+    route_cache: &RouteCache,
 ) -> Result<Option<NetworkInterface>, PistolError> {
     let ifs = datalink::interfaces();
     match src {
@@ -129,15 +133,6 @@ pub(crate) fn infer_if(
             }
         }
         None => {
-            let neighbor_cache = match neighbor {
-                Some(n) => n,
-                None => get_neighbor_cache()?,
-            };
-            let route_cache = match route {
-                Some(r) => r,
-                None => get_route_cache()?,
-            };
-
             let route = match route_cache.search_route(&dst) {
                 Some(nr) => nr,
                 None => {
@@ -160,7 +155,7 @@ pub(crate) fn infer_if(
 
             // If the target needs to go through a gateway,
             // we need to find the interface name of the gateway.
-            match neighbor_cache.search_ifname(&dst2)? {
+            match neigh_cache.search_ifname(&dst2)? {
                 Some(n) => {
                     for i in &ifs {
                         if i.name == n {
@@ -227,14 +222,16 @@ fn is_host_address(addr: IpAddr) -> bool {
 
 pub fn infer_net_info_multi(
     targets: &[(IpAddr, Option<IpAddr>)],
+    send_interval: u64,
+    timeout: Duration,
+    send_rate: SendRate,
+    max_retries: usize,
 ) -> Result<Vec<NetInfo>, PistolError> {
     let start = Instant::now();
-    let mut hm = HashMap::new();
+    let mut global_hm = HashMap::new();
 
     let neigh_cache = get_neighbor_cache()?;
     let route_cache = get_route_cache()?;
-
-    let mut mac_scan_dst = Vec::new();
 
     for (dst, src) in targets {
         let mut is_cached = true;
@@ -275,7 +272,6 @@ pub fn infer_net_info_multi(
                             None => {
                                 // send arp(ipv4) or ndp(ipv6) to get the mac address of the gateway
                                 is_cached = false;
-                                mac_scan_dst.push(*dst);
                                 None
                             }
                         }
@@ -296,23 +292,66 @@ pub fn infer_net_info_multi(
                     None => {
                         // send arp(ipv4) or ndp(ipv6) to get the mac address of the destination
                         is_cached = false;
-                        mac_scan_dst.push(*dst);
                         None
                     }
                 }
             }
         };
 
-        let inferred_interface = match infer_if(
-            *dst,
-            *src,
-            Some(neigh_cache.clone()),
-            Some(route_cache.clone()),
-        )? {
-            Some(i) => i,
-            None => return Err(PistolError::CanNotFoundInterface { addr: *dst }),
-        };
+        global_hm.insert(*dst, (*src, inferred_dst_mac));
+    }
 
+    let mut pending_mac_scan_targets: HashMap<String, Vec<MacScanTarget>> = HashMap::new();
+    for (dst, (src, mac)) in global_hm {
+        match mac {
+            Some(_) => (),
+            None => {
+                let inferred_interface = match infer_if(dst, src, &neigh_cache, &route_cache)? {
+                    Some(i) => i,
+                    None => return Err(PistolError::CanNotFoundInterface { addr: dst }),
+                };
+
+                let mt = MacScanTarget {
+                    dst_addr: dst,
+                    src_addr: src,
+                    origin: None,
+                };
+
+                let if_name = inferred_interface.name;
+                match pending_mac_scan_targets.get_mut(&if_name) {
+                    Some(v) => {
+                        v.push(mt);
+                    }
+                    None => {
+                        pending_mac_scan_targets.insert(inferred_interface.name, vec![mt]);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut ip_mac_hm = HashMap::new();
+    // scan all host here instead of scan individul
+    for (if_name, targets) in &pending_mac_scan_targets {
+        let mac_scan_ret = mac_scan(
+            targets,
+            send_interval,
+            if_name,
+            timeout,
+            max_retries,
+            send_rate,
+        )?;
+
+        for r in mac_scan_ret.mac_reports {
+            let dst = 
+        }
+    }
+
+    for r in mac_scan_ret.mac_reports {
+        ip_mac_hm.insert(r.addr, r.mac);
+    }
+
+    for (dst, mac) in global_hm {
         let inferred_src_mac = match inferred_interface.mac {
             Some(mac) => mac,
             None => return Err(PistolError::CanNotFoundSrcMacAddress),
@@ -364,7 +403,7 @@ pub fn infer_net_info_multi(
     }
 
     let mut rets = Vec::new();
-    for h in hm {
+    for h in global_hm {
         rets.push(h);
     }
 
