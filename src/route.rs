@@ -343,7 +343,8 @@ pub fn infer_net_info_multi(
         )?;
 
         for r in mac_scan_ret.mac_reports {
-            let dst = 
+            let dst = r.addr;
+            let mac 
         }
     }
 
