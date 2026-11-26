@@ -125,6 +125,7 @@ pub(crate) fn infer_interface(
     let ifs = datalink::interfaces();
     match src {
         Some(s) => {
+            // Determine the interface name based on the source address.
             for i in &ifs {
                 for ip in &i.ips {
                     if ip.ip() == s {
@@ -134,6 +135,9 @@ pub(crate) fn infer_interface(
             }
         }
         None => {
+            // First, check the routing table.
+            // If there is a route to the destination address, use this route.
+            // If not, use the default route.
             let route = match route_cache.search_route(&dst) {
                 Some(nr) => nr,
                 None => {
@@ -146,6 +150,7 @@ pub(crate) fn infer_interface(
                 }
             };
 
+            // Obtain the address of the router.
             let dst2 = match route.gateway {
                 Some(gateway) => match gateway {
                     NetRouteAddr::IpAddr(gateway_addr) => gateway_addr,
@@ -154,8 +159,7 @@ pub(crate) fn infer_interface(
                 None => dst,
             };
 
-            // If the target needs to go through a gateway,
-            // we need to find the interface name of the gateway.
+            // Query the neighbor table to obtain the interface name.
             match neigh_cache.search_ifname(&dst2)? {
                 Some(n) => {
                     for i in &ifs {
@@ -170,9 +174,9 @@ pub(crate) fn infer_interface(
                     }
                 }
                 None => {
-                    // Very rare case, if the neighbor cache
-                    // does not have the interface name for
-                    // the destination address.
+                    // Very rare case, if the neighbor cache does not
+                    // have the interface name for the destination address,
+                    // obtain the address manually.
                     for i in &ifs {
                         for ip in &i.ips {
                             if ip.contains(dst) {

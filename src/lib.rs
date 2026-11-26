@@ -410,6 +410,7 @@ impl SendWindow {
                 self.window_size = self.window_size_history[self.window_size_history.len() - 1];
             }
 
+            #[cfg(feature = "debug")]
             println!("now send window size: {}", self.window_size);
             self.reach_bandwidth_limited = true;
         }
@@ -1068,6 +1069,7 @@ pub struct Pistol {
     max_retries: usize,
     send_rate: SendRate,
     send_interval: u64, // nanos
+    ready_logger: bool,
 }
 
 impl Default for Pistol {
@@ -1079,6 +1081,7 @@ impl Default for Pistol {
             max_retries: 2,                        // default max_retries is 2
             send_rate: SendRate::Medium,           // default send speed is medium
             send_interval: 800_000,                // default send interval is 800k ns
+            ready_logger: false,
         }
     }
 }
@@ -1153,16 +1156,21 @@ impl Pistol {
     pub fn get_send_rate(&self) -> SendRate {
         self.send_rate
     }
-    fn init_logger(&self) {
-        if let Some(log_level) = self.log_level {
-            let subscriber = FmtSubscriber::builder()
-                .with_ansi(false)
-                .compact()
-                .with_max_level(log_level)
-                .finish();
-            if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
-                error!("failed to set global default subscriber: {}", e);
+    fn init_logger(&mut self) {
+        if self.ready_logger {
+            if let Some(log_level) = self.log_level {
+                let subscriber = FmtSubscriber::builder()
+                    .with_ansi(false)
+                    .compact()
+                    .with_max_level(log_level)
+                    .finish();
+                if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+                    error!("failed to set global default subscriber: {}", e);
+                }
             }
+            self.ready_logger = true;
+        } else {
+            warn!("the logger has already been initialized");
         }
     }
     /* Scan */
@@ -1634,28 +1642,15 @@ impl Pistol {
     /// ```
     /// The output of pistol tcp syn scan.
     /// ```
-    /// +------------------+------------------+------------------+------------------+------------------+
-    /// |                                          Port Scans                                          |
-    /// +------------------+------------------+------------------+------------------+------------------+
-    /// |        id        |       addr       |       port       |      status      |     retries      |
-    /// +------------------+------------------+------------------+------------------+------------------+
-    /// |        1         |   192.168.5.78   |        22        |       open       |        1         |
-    /// +------------------+------------------+------------------+------------------+------------------+
-    /// |        2         |   192.168.5.78   |        80        |       open       |        1         |
-    /// +------------------+------------------+------------------+------------------+------------------+
-    /// |        3         |   192.168.5.78   |       8080       |       open       |        1         |
-    /// +------------------+------------------+------------------+------------------+------------------+
-    /// | start at 2026-05-22 17:55:34 then finish at 2026-05-22 17:55:49, max_retries: 1              |
-    /// | layer2 cost: 116.97ms, total cost: 15.21s, open ports: 3                                     |
-    /// +------------------+------------------+------------------+------------------+------------------+
+    ///
     /// ```
     ///
     /// Compare the speed with nmap.
     /// ```
-    /// ➜  pistol-rs git:(dev) ✗ time sudo nmap -p 22-10240 -sS 192.168.5.78
-    /// Starting Nmap 7.95 ( https://nmap.org ) at 2026-05-22 17:55 CST
-    /// Nmap scan report for 192.168.5.78
-    /// Host is up (0.00087s latency).
+    /// ➜  pistol-rs git:(dev) ✗ time sudo nmap -p 22-10240 -sS 192.168.5.131
+    /// Starting Nmap 7.95 ( https://nmap.org ) at 2026-11-26 16:34 CST
+    /// Nmap scan report for 192.168.5.131
+    /// Host is up (0.00081s latency).
     /// Not shown: 10216 closed tcp ports (reset)
     /// PORT     STATE SERVICE
     /// 22/tcp   open  ssh
@@ -1663,8 +1658,8 @@ impl Pistol {
     /// 8080/tcp open  http-proxy
     /// MAC Address: 00:0C:29:CF:62:2F (VMware)
     ///
-    /// Nmap done: 1 IP address (1 host up) scanned in 14.65 seconds
-    /// sudo nmap -p 22-10240 -sS 192.168.5.78  0.04s user 0.00s system 0% cpu 14.784 total
+    /// Nmap done: 1 IP address (1 host up) scanned in 14.35 seconds
+    /// sudo nmap -p 22-10240 -sS 192.168.5.131  0.02s user 0.01s system 0% cpu 14.428 total
     /// ```
     pub fn tcp_syn_scan(&mut self, targets: &[PortScanTarget]) -> Result<PortScans, PistolError> {
         self.init_logger();
@@ -2802,7 +2797,7 @@ impl Pistol {
     /// By analyzing the responses to these probes,
     /// it max_retries to determine the service type and version.
     pub fn vs_scan(
-        &self,
+        &mut self,
         targets: &[VersionScanTarget],
         threads: usize,
         intensity: usize,
@@ -2816,7 +2811,7 @@ impl Pistol {
     /// By analyzing the responses to these probes,
     /// it max_retries to determine the service type and version.
     pub fn vs_scan_raw(
-        &self,
+        &mut self,
         dst_addr: IpAddr,
         dst_port: u16,
         only_null_probe: bool,
@@ -3386,7 +3381,6 @@ impl PingTargetWithNetInfo {
             infer_targets.push((t.dst_addr, t.src_addr));
         }
 
-        println!("XXX");
         let nis = infer_net_info_multi(
             &infer_targets,
             send_interval,
@@ -3394,8 +3388,6 @@ impl PingTargetWithNetInfo {
             max_retries,
             send_rate,
         )?;
-
-        println!("XXX");
 
         for t in targets {
             if let Some(n) = nis.get(&t.dst_addr) {
@@ -4238,7 +4230,7 @@ mod tests {
     #[test]
     fn test_net_info_detect() {
         let targets = IcmpPingTarget::from_subnet("192.168.5.0/24", None).unwrap();
-        let send_interval = 80_000;
+        let send_interval = 8_000;
         // let send_interval = 800_000;
         let timeout = Duration::from_millis(50);
         let max_retries = 2;
@@ -4368,14 +4360,16 @@ mod tests {
     fn test_arp_scan_raw() {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(2);
-        pistol.set_timeout(1.5);
+        pistol.set_timeout(0.5);
         // pistol.set_log_level("debug");
 
         let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 1);
         let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
 
-        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 78);
+        println!("============");
+
+        let dst_ipv4 = Ipv4Addr::new(192, 168, 5, 131);
         let (mac, rtt) = pistol.arp_scan_raw(dst_ipv4).unwrap();
         println!("{:?}({:.2}s)", mac, rtt.as_secs_f32());
     }
@@ -4452,6 +4446,7 @@ mod tests {
         let mut pistol = Pistol::new();
         pistol.set_max_retries(1);
         pistol.set_timeout(0.5);
+        pistol.set_send_interval(1000_000);
         // pistol.set_log_level("debug");
 
         let src_ipv4 = None;
