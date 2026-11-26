@@ -2,6 +2,10 @@
 use bitcode;
 use chrono::DateTime;
 use chrono::Local;
+use crossnet::neigh::NeighborCache;
+use crossnet::neigh::get_neighbor_cache;
+use crossnet::route::RouteCache;
+use crossnet::route::get_route_cache;
 use pnet::datalink;
 use pnet::datalink::MacAddr;
 use pnet::packet::Packet;
@@ -55,6 +59,7 @@ use crate::SendWindow;
 use crate::error::PistolError;
 use crate::layer::ipv6_all_routers_multicast_mac;
 use crate::layer::ipv6_solicited_node_multicast_mac;
+use crate::route::infer_interface;
 use crate::route::infer_net_info;
 use crate::scan::arp::build_arp_scan_buff;
 use crate::scan::ndp_ns::build_ndp_ns_scan_packet;
@@ -255,26 +260,30 @@ pub(crate) fn arp_scan_raw(
 fn get_arp_scan_buff(
     dst_ipv4: Ipv4Addr,
     src_addr: Option<IpAddr>,
-    send_interval: u64,
-    timeout: Duration,
+    route_cache: &RouteCache,
+    neigh_cache: &NeighborCache,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let net_info = match infer_net_info(dst_ipv4.into(), src_addr, send_interval, timeout)? {
-        Some(n) => n,
-        None => return Err(PistolError::CanNotFoundNetInfo),
-    };
-
-    let interface = net_info.inferred_interface;
-    let if_name = interface.name.clone();
-    // broadcast mac address
-    let dst_mac = MacAddr::broadcast();
-    let src_mac = net_info.inferred_src_mac;
-    let src_ipv4 = match net_info.inferred_src_addr {
-        IpAddr::V4(s) => s,
-        IpAddr::V6(_) => {
-            return Err(PistolError::AttackAddressNotMatch {
-                addr: net_info.inferred_src_addr,
+    let (ii, si) = infer_interface(dst_ipv4.into(), src_addr, neigh_cache, route_cache)?;
+    let interface = match ii {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                addr: dst_ipv4.into(),
             });
         }
+    };
+    let if_name = interface.name.clone();
+
+    // broadcast mac address
+    let dst_mac = MacAddr::broadcast();
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
+    };
+
+    let src_ipv4 = match si {
+        IpAddr::V4(s) => s,
+        _ => return Err(PistolError::AttackAddressNotMatch { addr: si }),
     };
 
     debug!("use interface {} and src ipv4 {}", if_name, src_ipv4);
@@ -397,24 +406,28 @@ pub(crate) fn ndp_ns_scan_raw(
 pub(crate) fn get_ndp_ns_scan_buff(
     dst_ipv6: Ipv6Addr,
     src_addr: Option<IpAddr>,
-    send_interval: u64,
-    timeout: Duration,
+    neigh_cache: &NeighborCache,
+    route_cache: &RouteCache,
 ) -> Result<(SendPacketParam, Vec<Arc<PacketFilter>>), PistolError> {
-    let net_info = match infer_net_info(dst_ipv6.into(), src_addr, send_interval, timeout)? {
-        Some(n) => n,
-        None => return Err(PistolError::CanNotFoundNetInfo),
-    };
+    let (ii, si) = infer_interface(dst_ipv6.into(), src_addr, neigh_cache, route_cache)?;
 
-    let interface = net_info.inferred_interface;
-    let if_name = interface.name.clone();
-    let src_mac = net_info.inferred_src_mac;
-    let src_ipv6 = match net_info.inferred_src_addr {
-        IpAddr::V6(s) => s,
-        _ => {
-            return Err(PistolError::AttackAddressNotMatch {
-                addr: net_info.inferred_src_addr,
+    let interface = match ii {
+        Some(i) => i,
+        None => {
+            return Err(PistolError::CanNotFoundInterface {
+                addr: dst_ipv6.into(),
             });
         }
+    };
+
+    let if_name = interface.name.clone();
+    let src_mac = match interface.mac {
+        Some(m) => m,
+        None => return Err(PistolError::CanNotFoundSrcMacAddress),
+    };
+    let src_ipv6 = match si {
+        IpAddr::V6(s) => s,
+        _ => return Err(PistolError::AttackAddressNotMatch { addr: si }),
     };
     let dst_mac = ipv6_solicited_node_multicast_mac(dst_ipv6);
 
@@ -630,6 +643,9 @@ pub(crate) fn mac_scan(
     let mut rets = MacScans::new(max_retries);
     let mut loop_states = LoopStates::default();
 
+    let route_cache = get_route_cache()?;
+    let neigh_cache = get_neighbor_cache()?;
+
     for t in targets {
         let dst_addr = t.dst_addr;
         let src_addr = t.src_addr;
@@ -664,8 +680,12 @@ pub(crate) fn mac_scan(
                             state.retries + 1,
                             max_retries
                         );
-                        let (spp, filters) =
-                            get_arp_scan_buff(dst_ipv4, state.src_addr, send_interval, timeout)?;
+                        let (spp, filters) = get_arp_scan_buff(
+                            dst_ipv4,
+                            state.src_addr,
+                            &route_cache,
+                            &neigh_cache,
+                        )?;
                         all_filters.extend(filters);
 
                         stream.send_packet(spp)?;
@@ -682,8 +702,12 @@ pub(crate) fn mac_scan(
                             max_retries
                         );
                         // retry to send ndp_ns scan packet and recv response
-                        let (spp, filters) =
-                            get_ndp_ns_scan_buff(dst_ipv6, state.src_addr, send_interval, timeout)?;
+                        let (spp, filters) = get_ndp_ns_scan_buff(
+                            dst_ipv6,
+                            state.src_addr,
+                            &neigh_cache,
+                            &route_cache,
+                        )?;
                         all_filters.extend(filters);
                         stream.send_packet(spp)?;
 
